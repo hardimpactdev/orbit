@@ -34,11 +34,20 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-provision
   GW-->>CLI: 202 Accepted<br/>task #5140
   SW->>H: Create and prepare the VM<br/>launch · WireGuard · Pi server
+  %%> Skipped for a claimed ready slot (`intent.slot`, chart `task_vm.slots`): the three slot steps below run instead.
+  SW->>H: Start the slot<br/>ssh exec · incus start
+  %%> Only for a claimed ready slot: the slot was enrolled and stopped ahead of time; a VM that already runs counts as started
+  SW->>H: Wait for the slot agent<br/>ssh exec · incus wait agent
+  SW->>H: Wait for the slot boot<br/>incus exec · systemctl --wait
+  %%> The agent answers before sshd, WireGuard and Pi; this waits for the boot to finish, and a degraded boot still counts
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> Private dependencies:
   %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
   %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
-  %%> - then it revokes the token (best effort), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - then it revokes the token (`DELETE installation/token`), so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
+  %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
+  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
+  %%> - when no setup step runs, nothing is written, removed or revoked
   %%> - a cancelled or timed-out run keeps them until the token expires, within the hour, or until `tasks:cancel` removes the VM
   %%> - the token is minted for these steps only, reads the repositories that the GitHub App installation covers, and expires within the hour
   %%> - when the App cannot supply a token, both files hold an empty configuration and setup runs without private access
@@ -71,7 +80,7 @@ sequenceDiagram
     %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
     %%> Why:
     %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
-    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM
+    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
     %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the NFS checkout, the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
     %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
     %%> - takes the stateful snapshot `base` of the three nested VMs, memory included; the proof batches restore it

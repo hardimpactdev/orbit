@@ -88,9 +88,11 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
+`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
+
 `task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
 
-`task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. A 14-day p95 replaces it after the first successes.
+`task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. The waits of the build are Ansible tasks with their own `until` and `retries`, so their literal timeouts only guard against a hung connection and this budget is the bound. A 14-day p95 replaces it after the first successes.
 
 `task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The fleet build, when the seed has no ready copies, takes 3,600 seconds at its bound and about 25 minutes in practice. The ready copies take 3,600 seconds at their bound, about ten minutes in practice. The builder converges at 3,300 seconds at its bound, and a VM at its pins takes about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
@@ -111,6 +113,8 @@ The measured parts on a fresh VM are the restore from the ready copies, the rsyn
 `proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
 
 Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; the provision takes about 300 and the destruction about 120; with 1.5 times margin and rounded up to five minutes it is 3,600. The `proof.run` that the CLI follows adds five minutes, because it closes when its last run has ended. Replace both with the 14-day p95 after the first success.
+
+`proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. Replace it with the 14-day p95 after the first success.
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
@@ -249,13 +253,17 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
 | `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
 | `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
+| `POST task-groups/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
+| `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
 | `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
+| `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
 | the gate check `tasks:pr-gate` (no route) | `tasks.pr_comment` | `task_group` | Gateway |
+| the gate check `tasks:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
@@ -290,7 +298,7 @@ Automatic deploy starts bind caller and command as well as target and input. The
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
 
-A caller that starts operations without a request keys each admission itself. `OperationIdempotency::under(kind, key, fingerprint, callback)` runs the callback under that key and puts the request's key back afterwards, also when the callback throws. The pull-request gate, a proof, project maintenance and task maintenance use it, and so does the HTTP boundary for the header.
+A caller that starts operations without a request keys each admission itself. `OperationIdempotency::under(kind, key, fingerprint, callback)` runs the callback under that key and puts the request's key back afterwards, also when the callback throws. The pull-request gate, a proof, project maintenance and task maintenance use it, and so does the HTTP boundary for the header. `OperationIdempotency::suspended(callback)` runs a callback with no key and puts the request's key back: an operation that the request did not ask for, such as the resume of a parked task VM, takes none.
 
 Concurrent starts with one new key create one operation and start one workflow. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
@@ -543,7 +551,7 @@ GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key
 
 The Gateway validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. A failed scope check, or a failed vault copy, revokes the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies. The token never enters an Operation, step output, receipt, Activity or shared token cache.
 
-`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403).
+`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a package install (`tasks.package`), a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403). A step that minted a setup token revokes it and reports the outcome in the result as `dependency_token` (`revoked`, `none` or `unrevoked` with a reason), for `tasks.provision` and `tasks.package`.
 
 ### Intent-bound certificate signing
 

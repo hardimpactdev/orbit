@@ -4,19 +4,23 @@ export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
 type Phase = z.infer<typeof Step> | null | undefined;
 type Phases = {
-    prepare: string;
-    fetch: string;
-    source: Phase;
-    environment: string;
+    checkout: Phase;
     database: string;
-    setup: string[];
+    setup: string;
     processes: string[];
     route: string;
+    /** The statuses of the Route's CSR and signing steps, which run beside the checkout. */
+    certificates?: string[];
 };
 
+/** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
+const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
+
 /**
- * Map the step statuses to the terminal receipt: the checked-out commit, or the first phase that did not finish.
- * The Gateway already holds the rendered environment, the branch and the Project's profile.
+ * Map the step statuses to the terminal receipt: the checked-out commit, or the phase that failed.
+ * A step that a failure skipped is not the failure, so a phase that ended `failed` wins over the first
+ * phase that merely did not run. The Gateway already holds the rendered environment, the branch and the
+ * Project's profile.
  */
 export function createResult(intent: Record<string, unknown>, phases: Phases) {
     if (intent.already_active === true) {
@@ -27,34 +31,45 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         };
         return { ready: true, stdout: JSON.stringify(result) };
     }
-    const commit = phases.source?.status === "succeeded"
-        ? String(phases.source.outputs?.stdout ?? "").trim()
+    const commit = phases.checkout?.status === "succeeded"
+        ? COMMIT.exec(String(phases.checkout.outputs?.stdout ?? ""))?.[1] ??
+            null
         : null;
     const steps = z.array(z.object({ name: z.string() }).passthrough()).parse(
         intent.setup_steps,
     );
-    const failedSetup = phases.setup.findIndex((status) =>
-        status !== "succeeded"
-    );
-    const outcomes: [string, boolean][] = [
-        ["prepare", phases.prepare === "succeeded"],
-        ["source", phases.fetch !== "failed" && commit !== null],
-        ["environment", phases.environment === "succeeded"],
+    const certificates = phases.certificates ?? [];
+    // [phase, finished, failed]
+    const outcomes: [string, boolean, boolean][] = [
+        ["checkout", commit !== null, commit === null],
         // Only a create that copies the default database or owns a server database runs the database phase.
         [
             "database",
             (intent.database == null && intent.server_database == null) ||
             phases.database === "succeeded",
+            phases.database === "failed",
         ],
-        ["setup", failedSetup < 0],
+        // A Project without setup steps runs no setup phase.
+        [
+            "setup",
+            steps.length === 0 || phases.setup === "succeeded",
+            phases.setup === "failed",
+        ],
         [
             "processes",
             phases.processes.every((status) => status === "succeeded"),
+            phases.processes.includes("failed"),
         ],
-        // A Project that serves no web pages has no Route; its route step is skipped.
-        ["route", intent.route == null || phases.route === "succeeded"],
+        // A Project that serves no web pages has no Route; its steps are skipped.
+        [
+            "route",
+            intent.route == null || (phases.route === "succeeded" &&
+                certificates.every((status) => status === "succeeded")),
+            phases.route === "failed" || certificates.includes("failed"),
+        ],
     ];
-    const failed = outcomes.find(([, ready]) => !ready);
+    const failed = outcomes.find(([, , failure]) => failure) ??
+        outcomes.find(([, finished]) => !finished);
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
@@ -67,9 +82,6 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
                 error_code: failed[0] === "setup"
                     ? "instance.setup_step_failed"
                     : "instance.create_" + failed[0] + "_failed",
-                ...(failed[0] === "setup" && failedSetup >= 0
-                    ? { failed_command: steps[failedSetup].name }
-                    : {}),
             }
             : {}),
     };

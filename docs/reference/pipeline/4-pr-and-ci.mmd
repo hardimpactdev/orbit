@@ -21,20 +21,27 @@ sequenceDiagram
   %%> What it does:
   %%> - pushes the command code and the runnable proof cases to the branch of the draft PR; no second PR is opened
   %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
-  %%> Not built:
-  %%> - the Swamp prep flow that opens the draft PR; `tasks:publish --draft` opens it as the Orbit App, but today the author opens it as `nckrtl`
+  %%> Built:
+  %%> - the Swamp prep flow (`operation-task-prep`, stage 1) opens the draft PR as the Orbit App with `tasks:publish --draft`; 1 of 3 runs succeeded by 2026-11-06
   GH->>CI: Start CI<br/>on the PR head, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the PR head on every push, also while the PR is a draft; there is one CI, and the merge requires its one result
+  %%> - the handoff branch `task-N-handoff`, which only the Orbit App pushes, runs the same CI before `tasks:publish`; its Swamp workflow validation step gets the read-only Swamp CI token for a push by the App
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - without the token, no handoff that changes `swamp/` could pass hosted CI; the token goes to that one step, never to `pull_request_target` or a fork
   Note over CI: Scope the change<br/>changed files pick the jobs
   %%> Rules:
   %%> - documentation only (`docs/`, `*.md`, charts): docs checks only, never the proof CI; this is the spec commit alone
   %%> - Gateway code: fast checks and the Gateway Pest suite
   %%> - web or CLI code: fast checks and that build
   %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
-  %%> - the proof CI starts only when a changed path selects a command in `swamp/proof/selection.txt`, the same list `proof:run` reads; docs, charts and case descriptions never start it
-  %%> Not built:
-  %%> - mapping each command's Gateway Action and CLI files in `selection.txt`; `apps/**` is `skip` until a command is ready
+  %%> - the proof CI starts only when a changed path selects a command (or `*`, every case) in `swamp/proof/selection.txt`, the same list `proof:run` reads; docs, charts and case descriptions never start it, also inside a directory that selects `*`
+  %%> Decided 2026-11-06:
+  %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select every command of the family; code that serves another family stays out, for example the router LAN ingress files
+  %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that proves nothing; `apps/**` stays `skip` until then
+  %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break; the shared files are named in the list, and the Operation kind and budget registries are among them, so adding a command to them runs every case
+  %%> Built:
+  %%> - the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`) and the shared files, checked by Pest tests against the checked-in list
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
   %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
@@ -43,9 +50,17 @@ sequenceDiagram
     opt the PR is from outside
       GH->>CI: Review + run-proofs label<br/>maintainer
       %%> What it does:
-      %%> - a maintainer approves the head and adds the label `run-proofs`; the workflow passes that head SHA to `proof:run`
+      %%> - a maintainer approves the head, then adds the label `run-proofs`; the label starts the workflow `proof-outside`, which passes that head SHA to `proof:run` on the proof runner
+      %%> - the workflow runs from the base branch of the PR (`pull_request_target`) and checks out only its own script, so the PR cannot change what runs on the runner; the code of the PR runs nowhere but in the task VM, after the Gateway checked the label and a maintainer's approval of exactly that commit
       %%> Why:
-      %%> - a new push removes the label; the new head needs a new approval
+      %%> - a new push removes the label (the workflow does it) and moves the head; the new head needs a new approval, then the label again
+      %%> - a label added before the approval fails with `proof.commit_untrusted`; remove it and add it again after approving
+      %%> Built:
+      %%> - the workflow `.github/workflows/proof-outside.yml`: the job `proof-run` on `labeled` and the job `unlabel` on `synchronize`, for pull requests from a fork only
+      %%> - the Gateway side, `proof:run` refusing an untrusted commit with `proof.commit_untrusted`
+      %%> Decided by the orchestrator, for Nick's review:
+      %%> - a workflow of its own, not a trigger on `ci.yml`: `pull_request_target` on `ci.yml` would run every job of the PR with the secrets and the write token of the base repository
+      %%> - the result is a run of that workflow; `Required checks` does not wait for it, as for the proof CI of a branch PR
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:
@@ -57,6 +72,8 @@ sequenceDiagram
     %%> Built:
     %%> - the job `proof-run` runs only when a changed path selects a command in `selection.txt`, passes only the SHA and an idempotency key, and a new push cancels the run of the previous push; it follows the one `proof.run` record until the last command run ended
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
+    %%> Built, not yet passed live:
+    %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Not built:
     %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and the job joins it once a run passes end to end
     GW-->>CI: Verdict per case
@@ -71,6 +88,7 @@ sequenceDiagram
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
     %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`tasks:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
+    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`tasks:prep-fix`), keyed by group and review, while the VM is parked (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below
@@ -78,12 +96,13 @@ sequenceDiagram
     %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the green CI and the approval
     %%> - Swamp steps make no Gateway calls; each admission starts its own Swamp run with the full intent
     %%> Rules:
-    %%> - admission is keyed by group and head, so a repeat tick on the same head is a no-op; a push moves the head and the check starts again
+    %%> - admission is keyed by group and head, so a repeat tick on the same head is a no-op; a push moves the head and the check starts again. The corrections of a spec are keyed by group and review instead: each new review of the owner starts one run, and a failed run starts again only with a new review
     %%> - a pending or red CI result, a missing approval, a busy group or a failed read is a quiet skip; the next tick reads again
     %%> - a draft PR with no passed handoff check on its head stays a draft, because the code and the runnable cases are not there yet: the PR that `tasks:prep` opens for a spec is such a PR, and an approval never merges it
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
     %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
+    %%> - the admission of the corrections of a prep spec, for a parked prep group whose owner requested changes on the current head
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and names the vault key of its token; the step mints the token when it runs
@@ -118,7 +137,7 @@ sequenceDiagram
       %%> - the admission, keyed by group and head, with the round number recorded on the group; it needs a green merge check and a passed handoff candidate on the head
       %%> - the fall back to manual mode after round 3 with findings, or when a round fails
       %%> Not built:
-      %%> - the one Swamp run per round: today the round is the reviewer turn of the existing turn workflow, and the comment and the fix are separate steps
+      %%> - the one Swamp run per round, as the chart in docs/cli/tasks/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of one run; today they are separate admissions of the gate check
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
@@ -155,8 +174,9 @@ sequenceDiagram
     %%> Built:
     %%> - the operation `tasks:pr-merge`, with its chart, called by the gate check
     %%> - the call in automatic mode, after a passed round on the head
-    %%> Not built:
-    %%> - a PR that is not in a Task group still merges with `gh pr merge N --squash` as `nckrtl` (the interim)
+    %%> - a PR that no Task group watches merges through `project:pr-merge` (`docs/cli/project/pr-merge.mmd`): the same Swamp step, admitted by the Gateway for the Project, with the green merge check on the exact head as the gate
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, a PR that a Task group watches is refused (`tasks:pr-merge` owns it), and so is a PR that does not target the default branch or that comes from a fork (a fork can define its own workflow that reports a passing merge check; open for Nick: how to trust a fork)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one

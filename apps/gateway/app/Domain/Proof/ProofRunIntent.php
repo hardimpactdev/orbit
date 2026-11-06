@@ -77,7 +77,7 @@ final readonly class ProofRunIntent
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $case, $input, $group, $instance), 'proof-run', null));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -103,7 +103,7 @@ final readonly class ProofRunIntent
      * @param  array<string,mixed>  $input  the provision input
      * @return array<string,mixed>
      */
-    private function runInput(Operation $proof, string $commit, array $case, array $input, Task $group, Instance $instance): array
+    private function runInput(Operation $proof, string $commit, string $base, array $case, array $input, Task $group, Instance $instance): array
     {
         $instance->loadMissing('node');
         // The guest's host key is pinned only by the VM step of the run; the run fills it into this target.
@@ -115,7 +115,9 @@ final readonly class ProofRunIntent
             'execution_secrets' => $input['execution_secrets'] ?? [],
             'provision' => array_diff_key($input, ['execution_secrets' => true]),
             'verify' => ['group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'command' => $case['command'],
-                'file' => $case['file'], 'ssh_execution' => $ssh, 'checkout_path' => $instance->checkout_path],
+                'file' => $case['file'], 'ssh_execution' => $ssh, 'checkout_path' => $instance->checkout_path,
+                // The proof of a new case switches the checkout to the merge base, with the new cases file of the head.
+                'head' => $commit, 'merge_base' => $base],
             'cancel' => app(TaskCancelIntent::class)->captureForProof($group),
         ];
     }

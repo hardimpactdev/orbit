@@ -139,7 +139,7 @@ Each read and command on the VM is one official `@swamp/ssh exec` argument list;
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue: its bootstrap starts the scheduler and Horizon units, and its `gateway` role keeps them.
 
-Before the first setup command, a step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer and npm configuration of the task account from it. After the last setup command, on success or failure, a step removes both files.
+Before the first setup command, a step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer and npm configuration of the task account from it. After the last setup command, on success or failure, a step removes both files. The same step revokes the token and reports the outcome in the receipt as `dependency_token`. A revoke that could not run says so: `The revoke step could not run.` Any other failed revoke says `The revoke request did not complete.`
 
 Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
@@ -175,7 +175,7 @@ Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 Ki
 
 The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows, and `Report the result` prints the result and fails the run on its error code. A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
-A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
+A workspace is required (`409 tasks.no_workspace`). A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
 Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
 
@@ -186,6 +186,8 @@ Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_P
 A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
 
 A changed checked tree returns `changed`; failed commands or unmet deliverables return `failed`. A failed Project check keeps its output and leaves skipped command deliverables unmet; it creates no candidate.
+
+A command deliverable stored without `fails_on_base` is admitted with `false`; the subtask keeps it as stored. The check workflows read the value of each command deliverable and never default it.
 
 A passing handoff creates its candidate commit in the VM with `git add --all` and one `git commit` as `Orbit <orbit@users.noreply.github.com>`, with hooks off and the admitted message. TypeScript on Node 209 reads `HEAD`, its tree and its parent back: they must be the checked tree on the checked HEAD, or the check is `changed` and records no candidate. `git update-ref` then records the candidate under `refs/orbit/check-operations/{operation}`. Native history owns successful step reuse. The workspace path is run intent; checks add no lease, ownership token or cross-step lock. Cancellation uses native Swamp cancel and official SSH session teardown. Leftover remote descendants are accepted until normal group cleanup or VM destruction.
 
@@ -233,9 +235,21 @@ The program's output stays out of native history ([command output](#keep-command
 
 Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
+#### Install a private package
+
+`POST /api/v1/task-groups/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `tasks-package`. There is no `orbit` command.
+
+An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
+
+Admission needs an open external group with its owned task VM workspace and refuses other active work on the group. It records the request and names the vault keys of the dependency configuration. It mints no token. The run asks the Gateway for a read token (`purpose: dependencies`), writes the Composer and npm configuration of the task account from it, runs one `composer require --no-scripts` or `npm install --ignore-scripts` in the checkout, and removes both files. The package is `$0` of a fixed command, so no shell parses it.
+
+The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one. The result names the outcome in `dependency_token`: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason. An `unrevoked` token does not fail the run. A cancelled run keeps the files until the token expires or `tasks:cancel` removes the VM.
+
 #### Run an external turn
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+
+A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
 
 The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
 
@@ -251,7 +265,9 @@ The final `outcome` step uses a native assert over the typed turn result after r
 | `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
 | `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
 
-Separate native steps capture workspace evidence, create `.git/orbit` and remove an earlier `receipt.json` with pinned `@swamp/ssh exec` argv, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The turn copies no file to the task VM. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the [turn receipt](#turn-receipt) schema, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
+Separate native steps capture workspace evidence, create `.git/orbit` and remove an earlier `receipt.json` with pinned `@swamp/ssh exec` argv, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The turn copies no file to the task VM. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the [turn receipt](#turn-receipt) schema, and the workspace MCP configuration. Orbit adds no rubric, reminder, or nudge.
+
+The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
 
 When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null` and `receipt_error: null`. A receipt that breaks the [schema](#turn-receipt) produces `receipt: null` and one fixed `receipt_error`; the turn itself still succeeds. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
 
@@ -298,11 +314,14 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the author thread, and one reviewer thread for each review round, with model, effort, session and Pi address;
 - the prompts of the draft, review and fix turns;
 - the title and body of the draft pull request;
-- the repository, the base and the branch `task-{group}`.
+- the repository, the base and the branch `task-{group}`; and
+- the review mode of the group, `manual` or `automatic`.
 
 It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation.
 
 Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
+
+The run is the same in both modes. When it succeeds in `manual` mode, the Gateway admits `tasks:park` for the group, so the VM stops while the spec waits for the owner; a park that the Gateway refuses is kept in the result as `park_refused`. In `automatic` mode nothing parks, and the VM keeps running.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
@@ -342,7 +361,11 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 #### Apply the corrections
 
-`tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller.
+`tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller, and so is the gate check of stage 4.
+
+Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `tasks:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
+
+The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` for that review once the VM is parked again. A failed run leaves the VM running, so until then the gate reads nothing for the group. A new review of the owner starts a new run. A comment, an approval, a dismissed review or a review of an older head starts nothing.
 
 The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
@@ -364,7 +387,29 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
 
-The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes. The gate check does not detect the owner's review yet.
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes.
+
+The gate check also admits this run when the owner requests changes, and it detects the approval, which [starts the build](#start-the-build).
+
+#### Start the build
+
+`tasks.build` is the step after the owner approves the spec of a prep group. The gate check admits it. It has no command, route or MCP tool. Before it existed, a person moved the group to `running` and added the build subtask by hand.
+
+The gate check acts on a group with a succeeded `tasks.prep` run, an open draft pull request and no other subtask than its completed spec subtask. The group is `waiting_for_review` after a manual prep, and `running` after an automatic prep or a park that was refused.
+
+In manual mode it acts when the latest review of the reviewer approves the exact head of the pull request. In automatic mode it acts without a review, because the clean review of the prep run is the approval. A group that has started its build, a head that is not the approved one and a busy group are quiet skips. The Idempotency-Key is `pr-gate:build:<group>:<head>`.
+
+In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
+
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+
+The native `operation-task-build` workflow is one parent run, with existing workflows as children:
+
+- `Resume the VM` runs `operation-task-vm-resume`.
+- `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
+- `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
+
+The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
 
 ### Task lifecycle
 
@@ -759,6 +804,16 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
+### Behavior names
+
+The local and data steps of `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `tasks.check` are named by the task VM: the name ends in the address of the VM (its WireGuard address). Addresses come from a bounded pool and are reused, so the set of names stays fixed. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+
+The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
+
+Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
+
+The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+
 ## Task workspace
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
@@ -917,6 +972,14 @@ An assistance request records the question on the group and subtask. A resolutio
 
 Use the comment API, CLI or MCP to post a resolution. This changes assistance only. Swamp reads the answer before deciding how to continue.
 
+### Bring the workspace up to date
+
+`tasks:sync` starts `tasks.sync` through `POST /api/v1/task-groups/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
+
+The admission checks an open external group with its own task VM workspace and wakes a parked VM, as the other work admissions do. It captures the repository, the default branch, the branch `task-<group>`, the workspace path and the SSH target, and names the vault key of a read token. As it starts the run, the Gateway mints that token with `contents: read` and writes it to the key. No step of the run calls the Gateway.
+
+On Node 209 the run makes a bare clone of the default branch, fetches the task branch and writes one bundle of both. It copies the bundle to a private directory on the VM with official SSH, runs `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-<group>`, and reads the two commits. HEAD, the working tree and the local branches stay as they are. A clean up step removes both scratch directories on success and on failure. The result holds the two commits.
+
 ## Project check
 
 A `tasks.check` operation runs the Project's configured check. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
@@ -1032,6 +1095,7 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A pull request in draft gets the ready step in the review mode of the group. Admission requires a green merge check on the head.
 - The ready step also requires a passed handoff check of the group on that commit.
 - A spec-only pull request, such as the one `tasks:prep` opens, has no such check and stays a draft.
+- The owner's approval of its head [starts the build](#start-the-build) instead.
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
@@ -1285,7 +1349,11 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
-A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. One step of provision, `Look for ready copies`, decides this, and the refresh of a task image builds the fleet in such a VM. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
+A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. One step of provision, `Look for ready copies`, decides this, and the refresh of a task image builds the fleet in such a VM.
+
+Placement keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies: with no other host free, the admission answers `tasks.capacity_unavailable`.
+
+That VM is always large: the admission of the refresh passes the size to `TaskProvisionIntent`, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
 
 ### An optional, generic extension
 
@@ -1424,7 +1492,7 @@ Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` w
 
 Admission holds the group execution lock and names two vault keys. It mints no token. The first step of the run asks the Gateway for two repository-scoped tokens (`purpose: dependency_merge`): Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. The Gateway writes them to the named keys. Native `gh api` commands read tokens from the environment. No other execution step reads credentials or reports results through a Gateway callback.
 
-All Projects are disabled: `dependency_merge.projects` is empty and the Project's `dependencyAutoMerge` entry in `projects.json` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
+All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission verifies the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
 Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. Every enabled policy must name `smoke_workflow`, an exact `.github/workflows/*.yml` or `.yaml` path. Its active workflow and `Production smoke / smoke` are mandatory: the raw `smoke` job must belong to that exact workflow's latest PR suite. Removing or renaming the workflow refuses the merge.
 

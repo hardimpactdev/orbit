@@ -39,6 +39,12 @@ final readonly class TaskVmImageRefreshIntent
 {
     public const string Kind = 'task_vm.image_refresh';
 
+    /** The nested fleet is built or started in the refresh VM, and its disk becomes the new seed. */
+    public const string SeedBuild = 'build';
+
+    /** The image part alone: no fleet is built and no ready copies are saved, and the seed that the refresh VM cloned is copied as it is. */
+    public const string SeedKeep = 'keep';
+
     public function __construct(private TaskProvisionIntent $provision, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private ProofSettings $proof, private RecipeImageBuilds $recipes,
         private TaskVmReadyCopiesIntent $copies, private TaskVmFleetBuildIntent $fleet) {}
@@ -67,8 +73,11 @@ final readonly class TaskVmImageRefreshIntent
         return $this->settings->host($host->id);
     }
 
-    public function start(Node $host, string $caller, ?string $request): Operation
+    public function start(Node $host, string $caller, ?string $request, string $seed = self::SeedBuild): Operation
     {
+        if (! in_array($seed, [self::SeedBuild, self::SeedKeep], true)) {
+            throw new ResourceOperationException('task_vm.seed_invalid', 'The seed of a refresh is build or keep.', 422);
+        }
         if (($open = self::open($host)) instanceof Operation) {
             return $open;
         }
@@ -77,13 +86,13 @@ final readonly class TaskVmImageRefreshIntent
             return self::open($host) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
         }
         try {
-            return self::open($host) ?? $this->admit($host, $caller, $request);
+            return self::open($host) ?? $this->admit($host, $caller, $request, $seed);
         } finally {
             $lock->release();
         }
     }
 
-    private function admit(Node $host, string $caller, ?string $request): Operation
+    private function admit(Node $host, string $caller, ?string $request, string $seed): Operation
     {
         $location = $this->assertCanRefresh($host);
         $image = $this->images->forHost($host, $location);
@@ -92,7 +101,7 @@ final readonly class TaskVmImageRefreshIntent
             'Bring the task image and the topology seed of '.$host->name.' up to commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Refresh the image',
                 'The Swamp run task_vm.image_refresh refreshes the image and the seed of the host.', [['id' => 'refreshed', 'type' => 'review', 'description' => 'The host promotes a new image and seed.']])]));
         try {
-            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit), $caller, $request, $host->id);
+            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit, $seed), $caller, $request, $host->id, TaskVmSize::Large);
         } catch (\Throwable $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
 
@@ -105,13 +114,13 @@ final readonly class TaskVmImageRefreshIntent
      * @param  array{fingerprint:string,recipe_identity:string}  $image  the image the host serves now
      * @return array<string,mixed>
      */
-    private function input(array $input, Task $group, Instance $instance, TaskVm $vm, Node $host, TaskVmHost $location, array $image, string $commit): array
+    private function input(array $input, Task $group, Instance $instance, TaskVm $vm, Node $host, TaskVmHost $location, array $image, string $commit, string $seed): array
     {
         // A published image is as large as the root disk of its VM, and no VM can be smaller than its image. The refresh VM
         // keeps the root disk of the host's base VM, so the image it publishes still fits a normal VM.
         $input['create'] = [...ValidatedData::object($input['create']), 'disk' => $location->disk];
         // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
-        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm), 'fleet_build' => $this->fleet->provisioning($vm)]);
+        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm), 'fleet_build' => $this->fleet->provisioning($vm, (string) $instance->checkout_path)]);
         $candidate = $location->imageAlias.'-refresh-'.$group->id;
         $recipeIdentity = $this->recipes->currentRecipe()->identity;
         $jump = $this->ssh->forNode($host);
@@ -124,7 +133,7 @@ final readonly class TaskVmImageRefreshIntent
             'execution_secrets' => $input['execution_secrets'] ?? [],
             'provision' => array_diff_key($input, ['execution_secrets' => true]),
             'refresh' => [
-                'host_node_id' => $host->id, 'host_ssh_execution' => $jump, 'commit' => $commit,
+                'host_node_id' => $host->id, 'host_ssh_execution' => $jump, 'commit' => $commit, 'seed' => $seed,
                 'image' => $image, 'recipe_identity' => $recipeIdentity,
                 'vm' => ['name' => $vm->name, 'project' => $location->project, 'pool' => $location->pool, 'seed_volume' => $vm->name.'-'.TaskVmVolumes::SeedDevice],
                 'names' => ['alias' => $location->imageAlias, 'candidate_alias' => $candidate, 'seed_prefix' => TaskVmVolumes::SeedPrefix],

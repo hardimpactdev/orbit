@@ -45,11 +45,11 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 ## 3. Proof
 
-**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, syncs the author's code and takes `base` again when something changed. Each batch then restores `base` once, and its cases run one after another without undo, each on its own resources. A case that does not pass triggers a restore. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Not built: that direct Swamp run and the reset of the fleet in the VM.
+**Partly built, with one case so far.** The cases of a command run on that topology. The target: Orbit's own Swamp runs the proof directly and reaches into the task VM over SSH, like every other step. A run restores `base`, syncs the author's code and takes `base` again when something changed. Each batch then restores `base` once, and its cases run one after another without undo, each on its own resources. A case that does not pass triggers a restore. Each case calls the real CLI, checks the real effect and prints a verdict. The first case is the `firewall:allow` traffic case. Built: [`orbit proof COMMAND`](/cli/proof/proof) runs the cases of one command on the author's own task VM, restores `base` first and leaves a clean fleet on the latest code after the last batch. Not built: the converge of the nested Nodes.
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof"></div>
 
-- Chart: the stage chart above. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
+- Charts: the stage chart above, and [`orbit proof`](/cli/proof/proof#how-it-works) for the author's own command. A command's own chart, such as [`firewall:allow`](/cli/firewall/allow#how-it-works), shows the command, not the proof run.
 - Design draft: [Verification cases](/reference/verification-cases) describes how cases are written as short specifications, covered against the command chart, and run by one shared runner (chart [3-proof-runner](/reference/verification-cases#the-run)).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: the drafts [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml) and [`batches.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/batches.yaml).
@@ -79,14 +79,14 @@ The target: the nested VMs hold their own checkout, with no code share from the 
 
 ## 6. Per-host task image and seed refresh
 
-**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts. The trigger is a release that changed playbooks, pins or lock files, plus a daily run. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested VMs as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
+**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts. No trigger runs it now: the release and daily triggers rebuilt on the nested-VM path and were removed; an operator starts it. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested VMs as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
 - Built: the refresh run `task_vm.image_refresh`, which an operator starts with `php artisan task-vms:refresh-image <host>`: a refresh VM, the converge, the ready copies, the clean, the new image and seed, the boot check and the promotion. The recipe image build stays for a new host or a new base OS.
-- Built: the release trigger and the daily schedule, and the NFS mount, apply and readiness check, through the provision child.
+- Built: the NFS mount, apply and readiness check, through the provision child. The release trigger and the daily schedule were removed.
 - Not built: the first refresh of a host with no ready copies (the fleet build child), the converge of the nested Nodes, and the replacement of ready slots.
-- Built: the re-mint of the nested Swamp tokens, at every provision that starts a fleet from ready copies (stage 2). The copies carry format 3, which marks the control plan it reads.
+- Built: the re-mint of the nested Swamp tokens, at every provision that starts a fleet from ready copies (stage 2), and in a proof run when the tokens in `base` are older than 20 days (stage 3). The copies carry format 3, which marks the control plan it reads.
 - Charts: the stage chart above, the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd) (draft; a refresh replaces ready slots built from the old image, one at a time).
 - Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 - Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml), [`swamp/workflows/workflow-task-vm-image-clean.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-task-vm-image-clean.yaml).

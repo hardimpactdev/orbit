@@ -52,10 +52,10 @@ class TaskVmNestedFirewallTest(unittest.TestCase):
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
-    def test_the_bridge_gets_dhcp_dns_and_a_way_out_only(self):
+    def test_the_bridge_gets_dhcp_dns_the_package_cache_and_a_way_out_only(self):
         rules = self.rules({'checkout': '/home/orbit/c', 'subnet': '10.232.2.0/24', 'interface': 'nested'})
         ports = sorted((rule['proto'], rule['to_port']) for rule in rules if not rule['route'])
-        self.assertEqual(ports, [('tcp', '53'), ('udp', '53'), ('udp', '67')])
+        self.assertEqual(ports, [('tcp', '3142'), ('tcp', '53'), ('udp', '53'), ('udp', '67')])
         self.assertTrue(all(rule['interface'] == 'nested' and rule['direction'] == 'in' for rule in rules if not rule['route']))
         routed = [rule for rule in rules if rule['route']]
         self.assertEqual(len(routed), 1)

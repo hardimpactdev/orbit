@@ -984,12 +984,19 @@ exec sleep 600
         });
         let stream = Stream { queue, task };
         // Keep the real observation intervals: a real journal has no fixture barrier.
+        let mut empty_batches = 0;
         for _ in 0..2 {
             tokio::time::sleep(Duration::from_millis(700)).await;
             let flush = stream.queue.flush("c", Instant::now()).unwrap();
-            assert!(flush.frames.is_empty(), "{:?}", flush.frames);
+            // The empty first batch says only that the first lines are complete, and it comes once.
+            for frame in &flush.frames {
+                assert_eq!(frame.data["lines"], serde_json::json!([]), "{frame:?}");
+                assert_eq!(frame.data["first_done"], true, "{frame:?}");
+                empty_batches += 1;
+            }
             assert!(!stream.task.is_finished());
         }
+        assert_eq!(empty_batches, 1);
         stream.task.abort();
     }
 

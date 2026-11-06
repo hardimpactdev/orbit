@@ -142,7 +142,6 @@ pub enum Operation {
     Converge {},
     Remove {},
     Restore { state: State },
-    Actual {},
 }
 #[derive(schemars::JsonSchema, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,7 +154,6 @@ pub struct Input {
 #[serde(untagged)]
 pub enum Output {
     State(State),
-    Actual { actual: &'static str },
     Changed { changed: bool },
 }
 
@@ -322,35 +320,6 @@ impl<H: Host> Runtime<H> {
             service_active: self.service_active()?,
             firewall_source,
         })
-    }
-    fn actual(&mut self) -> &'static str {
-        match self.snapshot() {
-            Ok(state) if state.configuration.is_none() && state.firewall_source.is_none() => {
-                "inactive"
-            }
-            Ok(state)
-                if state.configuration.is_none()
-                    || state.firewall_source != Some(self.metrics_address) =>
-            {
-                "drift"
-            }
-            Ok(state) => {
-                if state.service_active {
-                    "active"
-                } else {
-                    "inactive"
-                }
-            }
-            Err(error)
-                if matches!(
-                    error.step,
-                    Step::ConfigurationOwnership | Step::FirewallOwnership | Step::FirewallInactive
-                ) =>
-            {
-                "drift"
-            }
-            Err(_) => "unknown",
-        }
     }
     fn publish(&mut self, configuration: Option<&str>, step: Step) -> Result<()> {
         let path = self.path();
@@ -554,11 +523,6 @@ impl<H: Host> Runtime<H> {
     fn execute(&mut self, operation: Operation) -> Result<Output> {
         if let Operation::Restore { state } = &operation {
             self.validate_state(state)?;
-        }
-        if matches!(operation, Operation::Actual {}) {
-            return Ok(Output::Actual {
-                actual: self.actual(),
-            });
         }
         let before = self.snapshot()?;
         if matches!(operation, Operation::Snapshot {}) {

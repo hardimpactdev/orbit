@@ -77,20 +77,23 @@ final readonly class GatewayRuntimeFiles
         $owned = $node instanceof Node
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
-        $longRunning = fn (string $name, string $description, string $artisan, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
+        $longRunning = fn (string $name, string $description, string $artisan, string $stop = '', string ...$after): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n", ...$after)];
 
         return [
             ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
-            ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']))],
+            ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']), 'valkey-server.service')],
         ];
     }
 
-    private function service(string $description, string $type, string $artisan, string $extra = ''): string
+    /**
+     * `$after` orders the unit after more units: Horizon drains through its queue, so it stops before a Valkey on the same machine (no-op without one).
+     */
+    private function service(string $description, string $type, string $artisan, string $extra = '', string ...$after): string
     {
         $application = Config::string('orbit.gateway_checkout');
 
-        return "[Unit]\nDescription={$description}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\n"
+        return "[Unit]\nDescription={$description}\nAfter=".implode(' ', ['network-online.target', ...$after])."\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\n"
             ."WorkingDirectory={$this->directive($application)}\nEnvironment=ORBIT_HOME={$this->directive(Config::string('orbit.home'))}\n"
             ."ExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$artisan}\"\n{$extra}";
     }

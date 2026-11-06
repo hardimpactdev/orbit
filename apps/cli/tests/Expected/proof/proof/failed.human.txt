@@ -1,0 +1,22 @@
+Proof running...
+
+┌  Prove firewall:allow
+│
+├  ● Proof running
+│    proof.cases_failed
+│
+└  Proof failed.
+
+ ┌────────────────┬──────────────────────┬─────────┬──────────┐
+ │ COMMAND        │ CASE                 │ VERDICT │ DURATION │
+ ├────────────────┼──────────────────────┼─────────┼──────────┤
+ │ firewall:allow │ new-restricted-allow │ passed  │ 12.4 s   │
+ │ firewall:allow │ protocols            │ failed  │ 41.2 s   │
+ │ firewall:allow │ port-range           │ unrun   │ 0.3 s    │
+ └────────────────┴──────────────────────┴─────────┴──────────┘
+Not passed: protocols (assertion: expect[2] probe: app-prod to 47212/udp connected, expected blocked)
+Not passed: port-range (infrastructure)
+Failed step: batch-0
+Error code: proof.cases_failed
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

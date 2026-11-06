@@ -73,7 +73,7 @@ jobs:
   - name: 'Build the fleet'
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
+    guard: '${{ (has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep") || steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
     dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
     task:
       type: workflow
@@ -84,10 +84,11 @@ jobs:
         kind: task_vm.fleet_build
         intent: '${{ steps["Pin the VM"].outputs.fleet_build }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
-  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them.
+  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them. With `seed=keep` it is skipped: the seed disk stays as the refresh VM cloned it.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true
+    guard: '${{ has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep" }}'
     dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: workflow
@@ -102,7 +103,7 @@ jobs:
   - name: 'Stop the refresh VM'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

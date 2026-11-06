@@ -20,6 +20,7 @@ sequenceDiagram
   %%> Docs-only changes end here: skipped, nothing to prove.
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
+  %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start one run per command<br/>operation-proof-run · parallel
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
@@ -29,6 +30,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the CLI follows one Gateway record, `proof.run`, because it needs one task ID; each run is an Operation of its own, so each has one Swamp run, one terminal event and one projection
   %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
+  %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers `tasks.capacity_unavailable`, even when a skipped host has free slots
   %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` fails with the reason
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
@@ -37,8 +39,8 @@ sequenceDiagram
   %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
   %%> - the nested Gateway and app-dev mount the VM's checkout of the commit over NFS (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
-  %%> Not built:
-  %%> - the direct reset: not built; the old reset was removed, and a Swamp workflow will build the nested fleet from the ready copies and take `base`
+  %%> Built, not yet passed live:
+  %%> - the reset is the workflow `task-nested-fleet` inside `operation-task-provision` (start from the ready copies, apply, readiness, take `base`); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch (`task_vm.fleet_build`) has not succeeded yet
   opt the commit changes playbooks or pins
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
@@ -54,7 +56,7 @@ sequenceDiagram
   %%> What it does:
   %%> - each batch applies its declared start state; its cases run one after another with their own resources and no undo
   %%> - a batch setup that fails stops the run, and the remaining cases become `unrun`
-  %%> - not built: the restore of `base` before each batch and after a case that did not pass; the old restore was removed
+  %%> - built, not yet passed live: the restore of `base` before each batch and after a case that did not pass is the workflow `proof-fleet-restore`; 0 of 2 runs succeeded by 2026-11-06; the old restore was removed
   %%> - one verdict per case, as in the proof stage of the [command development pipeline](/reference/command-development-pipeline)
   %%> - built: the parent run starts the Swamp workflow `proof-fleet-verify` on Node 209 as a child, with the cases file and the pinned SSH target of this VM; it runs the runner over official SSH, one child per batch and one per case, and no second Swamp runs for this step
   %%> - the parent run joins the verdict lines in its `Report` step; the Gateway reads that step once, when the run ends, and records the verdicts; no step calls back

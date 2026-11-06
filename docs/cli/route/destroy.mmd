@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run, official cfgmgmt behaviors and SSH argv commands. docs/reference/routes.md#remove-a-route.
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
+  %% status: draft
   %% command: route:destroy
   %% kind: route.destroy
   autonumber
@@ -31,7 +32,7 @@ sequenceDiagram
   end
   SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent
   opt development targets
-    SW->>N: Converge PHP-FPM pools<br/>php-fpm -t, then reload
+    SW->>N: Converge PHP-FPM pools<br/>child route-create-site · Ansible
   end
   opt Cluster-scoped or public
     SW->>N: Remove unused LAN rules<br/>@swamp/cfgmgmt/firewall absent

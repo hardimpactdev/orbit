@@ -42,6 +42,7 @@ process.stop
 process.update
 project.detect
 project.observe
+project.pr_merge
 project.routine
 route.caddy_converge
 route.create
@@ -50,7 +51,6 @@ route.target_set
 route.update
 schedule.install_instance_definitions
 schedule.run
-task_vm.converge
 task_vm.destroy
 task_vm.fill_package_cache
 task_vm.hub_converge
@@ -62,6 +62,7 @@ tasks.cancel
 tasks.check
 tasks.dependency_merge
 tasks.maintenance
+tasks.package
 tasks.park
 tasks.pr_comment
 tasks.pr_merge

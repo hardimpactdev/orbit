@@ -110,7 +110,9 @@ Exporter listeners bind to the WireGuard address. Explicit exporter changes use 
 
 ### Exporter degradation
 
-`orbit metrics:status` observes the runtime and reports stored degradation metadata. A selected exporter that is inactive, drifting, unknown or skipped makes `reconcile_status` degraded even when Prometheus and Grafana are healthy. Status reads perform no convergence. A fresh explicit exporter Operation captures current desired state; retained Node parents own their existing lower recovery.
+`orbit metrics:status` asks Prometheus which scrape targets are up and reports stored degradation metadata. An exporter is `active` when the node-exporter and cAdvisor targets of its Node are both up, `inactive` when one is down or missing, and `unknown` when Prometheus did not answer through Grafana; the status then reports Prometheus and Grafana as `unhealthy`.
+
+A selected exporter that is not `active`, or that is skipped, makes `reconcile_status` degraded even when Prometheus and Grafana are healthy. A configuration that differs from Orbit's is not read here; the next exporter Operation finds it. Status reads perform no convergence. A fresh explicit exporter Operation captures current desired state; retained Node parents own their existing lower recovery.
 
 ## cAdvisor
 

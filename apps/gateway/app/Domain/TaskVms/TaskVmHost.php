@@ -37,9 +37,10 @@ final readonly class TaskVmHost
         public ?string $zfsDataset = null,
         public array $operatorOwned = [],
         public string $imageAlias = self::BaseImage,
+        public ?TaskVmSlotSetting $slots = null,
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'operator_owned', 'image_alias'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'operator_owned', 'image_alias', 'slots'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -71,6 +72,10 @@ final readonly class TaskVmHost
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
             'zfs_dataset' => ($entry['zfs_dataset'] ?? null) === null ? [] : ['required', 'string', 'regex:/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D'],
             'operator_owned' => ['list'],
+            'slots' => ['nullable', 'array:count,project_id,size', 'required_array_keys:count,project_id,size'],
+            'slots.count' => ['required_with:slots', 'integer:strict', 'between:1,16'],
+            'slots.project_id' => ['required_with:slots', 'integer:strict', 'min:1'],
+            'slots.size' => ['required_with:slots', 'string', 'in:'.implode(',', array_map(static fn (TaskVmSize $size): string => $size->value, TaskVmSize::cases()))],
             'operator_owned.*' => ['required', 'string', 'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\/(?:\*|[A-Za-z0-9][A-Za-z0-9._-]{0,253})\z/D'],
         ], [
             'node_id' => "{$key}.node_id must be an integer from 1 to 1000000000.",
@@ -86,9 +91,14 @@ final readonly class TaskVmHost
             'zfs_dataset' => "{$key}.zfs_dataset is invalid.",
             'operator_owned' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
             'operator_owned.*' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
+            'slots' => "{$key}.slots must be null or {count, project_id, size}.",
+            'slots.count' => "{$key}.slots.count must be an integer from 1 to 16.",
+            'slots.project_id' => "{$key}.slots.project_id must be a Project ID.",
+            'slots.size' => "{$key}.slots.size must be normal, medium or large.",
         ]);
 
         $zfsDataset = $entry['zfs_dataset'] ?? null;
+        $slots = is_array($entry['slots'] ?? null) ? $entry['slots'] : null;
 
         return new self(
             nodeId: $valid->integer('node_id'),
@@ -103,6 +113,7 @@ final readonly class TaskVmHost
             zfsDataset: is_string($zfsDataset) ? $zfsDataset : null,
             operatorOwned: array_values(array_unique(TaskVmConfig::strings($entry['operator_owned'] ?? []))),
             imageAlias: $valid->string('image_alias')->value(),
+            slots: $slots === null ? null : new TaskVmSlotSetting($valid->integer('slots.count'), $valid->integer('slots.project_id'), TaskVmSize::from($valid->string('slots.size')->value())),
         );
     }
 

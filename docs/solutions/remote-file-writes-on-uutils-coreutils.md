@@ -34,6 +34,8 @@ Node commands publish files through Rust filesystem APIs. They create a fresh ca
 
 The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. Rust publication sets numeric ownership directly, so Grafana's UID and GID `472` need no host account.
 
+Swamp workflow steps meet the same rule. The shared workflow `task-dependency-auth-write` writes `~/.config/composer/auth.json` and `~/.npmrc` with `install -m 0600 /dev/stdin`, so it clears both files first.
+
 ## Verification
 
 Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback.

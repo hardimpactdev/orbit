@@ -1,7 +1,8 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS 1 (token at admission, vault.get; signing is the one step→Gateway call), scope (Process/Schedule definitions, same-Node preview Route); database.clone merged in as a step; .env through the vault as in instance.create. docs/reference/instance-cloning.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (no DNS step: the preview name is inside Node 14's TLD; cert install in the publish step as in route:create; cfgmgmt user/file/systemd, 0600 credential file for the fetch).
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
+  %% status: draft
   %% command: instance:clone
   %% kind: instance.clone
   autonumber
@@ -112,7 +113,7 @@ sequenceDiagram
     GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
     %%> Returns:
     %%> - the certificate for the preview domain
-    SW->>N: Publish preview Route<br/>@swamp/cfgmgmt/file · reload
+    SW->>N: Publish preview Route<br/>child route-create-site · Ansible
     %%> What it does:
     %%> - installs the certificate and adds the Caddy site for `shop.com.prod.orbit` on Node 14
     %%> - same-Node work: Caddy on Node 14 serves the Instance home

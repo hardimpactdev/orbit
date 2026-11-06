@@ -179,7 +179,7 @@ Name a step's behavior after its target, never its run. Swamp reuses a definitio
 | --- | --- |
 | Target | `<step-family>-<node_id>` or the step's SSH address, for example `route-ssh-publish-<node_id>` |
 | One target | A fixed name, for example `gateway-swamp-load` |
-| Task VM | `<step-family>-<node_id>` from `ssh_execution.target.node_id`, never the VM's WireGuard address, which the next VM reuses |
+| Task VM | SSH steps: `<step-family>-<node_id>`, because the next VM reuses the WireGuard address. Local and data steps: `<step-family>-<address>` |
 | Family | Never one name such as `ssh-<node_id>` across step families |
 | Type | One behavior type per name; a fixed name that types would share carries its type, as in `result-network-command` |
 | Characters | `^[a-z0-9][a-z0-9_-]*$` |

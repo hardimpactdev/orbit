@@ -123,6 +123,8 @@ final readonly class NodeSettingOptions
                 in_array($key, $integers, true) => is_int($item),
                 $key === 'zfs_dataset' => $item === null || is_string($item),
                 $key === 'operator_owned' => is_array($item) && array_is_list($item) && array_all($item, fn (mixed $resource): bool => is_string($resource)),
+                $key === 'slots' => $item === null || ($item instanceof stdClass && is_int($item->count ?? null) && is_int($item->project_id ?? null)
+                    && is_string($item->size ?? null) && array_diff(array_keys(get_object_vars($item)), ['count', 'project_id', 'size']) === []),
                 default => false,
             };
             if (! $valid) {

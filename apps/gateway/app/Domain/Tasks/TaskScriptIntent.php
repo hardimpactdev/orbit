@@ -25,6 +25,7 @@ final readonly class TaskScriptIntent
         if (($existing = $this->idempotency->replay('tasks.script')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
         $group->refresh()->load('taskable', 'project');
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);

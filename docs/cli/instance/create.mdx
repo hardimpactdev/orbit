@@ -30,7 +30,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order:
+In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
 
 1. Clone the repository and check out the branch. Orbit mints a read token for this one repository, valid one hour. The token is never part of a command line and is removed from the Node after the clone.
 2. Write `.env` from the Project's env template, with `APP_URL`, a new `APP_KEY` and the database keys. The file has mode 0640 and group `orbit-env`. An owned MySQL or PostgreSQL database also gets `.env.testing`.
@@ -38,7 +38,7 @@ In a terminal, the CLI shows the steps below as a progress tree, then the result
 4. With `--database-server`, or when the `default` Instance's database is MySQL on a Database server, create the Instance's owner, database and test database there, as [`database:create --instance`](/reference/database-servers#create-a-database-on-a-server) does. A MySQL `default` database is then copied in.
 5. Run the Project setup steps, such as `composer install` and `php artisan migrate`, in order, as the Node's configured user.
 6. Create and start the Processes from the Project's development Process definitions.
-7. For a web-serving Project, create its Route as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
+7. For a web-serving Project, create its Route (its key, CSR and signature are made at the start, beside the checkout) as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
 
 The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
 
@@ -60,9 +60,9 @@ The Instance and its Route become active only after every step succeeds. A succe
 
 Repeating the command for an Instance that is already created succeeds with `Skipped — already created (instance.exists)`.
 
-A failed create removes what it made: it withdraws the Route, runs the Project teardown steps, then removes the Processes, the database it created and the checkout. Other Instances, the Database server and the `default` Instance's database stay. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
+A failed create withdraws the Route it published: the Caddy site, the PHP pool, the private DNS records and the certificate folders. It keeps the reserved Instance, its checkout, its Processes and its database, marked failed; `instance:destroy` removes them. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
 
-Once the cleanup finishes, run the command again, with a different `--branch` if you like.
+Run the command again with a new idempotency key once the task has ended, or run `instance:destroy` first.
 
 If the cleanup does not finish, the Instance stays marked failed with `details.cleanup = "incomplete"`. Run the same command again to finish the cleanup and create the Instance, or run [`instance:destroy`](/cli/instance/destroy). A changed `--root` or `--branch` is refused with `instance.placement_conflict` until the cleanup is done.
 

@@ -1,0 +1,103 @@
+id: 95cc7494-16cf-46fa-915b-4074c9ad2699
+name: operation-task-build
+description: >-
+  Start the build of an approved prep group in one run from full inputs on 209: resume the task VM, sync the refs of the approved
+  head into its workspace, and run the first implementer turn. The existing resume, sync and turn workflows run as children. No
+  step calls the Gateway.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.build}
+    intent:
+      type: object
+      properties:
+        resume: {type: object}
+        sync: {type: object}
+        turn: {type: object}
+      required: [resume, sync, turn]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        pi_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [pi_token]
+      additionalProperties: false
+    resume_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^task-vm-upcloud-token$'}
+        required: [vault, key]
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - resume_secrets
+  additionalProperties: false
+jobs:
+- name: build
+  labels: {role: swamp}
+  steps:
+  - name: Resume the VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-resume
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.resume.node_id }}'
+        kind: task_vm.resume
+        intent: '${{ inputs.intent.resume }}'
+        execution_secrets: '${{ inputs.resume_secrets }}'
+  - name: Sync the refs
+    labels: {role: swamp}
+    dependsOn:
+    - step: Resume the VM
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-sync
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.sync.node_id }}'
+        kind: tasks.sync
+        intent: '${{ inputs.intent.sync }}'
+        execution_secrets: {}
+  - name: Run the first turn
+    labels: {role: swamp}
+    dependsOn:
+    - step: Sync the refs
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-turn
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.intent.turn.node_id }}'
+        kind: tasks.turn
+        turn_key: '${{ "build-" + string(inputs.operation_id) + "-implementer" }}'
+        intent: '${{ inputs.intent.turn }}'
+        execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'

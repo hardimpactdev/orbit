@@ -373,7 +373,7 @@ jobs:
           set -u
           umask 077
           status=0
-          curl --fail --silent --location --max-redirs 0 --max-time 1800 --no-buffer \
+          curl --fail --silent --location --max-redirs 0 --max-time 3300 --no-buffer \
             --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
             "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
             awk -v turn="$ORBIT_PI_TURN" -v out="$ORBIT_TERMINAL" '
@@ -397,7 +397,7 @@ jobs:
           ORBIT_PI_SESSION: ${{ inputs.intent.session_id }}
           ORBIT_PI_TURN: ${{ steps.prepare.outputs.turn_key }}
           ORBIT_TERMINAL: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
-        timeout: 1800000
+        timeout: 3300000
       behaviorName: ${{ "task-turn-observe-" + string(inputs.node_id) }}
   - name: terminal
     labels: {role: swamp}

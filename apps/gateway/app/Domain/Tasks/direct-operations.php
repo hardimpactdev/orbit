@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\DependencyMergeProjection;
+use App\Domain\Tasks\TaskBuildProjection;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskMaintenanceProjection;
+use App\Domain\Tasks\TaskPackageProjection;
 use App\Domain\Tasks\TaskParkProjection;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
@@ -16,6 +18,7 @@ use App\Domain\Tasks\TaskPullRequestCommentProjection;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
 use App\Domain\Tasks\TaskPullRequestReadyProjection;
 use App\Domain\Tasks\TaskScriptProjection;
+use App\Domain\Tasks\TaskSyncProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
 $taskVmKinds = require __DIR__.'/../TaskVms/direct-operations.php';
@@ -29,6 +32,10 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
     'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-(git|deps-composer|deps-npm|deps-token)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']],
+], 'tasks.package' => ['workflow' => 'operation-task-package', 'projection' => TaskPackageProjection::class, 'github_token_issuer' => TaskGitHubTokens::class, 'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the package', 'native' => true,
+        'captures' => ['dependency_token' => ['job' => 'cleanup', 'step' => 'Remove the dependency auth', 'field' => 'result']]],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$']],
 ], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'github_token_issuer' => TaskGitHubTokens::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm publication', 'native' => true, 'captures' => ['pull_receipt' => ['job' => 'publish', 'step' => 'Read PR result', 'field' => 'stdout']]], 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.check' => ['workflow' => 'operation-task-check', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCheckProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the result', 'native' => true,
     'captures' => ['receipt' => ['job' => 'check', 'step' => 'Push the candidate', 'field' => 'finish']]],
     'scheduled_result' => ['workflow' => 'task-check-ci', 'workflow_id' => '4a2d9dd5-9f83-41d4-b8df-8e46367ed230',
@@ -80,6 +87,17 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             ]],
             'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
+        ], 'tasks.build' => [
+            'workflow' => 'operation-task-build', 'projection' => TaskBuildProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'build', 'step' => 'Run the first turn', 'native' => true, 'captures' => ['turn' => ['job' => 'build', 'step' => 'Run the first turn']]],
+            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
+        ], 'tasks.sync' => [
+            'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class,
+            'workflow_inputs' => true,
+            'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout']]],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
         ], 'tasks.park' => [
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,

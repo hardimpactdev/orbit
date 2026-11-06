@@ -91,11 +91,8 @@ final readonly class NodeRemovalInput
                 }
             }
         }
-        $hub = [];
-        if ($node->wireguard_public_key !== null) {
-            $owner = Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->sole();
-            $hub[] = app(NodeWireGuardHubInput::class)->intent($owner);
-        }
+        // Every removed Node leaves the hub, also one whose key the Gateway never recorded: its own enrollment run may have written the peer file.
+        $hub = [NodeWireGuardHubInput::removal(Node::query()->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Vpn))->sole(), $node)];
         $routerRules = [];
         foreach ($routerBefore as $id => $prior) {
             $member = Node::query()->findOrFail($id);

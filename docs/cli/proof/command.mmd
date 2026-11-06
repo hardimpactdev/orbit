@@ -31,9 +31,9 @@ sequenceDiagram
   %%> - one line a batch, `BATCH SETUP CASE...`, in the order of `swamp/proof/batches.yaml`; inside a batch, in file order
   VM-->>SW: Ordered plan<br/>batches · cases
   loop each batch, one at a time
-    Note over SW: Restore base<br/>not built
-    %%> Not built:
-    %%> - the restore of `base` before each batch; the old restore was removed, and its replacement is rebuilt as a Swamp step
+    Note over SW: Restore base<br/>built, not passed live
+    %%> Built, not yet passed live:
+    %%> - the restore of `base` before each batch is the workflow `proof-fleet-restore`, a step of the batch workflow; 0 of 2 runs succeeded by 2026-11-06; the old restore was removed
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>runner setup
       %%> What it does:
@@ -50,8 +50,8 @@ sequenceDiagram
         %%> Why:
         %%> - a failed case can leave anything behind; the setup of the batch runs again
         %%> - the last case of a batch skips it
-        %%> Not built:
-        %%> - the restore of `base` before the setup; the old restore was removed
+        %%> Built, not yet passed live:
+        %%> - the restore of `base` before the setup is the workflow `proof-fleet-restore` (0 of 2 runs succeeded by 2026-11-06); the old restore was removed
       end
     end
     Note over SW: Join the batch lines<br/>report

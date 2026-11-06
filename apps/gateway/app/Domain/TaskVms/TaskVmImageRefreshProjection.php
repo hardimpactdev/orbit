@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskProvisionProjection;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
@@ -74,6 +75,8 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             $result = ['error_code' => $code];
             if ($fingerprint !== null) {
                 $result = $this->record($operation, $fingerprint);
+                // Ready slots of the older image are replaced one at a time (docs/cli/tasks/vm-slots.mmd).
+                RefillTaskVmSlots::dispatchFor(ValidatedData::integer($result['host_node_id']));
             }
             $data['result'] = $result;
             $data['error_code'] = $code;

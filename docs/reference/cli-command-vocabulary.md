@@ -106,7 +106,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `inspect`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content, or [inspects](/cli/project/maintenance-inspect) a Project's dependencies. |
-| `proof` | `run` | The CLI runs the cases that a commit selects and reports a verdict for each; see [proof:run](/cli/proof/run). |
+| `proof` | `proof`, `run` | `proof` runs the cases of one command on the task VM that calls and reports a verdict for each; see [proof](/cli/proof/proof). `run` runs the cases that a commit selects; see [proof:run](/cli/proof/run). |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |

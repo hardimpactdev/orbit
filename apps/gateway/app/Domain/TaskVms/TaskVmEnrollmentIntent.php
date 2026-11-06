@@ -51,8 +51,8 @@ final readonly class TaskVmEnrollmentIntent
     {
         return DB::transaction(function () use ($vm): array {
             $vm->refresh();
-            if ($vm->state !== TaskVmState::Provisioning || $vm->group === null || $vm->group->parent_id !== null) {
-                throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group.');
+            if ($vm->state !== TaskVmState::Provisioning || ($vm->group === null ? $vm->slot_project_id === null : $vm->group->parent_id !== null)) {
+                throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group, or a slot.');
             }
             $origin = $this->keys->origin();
             if (($vm->ai_router_origin !== null && $vm->ai_router_origin !== $origin)

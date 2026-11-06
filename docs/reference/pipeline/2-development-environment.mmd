@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. The nested VMs mount the outer VM's checkout over NFS, so an edit reaches them at once with no sync, and memory snapshots still work (decided 2026-11-05). Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
+  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. The nested Nodes are Incus system containers with the outer VM's checkout as a disk device, so an edit reaches them at once with no sync; `base` is a container snapshot without memory (decided 2026-11-06). Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -13,12 +13,14 @@ sequenceDiagram
   participant SW as Swamp<br/>provision run
   participant H as Task VM host<br/>Incus over ssh
   participant VM as Task VM<br/>outer · operator
-  participant NT as Nested fleet<br/>Gateway · 2 Nodes
+  participant NT as Nested fleet<br/>3 containers
   Note over GW: Admit the task<br/>group at a commit
   %%> Requirements:
   %%> - an external task group in `todo` and a free task VM host
   %%> Result:
   %%> - the full intent is recorded; the group is reserved
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - a parked prep group is admitted by the gate check when the owner approves its spec: the Gateway appends the implementation subtask, moves the group to `running` and starts `tasks.build`, which resumes the VM, syncs the refs and runs the first implementer turn
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof
@@ -27,6 +29,10 @@ sequenceDiagram
   %%> - start a ready slot that was enrolled ahead of time and kept stopped; takes seconds (chart `task-vm.slots`)
   %%> Built today:
   %%> - clone the task image, boot, enrol (keys, WireGuard, observer), model key, Pi; takes minutes
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - a task that needs the nested fleet (a proof, or any VM with test nodes: medium or large) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
+  %%> - the Gateway reads the fact from its own records: the seed follows the image the VM boots from, and it holds usable copies when the host's latest refresh run promoted that image and saved copies of the current `user.ready.format`; no agent report and no ssh
+  %%> - the refresh of a host is pinned to that host and is not filtered, because it is what builds the copies; a task with no fleet (a plain task) still uses any host
   SW->>H: Attach the topology seed<br/>clone under the host lock
   %%> What it does:
   %%> - clones the seed of the host's task image; on ZFS the clone costs only what the Nodes write
@@ -39,18 +45,24 @@ sequenceDiagram
   SW->>VM: Start the nested fleet<br/>from the ready copies
   %%> What it does:
   %%> - creates the nested network from the subnet stored with the ready copies
-  %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, starts all three
+  %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, attaches the outer VM's checkout as an Incus disk device (Gateway and app-dev), starts all three
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the nested Nodes are Incus system containers, not VMs (chart `vm-fleet-build.mmd`); the outer task VM stays a VM
+  %%> - no memory snapshot of the outer VM (Nick, option 3): a cold start of the outer VM plus the containers was as fast as its memory restore (beast 35 s, shark 27 s against 34 s), and a memory snapshot would need retaking per host and per release
+  %%> - measured on shark (rvm-2): copies to a healthy fleet 8–11 s
   %%> - each ready copy is self-contained: its own `.env`, storage, `bootstrap/cache` and database on its own disk (stage 6 saves them so); the code comes from the outer VM's checkout
-  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three VMs
+  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three containers
   %%> - then pushes the proof Swamp Club key into the nested Gateway, as today
   %%> Proposed 2026-11-05:
   %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
-  %%> - about 75 seconds to a checked fleet, of which the boot is about 50
+  %%> - about 10 seconds to a healthy fleet from the copies (8–11 s on shark); Doctor reads healthy once every agent has reported, about a minute after the boot
   SW->>NT: Join as operator<br/>this VM's WireGuard key
   %%> What it does:
-  %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested VMs, so this needs no network yet)
+  %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested containers, so this needs no network yet)
   %%> - the nested Gateway puts the key on its hub; the outer VM brings up WireGuard as the operator `10.45.0.10`
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the hub gets the operator peer through its peer file, which the nested Gateway renders, not through a runtime `wg set`: a restore of `base` reboots the containers, and a peer that lived only in memory was gone after it
   %%> - the private key never leaves this task VM; each task VM has its own
   %%> Proposed 2026-11-05:
   %%> - the ready copies hold the operator Node record without a key (stage 6), so the key of the VM that made them never works anywhere else
@@ -63,29 +75,26 @@ sequenceDiagram
     %%> Time:
     %%> - about 230 seconds; the build ends by making the ready copies for the next reset
   end
-  SW->>NT: Mount the checkout<br/>NFS from the outer VM
+  SW->>NT: Apply the code<br/>migrate · restart
   %%> What it does:
-  %%> - the outer VM exports its checkout over NFS to the nested network only; the nested Gateway and app-dev mount it as their checkout
-  %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
-  %%> - then the re-mint below and the apply step: migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
-  %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
+  %%> - the bind-mount units of the copies put `.env`, `storage` and `bootstrap/cache` (each guest's own disk) over the shared checkout at boot
+  %%> - then the re-mint below, migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - the checkout is the disk device of the fleet start; there is no NFS export, NFS mount or mount ordering step any more
   %%> Why:
-  %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
-  %%> - Incus turns a shared folder into 9p when memory snapshots are on, and QEMU cannot snapshot a VM with 9p mounted; NFS is network traffic, so snapshots work
-  %%> Measured on tvm-554, 2026-11-05:
-  %%> - memory snapshot with NFS mounted: create 21 s, restore 10 s; an edit after the restore is visible at once
-  %%> - `artisan --version` 0.39 s against 0.23 s local; Gateway unit tests 3.9 s against 2.8 s; HTTP requests the same
-  %%> - installs and tests run on the outer VM against its local disk, so the slower NFS writes (a full `composer install` 17 s against 9 s) do not apply
+  %%> - an edit on the outer VM is in the nested Nodes at once, at local disk speed; nothing can run against old code
   SW->>NT: Re-mint the Swamp tokens<br/>nested Gateway · 30 days
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> What it does:
-  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the mounted checkout, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
+  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the checkout disk device, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
   %%> - the Swamp CLI renews the tokens by the names and into the files the build used: `access token rotate` for the serve driver, the two workers and the Gateway's run and read tokens, a new enrollment token for each worker; each lasts 30 days
   %%> - a worker gets a new enrollment token under a new name; the old one was used once and expires with the task VM, so nothing revokes it
   %%> - stops serve and both workers while the tokens change, then starts them; the apply step that follows restarts the Gateway's own services, which read the new tokens
+  %%> - the worker units read the token files directly (group orbit, 0640), not through `LoadCredential=`, which does nothing in a container (chart `vm-fleet-build.mmd`)
+  %%> - measured on shark: ok=15 failed=0, about 20 s
   %%> Why:
   %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
-  %%> - the same fleet start does it every time, from the same mounted code the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
+  %%> - the same fleet start does it every time, from the same checkout the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
   %%> - runs only when the VM has the proof Swamp Club key (a proof task): the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
   %%> - the certificates last 397 days and are issued again by the seed refresh; nothing else in the fleet expires within the life of a task
   %%> Time:
@@ -94,7 +103,7 @@ sequenceDiagram
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
     %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - the nested Orbit reads the playbooks from the mounted checkout
+    %%> - the nested Orbit reads the playbooks from the checkout disk device
     %%> - after a rebase onto main, a running task picks up the tools main added since its start
     %%> Why:
     %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
@@ -103,26 +112,29 @@ sequenceDiagram
   VM->>NT: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
   %%> - every Node agent online, the Swamp worker enrolled, the Gateway knows the operator, Doctor has no finding
-  SW->>NT: Take the base snapshot<br/>memory included
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - readiness first waits, bounded, until Doctor of the nested Gateway is healthy (one Ansible task with `until` and `retries`, the fleet build's wait playbook); the apply step restarts the agent-view subscriber, and the agents read online only after their next heartbeats, so a single read 3 s later failed (provision 11937)
+  SW->>NT: Take the base snapshot<br/>containers · no memory
   %%> What it does:
-  %%> - one Incus stateful snapshot `base` of the three nested VMs (`migration.stateful`, `size.state` = memory)
+  %%> - one Incus snapshot `base` of each of the three containers, in parallel
   %%> - every proof batch starts from it (stage 3)
-  %%> - holds the proof Swamp Club key, pushed in after the restore of the ready copies, and the Swamp tokens renewed by this provision (30 days); accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
-  %%> Why:
-  %%> - possible because the checkout is an NFS mount, not an Incus shared folder
+  %%> - holds the proof Swamp Club key, pushed in after the start from the ready copies, and the Swamp tokens renewed by this provision (30 days); accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
+  %%> - no memory state: a restore of `base` is a reboot of the containers, so the services start fresh, the clocks are the outer VM's, and nothing waits on an old network session
+  %%> - measured: snapshot 0.3 s against 30–41 s for the stateful VM snapshot
   SW-->>GW: Environment ready<br/>terminal event
   %%> Result:
   %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the proof CI (stage 4) uses the fleet
   loop while the author develops
     VM->>NT: Edit, test, call the CLI<br/>the checkout is shared
     %%> What it does:
-    %%> - the author edits and runs tests on the outer VM; PHP in the nested VMs sees the change on the next request
+    %%> - the author edits and runs tests on the outer VM; PHP in the nested containers sees the change on the next request
     %%> - the candidate CLI on the outer VM talks to the nested Gateway as the operator
     %%> - after a new migration or a change to a long-running service, the author runs the apply step again
     %%> - when the change holds playbooks or pins, or after a rebase onto main, the converge step above runs once
   end
   opt the author wants a clean fleet
-    SW->>NT: Restore the base snapshot<br/>about 16 s
+    SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
     %%> What it keeps:
     %%> - the outer VM, Pi and the checkout; the apply step follows, so the restored fleet runs the current code
   end

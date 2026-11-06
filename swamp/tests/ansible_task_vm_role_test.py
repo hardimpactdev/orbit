@@ -93,6 +93,49 @@ class TaskVmRoleTest(unittest.TestCase):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
             conditions(yaml.safe_load(path.read_text()), path.name)
 
+    def test_every_package_download_retries_with_the_tool_and_no_shell(self):
+        def tasks(node):
+            if isinstance(node, list):
+                for item in node:
+                    yield from tasks(item)
+            elif isinstance(node, dict):
+                if 'name' in node and any(key.startswith('ansible.builtin.') for key in node):
+                    yield node
+                for value in node.values():
+                    yield from tasks(value)
+
+        play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
+        self.assertEqual((play['vars']['apt_retries'], play['vars']['apt_delay']), (4, 30))
+        self.assertEqual(play['module_defaults']['ansible.builtin.apt']['lock_timeout'], 300)
+        found = {}
+        for name in ['task-vm-apt-config.yml', 'task-vm-apt.yml', 'task-vm-tools.yml']:
+            for task in tasks(yaml.safe_load((ANSIBLE / 'tasks' / name).read_text())):
+                for module in ('ansible.builtin.shell', 'ansible.builtin.raw'):
+                    self.assertNotIn(module, task, f"{task['name']}: {module} runs apt")
+                command = task.get('ansible.builtin.command')
+                if 'ansible.builtin.apt' in task or (command is not None and 'apt-get' in str(command)):
+                    found[task['name']] = task
+        self.assertEqual(
+            sorted(found),
+            ['Install the Ubuntu packages', 'Install the packages', 'Install the packages that come as files', 'Read the package indexes'],
+        )
+        for name, task in found.items():
+            expected = '{{ apt_index_environment }}' if name == 'Read the package indexes' else '{{ apt_environment }}'
+            self.assertEqual(task['environment'], expected, f'{name}: apt must read the snapshot configuration')
+        indexes = found['Read the package indexes']['ansible.builtin.apt']
+        self.assertIs(indexes['update_cache'], True)
+        self.assertEqual((indexes['update_cache_retries'], indexes['update_cache_retry_max_delay']), (12, 30))
+        for name in ['Install the Ubuntu packages', 'Install the packages', 'Install the packages that come as files']:
+            task = found[name]
+            self.assertEqual((task['retries'], task['delay']), ('{{ apt_retries }}', '{{ apt_delay }}'), name)
+            self.assertEqual(task['until'], f"{task['register']} is succeeded", name)
+        # The flags of the old apt-get commands: no recommends, no removal; the Ubuntu pins are exact, so a downgrade is allowed.
+        for name in ['Install the Ubuntu packages', 'Install the packages']:
+            apt = found[name]['ansible.builtin.apt']
+            self.assertIs(apt['install_recommends'], False, name)
+            self.assertIs(apt['fail_on_autoremove'], True, name)
+        self.assertIs(found['Install the Ubuntu packages']['ansible.builtin.apt']['allow_downgrade'], True)
+
     def test_the_wait_for_a_new_server_is_for_an_image_only(self):
         phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-ready.yml').read_text())
         self.assertEqual([task['when'] for task in phase], ['intent.image'])

@@ -29,6 +29,8 @@ The port is a decimal integer from 1 through 65535. The Gateway rejects a bare I
 
 When `orbit:bootstrap` gets no `--wireguard-endpoint`, the Gateway combines the public host with `--wireguard-port`, which defaults to 51820. It adds square brackets only when the host is an IPv6 address.
 
+`orbit:bootstrap --operator-ip` records the operator Node at an address of the same subnet. The address must differ from the Gateway's.
+
 A peer configuration takes the first endpoint that exists:
 
 1. The Node's endpoint override.
@@ -78,6 +80,8 @@ Before that restoration checkpoint, an exact `node.add` parent renders its conte
 
 `node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
+A removal does not rewrite the list. It deletes the file of the removed Node, whether or not the Gateway recorded its key, and loads the files that remain, so the live peer goes at once. It does not prune the files of Nodes that are already gone; the next converge of the hub does. It writes no other peer and keeps none, because the intent is a snapshot and a removal admitted at the same time as another would otherwise put the other's peer back.
+
 The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
 
 - `orbit.conf` is the wg-quick file: `Address`, `ListenPort`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key`, and a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`. It holds no peer.
@@ -89,10 +93,10 @@ One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub
 
 1. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once; it skips this when the file exists.
 2. `@swamp/cfgmgmt/file` writes `orbit.conf` and each peer file (0600, root).
-3. One `find` command deletes the peer files of Nodes that are gone. A Node still provisioning keeps its file, because its own run may be adding it.
+3. One `find` command deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
 4. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then every peer file.
 
-The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
+A Node keeps its peer file even before the Gateway records its key, because its own run may have written it. The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
 
 Node removal withdraws one peer the same way: it drops the peer from `orbit.conf` and its file from `orbit-peers.d`, and removes only that peer from the live interface with `wg set … remove`. A whole `wg syncconf` from one file would drop every peer that file does not list.
 

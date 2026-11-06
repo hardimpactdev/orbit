@@ -93,6 +93,8 @@ Operations need the queue too: the minute `ReconcileSwampOperations` job, unique
 
 Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. A Gateway Node without those Processes gets the units `orbit-gateway-schedule.service` and, where a queue is configured, `orbit-gateway-horizon.service` from the `gateway` role convergence. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`. Its unit carries the stop policy `KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no` and `TimeoutStopSec` set to the drain, so a stop waits for running jobs and never kills one. The drain is the longest supervisor job timeout plus 30 seconds.
 
+A bootstrapped Gateway starts both before its first run. The Horizon unit is ordered after `valkey-server.service`, so a shutdown stops Horizon before a local queue server.
+
 The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
 
 Horizon uses cached application configuration. After clearing `ORBIT_GATEWAY_QUEUE_CONNECTION`, apply the env change and destroy the Process with `orbit process:destroy <id>`.

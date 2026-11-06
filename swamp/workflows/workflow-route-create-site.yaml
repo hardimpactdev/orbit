@@ -1,6 +1,6 @@
 id: eeaaf23d-8fd2-5f7e-92c5-5619f1752423
 name: route-create-site
-description: "route.create: one Node's certificate, web root, pools, site and environment."
+description: "route.create: one Node's certificate, web root, pools, site, awake marker and APP_URL as one Ansible phase, and its production environment file."
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -9,6 +9,7 @@ inputs:
     intent: {type: object}
     node_id: {type: integer, minimum: 1}
     signed: {type: array, items: {type: string}}
+    prepared: {type: string}
     execution_secrets:
       type: object
       additionalProperties:
@@ -24,493 +25,46 @@ jobs:
 - name: create
   labels: {role: swamp}
   steps:
-    # The account's passwd line: its gid and home go into the pools and the certificate copy.
-  - name: 'account'
+    # Input: the admitted intent and the shipped playbooks, as the run folder that the phase reads.
+  - name: 'input'
     labels: {role: swamp}
-    dependsOn: []
+    writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-account-" + string(inputs.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-account-" + string(inputs.node_id)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
       inputs:
-        hosts: name:target
-        argv: '${{ ["timeout", "10", "getent", "passwd", inputs.intent.nodes[string(inputs.node_id)].account] }}'
-        timeoutSec: 20
-    # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one setfacl each).
-  - name: 'web-root'
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # Site: the account, the Caddy access ACLs, links, PHP-FPM pools (written, tested, reloaded), the signed certificate and its
+    # account copy, the trust store, the Caddyfile (written, validated, reloaded), the APP_URL lines and the awake markers of this Node.
+  - name: 'site'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'account', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    - {step: 'input', condition: {type: succeeded}}
     writes: true
-    concurrency: 1
-    forEach: {item: grant, in: '${{ inputs.intent.acl.filter(a, string(a.node_id) == string(inputs.node_id)) }}'}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-web-root-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-web-root-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-site-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
       inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "120"] + self.grant.argv }}'
-        timeoutSec: 130
-    # Production: each served directory's .env links into the shared env tree.
-  - name: 'links'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: link, in: '${{ inputs.intent.links.filter(l, string(l.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-link-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ self.link.path }}', target: '${{ self.link.target }}', owner: '${{ self.link.owner }}', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # The Node's whole PHP-FPM pool files, with the account's gid and home in place.
-  - name: 'pools'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: pool, in: '${{ inputs.intent.php_files.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-php-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ self.pool.path }}', content: '${{ self.pool.content.split("__ORBIT_NODE_GROUP__").join(steps.account.outputs.stdout.split(":")[3]).split("/__ORBIT_NODE_HOME__").join(steps.account.outputs.stdout.split(":")[5]) }}', owner: root, group: root, mode: '0644', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # php-fpm -t for each written pool.
-  - name: 'pools-test'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: test, in: '${{ inputs.intent.php_tests.filter(t, string(t.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-php-test-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-php-test-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "30"] + self.test.argv }}'
-        timeoutSec: 40
-    # A reload keeps open requests.
-  - name: 'pools-reload'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: reload, in: '${{ inputs.intent.php_reloads.filter(r, string(r.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-php-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '30', systemctl, reload, '${{ self.reload.unit }}']
-        timeoutSec: 40
-    # The signed leaf beside its key, root:caddy 0644.
-  - name: 'certificate'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes.filter(i, string(inputs.intent.leaves[i].node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-cert-" + string(inputs.node_id) + "-" + inputs.intent.leaves[self.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ inputs.intent.leaves[self.leaf].directory + "/cert.pem" }}', content: '${{ "-----BEGIN CERTIFICATE-----" + inputs.signed[self.leaf].split("-----BEGIN CERTIFICATE-----")[1] }}', owner: root, group: caddy, mode: '0644', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # current points at the new version, which the Caddy site names.
-  - name: 'certificate-current'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes.filter(i, string(inputs.intent.leaves[i].node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-cert-current-" + string(inputs.node_id) + "-" + inputs.intent.leaves[self.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ inputs.intent.leaves[self.leaf].current }}', target: '${{ inputs.intent.leaves[self.leaf].target }}', owner: root, ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # The account copy the development servers read: one install of key and certificate.
-  - name: 'account-pair'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes.filter(i, string(inputs.intent.leaves[i].node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-cert-copy-" + string(inputs.node_id) + "-" + inputs.intent.leaves[self.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-cert-copy-" + string(inputs.node_id) + "-" + inputs.intent.leaves[self.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "30", "install", "-D", "-o", inputs.intent.leaves[self.leaf].user, "-g", steps.account.outputs.stdout.split(":")[3], "-m", "0600", "-t", steps.account.outputs.stdout.split(":")[5] + "/.orbit/certificates/" + inputs.intent.leaves[self.leaf].scope + "/" + inputs.intent.leaves[self.leaf].target, inputs.intent.leaves[self.leaf].directory + "/key.pem", inputs.intent.leaves[self.leaf].directory + "/cert.pem"] }}'
-        timeoutSec: 40
-    # The account current points at the new version.
-  - name: 'account-pair-current'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes.filter(i, string(inputs.intent.leaves[i].node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("route-cert-copy-current-" + string(inputs.node_id) + "-" + inputs.intent.leaves[self.leaf].scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ steps.account.outputs.stdout.split(":")[5] + "/.orbit/certificates/" + inputs.intent.leaves[self.leaf].scope + "/current" }}', target: '${{ inputs.intent.leaves[self.leaf].target }}', owner: '${{ inputs.intent.leaves[self.leaf].user }}', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # The public Orbit root in the system trust folder.
-  - name: 'trust'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: node, in: '${{ inputs.intent.trust.filter(n, string(n) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-trust-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt, content: '${{ inputs.intent.root_certificate }}', owner: root, group: root, mode: '0644', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # update-ca-certificates after the root file.
-  - name: 'trust-store'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: node, in: '${{ inputs.intent.trust.filter(n, string(n) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-trust-store-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-trust-store-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', update-ca-certificates]
-        timeoutSec: 70
-    # The Node's whole Caddyfile, as the Gateway rendered it with this Route.
-  - name: 'caddyfile'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: site, in: '${{ inputs.intent.caddy.filter(c, string(c.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-caddyfile-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: /etc/caddy/Caddyfile, content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # caddy validate before the reload.
-  - name: 'caddy-validate'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: site, in: '${{ inputs.intent.caddy.filter(c, string(c.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-caddy-validate-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-caddy-validate-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-        timeoutSec: 70
-    # A reload keeps open connections; Caddy is never restarted.
-  - name: 'caddy-reload'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    - {step: 'caddy-validate', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: site, in: '${{ inputs.intent.caddy.filter(c, string(c.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-caddy-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("route-caddy-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
-          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
-          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
-        hosts:
-        - name: target
-          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
-          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', systemctl, reload, caddy]
-        timeoutSec: 70
-    # One APP_URL line per served directory; the .env keeps its owner and mode, and a missing one fails the step.
-  - name: 'app-url'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    - {step: 'caddy-validate', condition: {type: always}}
-    - {step: 'caddy-reload', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: url, in: '${{ inputs.intent.url_lines.filter(u, string(u.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/line'
-      behaviorName: '${{ ("route-app-url-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ self.url.path }}', regexp: '^APP_URL=', line: '${{ self.url.line }}', ensure: present, createFile: false,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
+        run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags site "$ORBIT_ANSIBLE/route-create-site.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ORBIT_NODE_ID: '${{ string(inputs.node_id) }}'
+          ORBIT_SIGNED: '${{ inputs.signed.join("|||") }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ORBIT_PREPARED: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
     # A .env is group orbit-env, so the Node agent can report its key names.
   - name: 'environment-group'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    - {step: 'caddy-validate', condition: {type: always}}
-    - {step: 'caddy-reload', condition: {type: always}}
-    - {step: 'app-url', condition: {type: always}}
+    dependsOn: [{step: site, condition: {type: always}}]
     guard: '${{ steps.exists(k, steps[k].status == "failed") || size(inputs.intent.env_files.filter(e, string(e.node_id) == string(inputs.node_id))) == 0 }}'
     writes: true
     task:
@@ -526,23 +80,8 @@ jobs:
   - name: 'environment'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    - {step: 'caddy-validate', condition: {type: always}}
-    - {step: 'caddy-reload', condition: {type: always}}
-    - {step: 'app-url', condition: {type: always}}
-    - {step: 'environment-group', condition: {type: always}}
+    - {step: site, condition: {type: always}}
+    - {step: environment-group, condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: env, in: '${{ inputs.intent.env_files.filter(e, string(e.node_id) == string(inputs.node_id)) }}'}
@@ -556,61 +95,21 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
-  - name: 'Mark the Instance awake'
+    # Cleanup: the run folder after a failure; a success removed it in the last task of the phase, so this step is skipped.
+  - name: 'cleanup'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'account', condition: {type: always}}
-    - {step: 'web-root', condition: {type: always}}
-    - {step: 'links', condition: {type: always}}
-    - {step: 'pools', condition: {type: always}}
-    - {step: 'pools-test', condition: {type: always}}
-    - {step: 'pools-reload', condition: {type: always}}
-    - {step: 'certificate', condition: {type: always}}
-    - {step: 'certificate-current', condition: {type: always}}
-    - {step: 'account-pair', condition: {type: always}}
-    - {step: 'account-pair-current', condition: {type: always}}
-    - {step: 'trust', condition: {type: always}}
-    - {step: 'trust-store', condition: {type: always}}
-    - {step: 'caddyfile', condition: {type: always}}
-    - {step: 'caddy-validate', condition: {type: always}}
-    - {step: 'caddy-reload', condition: {type: always}}
-    - {step: 'app-url', condition: {type: always}}
-    - {step: 'environment-group', condition: {type: always}}
-    - {step: 'environment', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    - {step: 'input', condition: {type: always}}
+    - {step: site, condition: {type: always}}
+    - {step: environment-group, condition: {type: always}}
+    - {step: environment, condition: {type: always}}
+    guard: '${{ !steps.exists(k, steps[k].status == "failed") }}'
     writes: true
-    forEach: {item: marker, in: '${{ has(inputs.intent.awake) ? inputs.intent.awake.filter(m, m.node_id == inputs.node_id) : [] }}'}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-awake-" + string(inputs.node_id) + "-" + string(self.marker.instance_id)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {path: '${{ self.marker.path }}', content: '', ensure: present, owner: root, group: root, mode: '0644',
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-  - name: 'Check the awake marker'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Mark the Instance awake', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
-    forEach: {item: marker, in: '${{ has(inputs.intent.awake) ? inputs.intent.awake.filter(m, m.node_id == inputs.node_id) : [] }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-awake-" + string(inputs.node_id) + "-" + string(self.marker.instance_id)).split(".").join("-") }}'
-      methodName: check
-      globalArgs: {path: '${{ self.marker.path }}', content: '', ensure: present, owner: root, group: root, mode: '0644',
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-  - name: 'Verify the awake state'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check the awake marker', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
-    task:
-      type: assert
-      expr: 'steps.filter(k, k.startsWith("Check the awake marker-")).all(k, steps[k].outputs.status == "compliant")'
-      message: instance.awake_marker_failed
-      severity: high
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-site-cleanup-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

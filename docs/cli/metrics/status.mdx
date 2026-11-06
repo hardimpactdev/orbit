@@ -7,3 +7,9 @@ description: "Show whether Metrics is enabled and the Grafana URL. The output al
 ```bash
 orbit metrics:status [--json]
 ```
+
+The command answers from the Gateway's records and from one query to Prometheus on the Metrics Node. It starts no task and runs nothing on a Node. Prometheus and Grafana are `healthy` when that query is answered, and `unhealthy` when it is not. An exporter is `active` when the node-exporter and cAdvisor targets of its Node are both up, `inactive` when one is down or missing, and `unknown` when the query failed or when the Gateway holds a stored degradation for it, such as a Node that the last convergence skipped. A selected exporter that is not `active` makes `reconcile_status` degraded. A failed query is part of the answer, not an error. See [Metrics](/reference/metrics).
+
+## How it works
+
+<div className="flow-at" data-chart="metrics/status"></div>

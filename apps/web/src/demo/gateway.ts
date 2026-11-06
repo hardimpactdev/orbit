@@ -1010,49 +1010,49 @@ export function createDemoGateway() {
             ),
             [
                 "GET",
-                /^\/api\/v1\/instances\/(\d+)\/queue\?state=(pending|completed|failed)$/,
+                /^\/api\/v1\/instances\/(\d+)\/queue\?state=(pending|failed)$/,
                 ([id = "", state = "pending"]) => {
-                    // Only charlie-shop/dev runs Horizon in the fixture fleet.
+                    // Only charlie-shop/dev has a queue store in the fixture fleet.
                     if (id !== "1") {
                         return ok({ available: false, state });
                     }
 
-                    const dashboard = "https://charlie-shop.test/horizon";
-                    const job = (jobId: string, name: string, failed: boolean) => ({
-                        id: jobId,
-                        name,
-                        queue: "default",
-                        status: failed ? "failed" : state,
-                        pushed_at: "2026-09-19T10:00:00Z",
-                        completed_at: state === "completed" ? "2026-09-19T10:00:02Z" : null,
-                        failed_at: failed ? "2026-09-19T10:00:02Z" : null,
-                        exception: failed
-                            ? "RuntimeException: The mail server refused the message."
-                            : null,
-                        url: `${dashboard}${failed ? "/failed/" : `/jobs/${state}/`}${jobId}`,
-                    });
-
                     return ok({
                         available: true,
-                        process_id: 1,
-                        status: "running",
-                        jobs_per_minute: 12,
-                        recent_jobs: 40,
-                        recently_failed_jobs: 1,
-                        processes: 3,
-                        totals: { pending: 0, completed: 2, failed: 1 },
-                        queues: [{ name: "default", length: 0, wait_seconds: 0, processes: 3 }],
-                        dashboard_url: dashboard,
                         state,
+                        totals: { pending: 2, failed: 1 },
+                        queues: [{ name: "default", length: 2 }],
                         jobs:
-                            state === "completed"
+                            state === "failed"
                                 ? [
-                                      job("a1", "App\\Jobs\\SendInvoice", false),
-                                      job("a2", "App\\Jobs\\SyncStock", false),
+                                      {
+                                          id: "f1",
+                                          name: "App\\Jobs\\SendReceipt",
+                                          queue: "default",
+                                          pushed_at: null,
+                                          failed_at: "2026-09-19T10:00:02Z",
+                                          exception:
+                                              "RuntimeException: The mail server refused the message.",
+                                      },
                                   ]
-                                : state === "failed"
-                                  ? [job("f1", "App\\Jobs\\SendReceipt", true)]
-                                  : [],
+                                : [
+                                      {
+                                          id: "a1",
+                                          name: "App\\Jobs\\SendInvoice",
+                                          queue: "default",
+                                          pushed_at: "2026-09-19T10:00:00Z",
+                                          failed_at: null,
+                                          exception: null,
+                                      },
+                                      {
+                                          id: "a2",
+                                          name: "App\\Jobs\\SyncStock",
+                                          queue: "default",
+                                          pushed_at: "2026-09-19T10:00:01Z",
+                                          failed_at: null,
+                                          exception: null,
+                                      },
+                                  ],
                     });
                 },
             ],

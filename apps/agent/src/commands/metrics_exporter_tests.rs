@@ -191,7 +191,6 @@ fn installs_configures_verifies_and_repeats_both_exporters() {
             fs::metadata(f.path()).unwrap().permissions().mode() & 0o777,
             0o644
         );
-        assert_eq!(f.actual(), "active");
         let before = f.snapshot().unwrap();
         f.execute(Operation::Converge {}).unwrap();
         assert_eq!(f.snapshot().unwrap(), before);
@@ -214,7 +213,6 @@ fn removes_repeatedly_and_restores_a_fleet_snapshot_after_binary_removal() {
             assert!(!f.root.join(CADVISOR_BINARY).exists());
             assert!(!f.host.active);
             assert_eq!(f.host.rule, None);
-            assert_eq!(f.actual(), "inactive");
         }
         for _ in 0..2 {
             f.execute(Operation::Restore {
@@ -461,24 +459,4 @@ fn reports_initial_and_rollback_failures_without_program_output() {
             "metrics.exporter_service_failed".into()
         ])
     );
-}
-#[test]
-fn observes_drift_and_unknown_without_repairing() {
-    let mut f = fixture(Kind::Exporter);
-    assert_eq!(f.actual(), "inactive");
-    owned(&mut f);
-    assert_eq!(f.actual(), "drift");
-    let address = f.metrics_address;
-    f.host.rule = Some(address);
-    f.host.active = false;
-    assert_eq!(f.actual(), "inactive");
-    f.host.active = true;
-    assert_eq!(f.actual(), "active");
-    fail(&mut f, &["ufw", "status", "numbered"], 5);
-    assert_eq!(f.actual(), "unknown");
-    assert!(f
-        .host
-        .commands
-        .iter()
-        .all(|c| c[1] == "status" || c[1] == "is-active"));
 }

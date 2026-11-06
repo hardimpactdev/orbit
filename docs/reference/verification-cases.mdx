@@ -271,7 +271,7 @@ negative:
   must_fail: [gateway-connects]
 ```
 
-The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The proof CI also proves that a new case needs the new code, by running it on the merge base; see the [stage 3 chart](/reference/command-development-pipeline#3-proof). The two checks differ: `negative` breaks the effect, the merge-base run removes the code. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
 
 ## Where the code is
 

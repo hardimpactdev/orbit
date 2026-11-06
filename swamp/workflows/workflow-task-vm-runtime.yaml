@@ -1,6 +1,6 @@
 id: ecba7071-63ee-4dbf-a293-b2d60c476a2e
 name: task-vm-runtime
-description: Install the pinned Pi artifact, the Orbit root, Pi credentials and its Process in the guest with pinned official SSH from 209; no script reaches the guest.
+description: Install the pinned Pi artifact, the Orbit root, Pi credentials and its Process in the guest with pinned official SSH from 209; an Ansible playbook writes them.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -43,8 +43,23 @@ jobs:
 - name: runtime
   labels: {role: swamp}
   steps:
+  - name: input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
   - name: Fetch the Pi build
     labels: {role: swamp}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -65,220 +80,90 @@ jobs:
       inputs:
         hosts: name:target
         src: ${{ inputs.intent.pi_artifact.path }}
-        dst: ${{ "/tmp/orbit-pi-" + run.id + ".bin" }}
+        dst: ${{ "/tmp/orbit-ansible-" + run.id + "/pi-server" }}
         direction: from
+  # The pinned digest, checked on 209 before anything reaches the guest.
   - name: Check the Pi build
     labels: {role: swamp}
+    dependsOn:
+    - step: Fetch the Pi build
+      condition: {type: succeeded}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "vm-runtime-local" }}'
+      behaviorName: '${{ ("task-vm-runtime-check-build-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
-        # The pinned digest, checked on 209 before anything reaches the guest.
-        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_STAGE" | sha256sum -c --quiet
+        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
         env:
           ORBIT_SHA: ${{ inputs.intent.pi_artifact.sha256 }}
-          ORBIT_STAGE: ${{ "/tmp/orbit-pi-" + run.id + ".bin" }}
-    dependsOn:
-    - step: Fetch the Pi build
-      condition:
-        type: succeeded
-  - name: Copy the Pi build
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+  - name: Write the playbook input
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: &guest
-        name: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-pi-" + run.id + ".bin" }}
-        dst: ${{ "/tmp/orbit-pi-" + run.id + ".bin" }}
-        direction: to
+    writes: true
     dependsOn:
     - step: Check the Pi build
-      condition:
-        type: succeeded
-    writes: true
-  - name: Install the Pi server
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        # The guest checks the same digest before it installs the build for the managed account.
-        argv: '${{ ["sh", "-c", "printf \"%s  %s\\n\" \"$1\" \"$2\" | sha256sum -c --quiet && install -d -m 0755 -o orbit -g orbit /home/orbit/.local /home/orbit/.local/bin && install -m 0755 -o orbit -g orbit \"$2\" /home/orbit/.local/bin/pi-server; s=$?; rm -f -- \"$2\"; exit $s", "sh", inputs.intent.pi_artifact.sha256, "/tmp/orbit-pi-" + run.id + ".bin"] }}'
-    dependsOn:
-    - step: Copy the Pi build
-      condition:
-        type: succeeded
-    writes: true
-  - name: Trust the Orbit root
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [sh, -c, 'install -D -m 0644 -o root -g root /dev/stdin /usr/local/share/ca-certificates/orbit-root.crt && timeout 45 update-ca-certificates']
-        stdin: ${{ inputs.intent.certificate }}
-    dependsOn:
-    - step: Install the Pi server
-      condition:
-        type: succeeded
-    writes: true
-  - name: Write the Pi models
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        # The Gateway renders the whole file, with the VM's model key, as one vault value.
-        argv: [sh, -c, 'install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent && install -m 0600 -o orbit -g orbit /dev/stdin /home/orbit/.pi/agent/models.json']
-        stdin: ${{ vault.get(inputs.execution_secrets.pi_models.vault, inputs.execution_secrets.pi_models.key) }}
-    dependsOn:
-    - step: Trust the Orbit root
-      condition:
-        type: succeeded
-    writes: true
-  - name: Write the Pi token
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [install, -m, '0600', -o, orbit, -g, orbit, /dev/stdin, /home/orbit/.pi/agent/orbit-token]
-        stdin: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
-    dependsOn:
-    - step: Write the Pi models
-      condition:
-        type: succeeded
-    writes: true
-  - name: Install the Pi service
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [install, -D, -m, '0644', -o, root, -g, root, /dev/stdin, '${{ inputs.intent.runtime.process.unit_path }}']
-        stdin: ${{ inputs.intent.process_unit }}
-    dependsOn:
-    - step: Write the Pi token
-      condition:
-        type: succeeded
-    writes: true
-  - name: Restart the Pi server
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [sh, -c, 'systemctl daemon-reload && systemctl enable "$1" && systemctl restart "$1"', sh, '${{ inputs.intent.runtime.process.unit_name }}']
-    dependsOn:
-    - step: Install the Pi service
-      condition:
-        type: succeeded
-    writes: true
-  - name: Check the Pi service
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [systemctl, is-active, --quiet, '${{ inputs.intent.runtime.process.unit_name }}']
-    dependsOn:
-    - step: Restart the Pi server
-      condition:
-        type: succeeded
-  - name: Probe the Pi server
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *guest
-      inputs:
-        hosts: name:target
-        sudo: true
-        # The bearer goes to curl as a header file on a pipe; it never appears in an argument.
-        argv: [timeout, '30', bash, -c, 'curl -fsS -o /dev/null --max-time 10 -H @<(printf "Authorization: Bearer %s" "$(cat /home/orbit/.pi/agent/orbit-token)") "$1/capabilities"', bash, '${{ inputs.intent.pi_url }}']
-    dependsOn:
-    - step: Check the Pi service
-      condition:
-        type: succeeded
-  - name: Remove the staged build
-    labels: {role: swamp}
+      condition: {type: succeeded}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "vm-runtime-local" }}'
+      behaviorName: '${{ ("task-vm-runtime-input-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: rm -f -- "$ORBIT_STAGE"
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
         env:
-          ORBIT_STAGE: ${{ "/tmp/orbit-pi-" + run.id + ".bin" }}
-    # Runs after the last step that ran, whatever its outcome, so a refused build leaves nothing on 209.
-    dependsOn:
-    - step: Probe the Pi server
-      condition:
-        type: always
-    - step: Fetch the Pi build
-      condition:
-        type: completed
-  - name: result
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ORBIT_KIND: task_vm.runtime
+  - name: Install the Pi server
     labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Write the playbook input
+      condition: {type: succeeded}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "vm-runtime-local" }}'
+      behaviorName: '${{ ("task-vm-runtime-install-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags install "$ORBIT_ANSIBLE/task-vm-runtime.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_PI_MODELS: ${{ vault.get(inputs.execution_secrets.pi_models.vault, inputs.execution_secrets.pi_models.key) }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+  - name: Check the Pi server
+    labels: {role: swamp}
+    dependsOn:
+    - step: Install the Pi server
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("task-vm-runtime-check-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags check "$ORBIT_ANSIBLE/task-vm-runtime.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+  - name: result
+    labels: {role: swamp}
+    dependsOn:
+    - step: Check the Pi server
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("task-vm-runtime-result-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: printf '{"task_vm_id":%s,"guest_node_id":%s,"process_id":%s,"ready":true}\n' "$ORBIT_VM_ID" "$ORBIT_GUEST_ID" "$ORBIT_PROCESS_ID"
@@ -286,7 +171,20 @@ jobs:
           ORBIT_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
           ORBIT_GUEST_ID: ${{ string(inputs.intent.guest_node_id) }}
           ORBIT_PROCESS_ID: ${{ string(inputs.intent.runtime.process.process_id) }}
-    dependsOn:
-    - step: Probe the Pi server
-      condition:
-        type: succeeded
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: runtime, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("task-vm-runtime-cleanup-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}

@@ -4,6 +4,8 @@
 # copies never decide how long a fleet lives. It needs the Swamp Club key on the machine, which a proof run pushes. The tokens are the ones `gateway-swamp.yml` mints, by the same names and into the same files;
 # the Swamp CLI renews them: `access token rotate` revokes a token and mints a replacement with its name and principal, and a worker
 # enrollment token is minted again under a new name. Nothing is written to output, and no run input or output holds a token.
+# The shell tasks print no token: every token goes to a file or a variable, so a failure shows its command and its error. The copy
+# of the worker tokens keeps `no_log`.
 - name: Name the paths of the control plane
   ansible.builtin.set_fact:
     swamp_user: "{{ control.user }}"
@@ -31,19 +33,26 @@
   loop: [a, b]
 - name: Stop serve
   ansible.builtin.systemd: { name: orbit-swamp-serve.service, state: stopped }
+# The rotation is its own task with a short command, so a failure shows the CLI's error in the few hundred characters that the run keeps.
 - name: Rotate the serve driver token
+  ansible.builtin.shell:
+    cmd: umask 077 && swamp access token rotate serve-driver --duration 30d --json >/dev/null
+    chdir: "{{ swamp_repository }}"
+    executable: /bin/bash
+  become_user: "{{ swamp_user }}"
+  environment: "{{ swamp_cli }}"
+  changed_when: true
+- name: Write the serve driver token
   ansible.builtin.shell:
     cmd: |
       set -euo pipefail
       umask 077
-      swamp access token rotate serve-driver --duration 30d --json >/dev/null
       swamp access token reveal serve-driver --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > {{ swamp_driver_token }}
     chdir: "{{ swamp_repository }}"
     executable: /bin/bash
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
   changed_when: true
-  no_log: true
 - name: Renew the worker tokens
   ansible.builtin.shell:
     cmd: |
@@ -59,7 +68,6 @@
   environment: "{{ swamp_cli }}"
   loop: [a, b]
   changed_when: true
-  no_log: true
 - name: Place the worker tokens
   ansible.builtin.copy:
     src: "{{ swamp_home }}/.config/swamp/worker-{{ item.worker }}.{{ item.kind }}"
@@ -101,7 +109,6 @@
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
   changed_when: true
-  no_log: true
 - name: Clear the configuration of the Gateway
   ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", config:clear] }
   become_user: "{{ swamp_user }}"

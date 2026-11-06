@@ -1,7 +1,8 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
   %% Tightened: flow-tighten 2026-11-02, rules 17, 18, 22 (certificates installed in the publish step, as route:create does; cfgmgmt behaviors named).
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
+  %% status: draft
   %% command: cluster:router:set
   %% kind: cluster.router_set
   %% Pinned Caddy downloads follow admitted candidates; transport failures may try upstream, integrity failures stop.
@@ -71,7 +72,7 @@ sequenceDiagram
     %%> - on each workload member: allows the candidate's LAN address to its Route ports
     %%> - identical lines are left as they are
     %%> - one `forEach` over the members; it runs after the certificates are signed
-    SW->>N: Install certs, publish<br/>@swamp/cfgmgmt/file · reload
+    SW->>N: Install certs, publish<br/>child route-create-site · Ansible
     %%> What it does:
     %%> - installs the signed certificates next to their keys and writes the Router site list with `@swamp/cfgmgmt/file`, in one step as `route:create` does
     %%> - validates the full Router site list, then reloads the running Caddy; no restart

@@ -2,7 +2,10 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
-  %% status: migrated
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): an Instance without a Route skips the Route withdrawal and the DNS records (a bare destroy spent 33 s and 11 s there on nothing), and a destroyed name waits no DNS grace (it has no new target to move to; the 31 s wait was 27% of a 116 s destroy).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): a destroy applies each published state once. Without the grace, the prepared, withdrawn and live Caddyfiles and the prepared and final DNS records are identical, so the Route mutation publishes each once (two of three Caddy publications and two of three DNS publications were repeats); the separate DNS step of the Instance, which repeated the mutation, is gone.
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route withdrawal is one Ansible read, one composition and one Ansible apply per Node, the Nodes in parallel, in place of about 30 serial dispatches of the Route mutation (34 s of a 46 s destroy). The pool and Caddyfile composition is unchanged; it runs once against what the Node holds, and the captured states keep their revision checks. DNS records leave in the same phase as the Caddy site of another Node, not after it.
+  %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
   autonumber
@@ -96,27 +99,26 @@ sequenceDiagram
   SW->>N: Remove the git credential<br/>@swamp/cfgmgmt/file absent
   %%> When:
   %%> - always after the check, also when it refused
-  SW->>N: Withdraw the Route<br/>@swamp/cfgmgmt/file absent
+  opt Instance has a Route
+  SW->>N: Withdraw the Route<br/>Ansible read, compose, apply
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
-  %%> - one step, the mirror of `route:create`, which installs the certificate and publishes the site in one step
+  %%> - per Node, in parallel: one Ansible read of the pools, the Caddyfile and the private DNS files, one composition of the captured states against them, one Ansible apply
+  %%> - the apply writes the pools, tests and reloads PHP-FPM, writes the Caddyfile, validates and reloads Caddy, writes the DNS records and restarts the backend, then removes the certificate folders
+  %%> - for a Route domain outside the Cluster or Node TLD it also removes the private DNS records on Node 1 (private DNS answers the whole TLD, so a domain inside it has none), in this step and not in a step of its own
   %%> If it does not hold:
   %%> - every later step is skipped and the task fails with `route.withdrawal_failed`; the Instance and its source stay
   %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file` (`ensure: absent`) plus `@swamp/cfgmgmt/systemd` reload; nothing is copied to the Node
+  %%> - Swamp runs the Ansible phases from 209 over SSH; the playbook ships with the run, and nothing is copied to the Node
+  %%> - a live file that matches none of the captured states stops the phase before it writes (`owned_revision_conflict`)
+  %%> - the apply refuses a file that changed since the read
   %%> Why first:
   %%> - unpublish before removing, so no request reaches a half-removed Instance
   %%> - accepted: a failed teardown leaves Instance 42 without its site until a rerun completes the removal
+  %%> No DNS grace:
+  %%> - the name is removed, not moved, so no client has a new target to switch to; the Route is withdrawn right after its DNS records go
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
-  opt domain outside the TLD
-    Note over SW: Remove DNS records<br/>Node 1 over @swamp/ssh
-    %%> When:
-    %%> - only for a Route domain outside the Cluster or Node TLD; private DNS answers the whole TLD, so a domain inside it has no record
-    %%> What it does:
-    %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
-    %%> How:
-    %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   end
   SW->>N: Stop, remove Processes<br/>@swamp/cfgmgmt/systemd absent
   %%> What it does:

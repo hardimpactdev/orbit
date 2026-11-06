@@ -1,0 +1,78 @@
+sequenceDiagram
+  %% Target design: stage 2 and stage 4 of the command development pipeline (docs/reference/pipeline/2-development-environment.mmd, 4-pr-and-ci.mmd). A task VM holds no GitHub credential, so the workspace cannot fetch. The author needs the branch of the pull request and main when either moved on origin (a merge of main into the branch, a correction pushed by the owner), to merge or rebase before the push. Decided by the orchestrator, for Nick's review.
+  %% status: draft
+  %% command: tasks:sync
+  %% kind: tasks.sync
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>workspace
+  participant GH as GitHub<br/>origin
+  CLI->>GW: tasks:sync 42<br/>refresh the refs
+  %%> Command:
+  %%> - the MCP tool `tasks-sync`, or `POST /api/v1/task-groups/42/sync` with an `Idempotency-Key` and no body
+  Note over GW: Admit the sync<br/>group 42 · capture the intent
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - group 42 is open and external, with its own task VM workspace and a pushed branch `task-42`
+  %%> - the task VM runs; a parked VM is woken by the admission, which answers `tasks.vm_resuming`
+  %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - captures the repository, the default branch, the branch `task-42`, the workspace path and the SSH target of the VM
+  %%> - names the vault key of the read token
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no Swamp step calls the Gateway: the Gateway mints the read token (`contents: read`, valid one hour) as it starts the run and writes it to that vault key, as it does for the Pi token of a turn; the run gets only the key name
+  GW->>SW: Start one run, full intent<br/>operation-task-sync
+  %%> Inputs:
+  %%> - the whole intent above and the vault key name of the read token, never the token
+  %%> - no step of the run calls the Gateway
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Next:
+  %%> - the CLI follows the Operation with `operation:show`
+  SW->>GH: Clone the refs<br/>git clone --bare · fetch
+  %%> What it does:
+  %%> - on Node 209, in a scratch directory of the run: a bare clone of the default branch and a fetch of `task-42`, with the token, read from its vault key, as an extra header of the commands and nowhere else
+  SW->>SW: Bundle the refs<br/>git bundle create
+  %%> What it does:
+  %%> - one bundle of the default branch and `task-42`
+  SW->>VM: Copy the bundle<br/>official SSH copy
+  %%> What it does:
+  %%> - prepares a private directory on the VM and copies the bundle into it; no token and no script reaches the VM
+  SW->>VM: Fetch the refs<br/>git fetch · bundle
+  %%> What it does:
+  %%> - `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` of the workspace
+  %%> Result:
+  %%> - HEAD, the working tree and the local branches are not touched; the author merges or rebases itself, as the review of the stage asks
+  SW->>VM: Read the refs<br/>git rev-parse
+  %%> What it does:
+  %%> - reads the two commits the fetch stored
+  SW->>VM: Clean up<br/>remove scratch
+  %%> When:
+  %%> - always, on success and failure: the scratch directory on Node 209 and the one on the VM
+  Note over SW: Confirm the sync
+  %%> What it does:
+  %%> - native assert: the fetch, the read and the clean up succeeded
+  alt synced
+    SW-->>GW: Run succeeded<br/>terminal event · two commits
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the result<br/>refs
+    %%> Result:
+    %%> - the Operation succeeds with the commit of the default branch and the commit of `task-42`
+  else a step failed
+    SW--xGW: Run failed<br/>error_code · failed step
+    %%> The Gateway reads:
+    %%> - which step failed; a branch that does not exist on origin fails the clone step
+    Note over GW: Mark the Operation failed<br/>workspace unchanged
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+    %%> Returns:
+    %%> - the Operation status, and the two commits when the run succeeded
+  end

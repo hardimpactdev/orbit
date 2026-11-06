@@ -30,7 +30,7 @@ sequenceDiagram
     %%> What it does:
     %%> - restores the task's stateful snapshot `base` of the three nested VMs; skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
-    %%> - not built: the step that restores; the old `runner restore` was removed
+    %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, clock, NFS server restart, readiness, apply the checkout), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
     opt the batch declares a start state
       SW->>VM: Set up the batch<br/>batch setup steps
       %%> What it does:

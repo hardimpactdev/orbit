@@ -151,11 +151,13 @@ Tool installs and updates wait for a busy apt or dpkg lock, for example while un
 | --- | --- | --- |
 | First-use prerequisites (`brew`) | `apt-get update` | None. It takes the lists lock, `/var/lib/apt/lists/lock`, which `DPkg::Lock::Timeout` does not cover, and fails at once. |
 | First-use prerequisites (`brew`) | `apt-get install --no-remove` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | 300 s |
-| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock |
+| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock. |
 | `apt` install and update | `apt-get install --no-remove` | 300 s |
 | `apt` remove | `dpkg --remove` | None. dpkg refuses at once. |
 
 Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not wait.
+
+A Node inside the nested subnet of a task VM reads the snapshot indexes for the `composer` transaction through the package cache of that VM (`http://10.232.2.1:3142`, one request at a time) and downloads the packages directly. Any other Node reads everything directly over https.
 
 A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Only a failed package install marks the Tool `failed`. Retry the install; a manager or apt source set up before the failure stays, and the retry reuses it.
 

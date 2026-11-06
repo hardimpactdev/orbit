@@ -6,7 +6,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.02.2",
+    version: "2026.11.06.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -16,26 +16,22 @@ export const behavior = {
                 "Map the create phase steps to one public terminal receipt",
             arguments: z.object({
                 intent: ObjectValue,
-                prepare: z.string(),
-                fetch: z.string(),
-                source: Step.nullable(),
-                environment: z.string(),
+                checkout: Step.nullable(),
                 database: z.string(),
-                setup: z.array(z.string()),
+                setup: z.string(),
                 processes: z.array(z.string()),
                 route: z.string(),
+                certificates: z.array(z.string()).default([]),
             }),
             execute: async (
                 args: {
                     intent: Record<string, unknown>;
-                    prepare: string;
-                    fetch: string;
-                    source: z.infer<typeof Step> | null;
-                    environment: string;
+                    checkout: z.infer<typeof Step> | null;
                     database: string;
-                    setup: string[];
+                    setup: string;
                     processes: string[];
                     route: string;
+                    certificates?: string[];
                 },
                 ctx: Context,
             ) => {

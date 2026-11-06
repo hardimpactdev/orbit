@@ -52,10 +52,10 @@ sequenceDiagram
     %%> - the run reports success once, as a terminal result
     Note over GW: Record the release<br/>verified
     %%> Result:
-    %%> - the release is recorded; the footprint rollout of stage 8 may follow
+    %%> - the release is recorded; the Gateway admits the footprint rollout of stage 8 (`fleet.rollout`), and a daily pass at 03:05 Amsterdam visits the Nodes it deferred
     %%> - no fleet test follows a release
     %%> Next:
-    %%> - each task VM host refreshes its image and seed (stage 6, not built)
+    %%> - each task VM host refreshes its image and seed (stage 6; built, 4 of 33 runs succeeded by 2026-11-06)
   else the check fails
     SW->>GN: Switch back<br/>gateway-rollback previous
     %%> What it does:

@@ -26,6 +26,8 @@ use Throwable;
  *
  * @property int $id
  * @property int|null $group_id
+ * @property int|null $slot_project_id the Project a ready slot was enrolled for; set on a slot row, kept after its claim
+ * @property string|null $slot_digest the digest of what a task image carries in the release whose converge the slot got
  * @property int|null $host_node_id
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
@@ -81,7 +83,7 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
+        'group_id', 'slot_project_id', 'slot_digest', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at',
@@ -113,6 +115,7 @@ final class TaskVm extends Model
             'model_key' => 'encrypted',
             'provider_bootstrap' => 'encrypted:array',
             'worker_stop_required' => 'boolean',
+            'slot_project_id' => 'integer',
             'image_build_id' => 'integer',
             'image_fallback' => 'boolean',
             'claimed_at' => 'datetime',
@@ -140,7 +143,21 @@ final class TaskVm extends Model
     protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
-            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed));
+            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed))
+            // A stopped slot that no group holds keeps disk, not memory.
+            ->whereNot(static fn (Builder $query) => $query->whereNotNull('slot_project_id')->whereNull('group_id')->where('state', TaskVmState::Parked));
+    }
+
+    /**
+     * The slot rows that no group holds: enrolling, ready (`parked`), failed or being destroyed
+     * (docs/cli/tasks/vm-slots.mmd).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function unclaimedSlots(Builder $query): void
+    {
+        $query->where('state', '!=', TaskVmState::Destroyed)->whereNotNull('slot_project_id')->whereNull('group_id');
     }
 
     /**

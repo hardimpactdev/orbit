@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run, certificate signing is the one step-to-Gateway call. docs/reference/routes.md#change-an-explicit-domain.
-  %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
+  %% status: draft
   %% command: route:update
   %% kind: route.update
   autonumber
@@ -45,7 +46,7 @@ sequenceDiagram
       %%> - certificate signing is the one allowed step-to-Gateway call; the Orbit CA stays in the Gateway
       GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
     end
-    SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
+    SW->>N: Install cert, publish site<br/>child route-create-site · Ansible
     %%> What it does:
     %%> - publishes the replacement site beside the old one; Caddy reloads after validation
     %%> - for `--web-root`, prepares the workload for the new root (Caddy access, PHP pool) and publishes with it

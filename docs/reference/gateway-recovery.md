@@ -328,8 +328,6 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-A release that went live also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) when it changed playbooks, pins or lock files since the release it replaced. A release of code only starts nothing, and the refresh never holds the release.
-
 ```bash
 orbit gateway:release:auto:enable
 orbit gateway:release:auto:status
@@ -523,7 +521,7 @@ The rollout keeps no records of its own. Each pass is one `fleet.rollout` Operat
 
 ### Turn it on
 
-The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, Swamp admits no rollout, and Doctor reports no `node.release_lag`.
+The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, the Gateway admits no rollout, and Doctor reports no `node.release_lag`.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
@@ -532,7 +530,14 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 ### Execution
 
-No schedule admits rollouts. An operator starts one with `orbit fleet:rollout`; without Node IDs, the Gateway picks the [Nodes that need a visit](#which-nodes-a-pass-visits) and admits one `fleet.rollout` Operation for them with `POST /api/v1/fleet/rollout`. The `fleet-maintenance` schedule that did this each minute was deleted on 2026-11-06.
+The Gateway admits one `fleet.rollout` Operation for the [Nodes that need a visit](#which-nodes-a-pass-visits) at two times:
+
+- when it records a release `verified`
+- every day at 03:05 Europe/Amsterdam, when the [window](#rollout-set-and-order) of the other Nodes opens
+
+Both queue the same admission job. The daily schedule only queues it. The job waits a minute at a time while the commit has no CLI release yet, or while a rollout runs. CI publishes the CLI release minutes after the release goes live. A plan with no Node to visit admits nothing.
+
+An operator starts a pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Without Node IDs, the Gateway picks the Nodes. The Swamp `fleet-maintenance` schedule that admitted a pass each minute was deleted on 2026-11-06.
 
 Admission validates the serving release and captures the desired state: the commit, the CLI release, the agent pin, and each Node's SSH target. One rollout runs at a time; a second admission returns `fleet.rollout_busy` (409). A plan with no Node to visit admits nothing.
 
@@ -598,7 +603,7 @@ A lost or unknown command result leaves the Operation unresolved; it is not repo
 
 At the first failed Node, native dependencies leave later Nodes untouched. The run fails with that Node's error code, and the Operation's result names the Node. The Gateway raises [`rollout_halted`](#release-alerts) for that Node.
 
-Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. Until it converges, later Nodes wait, also during those 5 minutes. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
+Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. That pass comes with the next verified release, the daily window pass, or `orbit fleet:rollout`. Until it converges, later Nodes wait. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
 
 Native `swamp workflow resume` does not replace the retry. A failed rollout Operation is final at the Gateway, and the pinned Swamp release drops the inline SSH arguments of a resumed run. A new pass is the retry.
 
@@ -612,7 +617,7 @@ The Gateway's plan reads the newest result of each Node in the terminal `fleet.r
 | `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
 | `converged` or `unchanged`, but drifted | Its observer reports another version, or its recorded CLI version differs from the desired release |
 
-A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged within about 5 minutes after it returns, inside its window.
+A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns, inside its window.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no visit yet`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a pass already resolved; it never asks Git or GitHub.
 

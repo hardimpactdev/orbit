@@ -4,10 +4,12 @@ import { ciCacheImportProgram } from "../instance-deploy/app_step_runtime.ts";
 import {
     bindHostKeys,
     connection,
+    dependencyToken,
     Intent,
     observe,
     pinIntents,
     result,
+    revokeOutcome,
     setupArgv,
     sourceResult,
 } from "./provision.ts";
@@ -121,10 +123,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
             "inspect",
             "composer",
             "profile",
-            "mint_deps",
-            "deps_clear",
-            "deps_composer",
-            "deps_npm",
+            "deps_write",
             "deps_remove",
         ].map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
@@ -145,7 +144,7 @@ Deno.test("source result requires every ordered setup step before exposing the s
         source,
     });
     // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
-    for (const name of ["mint_deps", "deps_clear", "deps_composer", "deps_npm", "deps_remove"]) {
+    for (const name of ["deps_write", "deps_remove"]) {
         const before = steps[name].status;
         steps[name].status = "failed";
         assertEquals(sourceResult(input, steps), { error_code: "tasks.provision_failed", failed_step: name });
@@ -156,9 +155,6 @@ Deno.test("source result requires every ordered setup step before exposing the s
         assertEquals(sourceResult(input, steps), { source });
         steps[name] = kept;
     }
-    // The token revoke is not part of the receipt: the token expires within the hour, and a failed revoke must not fail a provision.
-    steps.deps_revoke = { status: "failed", outputs: {} };
-    assertEquals(sourceResult(input, steps), { source });
     const receipt = result(input, vm, {
         guest: { status: "succeeded" },
         ...steps,
@@ -186,10 +182,7 @@ Deno.test("proof provision requires private delivery before group readiness but 
                 "identity",
                 "inspect",
                 "composer",
-                "mint_deps",
-                "deps_clear",
-                "deps_composer",
-                "deps_npm",
+                "deps_write",
                 "deps_remove",
             ].map((name) => [name, { status: "succeeded", outputs: {} }]),
         ),
@@ -497,4 +490,78 @@ Deno.test("pin fills the host key of every guest target of a prep run from the p
     assertThrows(() =>
         pinIntents(JSON.stringify({ ...vm, ready: false }), 20, intents)
     );
+});
+
+Deno.test("the revoke outcome tells a revoked token from one GitHub does not know and from one left unrevoked", () => {
+    const revoke = (status: string, stdout?: string) =>
+        revokeOutcome({ Revoke: { status, outputs: stdout === undefined ? {} : { stdout } } });
+
+    assertEquals(revoke("succeeded", "204"), { state: "revoked" });
+    assertEquals(revoke("succeeded", "401\n").state, "none");
+    for (const code of ["403", "404", "500", "503"]) {
+        const outcome = revoke("succeeded", code);
+        assertEquals(outcome.state, "unrevoked");
+        assertEquals(outcome.reason, `GitHub answered HTTP ${code} to the revoke.`);
+    }
+    // curl printed something that is not a status: the reason never repeats it.
+    const odd = revoke("succeeded", "ghs_NotAStatus");
+    assertEquals(odd.state, "unrevoked");
+    assertEquals(odd.reason, "GitHub answered HTTP an unknown status to the revoke.");
+    // The request itself failed, so a token may still be valid.
+    assertEquals(revoke("failed"), {
+        state: "unrevoked",
+        reason: "The revoke request did not complete.",
+    });
+    // A curl error text is a revoke that did not complete, not a step that could not run.
+    assertEquals(
+        revokeOutcome({ Revoke: { status: "failed", error: "curl: (6) Could not resolve host: api.github.com" } }).reason,
+        "The revoke request did not complete.",
+    );
+    // The step failed before its command ran: the vault key could not be read.
+    assertEquals(
+        revokeOutcome({
+            Revoke: {
+                status: "failed",
+                error: "Failed to resolve vault expression vault.get(...): Secret 'x' not found in vault 'orbit-control-inputs'",
+            },
+        }),
+        { state: "unrevoked", reason: "The revoke step could not run." },
+    );
+    // No revoke step ran: nothing says the token is gone.
+    assertEquals(revokeOutcome({}), { state: "unrevoked", reason: "The revoke step could not run." });
+});
+Deno.test("the receipt names what became of the setup token, and a missing report is never a success", () => {
+    const reported = { state: "revoked" };
+    assertEquals(
+        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: reported } } }),
+        reported,
+    );
+    assertEquals(
+        dependencyToken({
+            deps_write: { status: "succeeded" },
+            deps_remove: { status: "succeeded", outputs: { result: { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." } } },
+        }),
+        { state: "unrevoked", reason: "GitHub answered HTTP 503 to the revoke." },
+    );
+    // The write step ran and nothing was reported back.
+    assertEquals(dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: {} } }).state, "unrevoked");
+    assertEquals(
+        dependencyToken({ deps_write: { status: "succeeded" }, deps_remove: { status: "succeeded", outputs: { result: { state: "fine" } } } }).state,
+        "unrevoked",
+    );
+    // The write step was skipped: nothing was written, so nothing needed revoking.
+    assertEquals(dependencyToken({}), { state: "none", reason: "No setup step ran." });
+
+    const source = { branch: "task-30", commit: "a".repeat(40), php_version: null, laravel: false };
+    const steps: Record<string, { status: string; outputs?: unknown }> = Object.fromEntries(
+        ["prepare", "directory", "control", "mint_clone", "clone", "bundle", "prepare_remote", "copy_bundle", "import", "origin", "branch", "identity", "inspect", "composer", "profile", "deps_write"]
+            .map((name) => [name, { status: "succeeded", outputs: {} }]),
+    );
+    steps.guest = { status: "succeeded" };
+    steps.profile.outputs = { source };
+    steps.deps_remove = { status: "succeeded", outputs: { result: { state: "none", reason: "GitHub holds no valid setup token." } } };
+
+    const receipt = result(intent, vm, steps);
+    assertEquals(receipt.dependency_token, { state: "none", reason: "GitHub holds no valid setup token." });
+    assertEquals(receipt.source, source);
 });

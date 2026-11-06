@@ -1,0 +1,131 @@
+id: 3b9f6a14-52c7-4e08-8d1a-7e40c5b2f9a6
+name: route-withdraw-node
+description: "instance.destroy: one Node's Route withdrawal. Read what the Node holds, compose the withdrawal from the captured states, apply it: pools, Caddyfile, private DNS records and certificate folders, each written once."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent:
+      type: object
+      properties:
+        publication: {type: object}
+        php: {type: object}
+        caddy: {type: object}
+        dns: {type: object}
+        cleanup: {type: array}
+      required: [publication, php, caddy, dns, cleanup]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: withdraw
+  labels: {role: swamp}
+  steps:
+    # Input: what the playbook needs of the Node, and the shipped playbooks, as the run folder that the phases read.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent:
+          node:
+            host: '${{ inputs.intent.publication.connection.nodeHost }}'
+            user: '${{ inputs.intent.publication.connection.nodeUser }}'
+            port: '${{ inputs.intent.publication.connection.nodePort }}'
+            identity_file: '${{ inputs.intent.publication.connection.nodeIdentityFile }}'
+            host_keys: '${{ inputs.intent.publication.host_keys }}'
+            account: '${{ inputs.intent.publication.user }}'
+          serves_routes: '${{ inputs.intent.publication.serves_routes }}'
+          reads_dns: '${{ size(inputs.intent.dns) > 0 }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # Read: the account, the PHP-FPM pool files, the Caddyfile and the private DNS files of this Node, into the run folder.
+  - name: 'read'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'input', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-read-" + string(inputs.intent.publication.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags read "$ORBIT_ANSIBLE/route-withdraw.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # Compose: the captured states applied in order to what the Node holds. Pure; it writes the plan the apply phase reads.
+  - name: 'compose'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'read', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication-command'
+      behaviorName: '${{ "route-withdraw-compose" }}'
+      methodName: withdraw
+      inputs:
+        node_id: '${{ inputs.intent.publication.node_id }}'
+        user: '${{ inputs.intent.publication.user }}'
+        control_node_id: '${{ inputs.intent.publication.control_node_id }}'
+        connection: '${{ inputs.intent.publication.connection }}'
+        host_keys: '${{ inputs.intent.publication.host_keys }}'
+        read_path: '${{ "/tmp/orbit-ansible-" + run.id + "/read.json" }}'
+        plan_path: '${{ "/tmp/orbit-ansible-" + run.id + "/plan.json" }}'
+        php: '${{ inputs.intent.php }}'
+        caddy: '${{ inputs.intent.caddy }}'
+        dns: '${{ inputs.intent.dns }}'
+        cleanup: '${{ inputs.intent.cleanup }}'
+    # Apply: pools written, tested and reloaded; the Caddyfile written, validated and reloaded; the private DNS records written and
+    # the backend restarted; the withdrawn certificate folders removed. The phase removes the run folder when it ends.
+  - name: 'apply'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'compose', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-apply-" + string(inputs.intent.publication.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/route-withdraw.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # Cleanup: the run folder after a failure; a success removed it in the apply phase, so this step is skipped.
+  - name: 'cleanup'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'input', condition: {type: always}}
+    - {step: read, condition: {type: always}}
+    - {step: compose, condition: {type: always}}
+    - {step: apply, condition: {type: always}}
+    guard: '${{ !steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-cleanup-" + string(inputs.intent.publication.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

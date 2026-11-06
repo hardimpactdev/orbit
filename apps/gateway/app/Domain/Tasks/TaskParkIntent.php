@@ -51,7 +51,7 @@ final readonly class TaskParkIntent
 
         return ! $group->tasks()->get()->contains(fn (Task $child): bool => array_filter($child->only(TaskAssistance::Fields)) !== [] || ! in_array($child->status, $settled, true))
             && ! Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-                ->whereIn('kind', [OperationKinds::TasksTurn, OperationKinds::TasksCheck, OperationKinds::TasksPrep, OperationKinds::TasksPrepFix])->whereNotIn('status', OperationStatus::terminalValues())->exists();
+                ->whereIn('kind', [OperationKinds::TasksTurn, OperationKinds::TasksCheck, OperationKinds::TasksPrep, OperationKinds::TasksPrepFix, OperationKinds::TasksBuild])->whereNotIn('status', OperationStatus::terminalValues())->exists();
     }
 
     /** The group's task VM workspace on the VM's own Node. */

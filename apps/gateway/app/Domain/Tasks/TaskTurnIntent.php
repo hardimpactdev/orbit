@@ -31,6 +31,7 @@ final readonly class TaskTurnIntent
         if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
             return $existing;
         }
+        TaskVmAwake::require($group);
 
         return DB::transaction(function () use ($group, $data, $caller, $request): Operation {
             $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
@@ -86,7 +87,7 @@ final readonly class TaskTurnIntent
             ($data->threadRole() === TaskThreadRole::Implementer ? $task : $group)->update([$data->threadRole()->value.'_agent_thread_id' => $thread->id]);
 
             return $this->start->execute('tasks.turn', 'task_group', $group->id, $instance->node_id, [
-                ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+                ...$data->toArray(), 'prompt' => TaskTurnPrompt::compose($task, $data->prompt), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
                 'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),

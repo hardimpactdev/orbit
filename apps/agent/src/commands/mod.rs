@@ -23,7 +23,6 @@ mod guest;
 pub mod hibernation;
 mod homebrew;
 mod homebrew_scope;
-pub mod horizon_queue;
 pub mod http_check;
 mod image_boot;
 mod incus;
@@ -119,7 +118,6 @@ pub fn all() -> Vec<Entry> {
         entry::<websocket_runtime::RemoveRuntime>(),
         entry::<websocket_runtime::RuntimeActive>(),
         entry::<ci_runner::CiRunnerHost>(),
-        entry::<horizon_queue::ReadQueue>(),
         entry::<cli::InstallCli>(),
         entry::<os_release::ReadOsRelease>(),
         entry::<node_bootstrap::Bootstrap>(),
@@ -128,8 +126,6 @@ pub fn all() -> Vec<Entry> {
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectLaravelRoutes>(),
         entry::<production::ActivateRelease>(),
-        entry::<production::InspectRelease>(),
-        entry::<production::ListReleases>(),
         entry::<production::InspectRepositoryBinding>(),
         entry::<production::RebindRepository>(),
         entry::<application_log::ReadApplicationLog>(),
@@ -161,7 +157,6 @@ pub fn all() -> Vec<Entry> {
         entry::<metrics_exporter::Cadvisor>(),
         entry::<metrics_runtime::MetricsRuntime>(),
         entry::<metrics_publication::Publication>(),
-        entry::<metrics_runtime::MetricsHealth>(),
         entry::<metrics_runtime::MetricsCredentials>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<hibernation::PrepareDirectories>(),

@@ -1,0 +1,24 @@
+---
+# Read the key list of the model router, check its size and shape, and set `router_keys`.
+- name: Read the keys
+  no_log: true
+  ansible.builtin.uri:
+    url: "{{ router }}/v0/management/api-keys"
+    headers: "{{ management_headers }}"
+    return_content: true
+  register: listed
+- name: Check that the answer is small
+  no_log: true
+  ansible.builtin.assert:
+    that: listed.content | length <= 1048576
+- name: Parse the list
+  no_log: true
+  ansible.builtin.set_fact:
+    router_keys: "{{ (listed.content | from_json)['api-keys'] }}"
+- name: Check the list shape
+  no_log: true
+  ansible.builtin.assert:
+    that:
+      - router_keys | type_debug == 'list'
+      - router_keys | length <= 4096
+      - router_keys | select('string') | list | length == router_keys | length

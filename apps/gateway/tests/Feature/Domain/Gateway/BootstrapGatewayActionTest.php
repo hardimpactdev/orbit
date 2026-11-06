@@ -31,10 +31,10 @@ function bootstrapFixture(): array
     return [$home, 'SHA256:'.rtrim(base64_encode(hash('sha256', $bytes, true)), '=')];
 }
 
-function bootstrapData(string $ip = '10.45.0.1'): BootstrapGatewayData
+function bootstrapData(string $ip = '10.45.0.1', ?string $operator = null): BootstrapGatewayData
 {
     return new BootstrapGatewayData(publicHost: '10.232.2.9', wireguardIp: $ip, wireguardSubnet: '10.45.0.0/24',
-        wireguardEndpoint: '10.232.2.9:51820', dnsServer: $ip, domain: 'orbit');
+        wireguardEndpoint: '10.232.2.9:51820', dnsServer: $ip, domain: 'orbit', operatorIp: $operator);
 }
 
 it('records the Gateway, makes its CA and SSH key, and keeps them on a second run', function (): void {
@@ -76,3 +76,26 @@ it('refuses an address outside the WireGuard subnet before it changes anything',
     expect(fn () => $action->execute(bootstrapData('10.46.0.1')))->toThrow(NodeProvisioningException::class);
     expect(Node::query()->count())->toBe(0)->and(is_dir($home.'/ca'))->toBeFalse();
 });
+
+it('records the operator without roles or key, with access to the Gateway, once', function (): void {
+    [$home] = bootstrapFixture();
+    $action = new BootstrapGatewayAction(app(AssignRoleAction::class), app(VpnSettings::class),
+        app(ProcessRunner::class), app(GatewayServingHost::class), $home.'.hostkey.pub');
+
+    $gateway = $action->execute(bootstrapData(operator: '10.45.0.10'));
+    $action->execute(bootstrapData(operator: '10.45.0.10'));
+
+    $operator = Node::query()->where('name', 'operator')->sole();
+    expect($operator->only(['status', 'wireguard_ip', 'wireguard_public_key']))->toEqual(['status' => LifecycleStatus::Active, 'wireguard_ip' => '10.45.0.10', 'wireguard_public_key' => null])
+        ->and($operator->roles()->count())->toBe(0)
+        ->and($operator->accessibleNodes()->pluck('nodes.id')->all())->toBe([$gateway->id]);
+});
+
+it('refuses an operator address outside the subnet or on the Gateway', function (string $operator): void {
+    [$home] = bootstrapFixture();
+    $action = new BootstrapGatewayAction(app(AssignRoleAction::class), app(VpnSettings::class),
+        app(ProcessRunner::class), app(GatewayServingHost::class), $home.'.hostkey.pub');
+
+    expect(fn () => $action->execute(bootstrapData(operator: $operator)))->toThrow(NodeProvisioningException::class)
+        ->and(Node::query()->count())->toBe(0);
+})->with(['outside' => '10.46.0.10', 'gateway' => '10.45.0.1']);

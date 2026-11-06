@@ -33,6 +33,14 @@ sequenceDiagram
   %%> - Swamp on 209 runs `ansible-playbook` over SSH to the builder through the host (ProxyJump with the recorded host keys), as node:converge reaches a Node
   %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
   %%> - versions come from recipe.json of the release commit; the same playbooks converge a running task VM in stage 2 and the refresh VM in stage 6
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), the package cache of the task VM:
+  %%> - the first software task installs stock `apt-cacher-ng` from the VM's own sources (not in the recipe: it is not a pinned tool) and starts it; a drop-in lets it ask the snapshot service again (`DlMaxRetries 10`) before it answers a client with an error: the service answers a check of a stored index with a 5xx now and then
+  %%> - the index read of the phases goes through it (`http://snapshot.ubuntu.com` with the apt proxy `localhost:3142` and no request pipelining: the cache answers some of several requests in flight with the body of another file; apt still checks the signatures), so the build itself fills the cache with the snapshot indexes
+  %%> - the packages stay a direct download over https: through the cache most of them failed (a 503 without a length, or a closed connection), and the cache then holds no `.deb`
+  %%> - the cache stays in the image: every task VM starts with the indexes of the recipe's snapshot, and the nested Nodes of its fleet read them from the VM (fleet build, `Add app-dev and app-prod`)
+  %%> - the end check reads that the cache is active
+  %%> Why:
+  %%> - measured 2026-11-06 (fleet build, VM 714): each nested Node spent 11 min (app-dev) and 4 min (app-prod) refreshing 30 MB of indexes from snapshot.ubuntu.com; from a warm cache the same index refresh took 24 to 37 s on a task VM (measured with the cache tasks on a throwaway VM; a fleet build on an image that holds the cache is the next proof)
   SW->>H: Clean and stop<br/>cloud-init · host keys
   %%> What it does:
   %%> - `cloud-init clean`, an empty machine-id, removed SSH host keys, then stop; each one `@swamp/ssh exec` argv

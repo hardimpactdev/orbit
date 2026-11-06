@@ -62,7 +62,7 @@ final readonly class TaskPrepIntent
             $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
             return [
-                'command' => $data->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
+                'command' => $data->command, 'mode' => $group->review_mode->value, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
                 'execution_secrets' => $input['execution_secrets'] ?? [],
                 'provision' => array_diff_key($input, ['execution_secrets' => true]),
                 'draft' => $turn($author, $prompts->draft(), true),

@@ -7,6 +7,8 @@
   hosts: task_vm
   become: true
   gather_facts: false
+  module_defaults:
+    ansible.builtin.apt: { lock_timeout: 300 }
   vars:
     recipe: "{{ intent.recipe }}"
     profile: "{{ intent.profile | default('base') }}"
@@ -14,8 +16,16 @@
     orbit_home: "/home/orbit"
     vp_home: "/home/orbit/.local/share/vite-plus"
     apt_directory: /var/tmp/orbit-image-apt
+    # Package downloads retry on a transient error of the snapshot service: four retries, 30 seconds apart (swamp-shape rule 6).
+    apt_retries: 4
+    apt_delay: 30
     apt_environment:
       APT_CONFIG: /var/tmp/orbit-image-apt/apt.conf
+      DEBIAN_FRONTEND: noninteractive
+      NEEDRESTART_MODE: l
+    # The index read goes through the package cache of the VM; the packages stay a direct download (task-vm-apt-config.yml).
+    apt_index_environment:
+      APT_CONFIG: /var/tmp/orbit-image-apt/apt-cache.conf
       DEBIAN_FRONTEND: noninteractive
       NEEDRESTART_MODE: l
   handlers:

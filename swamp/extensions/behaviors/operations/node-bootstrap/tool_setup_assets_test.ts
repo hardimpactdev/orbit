@@ -43,6 +43,95 @@ Deno.test("Composer setup preserves its scope and installs exact snapshot packag
         true,
     );
 });
+Deno.test("Composer setup reads the snapshot indexes through a package cache and downloads the packages directly", async () => {
+    const direct = await toolSetupPlan(composer, "/home/orbit");
+    const sources = (plan: typeof direct) =>
+        Object.fromEntries(
+            plan.files.filter((f) => String(f.path).endsWith(".list")).map((
+                f,
+            ) => [String(f.path).split("/").at(-1), String(f.content)]),
+        );
+    assertEquals(Object.keys(sources(direct)), ["sources.list"]);
+    assertEquals(
+        sources(direct)["sources.list"].includes(
+            "] https://snapshot.ubuntu.com/",
+        ),
+        true,
+    );
+    assertEquals(
+        direct.apt_update.some((a) => a.startsWith("Acquire::http::Proxy")),
+        false,
+    );
+    const cached = await toolSetupPlan({
+        ...composer,
+        apt: { ...composer.apt, proxy: "http://10.232.2.1:3142" },
+    }, "/home/orbit");
+    const lists = sources(cached);
+    assertEquals(
+        lists["sources.list"].includes("] https://snapshot.ubuntu.com/"),
+        true,
+    );
+    assertEquals(
+        lists["sources-cache.list"].includes("] http://snapshot.ubuntu.com/"),
+        true,
+    );
+    assertEquals(lists["sources-cache.list"].includes("https://"), false);
+    // The update reads the cached sources through the cache, one request at a time.
+    assertEquals(
+        cached.apt_update.some((a) => a.endsWith("/sources-cache.list")),
+        true,
+    );
+    assertEquals(
+        cached.apt_update.includes(
+            "Acquire::http::Proxy=http://10.232.2.1:3142",
+        ),
+        true,
+    );
+    assertEquals(
+        cached.apt_update.includes("Acquire::http::Pipeline-Depth=0"),
+        true,
+    );
+    assertEquals(cached.apt_update.includes("Dir::Etc::parts=-"), true);
+    // The install reads the same lists directory but no proxy: the packages are a direct download.
+    assertEquals(
+        cached.apt_install_prefix.some((a) => a.endsWith("/sources.list")),
+        true,
+    );
+    assertEquals(
+        cached.apt_install_prefix.some((a) =>
+            a.startsWith("Acquire::http::Proxy")
+        ),
+        false,
+    );
+    assertEquals(
+        cached.apt_install_prefix.includes("Acquire::http::Pipeline-Depth=0"),
+        false,
+    );
+});
+Deno.test("A package cache of another kind than plain http is refused", () => {
+    for (
+        const proxy of [
+            "https://10.232.2.1:3142",
+            "10.232.2.1:3142",
+            "ftp://10.232.2.1",
+        ]
+    ) {
+        assertEquals(
+            Setup.safeParse({ ...composer, apt: { ...composer.apt, proxy } })
+                .success,
+            false,
+            proxy,
+        );
+    }
+    assertEquals(
+        Setup.safeParse({
+            ...composer,
+            apt: { ...composer.apt, proxy: "http://10.232.2.1:3142" },
+        }).success,
+        true,
+    );
+    assertEquals(Setup.safeParse(composer).success, true);
+});
 Deno.test("Homebrew setup describes one pinned repository and retains other package managers", async () => {
     const plan = await toolSetupPlan({
         manager: "homebrew",

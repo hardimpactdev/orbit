@@ -1,0 +1,309 @@
+id: 4399a8db-b621-474a-8433-4cb1d7607947
+name: operation-task-sync
+description: >-
+  Bring the default branch and the task branch of an external group from origin into its task VM workspace in one run from full
+  inputs on 209: a bare clone with a read token that exists only in the vault and in the environment of the clone, one bundle, an
+  official SSH copy to a private directory of the VM and a git fetch of the bundle into refs/remotes/origin. No credential and no script
+  reaches the VM; HEAD, the working tree and the local branches stay as they are.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: tasks.sync}
+    intent:
+      type: object
+      properties:
+        group_id: {type: integer, minimum: 1}
+        instance_id: {type: integer, minimum: 1}
+        project_id: {type: integer, minimum: 1}
+        node_id: {type: integer, minimum: 1}
+        checkout_path: {type: string, pattern: '^/'}
+        workspace:
+          type: object
+          properties:
+            repository: {type: string, minLength: 1}
+            default_branch: {type: string, pattern: '^[A-Za-z0-9._/-]+$'}
+            branch: {type: string, pattern: '^task-[1-9][0-9]*$'}
+          required: [repository, default_branch, branch]
+          additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-sync-token-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [group_id, instance_id, project_id, node_id, checkout_path, workspace, git_authorization, ssh_execution]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: sync
+  labels: {role: swamp}
+  steps:
+  - name: Clone the refs
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-sync-clone" }}
+      methodName: execute
+      inputs:
+        run: |
+          umask 077
+          mkdir -p -- "$ORBIT_ROOT"
+          timeout 120 git clone --bare --single-branch --branch "$ORBIT_BASE" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+          timeout 60 git -C "$ORBIT_SOURCE" fetch --no-tags origin "+refs/heads/$ORBIT_BRANCH:refs/heads/$ORBIT_BRANCH"
+        env:
+          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id }}
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/source" }}
+          ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
+          ORBIT_BASE: ${{ inputs.intent.workspace.default_branch }}
+          ORBIT_BRANCH: ${{ inputs.intent.workspace.branch }}
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_CONFIG_COUNT: '3'
+          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.intent.git_authorization.vault, inputs.intent.git_authorization.key) }}
+          GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_1: 'git@github.com:'
+          GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_2: ssh://git@github.com/
+  - name: Bundle the refs
+    labels: {role: swamp}
+    queueTimeout: 30
+    writes: true
+    dependsOn:
+    - step: Clone the refs
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-sync-bundle" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 60 git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" "refs/heads/$ORBIT_BASE" "refs/heads/$ORBIT_BRANCH"
+        env:
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/source" }}
+          ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/refs.bundle" }}
+          ORBIT_BASE: ${{ inputs.intent.workspace.default_branch }}
+          ORBIT_BRANCH: ${{ inputs.intent.workspace.branch }}
+  - name: Prepare the VM directory
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Bundle the refs
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0700'
+        - --
+        - ${{ "/tmp/orbit-task-sync-" + run.id }}
+  - name: Copy the bundle
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Prepare the VM directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: copy
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 120
+        src: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id + "/refs.bundle" }}
+        dst: ${{ "/tmp/orbit-task-sync-" + run.id + "/refs.bundle" }}
+        direction: to
+  - name: Fetch the refs
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Copy the bundle
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 120
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - fetch
+        - --no-tags
+        - ${{ "/tmp/orbit-task-sync-" + run.id + "/refs.bundle" }}
+        - ${{ "+refs/heads/" + inputs.intent.workspace.default_branch + ":refs/remotes/origin/" + inputs.intent.workspace.default_branch }}
+        - ${{ "+refs/heads/" + inputs.intent.workspace.branch + ":refs/remotes/origin/" + inputs.intent.workspace.branch }}
+  - name: Read the refs
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Fetch the refs
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - ${{ "refs/remotes/origin/" + inputs.intent.workspace.default_branch }}
+        - ${{ "refs/remotes/origin/" + inputs.intent.workspace.branch }}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - job: sync
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Clean up the scratch
+    labels: {role: swamp}
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-sync-scratch" }}
+      methodName: execute
+      inputs:
+        run: |
+          timeout 30 rm -rf -- "$ORBIT_ROOT"
+        env:
+          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-sync/" + run.id }}
+  - name: Clean up the VM directory
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Clean up the scratch
+      condition:
+        type: completed
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.intent.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+        name: '${{ ("task-sync-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-sync-" + run.id }}
+  - name: Confirm the sync
+    labels: {role: swamp}
+    queueTimeout: 30
+    dependsOn:
+    - step: Clean up the VM directory
+      condition:
+        type: completed
+    task:
+      type: assert
+      expr: '"Read the refs" in steps && steps["Read the refs"].status == "succeeded" && steps["Clean up the scratch"].status == "succeeded" && steps["Clean up the VM directory"].status == "succeeded"'
+      message: tasks.sync_failed
+      severity: high

@@ -11,6 +11,7 @@ inputs:
     # intent.gateway: url, the address of the new Gateway (APP_URL); wireguard_ip and wireguard_subnet, its address in the private network of the fleet it leads.
     # intent.agent_delivery: the JSON text of the agent delivery manifest ({commit, version, artifacts}), public pins the admitting Gateway sends.
     # intent.operator: checkout, the release checkout on the operator, with its Gateway dependencies; it renders the plan of the machine.
+    #   Optional wireguard_ip: the operator's address in the fleet's network; the Gateway records the Node `operator` there (orbit:bootstrap --operator-ip).
     intent: {type: object}
   required: [intent]
   additionalProperties: false
@@ -383,7 +384,7 @@ jobs:
       globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-bootstrap").split(".").join("-") }}'}
       inputs:
         hosts: name:target
-        argv: [timeout, '300', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'orbit:bootstrap', '${{ inputs.intent.ssh.host }}', '--wireguard-ip=${{ inputs.intent.gateway.wireguard_ip }}', '--wireguard-subnet=${{ inputs.intent.gateway.wireguard_subnet }}', --no-interaction]
+        argv: '${{ ["timeout", "300", "php", "/home/" + inputs.intent.ssh.user + "/orbit/apps/gateway/artisan", "orbit:bootstrap", inputs.intent.ssh.host, "--wireguard-ip=" + inputs.intent.gateway.wireguard_ip, "--wireguard-subnet=" + inputs.intent.gateway.wireguard_subnet, "--no-interaction"] + (has(inputs.intent.operator.wireguard_ip) ? ["--operator-ip=" + inputs.intent.operator.wireguard_ip] : []) }}'
         timeoutSec: 305
 # The Swamp control plane of the new Gateway, on its own machine: units, tokens minted there, grants, the swamp.orbit front, then serve and two workers.
 - name: control

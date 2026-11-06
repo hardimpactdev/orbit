@@ -673,20 +673,6 @@
       ]
     },
     {
-      "name": "instance.read-queue",
-      "summary": "Report an Instance's Horizon queue, without job payloads.",
-      "mutates": false,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "instance.queue_invalid",
-        "instance.queue_failed"
-      ]
-    },
-    {
       "name": "cli.install",
       "summary": "Install the Orbit CLI release when the Node needs it, and write root's CLI profile.",
       "mutates": true,
@@ -800,38 +786,6 @@
       "summary": "Check a production release, grant Caddy its web roots, and select it as current.",
       "mutates": true,
       "timeout_seconds": 300,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.release_invalid",
-        "instance.commit_not_on_branch",
-        "instance.release_step_failed",
-        "instance.release_missing"
-      ]
-    },
-    {
-      "name": "instance.inspect-release",
-      "summary": "Check and read the selected production release, or a named retained one.",
-      "mutates": false,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.release_invalid",
-        "instance.commit_not_on_branch",
-        "instance.release_step_failed",
-        "instance.release_missing"
-      ]
-    },
-    {
-      "name": "instance.list-releases",
-      "summary": "List the production releases that pass their checks, and the selected one.",
-      "mutates": false,
-      "timeout_seconds": 120,
       "privilege": {
         "linux": "owner",
         "macos": null
@@ -1484,43 +1438,6 @@
         "metrics.publication_firewall_remove_failed",
         "metrics.publication_firewall_remove_verify_failed",
         "metrics.remote_command_timed_out"
-      ]
-    },
-    {
-      "name": "metrics.runtime-health",
-      "summary": "Observe the health of an owned Metrics container.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "metrics.runtime_input_invalid",
-        "metrics.wireguard_ip_missing",
-        "metrics.configuration_ownership_drift",
-        "metrics.configuration_snapshot_failed",
-        "metrics.configuration_publish_failed",
-        "metrics.configuration_remove_failed",
-        "metrics.runtime_rollback_failed",
-        "metrics.prometheus_configuration_invalid",
-        "metrics.prometheus_configuration_check_timed_out",
-        "metrics.image_pull_failed",
-        "metrics.image_pull_timed_out",
-        "metrics.docker_unavailable",
-        "metrics.container_inspection_failed",
-        "metrics.volume_inspection_failed",
-        "metrics.container_inspection_invalid",
-        "metrics.volume_inspection_invalid",
-        "metrics.container_ownership_drift",
-        "metrics.volume_ownership_drift",
-        "metrics.container_convergence_failed",
-        "metrics.container_rollback_failed",
-        "metrics.container_cleanup_failed",
-        "metrics.container_remove_failed",
-        "metrics.volume_purge_failed",
-        "metrics.remote_command_timed_out",
-        "metrics.credentials_reset_failed"
       ]
     },
     {

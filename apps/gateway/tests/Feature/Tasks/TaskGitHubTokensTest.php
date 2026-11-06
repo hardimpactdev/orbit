@@ -134,7 +134,10 @@ function cloneOperation(string $kind, array $overrides = [], string $source = 'g
     $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.fake()->numberBetween(1, 900)];
     $intent = [...['project_id' => $project->id, 'git_authorization' => $reference, 'workspace' => ['repository' => $project->repository_url]], ...$overrides];
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
-        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $kind === 'tasks.prep' ? ['provision' => $intent] : $intent]);
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => match ($kind) {
+            'tasks.prep' => ['provision' => $intent],
+            default => $intent,
+        }]);
 
     return [$operation, $reference];
 }
@@ -162,6 +165,17 @@ it('mints the clone credential of a workspace when the clone step asks, and only
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
 })->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
 
+it('writes the clone header of a sync run as the Gateway starts it, and refuses a step that asks for it', function (): void {
+    $socket = tokenWorld();
+    [$operation, $reference] = cloneOperation('tasks.sync');
+
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($input['intent']['git_authorization'])->toBe($reference)
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]])
+        ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token');
+});
+
 it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {
     $socket = tokenWorld();
     [$operation] = cloneOperation($kind);
@@ -180,6 +194,24 @@ it('writes the Composer and npm configuration of the setup steps from one read t
             ['orbit-control-inputs', 'task-provision-deps-token-7', 'deps-token-value'],
         ]);
 })->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
+
+it('writes the same configuration for a package install, whose intent holds the key names itself', function (): void {
+    $socket = tokenWorld();
+    [$operation] = cloneOperation('tasks.package');
+    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']];
+    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => $references]])->save();
+
+    expect(app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toEqual($references)
+        ->and(array_column(tokenPuts($socket), 1))->toBe(['task-provision-deps-composer-9', 'task-provision-deps-npm-9', 'task-provision-deps-token-9']);
+});
+
+it('refuses a package install every purpose but dependencies', function (string $purpose): void {
+    $socket = tokenWorld();
+    [$operation] = cloneOperation('tasks.package');
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, $purpose))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+})->with(['clone', 'publish', 'pull_request', 'dependency_merge']);
 
 it('writes an empty configuration, and records no issue, when the App cannot supply a token', function (): void {
     $socket = tokenWorld(installed: false);
@@ -335,7 +367,11 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+
+it('gives a sync run and a build run no token mint, because the Gateway writes their read token as it starts the run', function (string $kind): void {
+    expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');
+})->with(['tasks.sync', 'tasks.build']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();
@@ -415,3 +451,34 @@ arch('the admission of a publish, of a prep run and of its corrections does not 
 arch('the admission of a pull request step, a dependency merge and a cancel mints no token')
     ->expect([StartTaskPullRequestStepAction::class, StartDependencyBatchMergeAction::class, TaskCancelIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, GitHubApi::class, GitHubAppStore::class]);
+
+it('mints the write token of the merge of a pull request outside every task group, for the Project the operation targets', function (): void {
+    $grants = [];
+    $socket = tokenWorld(scoped: $grants);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.fake()->uuid()];
+    $operation = Operation::query()->create(['kind' => 'project.pr_merge', 'target_type' => 'project', 'target_id' => $project->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => ['write_token' => $reference]]]);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'pull_request');
+
+    expect($copies)->toBe(['write_token' => $reference])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'step-token-value']])
+        ->and($grants[0]->permissions)->toBe(['contents' => 'write', 'pull_requests' => 'write']);
+});
+
+it('refuses the token of a project merge for another repository, another purpose, a finished operation or another caller', function (): void {
+    $socket = tokenWorld();
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $make = fn (string $repository, OperationStatus $status = OperationStatus::Running): Operation => Operation::query()->create(['kind' => 'project.pr_merge', 'target_type' => 'project',
+        'target_id' => $project->id, 'node_id' => SwampNodeFixture::Id, 'status' => $status, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => $repository, 'execution_secrets' => ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.fake()->uuid()]]]]);
+    $issue = fn (Operation $subject, string $purpose = 'pull_request', int $caller = SwampNodeFixture::Id) => fn () => app(TaskGitHubTokens::class)->issue($subject, $caller, TOKEN_RUN, $purpose);
+
+    expect($issue($make('someone/else')))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit'), 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit', OperationStatus::Succeeded)))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit'), 'pull_request', SwampNodeFixture::Id + 1))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});

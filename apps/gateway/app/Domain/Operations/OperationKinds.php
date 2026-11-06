@@ -32,6 +32,8 @@ final readonly class OperationKinds
 
     public const string TasksScript = 'tasks.script';
 
+    public const string TasksPackage = 'tasks.package';
+
     public const string TasksCheck = 'tasks.check';
 
     public const string TasksProvision = 'tasks.provision';
@@ -44,13 +46,22 @@ final readonly class OperationKinds
 
     public const string TasksPrepFix = 'tasks.prep_fix';
 
+    public const string TasksSync = 'tasks.sync';
+
+    public const string TasksBuild = 'tasks.build';
+
     public const string TasksPrReady = 'tasks.pr_ready';
 
     public const string TasksPrMerge = 'tasks.pr_merge';
 
+    /** The merge of a pull request that no Task group watches; it targets its Project. */
+    public const string ProjectPrMerge = 'project.pr_merge';
+
     public const string TasksPrComment = 'tasks.pr_comment';
 
     public const string ProofRun = 'proof.run';
+
+    public const string ProofVerify = 'proof.verify';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */
     public const string InstanceTarget = 'instance';

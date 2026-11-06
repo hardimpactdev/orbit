@@ -20,7 +20,14 @@ sequenceDiagram
   %%> Requirements:
   %%> - group 42 is external and open; child 43 is current and open
   %%> - your Node has an access grant to the workspace Node
+  %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - a reviewer has an eligible check on the admitted candidate
+  %%> What it does:
+  %%> - composes the prompt the VM receives: the title, brief and deliverables of the subtask, then the prompt of the caller, for every role
+  %%> - records the composed prompt as the admitted intent
+  %%> - refuses a composed prompt longer than the workflow accepts, 100000 characters, with `tasks.prompt_too_large`
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:
   %%> - the admitted prompt, role, session, candidate, SSH identity and vault key names

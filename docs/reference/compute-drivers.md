@@ -655,7 +655,11 @@ The configuration is two files with mode 0600: `~/.config/composer/auth.json` an
 
 The token reads every repository the App installation covers, because a private package can live in any of them. A setup command is repository code and can read the same repositories while the files exist. The Gateway revokes the token itself if it cannot store one of the three vault copies.
 
-A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. A last step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
+A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. The same step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
+
+The provision result names what became of the token in `dependency_token`. `revoked` means GitHub answered 204. `none` means GitHub answered 401: no token was minted, as for a public repository that the App does not cover, or it had already expired or been revoked. `unrevoked` carries a `reason` (GitHub answered another status, the request did not complete, or the revoke step could not run), and the token may stay valid for up to an hour.
+
+An `unrevoked` token does not fail the provision: the files are already gone from the VM, and failing would not shorten the hour. The result says why instead. A provision that runs no setup step writes, removes and revokes nothing, and reports `none`.
 
 If the App cannot supply a token, both files hold an empty configuration and setup continues without private access. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.
 
@@ -728,7 +732,7 @@ The Gateway puts these in the Operation:
 
 No task file names a version.
 
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
+The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
 The `tools` phase installs the NFS server and the shape gate linters.
 
@@ -1198,7 +1202,7 @@ An Incus build copies the pinned Pi build from the Gateway Node to 209 with offi
 The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record.
 A run whose seed check skipped the promote is a recorded build without a promotion: the candidate and its fingerprint stay, and claims keep the promoted image. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
 
-An image build, Incus or UpCloud, installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and runs `apt-get` with `APT_CONFIG` pointing at it, with `--allow-downgrades` because the pins are exact. The `check` phase asserts every package at its pin.
+An image build, Incus or UpCloud, installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the image, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
 
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
@@ -1215,7 +1219,9 @@ A new task image comes from the recipe build only for a new host or a new base O
 
 The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped VMs: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
 
-Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger.
+Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Nothing triggers it automatically: the release and daily triggers rebuilt on the nested-VM path, which the container inner topology replaces, so they were removed. A host with a refresh open returns it, and a host that refuses is skipped.
+
+`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. `task-vms:refresh-images` always uses `build`.
 
 The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
@@ -1241,6 +1247,12 @@ The refresh has no converge step of its own, because the provision converges the
 
 The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested VMs. Its private half stays on the refresh VM, which is never published. The build creates the three nested VMs one at a time, because three parallel `incus init` calls of one image race on the image cache of the client.
 
+The fleet build runs only in a large task VM (12 GiB, 6 CPUs), because the three nested VMs hold 10 GiB and a medium VM lost its nested Gateway to the out-of-memory killer. The Gateway refuses the build for any other size. The admission of the refresh sets the size to large, so the Project size lists do not decide it, and the refresh needs three free slots of its host.
+
+Every wait of the build for the nested Gateway is one run of the playbook `task-vm-fleet-wait.yml` from Node 209 against the refresh VM. A task with `until`, `retries` and `delay` checks with one `incus exec` every 5 seconds. A check that finds the Gateway guest not running ends the wait at once. The playbook then lists the nested VMs, fails naming any that is not running, and asserts the end state. An Operation that did not succeed fails with its failed step and error code. The last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run.
+
+The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested guests mount the export of that path at `/home/orbit/orbit`, so their mount units name the export path as `What=`.
+
 The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM and the builder. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The builder starts only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing.
 
 A cancelled refresh cancels its group, whether it ends before its Swamp run starts or the run ends cancelled. A cancelled run marks the group cancelled and leaves its VM in provisioning, so the group cancel still runs while that VM is not destroyed. It destroys the refresh VM and frees its slot. When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
@@ -1258,7 +1270,6 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 The chart lists what the run still lacks:
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
-- The re-mint of the nested Swamp tokens in a proof run (stage 3). The provision already renews them.
 - The replacement of old ready slots. Ready slots do not exist yet.
 
 ##### Save the ready copies
@@ -1281,19 +1292,21 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three VMs from the stock image with cloud-init, the key of the VM, the NFS client, and the state disk that stateful copies need. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
+The bootstrap input names the VM's operator address, 10.45.0.10, so the nested Gateway records the `operator` Node that stage 2 gives its key. The local bootstrap run needs the Swamp key on the VM. The build places it there from its vault copy, on stdin, just before that run, and removes it after the run, also after a failure, so no key stays on a VM where a task's agent may run. A build on a proof VM would remove the key that VM got at provision.
+
 Each VM has a 20 GiB root disk and a state volume as large as its memory, set as two device options, so that its copies can be stateful. The VMs live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
 
-The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
+The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM.
 
 The new Gateway then does the rest through its own Orbit. It converges its own Node, then its `gateway` role, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
 
 The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built, and the stock systemd mount units mount the NFS export of the outer VM and the state over it. The services start again on the shared checkout.
 
-The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check passes when Doctor of the nested Gateway has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
+The outer VM must export its checkout to the nested network: the converge of the task VM role does that, with the NFS settings of a task VM. The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
 
 ##### Start the nested fleet
 
-A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own.
+A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own. Placement already keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies, so a skipped step is the exception.
 
 The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
 
@@ -1313,9 +1326,11 @@ The step `Apply the checkout` of the fleet child calls the child `task-nested-ap
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 
-The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
+The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
 
-The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested VMs statefully with a limit of 45 seconds and no retry, sets each guest clock from the task VM, calls `task-nested-ready` and then `task-nested-apply`. The batch workflow calls it before every batch but the first. The case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
+The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested VMs statefully with a limit of 45 seconds and no retry, and sets each guest clock from the task VM. It then restarts the NFS server of the task VM, so the restored guests open new connections to the checkout, and calls `task-nested-ready` and then `task-nested-apply`.
+
+The batch workflow calls it before every batch but the first. The case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
 
 After the apply step, the fleet child gives the VM a CLI profile. The steps `Make the CLI home`, `Pin the nested CA` and `Add the CLI profile` pull the root CA of the nested Gateway to `~/.orbit/nested-ca.pem` and run `gateway:add https://10.45.0.1 --name=nested --use --ca=…` with the candidate CLI of the checkout. The proof runner runs that same CLI (`php apps/cli/orbit`) and finds the nested Gateway through the profile. The apply child checks the Swamp services only when the VM has the proof Club key (input `club`), because the nested Swamp serve cannot start without it.
 
@@ -1325,7 +1340,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used.
+The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 

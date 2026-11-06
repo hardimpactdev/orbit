@@ -27,7 +27,9 @@ sequenceDiagram
   %%> - the vault key names of the push token, never a token
   %%> Built or not:
   %%> - built: `tasks:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
-  %%> - not built: the automatic mode, which a flow input would set
+  %%> - built: the mode of the run, `manual` or `automatic`, is the review mode of the Task group (`tasks:create --review`), captured in the intent at admission
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the mode is part of the admitted intent, not a Swamp input: the run is the same in both modes and only the Gateway projection differs, so the Gateway records the mode once and Swamp learns nothing it does not use
   Note over SW: Child workflows<br/>provision · turn · publish
   %%> What it does:
   %%> - the arrows below from Swamp to the task VM and to GitHub are child workflows of one parent run: `operation-task-provision`, `operation-task-turn` for the draft, review and fix turns, and `operation-task-publish` with a draft
@@ -101,6 +103,12 @@ sequenceDiagram
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
   alt manual mode
+    Note over GW: Park the VM<br/>the spec waits for the owner
+    %%> What it does:
+    %%> - when the run ends, the Gateway records the draft PR and admits `tasks:park` for the group, which stops the VM; the workspace stays
+    %%> - a refused park is kept in the result as `park_refused`
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the park follows the mode and needs no step in the run, like the park after `tasks:prep-fix`
     opt spec checkpoint
       opt Nick reviews in an Instance
         NK->>GW: Create an Instance<br/>instance:create --branch=BRANCH
@@ -117,6 +125,16 @@ sequenceDiagram
       %%> - Nick approves the spec; the chart is then marked `%% status: reviewed`
       %%> Why:
       %%> - a wrong spec is cheapest to fix before code follows it
+      GW->>GH: Read the reviews<br/>gate check · every minute
+      %%> What it does:
+      %%> - the gate check of stage 4 reads the reviews of a draft PR whose group has a succeeded prep run, a parked VM and a build that has not started, when the owner has not approved the head, with a read-only App token; a group that is coding, or whose automatic mode parked nothing, is not read
+      %%> - Nick's latest decision on exactly this head, a request for changes, is the request for corrections; his review text and his inline comments are the corrections
+      %%> - a comment, an approval, a dismissed review, a review of an older head or no review is a quiet skip until the next tick
+      %%> Why:
+      %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the review
+      GW->>SW: Admit the corrections<br/>tasks:prep-fix
+      %%> What it does:
+      %%> - admits `tasks:prep-fix` for the group with the review as the corrections, keyed by group and review, so a repeat tick starts nothing and each new review starts one run
       SW->>VM: Apply the corrections<br/>author agent
       %%> When:
       %%> - only when Nick asks for corrections
@@ -125,17 +143,48 @@ sequenceDiagram
       %%> - the group then parks again
       %%> Built or not:
       %%> - built: `tasks:prep-fix`, with the review of the owner as its input (`docs/cli/tasks/prep-fix.mmd`)
-      %%> - not built: the gate check does not detect the review of the owner yet
+      %%> - built: the gate check admits this run when the owner requests changes on the current head of a spec whose build has not started; it detects the approval too, which starts the build (below)
       %%> Decided by the orchestrator, for Nick's review:
+      %%> - only a request for changes on the current head starts corrections; a comment review does not, because it may be a note and not a request
+      %%> - the corrections are the review text and the inline comments of the owner, cut at the 40,000 characters that `tasks:prep-fix` takes, with a note when they were cut; a review with no text points to the review
+      %%> - a run that failed is not started again by the next tick: the same review replays the failed run and the gate reports `tasks_pr.prep_fix_failed`; a new review of the owner starts a new run
+      %%> - the gate reads reviews only while the VM is parked, and a failed run leaves the VM running, so `tasks_pr.prep_fix_failed` shows only when the VM was parked again; otherwise the orchestrator reads the failed Operation and parks the VM
       %%> - the run is admitted with the review as text, so a decision made after the review can go with it; two review rounds follow the corrections
     end
   else automatic mode
     Note over GH: No checkpoint<br/>the flow continues
     %%> Why:
     %%> - the review agents' clean pass is the spec approval; the final self-review in stage 4 reads the whole PR
+    %%> What it does:
+    %%> - parks nothing: the VM keeps running
   end
   SW-->>GW: Record the outcome<br/>spec in draft PR
   %%> Result:
   %%> - the Gateway records the draft PR with its spec commit, for the CLI and web
   %%> - the command is not ready and not merged; building starts in the same PR with stage 2, and stages 3 and 4 follow in it
   %%> - a command already prepared through a docs-only PR stays as it is; when its turn comes, this flow reviews and updates its spec
+  alt manual mode
+    NK->>GH: Approve the spec head<br/>review of the draft PR
+    %%> What it does:
+    %%> - the owner approves the exact head of the draft PR; it is the review that `tasks:pr-merge` reads for the code
+    GW->>SW: Start the build<br/>gate check · approved head
+    %%> What it does:
+    %%> - the gate check (reads only, every minute) sees the approval on the head of the draft PR of a prep group whose spec is done
+    %%> - the Gateway records the approval, appends the implementation subtask, moves the group to `running` and admits one run, `tasks.build` (`docs/cli/tasks/build.mmd`)
+    %%> - the subtask has a fixed brief that names the approved chart, page and cases and the approved head; its deliverables are that the runner plan of the cases file passes and that the Project check passes
+    %%> Never:
+    %%> - acts on a group that has started its build (it has a build subtask), or on a head other than the approved one; a push after the approval needs a new approval
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the approval starts the build with no hand step
+  else automatic mode
+    GW->>SW: Start the build<br/>gate check · clean review
+    %%> What it does:
+    %%> - the same admission, once the clean review is behind the group, which prep left running; it reads no approval, because the clean review is the approval
+  end
+  SW->>VM: Resume, sync, first turn<br/>operation-task-build
+  %%> What it does:
+  %%> - one parent run with three child workflows: `operation-task-vm-resume`, `operation-task-sync` and `operation-task-turn`, the first implementer turn on a new thread
+  %%> - the Gateway captured the whole intent at admission and Swamp passes it down as inputs
+  %%> - the Gateway projects the terminal event once; the group stays `running` and stage 2 goes on
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no step of the run calls the Gateway: the Gateway writes the read token of the sync child to its vault key as it starts the run

@@ -1,7 +1,7 @@
 //! `instance.*-release`: the release layout of a production Instance. A home `/home/<user>` holds `releases/<name>`
 //! checkouts, a `current` link to the selected one, and the stable `.env`. Each command checks the root-owned layout
 //! marker first. It runs as root, and Git and every file it writes in the home run as the production user, so the
-//! release stays the user's alone. These replace the Bash that `RemoteProductionDeployment` sent, check for check.
+//! release stays the user's alone.
 
 use super::git_read::GitRead;
 use super::source::{is_real_directory, is_symlink, realpath};
@@ -250,23 +250,6 @@ impl ReleaseHome {
             )?;
         }
         Ok(())
-    }
-
-    /// The release that `current` names, or `None` when there is no `current`.
-    pub(super) fn selected(&self) -> Result<Option<String>, ReleaseError> {
-        let current = self.home.join("current");
-        if fs::symlink_metadata(&current).is_err() {
-            return Ok(None);
-        }
-        check(is_symlink(&current), "current is a link")?;
-        let target = realpath(&current).ok_or_else(|| invalid("current names a release"))?;
-        let name = target
-            .strip_prefix(self.releases())
-            .ok()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.contains('/') && valid_name(name))
-            .ok_or_else(|| invalid("current names a release"))?;
-        Ok(Some(name.to_string()))
     }
 
     /// The web root of a release: inside it, and a directory.
@@ -663,123 +646,6 @@ impl Command for ActivateRelease {
 
     fn run(input: ActivateInput, _: &Context) -> Result<Release, ReleaseError> {
         activate(&input, &Layout::system())
-    }
-}
-
-// ---- inspect and list -------------------------------------------------------------------------------------------
-
-/// Reads the selected release, or a named retained one, after every check.
-pub struct InspectRelease;
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InspectInput {
-    #[serde(flatten)]
-    pub home: ReleaseHome,
-    /// The retained release to read, or `None` for the one `current` selects.
-    #[serde(default)]
-    pub name: Option<String>,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct InspectOutput {
-    /// `None` when no release is selected.
-    pub release: Option<Release>,
-}
-
-pub fn inspect(input: &InspectInput, layout: &Layout) -> Result<InspectOutput, ReleaseError> {
-    let home = &input.home;
-    home.check(layout, true)?;
-    let name = match &input.name {
-        Some(name) => name.clone(),
-        None => match home.selected()? {
-            Some(name) => name,
-            None => return Ok(InspectOutput { release: None }),
-        },
-    };
-    let commit = home.inspect(&name)?;
-    Ok(InspectOutput {
-        release: Some(Release { name, commit }),
-    })
-}
-
-impl Command for InspectRelease {
-    const NAME: &'static str = "instance.inspect-release";
-    const SUMMARY: &'static str =
-        "Check and read the selected production release, or a named retained one.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = InspectInput;
-    type Output = InspectOutput;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: InspectInput, _: &Context) -> Result<InspectOutput, ReleaseError> {
-        inspect(&input, &Layout::system())
-    }
-}
-
-/// Lists the releases that pass every check, and the selected one.
-pub struct ListReleases;
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ListInput {
-    #[serde(flatten)]
-    pub home: ReleaseHome,
-}
-
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct ListOutput {
-    pub selected: Option<String>,
-    pub releases: Vec<Release>,
-}
-
-/// The names of the release directories, sorted. A release that fails inspection is left out, never removed.
-fn release_names(home: &ReleaseHome) -> Result<Vec<String>, ReleaseError> {
-    let mut names: Vec<String> = fs::read_dir(home.releases())
-        .map_err(|_| invalid("the releases directory can be read"))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    Ok(names)
-}
-
-pub fn list(home: &ReleaseHome, layout: &Layout) -> Result<ListOutput, ReleaseError> {
-    home.check(layout, true)?;
-    let selected = home.selected()?;
-    let releases = release_names(home)?
-        .into_iter()
-        .filter_map(|name| {
-            home.inspect(&name)
-                .ok()
-                .map(|commit| Release { name, commit })
-        })
-        .collect();
-    Ok(ListOutput { selected, releases })
-}
-
-impl Command for ListReleases {
-    const NAME: &'static str = "instance.list-releases";
-    const SUMMARY: &'static str =
-        "List the production releases that pass their checks, and the selected one.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(120);
-    type Input = ListInput;
-    type Output = ListOutput;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: ListInput, _: &Context) -> Result<ListOutput, ReleaseError> {
-        list(&input.home, &Layout::system())
     }
 }
 

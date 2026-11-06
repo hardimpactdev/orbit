@@ -18,13 +18,15 @@ covers:
 
 Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.update` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge, SSH access and rekey use official `@swamp/cfgmgmt` behaviors and ship no script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
-The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `user`, `port` and pinned `host_keys`. Steps that reach a task VM name their SSH behaviors by `node_id`: the VM's address returns to the pool and the next VM reuses it, but its Node id is never reused.
+The public SSH intent of a Node carries its target `name`, `node_id`, `host`, `user`, `port` and pinned `host_keys`. Steps that reach a task VM name their SSH behaviors by `node_id`: the VM's address returns to the pool and the next VM reuses it, but its Node id is never reused. The local and data steps of the same workflows hold no host key, so they name themselves by the address: one lock per VM and a bounded set of names.
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 Native role prerequisites retain a complete Docker CE installation instead of installing `docker.io` over it. One bounded APT command installs missing prerequisites with removal and upgrades disabled. The end check verifies the retained provider packages or the normal Ubuntu packages. Exporter children use bounded fan-out so a single control worker does not exhaust their native queue timeout.
 
 Node and standalone role removal also execute from 209. They remove services, files, containers and authorized keys with official cfgmgmt behaviors. Direct commands use SSH argv. No removal script ships to a worker or a Node. Publication withdrawal finishes before runtime removal. Node removal publishes Metrics membership before stopping exporters, updates the full hub configuration, and removes management keys last. Offline consent skips only an unreachable departing Node; other participants still converge.
+
+Removal takes the Node off the hub by deleting its own peer file and loading the files that remain, also when the Gateway never recorded its key. See [Converge the hub](/reference/wireguard-endpoints#converge-the-hub).
 
 Removal retains packages, accounts, runtime data and unrelated SSH keys. Explicit role purge removes the admitted WebSocket releases, Metrics volumes, or drained CI resources. A regular CI role removal retains its project, image cache and network. Native resource checks and one assert determine completion; the Gateway records the public result from that run.
 
@@ -80,6 +82,8 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
 Each role in the intent names its execution copies as a record: `{}` for a role without any.
+
+The execution copies of task runs are not role records. Their vault key patterns are declared in `swamp/config/gateway-workflow-grants.json`; the [implementation loop](/reference/implementation-loop) says how.
 
 The `baseline` phase replaces the Node pin on 209, and it validates the sudo rule before the rule replaces the old one. The `tunnel` phase requires the WireGuard public key to be unique, and an existing hub to keep its peer-facing key, before it changes any tunnel file, interface or peer.
 
@@ -420,11 +424,15 @@ Missing or damaged protected files require their approved recovery procedure and
 
 A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only. The [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) runs it to make the server ready for a template.
 
+The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
+
+The role exports the checkout to the nested guests over NFS; see [the restore of `base`](/reference/compute-drivers) for why a restore restarts that NFS server.
+
 On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
-The role reads the package indexes of the Ubuntu snapshot with up to eight retries, 30 seconds apart. The snapshot service answers 503 now and then, for an index and for a package. A 503 on a package fails the phase, and a resumed run repeats it.
+The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
 
-The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` from the same Ubuntu snapshot, which the shape gate linters need. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
+The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` and `jq` from the same Ubuntu snapshot: the shape gate linters need the first, and its Swamp load test needs the second. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
 
@@ -448,11 +456,15 @@ The `app` job sets up the Gateway app on the machine: it writes the `.env` (`orb
 
 Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It records the Gateway Node with its Gateway and VPN roles and sets the VPN settings. It also makes the root CA and the Gateway SSH key, and records the host key of the machine. It also records the `swamp` role on that Node, as provisioning. The Gateway finds the Swamp Node by that role, never by an id. The role and route workflows read the control Node from each intent (`control_node_id`) and accept any Node id. The VPN role stays provisioning until Swamp applies the hub.
 
+With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The fleet build of a task VM passes 10.45.0.10, the address stage 2 joins with.
+
 ### The Swamp control plane
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
 The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+
+The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
@@ -857,4 +869,12 @@ Firewall convergence compares each owned rule's shape and position. It removes a
 
 A readiness phase waits up to 60 seconds for a newly started Analytics Process before publication. The Gateway DNS oneshot runs only when its unit or live resolver policy changed, under the unit’s existing conditions. PHP and DNS delta publications retain their shared native three-way composition, which preserves unrelated changes admitted by other commands; Ansible has no built-in equivalent. Ansible runs only on the Swamp Node; targets need SSH and Python.
 
-The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
+The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. The readiness of a nested fleet uses the same input, as the kind `task_vm.nested_ready`.
+
+The development create playbook has no builder: it reads the intent file by lookup, pins the admitted host keys in the run folder and addresses the Node itself, and it takes its secrets from the environment of the phase. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.
+
+For a web-serving Project, its `checkout` phase also gives Caddy its access to the checkout and sets `APP_URL` in the `.env`, before the setup commands write into the tree. The Route playbook `route-create-site.yml` then skips both on that Node, and removes its own run folder as its last task, so a success needs no cleanup step. It updates the trust store only when it wrote a new Orbit root.
+
+The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
+
+The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.

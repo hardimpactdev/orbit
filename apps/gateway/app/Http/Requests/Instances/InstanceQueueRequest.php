@@ -13,19 +13,15 @@ final class InstanceQueueRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'state' => ['sometimes', 'string', Rule::in(['pending', 'completed', 'failed'])],
+            'state' => ['sometimes', 'string', Rule::in(['pending', 'failed'])],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ];
     }
 
-    /** @return 'pending'|'completed'|'failed' */
+    /** @return 'pending'|'failed' */
     public function state(): string
     {
-        return match ($this->string('state', 'pending')->toString()) {
-            'completed' => 'completed',
-            'failed' => 'failed',
-            default => 'pending',
-        };
+        return $this->string('state', 'pending')->toString() === 'failed' ? 'failed' : 'pending';
     }
 
     public function limit(): int

@@ -257,7 +257,7 @@ export const instanceAnalyticsStatsQuery = (id: number) =>
         retry: false,
     });
 
-/** The instance's Horizon queue: its summary, its queues, and the newest jobs in one state. */
+/** The instance's queue: its totals, its queues, and the newest jobs in one state. */
 export const instanceQueueQuery = (id: number, state: QueueState) =>
     queryOptions({
         queryKey: ["instance-queue", id, state],

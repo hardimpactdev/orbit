@@ -75,6 +75,7 @@ sequenceDiagram
   SW->>SW: Issue the model key<br/>model · task-vm-model-issue
   %%> What it does:
   %%> - adds VM 333's model key on the model router from 209 and confirms the anchor key stays
+  %%> - two Ansible phases on 209, `anchor` and `issue`: HTTPS calls to the router, no script
   %%> When:
   %%> - in parallel from the start of the run; it touches no guest (rule 18)
   %%> Held open:
@@ -88,13 +89,15 @@ sequenceDiagram
   %%> - runs beside the Pi install
   %%> Replaces:
   %%> - `observer-identity`, `observer-configuration`, `observer-ca`, `observer-unit`, `observer-reload` and `observer-start` (inline Python writes)
-  SW->>VM: Install the Pi server<br/>runtime · cfgmgmt file · systemd
+  SW->>VM: Install the Pi server<br/>runtime · Ansible phase install
   %%> What it does:
-  %%> - checks the pinned Pi build's digest on 209, then copies it to the guest
-  %%> - `@swamp/cfgmgmt/file` writes the Orbit root, Pi models and the Pi token from `vault.get` as 0600 files; `@swamp/cfgmgmt/systemd` installs and starts `pi-server`
-  %%> - removes the staged build on a best-effort basis
+  %%> - fetches the pinned Pi build to 209 and checks its digest there
+  %%> - Ansible phase `install`, over SSH with the pinned guest host key: copies the build (its digest is checked on the staged file first), writes the Orbit root, the Pi models and the Pi token (0600, from `vault.get` through the environment, `no_log`), installs the unit, and restarts `pi-server` when a file changed
+  %%> - Ansible phase `check`: the service is active and `/capabilities` answers 200 to the bearer
+  %%> - the run folder, with the staged build, is removed in a last job
+  %%> - not `@swamp/cfgmgmt`: it cannot pin a host key toward a task VM
   %%> Replaces:
-  %%> - the eleven `task-vm-runtime` steps and its `result` step
+  %%> - the eleven `task-vm-runtime` guest steps; its `result` step stays, because enrollment reads it
   SW->>VM: Check the guest is ready<br/>check · agent, Pi, private ssh
   %%> What it does:
   %%> - one pinned exec over WireGuard collects `orbit-agent` and `pi-server` state and the Pi capabilities on the bind address; Swamp's `assert` checks them

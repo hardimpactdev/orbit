@@ -93,7 +93,9 @@ jobs:
   - name: Remove stale peer files
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Write the peer files, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    # Not after the peer files: a removal writes none, a forEach over no peer leaves no step to wait for, and a step that waits for a missing step is skipped.
+    # The prune keeps every file a rewrite writes, so it needs no order with the writes.
+    dependsOn: [{step: Write the hub config, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -107,7 +109,7 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # A Node still provisioning keeps its file: its own run may be adding it right now.
+      # A rewrite deletes the files of Nodes that are gone or being removed and keeps every other Node's file, because its own run may have written it. A removal deletes only its own Node's file.
       inputs: {hosts: 'name:hub', sudo: true, argv: '${{ inputs.intent.prune_argv }}'}
 - name: apply
   dependsOn: [{job: files, condition: {type: succeeded}}]

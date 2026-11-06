@@ -1,5 +1,5 @@
 # The selection list. It maps each changed path to the proof it needs. `orbit proof:run` reads the list of the tested
-# commit; see docs/reference/feature-flow.md, "Choose the cases". The last matching line wins, so broad lines come first.
+# commit; see docs/reference/feature-flow.md, "Choose the cases". The last matching line wins, so broad lines come first; the documentation skips come last, to win inside every directory.
 # A path that matches no line is refused (proof.path_unmapped): classify every new kind of file here.
 #
 # Values: skip | family:command ... | * | none: reason
@@ -24,32 +24,124 @@ tools/**                                         skip
 # Swamp code that no case covers yet is listed as uncovered and does not fail the run.
 swamp/**                                         none: no case yet
 
-# Documentation, charts and case descriptions need no proof.
-**/*.md                                          skip
-**/*.mdx                                         skip
-**/*.mmd                                         skip
-
 # The firewall commands. Shared code lists every command that uses it.
 swamp/workflows/workflow-operation-firewall-direct.yaml    firewall:allow firewall:deny firewall:remove
 swamp/extensions/behaviors/operations/firewall/**          firewall:allow firewall:deny firewall:remove
 swamp/ansible/tasks/firewall*.yml                          firewall:allow firewall:deny firewall:remove
 swamp/proof/firewall/allow.cases.yaml                      firewall:allow
 swamp/proof/firewall/list.cases.yaml                       firewall:list
-swamp/proof/firewall/*.md                                  skip
 # The Gateway and CLI code of the firewall commands. The cases of the other commands read firewall:list (`record`).
 apps/cli/app/Commands/Firewall/**                          firewall:allow firewall:deny firewall:list firewall:remove
-apps/cli/app/Support/CommandVocabulary/firewall.php        firewall:allow firewall:deny firewall:remove
+apps/cli/app/Support/CommandVocabulary/firewall.php        firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Actions/Firewall/**                       firewall:allow firewall:deny firewall:list firewall:remove
-apps/gateway/app/Data/Firewall/**                          firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Data/Firewall/**                          firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Domain/Firewall/**                        firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Domain/Firewall/RouterLanIngress*.php     skip
 apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php  firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Http/Requests/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 apps/gateway/app/Models/FirewallRule.php                   firewall:allow firewall:deny firewall:list firewall:remove
-apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  firewall:allow firewall:deny firewall:remove
+apps/gateway/app/Providers/Domains/FirewallServiceProvider.php  skip
+apps/gateway/app/Infrastructure/Firewall/**                firewall:allow firewall:deny firewall:list firewall:remove
+apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php  skip
+apps/gateway/database/migrations/*_firewall_rules*.php     firewall:allow firewall:deny firewall:list firewall:remove
+apps/gateway/routes/api/firewall.php                       firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
-# The proof tooling is shared code of every case.
+# Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
+# any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
+# commands use (schedules, logs, project definitions) stays out. The registries of Operation kinds and budgets are shared too: adding a command to them runs every case.
+apps/gateway/app/Actions/Operations/**                     *
+apps/gateway/app/Data/Operations/**                        *
+apps/gateway/app/Domain/Operations/**                      *
+apps/gateway/app/Domain/Shared/ResourceOperationException.php  *
+apps/gateway/app/Domain/Activity/ActivityInputRedaction.php  *
+apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php     *
+apps/gateway/app/Infrastructure/Activity/ActivityShutdownFinalizer.php  *
+apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php  *
+apps/gateway/app/Infrastructure/Activity/CommandActivityTargetResolver.php  *
+apps/gateway/app/Infrastructure/Logging/GatewayExceptionStatus.php  *
+apps/gateway/app/Infrastructure/Logging/RequestLogContext.php  *
+apps/gateway/app/Infrastructure/Processes/CommandDeadline.php  *
+apps/gateway/app/Http/Controllers/Api/DirectCertificatesController.php  *
+apps/gateway/app/Http/Controllers/Api/DirectGitHubTokenController.php  *
+apps/gateway/app/Http/Controllers/Api/DirectOperationsController.php  *
+apps/gateway/app/Http/Authorization/**                     *
+apps/gateway/app/Http/Controllers/Api/OperationsController.php  *
+apps/gateway/app/Http/Controllers/Controller.php           *
+apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php  *
+apps/gateway/app/Http/Middleware/EnsureRequestId.php       *
+apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php   *
+apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php  *
+apps/gateway/app/Http/Middleware/NormalizeErrorDetails.php  *
+apps/gateway/app/Http/Middleware/RecordCommandActivity.php  *
+apps/gateway/app/Http/Middleware/RequireActiveWireGuardPeer.php  *
+apps/gateway/app/Http/Middleware/RequireNodeAccess.php     *
+apps/gateway/app/Http/Middleware/StartRequestDeadline.php  *
+apps/gateway/app/Http/Middleware/ValidateRequestBodySize.php  *
+apps/gateway/app/Http/Requests/Operations/**               *
+apps/gateway/app/Http/Responses/ApiErrorResponse.php       *
+apps/gateway/app/Http/Responses/RendersApiError.php        *
+apps/gateway/app/Infrastructure/Swamp/CancelSwampRun.php   *
+apps/gateway/app/Infrastructure/Swamp/Native*.php          *
+apps/gateway/app/Infrastructure/Swamp/PendingSshHostKey.php  *
+apps/gateway/app/Infrastructure/Swamp/ReadNativeRunFailure.php  *
+apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php    *
+apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampConnection.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampDispatch.php    *
+apps/gateway/app/Infrastructure/Swamp/SwampReadBudget.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampSshExecutionInput.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampTerminalReadUnavailable.php  *
+apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php  *
+apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php  *
+apps/gateway/app/Models/Operation.php                      *
+apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  *
+apps/gateway/app/Support/StrictJson.php                    *
+apps/gateway/app/Support/ValidatedData.php                 *
+apps/gateway/bootstrap/app.php                             *
+apps/gateway/bootstrap/providers.php                       *
+apps/gateway/routes/api.php                                *
+apps/gateway/routes/api/operation.php                      *
+apps/cli/bootstrap/app.php                                 *
+apps/cli/bootstrap/providers.php                           *
+apps/cli/app/Commands/GatewayCommand.php                   *
+apps/cli/app/Commands/Concerns/FollowsOperations.php       *
+apps/cli/app/Commands/Operations/**                        *
+apps/cli/app/Console/**                                    *
+apps/cli/app/Data/GatewayProfile.php                       *
+apps/cli/app/Exceptions/**                                 *
+apps/cli/app/Providers/AppServiceProvider.php              *
+apps/cli/app/Repositories/**                               *
+apps/cli/app/Services/Extensions/ExtensionDiscoveryResult.php  *
+apps/cli/app/Services/Extensions/GatewayExtensionState.php  *
+apps/cli/app/Services/GatewayConnectorFactory.php          *
+apps/cli/app/Services/SelfUpdate/CliReleaseNotice.php      *
+apps/cli/app/Services/Profile/**                           *
+apps/cli/app/Support/CommandVocabulary.php                 *
+apps/cli/app/Support/Console/**                            *
+apps/cli/app/Support/ExtensionCommandVisibility.php        *
+apps/cli/app/Support/GatedExtensionCommand.php             *
+apps/cli/app/Support/GatewayFailureRenderer.php            *
+apps/cli/app/Support/Operations/**                         *
+packages/php-sdk/src/Gateway*.php                          *
+packages/php-sdk/src/Support/**                            *
+packages/php-sdk/src/Requests/Operations/**                *
+packages/php-sdk/src/Responses/Operations/**               *
+
+# The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        *
+swamp/proof/batches.yaml                         *
+swamp/proof/runner/**                            *
+swamp/proof/runner/tests/**                      skip
 tools/swamp-proof-guest/**                       *
+
+# The firewall extension's tests and fixture prove nothing by themselves.
+swamp/extensions/behaviors/operations/firewall/*_test.ts   skip
+swamp/extensions/behaviors/operations/firewall/native_fixture.ts  skip
+
+# Documentation, charts and case descriptions need no proof, also inside the directories above. This block comes last so that it wins.
+**/*.md                                          skip
+**/*.mdx                                         skip
+**/*.mmd                                         skip

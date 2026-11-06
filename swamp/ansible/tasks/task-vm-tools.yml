@@ -11,10 +11,16 @@
   block:
     - { name: Configure apt, ansible.builtin.import_tasks: task-vm-apt-config.yml }
     - name: Install the packages
-      ansible.builtin.command:
-        argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--'] + tool_packages_missing }}"
+      ansible.builtin.apt:
+        name: "{{ tool_packages_missing }}"
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
       environment: "{{ apt_environment }}"
-      changed_when: true
+      register: apt_install
+      until: apt_install is succeeded
+      retries: "{{ apt_retries }}"
+      delay: "{{ apt_delay }}"
 - { name: Serve the checkout, ansible.builtin.import_tasks: task-vm-nfs.yml }
 - { name: Initialise Incus, ansible.builtin.import_tasks: task-vm-incus.yml }
 - { name: Open the firewall to the nested bridge, ansible.builtin.import_tasks: task-vm-nested-firewall.yml }
