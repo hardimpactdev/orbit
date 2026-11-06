@@ -17,6 +17,8 @@ inputs:
     kind: {type: string, const: tasks.provision}
     intent:
       type: object
+    converge:
+      type: object
     execution_secrets:
       type: object
       additionalProperties:
@@ -73,7 +75,7 @@ jobs:
   - name: Pin the converge
     labels: {role: swamp}
     # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    guard: '${{ !has(inputs.converge) }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
@@ -82,7 +84,7 @@ jobs:
       inputs:
         receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
         guest_node_id: ${{ inputs.intent.guest_node_id }}
-        intents: '${{ {"converge": inputs.intent.converge} }}'
+        intents: '${{ {"converge": inputs.converge} }}'
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -90,7 +92,7 @@ jobs:
   - name: Converge once
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
+    guard: '${{ !has(inputs.converge) }}'
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-converge

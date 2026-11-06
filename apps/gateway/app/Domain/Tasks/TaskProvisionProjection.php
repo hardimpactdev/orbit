@@ -35,6 +35,10 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
     {
         $input = $this->vms->input($operation);
         $intent = ValidatedData::object($input['intent']);
+        // The converge intent carries the recipe and lock files. The VM provider puts the whole intent into one argument, so the
+        // intent leaves it and the workflow takes it as an input of its own.
+        $converge = $intent['converge'] ?? null;
+        unset($intent['converge']);
         $group = Task::topLevel()->findOrFail($operation->target_id);
         $guest = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']))->node_id;
         // The guest's targets carry `host_keys: null`; the workflow binds the key its VM step pins.
@@ -51,7 +55,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
         $route = is_array($operation->input['route'] ?? null) ? $operation->input['route'] : null;
 
-        return [...$input, 'execution_secrets' => $copies, 'intent' => [...$intent,
+        return [...$input, 'execution_secrets' => $copies, ...(is_array($converge) ? ['converge' => $converge] : []), 'intent' => [...$intent,
             'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved,
             'processes' => $members, 'route' => $route['route_create'] ?? null, 'route_secrets' => $route['execution_secrets'] ?? (object) []]];
     }
