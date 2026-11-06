@@ -54,6 +54,29 @@ final class FirewallSource
         return $prefixLength === $maximumPrefix ? $normalized : "{$normalized}/{$prefixLength}";
     }
 
+    /** Whether every address in the normalized inner source is admitted by the outer source. */
+    public static function contains(string $outer, string $inner): bool
+    {
+        if ($outer === 'any') {
+            return true;
+        }
+        if ($inner === 'any' || $outer === '') {
+            return false;
+        }
+        $wide = explode('/', $outer, limit: 2);
+        $narrow = explode('/', $inner, limit: 2);
+        $wideAddress = inet_pton($wide[0]);
+        $narrowAddress = inet_pton($narrow[0]);
+        if ($wideAddress === false || $narrowAddress === false || strlen($wideAddress) !== strlen($narrowAddress)) {
+            return false;
+        }
+        $wideBits = isset($wide[1]) ? (int) $wide[1] : strlen($wideAddress) * 8;
+        $narrowBits = isset($narrow[1]) ? (int) $narrow[1] : strlen($narrowAddress) * 8;
+
+        return $narrowBits >= $wideBits
+            && self::networkAddress($narrowAddress, $wideBits) === self::networkAddress($wideAddress, $wideBits);
+    }
+
     public static function family(string $source): string
     {
         if ($source === 'any') {
