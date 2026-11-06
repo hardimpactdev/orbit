@@ -1240,6 +1240,8 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 | `Clean the refresh VM` | Runs `task-vm-image-clean` and stops the VM. |
 | `Publish the image` | Runs `incus publish` of the stopped VM under a candidate alias and reads its fingerprint. |
 | `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
+| `Enroll the check VM` | Runs `task-vm-bootstrap`, the bootstrap steps of an enrollment, on the smoke VM: the account, the key, the sudoers file and the observer install with their checks. |
+| `Converge the check VM` | Runs `task-vm-image-ansible` on the smoke VM with the phases `software`, `tools` and `check`, as the converge of a provision does. |
 | `Check the image identity` | Looks on the smoke VM for the enrollment files and the identity of the refresh VM. |
 | `Copy the seed`, `Detach the seed` | Copy the seed disk of the refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
 | `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
