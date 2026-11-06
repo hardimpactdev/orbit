@@ -457,7 +457,7 @@ jobs:
       globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-hub").split(".").join("-") }}'}
       inputs:
         hosts: name:target
-        argv: [ip, -4, -br, addr, show, orbit]
+        argv: [ip, '-4', -br, addr, show, orbit]
         timeoutSec: 30
 # The end check: the pinned Swamp runs, the venv runs the pinned Ansible, and the checkout is at the release.
 - name: check
