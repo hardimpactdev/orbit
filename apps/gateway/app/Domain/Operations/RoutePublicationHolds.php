@@ -6,7 +6,9 @@ namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Operation;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,7 +17,7 @@ use Throwable;
 /**
  * The hold of the Nodes that serve a Route write (docs/reference/routes.md#coordinate-publication). Admission takes every Node
  * of the write at once or none; a write that finds one held waits with status `waiting` and starts, oldest first, when the
- * Nodes are free. The terminal state releases them, except for a timed-out write that still awaits proof that its run ended.
+ * Nodes are free. The terminal state releases them, except for a timed-out write whose run Swamp has not confirmed stopped.
  * The DNS Node is not held: its records are keyed.
  */
 final class RoutePublicationHolds
@@ -24,9 +26,33 @@ final class RoutePublicationHolds
     private const array Kinds = ['instance.create', 'instance.destroy', 'instance.clone', 'instance.transfer',
         'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
+    /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
+    private const int UnconfirmedMinutes = 15;
+
     public static function applies(string $kind): bool
     {
         return in_array($kind, self::Kinds, true);
+    }
+
+    /** A Route write that waits for a held Node: native workflows report `waiting` too, and those are not ours. */
+    public static function waitsForNodes(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Waiting && self::applies($operation->kind)
+            && isset($operation->state['hold_nodes']) && ! isset($operation->state['swamp_run_id']);
+    }
+
+    /**
+     * Whether a finished write keeps its Nodes. Its run may still be going while the Gateway waits for proof: a timed-out write
+     * keeps them until Swamp confirms the cancel, or for `UnconfirmedMinutes`.
+     */
+    public static function keepsNodes(Operation $operation): bool
+    {
+        if (ExpireOperationAction::awaitsSettlement($operation)) {
+            return true;
+        }
+
+        return ExpireOperationAction::expiredUnsettled($operation) && ! isset($operation->state['native_cancel_confirmed_at'])
+            && $operation->finished_at !== null && $operation->finished_at->isAfter(now()->subMinutes(self::UnconfirmedMinutes));
     }
 
     /**
@@ -82,12 +108,12 @@ final class RoutePublicationHolds
         return false;
     }
 
-    /** Frees the Nodes of a finished Operation, then starts the waiting ones that fit. */
+    /** Frees the Nodes of a finished Operation, then asks for the waiting ones to start, after the caller's transaction. */
     public function release(int $operationId, bool $wasWaiting = false): void
     {
         $freed = DB::table('route_publication_holds')->where('operation_id', $operationId)->delete();
         if ($freed > 0 || $wasWaiting) {
-            $this->start($this->promote());
+            PromoteRouteWrites::dispatch()->afterCommit();
         }
     }
 
@@ -100,13 +126,18 @@ final class RoutePublicationHolds
         $freed = 0;
         foreach (DB::table('route_publication_holds')->distinct()->pluck('operation_id') as $id) {
             $operation = Operation::query()->whereKey($id)->first();
-            if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
+            if ($operation === null || ($operation->status->terminal() && ! self::keepsNodes($operation))) {
                 $freed += DB::table('route_publication_holds')->where('operation_id', $id)->delete();
             }
         }
-        $this->start($this->promote());
+        $this->promoteAndStart();
 
         return $freed;
+    }
+
+    public function promoteAndStart(): void
+    {
+        $this->start($this->promote());
     }
 
     /**
@@ -119,9 +150,9 @@ final class RoutePublicationHolds
     {
         $promoted = [];
         $blocked = [];
-        foreach (Operation::query()->where('status', OperationStatus::Waiting)->orderBy('id')->get() as $waiter) {
+        foreach ($this->waiters() as $waiter) {
             $nodes = self::waitingNodes($waiter);
-            if (array_intersect($nodes, $blocked) !== [] || ($nodes !== [] && ! $this->acquire($waiter->id, $nodes))) {
+            if (array_intersect($nodes, $blocked) !== [] || ! $this->acquire($waiter->id, $nodes)) {
                 $blocked = [...$blocked, ...$nodes];
 
                 continue;
@@ -132,6 +163,14 @@ final class RoutePublicationHolds
         }
 
         return $promoted;
+    }
+
+    /** @return Collection<int, Operation> */
+    private function waiters(?int $before = null): Collection
+    {
+        return Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)->whereNull('state->swamp_run_id')
+            ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))->orderBy('id')->get()
+            ->filter(static fn (Operation $waiter): bool => self::waitingNodes($waiter) !== [])->values();
     }
 
     /** @return list<int> */
@@ -145,7 +184,7 @@ final class RoutePublicationHolds
     /** @param list<int> $nodes */
     private function olderWaiterOverlaps(int $operationId, array $nodes): bool
     {
-        foreach (Operation::query()->where('status', OperationStatus::Waiting)->where('id', '<', $operationId)->get() as $waiter) {
+        foreach ($this->waiters($operationId) as $waiter) {
             if (array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
                 return true;
             }
@@ -170,22 +209,28 @@ final class RoutePublicationHolds
 
             return true;
         } catch (UniqueConstraintViolationException) {
-            // A retry of a promotion that already took them is not a conflict.
+            // A promotion that already took them is not a conflict.
             return DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes)->count() === count($nodes);
         }
     }
 
-    /** Waiting to queued under the row lock. A waiter that was cancelled meanwhile gives its Nodes back. */
+    /**
+     * Waiting to queued under the row lock. Another promotion may have started the waiter meanwhile, and it keeps its Nodes; one that
+     * was cancelled meanwhile gives them back.
+     */
     private function queue(Operation $waiter): bool
     {
         return DB::transaction(function () use ($waiter): bool {
             $current = Operation::query()->lockForUpdate()->findOrFail($waiter->id);
             if ($current->status !== OperationStatus::Waiting) {
-                DB::table('route_publication_holds')->where('operation_id', $current->id)->delete();
+                if ($current->status->terminal() && ! self::keepsNodes($current)) {
+                    DB::table('route_publication_holds')->where('operation_id', $current->id)->delete();
+                }
 
                 return false;
             }
-            app(OperationStore::class)->change($current, ['status' => OperationStatus::Queued]);
+            // The budget of the write counts from its start, not from its admission.
+            app(OperationStore::class)->change($current, ['status' => OperationStatus::Queued, 'started_at' => now()]);
             $waiter->setRawAttributes($current->getAttributes(), true);
 
             return true;

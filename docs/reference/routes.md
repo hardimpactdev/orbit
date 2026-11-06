@@ -691,7 +691,9 @@ Only one operation publishes private Caddy, DNS, or Metrics configuration at a t
 
 Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:destroy`, `instance:clone` or `instance:transfer`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. The task keeps the hold until it reaches a terminal state.
 
-A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. Its time budget counts from that start. A failed task that still awaits settlement keeps its Nodes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read.
+A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
+
+A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed, and the apply phase refuses a file that changed since the read. Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, and they are not held.
 
 Each Cluster also has a Router lock. Setting or clearing a Router holds it through validation, setup, activation, and cleanup. Cluster state and TLD changes use it too. A competitor for the same Cluster waits up to 30 seconds and then returns HTTP 409 `cluster.router_busy`. Different Clusters use separate locks.
 

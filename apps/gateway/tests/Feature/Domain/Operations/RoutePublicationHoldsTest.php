@@ -8,12 +8,16 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
+
+beforeEach(fn () => Queue::fake());
 
 /** The Operations the hold would have started, in order. */
 function startedOperations(): ArrayObject
@@ -48,6 +52,13 @@ function routeWrite(array $serving, string $kind = 'route.create', array $other 
 function finish(Operation $operation, OperationStatus $status = OperationStatus::Succeeded): void
 {
     app(OperationStore::class)->change($operation, ['status' => $status, 'finished_at' => now(), 'lock_key' => null]);
+}
+
+/** What the worker does after a release: start the waiters that fit. */
+function runPromotion(): void
+{
+    Queue::assertPushed(PromoteRouteWrites::class);
+    (new PromoteRouteWrites)->handle(app(RoutePublicationHolds::class));
 }
 
 function holder(int $node): ?int
@@ -86,12 +97,15 @@ it('starts the waiting writes oldest first when the holder finishes', function (
     $holds->admit($third);
 
     finish($first);
+    runPromotion();
     expect($second->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($second->started_at)->not->toBeNull()
         ->and($third->refresh()->status)->toBe(OperationStatus::Waiting)
         ->and(holder(5))->toBe($second->id)
         ->and($started->getArrayCopy())->toBe([$second->id]);
 
     finish($second);
+    runPromotion();
     expect($third->refresh()->status)->toBe(OperationStatus::Queued)
         ->and(holder(5))->toBe($third->id)
         ->and(holder(6))->toBe($third->id)
@@ -120,6 +134,7 @@ it('starts the writes that a cancelled waiter was holding back', function (): vo
     $holds->admit($narrow);
 
     app(CancelOperationAction::class)->execute($wide);
+    runPromotion();
 
     expect($wide->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($narrow->refresh()->status)->toBe(OperationStatus::Queued)
@@ -127,21 +142,49 @@ it('starts the writes that a cancelled waiter was holding back', function (): vo
         ->and($started->getArrayCopy())->toBe([$narrow->id]);
 });
 
-it('keeps the Nodes of a timed-out write until its run is proven ended', function (): void {
-    startedOperations();
+it('keeps the Nodes of a timed-out write until Swamp confirms that its run stopped', function (): void {
+    $started = startedOperations();
     $holds = app(RoutePublicationHolds::class);
     [$first, $second] = [routeWrite([5]), routeWrite([5])];
-    $first->forceFill(['lock_key' => 'route:1'])->save();
     $holds->admit($first);
     $holds->admit($second);
 
-    app(OperationStore::class)->change($first, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out']);
+    app(OperationStore::class)->change($first, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out',
+        'state' => ['native_timeout' => ['budget_seconds' => 60], 'native_cancel_requested_at' => now()->toISOString()]]);
+    $holds->promoteAndStart();
     expect(holder(5))->toBe($first->id)
         ->and($second->refresh()->status)->toBe(OperationStatus::Waiting);
 
-    app(OperationStore::class)->change($first, ['lock_key' => null]);
+    app(OperationStore::class)->change($first, ['state' => [...$first->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+    runPromotion();
     expect($second->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and(holder(5))->toBe($second->id);
+        ->and(holder(5))->toBe($second->id)
+        ->and($started->getArrayCopy())->toBe([$second->id]);
+});
+
+it('gives the Nodes of a timed-out write back after 15 minutes without a confirmation', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $first = routeWrite([5]);
+    $holds->admit($first);
+    $first->forceFill(['status' => OperationStatus::Failed, 'finished_at' => now()->subMinutes(16), 'error_code' => 'operation.timed_out',
+        'state' => ['native_timeout' => ['budget_seconds' => 60]]])->save();
+
+    expect($holds->sweep())->toBe(1)
+        ->and(holder(5))->toBeNull();
+});
+
+it('keeps the Nodes of a write that holds its target lock until the lock is freed', function (): void {
+    startedOperations();
+    $holds = app(RoutePublicationHolds::class);
+    $first = routeWrite([5]);
+    $first->forceFill(['lock_key' => 'route:1'])->save();
+    $holds->admit($first);
+
+    app(OperationStore::class)->change($first, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'operation.timed_out']);
+    expect(holder(5))->toBe($first->id);
+
+    app(OperationStore::class)->change($first, ['lock_key' => null]);
+    expect(holder(5))->toBeNull();
 });
 
 it('frees the Nodes of a finished write that nothing released, and starts the waiter', function (): void {
@@ -161,9 +204,34 @@ it('frees the Nodes of a finished write that nothing released, and starts the wa
         ->and(DB::table('route_publication_holds')->count())->toBe(0);
 });
 
-it('gives a waiting write no deadline, and counts the budget of a started one', function (): void {
+it('never takes a started write for a waiter, so a second promotion cannot free its Nodes', function (): void {
+    startedOperations();
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $second] = [routeWrite([5]), routeWrite([5])];
+    $holds->admit($first);
+    $holds->admit($second);
+    $stale = Operation::query()->findOrFail($second->id);
+    finish($first);
+    $holds->promoteAndStart();
+
+    $queue = new ReflectionMethod($holds, 'queue');
+    expect($queue->invoke($holds, $stale))->toBeFalse()
+        ->and(holder(5))->toBe($second->id);
+});
+
+it('leaves a waiting status that a native workflow reported alone', function (): void {
+    $native = routeWrite([5], 'tasks.check');
+    $native->forceFill(['status' => OperationStatus::Waiting, 'state' => ['swamp_run_id' => 'run-1'], 'created_at' => now()->subHour()])->save();
+    $holds = app(RoutePublicationHolds::class);
+
+    expect($holds->promote())->toBe([])
+        ->and($native->refresh()->status)->toBe(OperationStatus::Waiting)
+        ->and(OperationRunBudgets::deadline($native))->not->toBeNull();
+});
+
+it('gives a held waiting write no deadline, and counts the budget of a started one', function (): void {
     $waiting = routeWrite([5]);
-    $waiting->forceFill(['status' => OperationStatus::Waiting, 'created_at' => now()->subHour()]);
+    $waiting->forceFill(['status' => OperationStatus::Waiting, 'state' => ['hold_nodes' => [5]], 'created_at' => now()->subHour()]);
     $running = routeWrite([5]);
     $running->forceFill(['status' => OperationStatus::Running, 'started_at' => now()]);
 

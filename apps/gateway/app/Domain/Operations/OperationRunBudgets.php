@@ -211,7 +211,7 @@ final class OperationRunBudgets
     /** A Route write that waits for a held Node has no deadline; its budget counts from its start (docs/reference/routes.md#coordinate-publication). */
     public static function deadline(Operation $operation): ?CarbonImmutable
     {
-        if ($operation->status === OperationStatus::Waiting) {
+        if (RoutePublicationHolds::waitsForNodes($operation)) {
             return null;
         }
         $start = $operation->started_at ?? $operation->created_at;
