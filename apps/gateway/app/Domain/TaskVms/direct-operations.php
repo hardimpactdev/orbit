@@ -68,6 +68,8 @@ return ['task_vm.hub_converge' => [
     'workflow_inputs' => true,
     // No result step: the projector reads the run's step statuses; the native assert is the end check.
     'terminal_result' => ['job' => 'end', 'step' => TaskVmFleetBuildProjection::EndCheck, 'native' => true],
+    // The proof Swamp Club key, which the new Gateway's Swamp runs with.
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
 ], 'task_vm.ready_copies' => [
     'workflow' => 'operation-task-vm-ready-copies',
     'projection' => TaskVmReadyCopiesProjection::class,

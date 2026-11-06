@@ -2,6 +2,7 @@ id: 7b12830f-6b39-516c-85bf-13dc5726cd61
 name: operation-task-vm-fleet-build
 description: >-
   Build the nested fleet of a task VM from stock Ubuntu with Orbit's own steps (docs/cli/tasks/vm-fleet-build.mmd): the nested network and three VMs, a Gateway with its own Swamp prepared by one local run of `gateway-bootstrap`, its own Node, role and websocket converges, app-dev and app-prod added through its own Orbit, and a Doctor check. Each step is one command over official SSH to the task VM.
+vaults: [orbit-control-inputs]
 queueTimeout: 60
 inputs:
   type: object
@@ -10,9 +11,16 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: task_vm.fleet_build}
     intent: {type: object}
-    # PHP sends an empty map of copies as an empty list.
-    execution_secrets: {}
-  required: [operation_id, node_id, kind, intent]
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^swamp-proof-club-api-key$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: network
@@ -109,13 +117,13 @@ jobs:
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-gateway-host-key").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'ssh-keyscan', '-t', 'ed25519', '${{ inputs.intent.fleet.layout["gateway"].address }}'], timeoutSec: 80}}
     dependsOn: [{step: 'Read the release address', condition: {type: succeeded}}]
-  # The Swamp key reaches the machine as a file of its account, in its owner's folder.
+  # The Swamp key reaches the machine through stdin, as a file of its account in its owner's folder; it is in no copy.
   - name: 'Push the Swamp key'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-push-the-swamp-key").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-push-the-swamp-key").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '/home/orbit/.config/swamp/club-api-key', '${{ inputs.intent.fleet.guests.gateway + "/home/orbit/.config/swamp/api-key" }}', '--create-dirs', '--mode', '0600', '--uid', '1000', '--gid', '1000'], timeoutSec: 50}}
+      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ inputs.intent.fleet.guests.gateway + "/home/orbit/.config/swamp/api-key" }}', '--create-dirs', '--mode', '0600', '--uid', '1000', '--gid', '1000'], stdin: '${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}', timeoutSec: 50}}
     dependsOn: [{step: 'Read the Gateway host key', condition: {type: succeeded}}]
   # One local run: its steps request no worker, so the Swamp binary of this VM runs them itself, over SSH on the machine. The Gateway sends everything it knows as the fragment of the input; the run adds the machine, its host key and the release.
   - name: 'Prepare the Gateway'

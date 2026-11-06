@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -37,7 +38,7 @@ final readonly class TaskVmFleetBuildIntent
     /** The private network of the nested fleet, which its Gateway leads. */
     public const string WireGuardSubnet = '10.45.0.0/24';
 
-    public function __construct(private SwampSshExecutionInput $ssh, private AgentDelivery $delivery) {}
+    public function __construct(private SwampSshExecutionInput $ssh, private AgentDelivery $delivery, private SwampCommandStep $shared) {}
 
     /** @return array<string,mixed> one flat array that `TaskVmProviderWorkflowInput::envelope()` splits into its `intent` and its `execution_secrets` */
     public function capture(TaskVm $vm): array
@@ -48,12 +49,18 @@ final readonly class TaskVmFleetBuildIntent
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a ready Incus VM and its active guest identity with its recorded host key.', 409);
         }
 
+        $club = config('swamp.proof_club_api_key');
+        if (! is_string($club) || trim($club) === '') {
+            throw new ResourceOperationException('task_vm.fleet_build_unavailable', 'Building a fleet needs the proof Swamp Club key.', 409);
+        }
+
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
             'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout],
             'bootstrap' => ['fragment' => $this->fragment()],
-            'execution_secrets' => [],
+            // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
+            'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
         ];
     }
 
