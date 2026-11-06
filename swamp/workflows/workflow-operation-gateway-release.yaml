@@ -99,7 +99,7 @@ jobs:
         - ${{ inputs.intent.sha }}
     # Resolves the current release, adds the worktree of the fetched commit, links shared env and storage, installs dependencies, writes the agent
     # manifest and seals the release with REVISION and a cached configuration. A sealed release of the same commit is reused. Its script is read
-    # from the commit being released, so a release never runs the scripts of another. Prints the release's rendered Swamp grants.
+    # from the commit being released (a commit from before the scripts has none: gateway.release_script_missing), so a release never runs the scripts of another. Prints the release's rendered Swamp grants.
   - name: Build the release
     labels: {role: swamp}
     writes: true
@@ -118,7 +118,7 @@ jobs:
         - '2400'
         - /bin/bash
         - -c
-        - 'set -o pipefail; git -C "$1" show "$2:swamp/scripts/gateway-release-build.sh" | bash -s -- "$2" "$3" "$4"'
+        - 'git -C "$1" cat-file -e "$2:swamp/scripts/gateway-release-build.sh" || { echo "gateway.release_script_missing: $2 has no release build script; roll back to it with bin/gateway-rollback" >&2; exit 1; }; bash <(git -C "$1" show "$2:swamp/scripts/gateway-release-build.sh") "$2" "$3" "$4"'
         - bash
         - /home/orbit/shared/orbit.git
         - ${{ inputs.intent.sha }}
