@@ -129,6 +129,13 @@ sequenceDiagram
     Note over GW: Mark the task failed<br/>group asks for help
     %%> On the VM:
     %%> - VM 88 and its checkout stay; there is no rollback; `tasks:cancel 42` ends the group and removes the VM
+  else the run is cancelled
+    SW--xGW: Run cancelled<br/>terminal event
+    Note over GW: End the group<br/>tasks.cancel · VM 88 removed
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - a cancel can stop the run while it creates VM 88 or the workspace; group 42 ends `cancelled`, and the Gateway admits the group's `tasks.cancel` itself, once per provision
+    %%> - that ending destroys VM 88, whether it exists yet or not, and removes the workspace and its Route
+    %%> - a refused ending asks for help (`removal_failure`), so no row stays `provisioning` with a VM running, as tvm-791 did after provision 12239
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5140

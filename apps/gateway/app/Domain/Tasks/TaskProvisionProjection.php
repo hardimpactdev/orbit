@@ -16,6 +16,7 @@ use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\PendingSshHostKey;
+use App\Jobs\TaskVms\EndCancelledTaskProvision;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
@@ -136,6 +137,8 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
         } elseif ($data['status'] === 'cancelled') {
             $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
+            // The run may have stopped while it created the VM or the workspace: the group's ending destroys what it started.
+            EndCancelledTaskProvision::dispatch($group->id, $operation->id)->afterCommit();
         }
 
         return $projected;
