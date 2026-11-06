@@ -1099,11 +1099,19 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`; the chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent: the resume of the task VM, a fresh reviewer turn in a new thread on the head, and in rounds 1 and 2 the fix (the author turn, the local check and the push). Admission requires a green merge check on the head, and a head that is a passed handoff candidate of the current subtask or the commit that an earlier round pushed.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
-The run resumes the VM, lets the reviewer judge the head and posts the verdict and the findings as a comment of the Orbit App, so the reviewer can read them. The comment mints its own token when it runs, and a comment that GitHub refuses does not fail the run. When the reviewer ends with `approved`, the Gateway records a pass for that head from the end of the run, and the next tick admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. A run that ends in error never records a pass.
+Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
-When the reviewer ends with `changes_requested` in round 1 or 2, the same run goes on: an author turn in the thread of the author with the findings as its prompt, then the handoff check of the subtask without hosted CI, then a push of the checked candidate to the branch of the pull request. The pull request runs its own CI on the pushed head, so the push has no hosted handoff CI. The row of the local check is kept on the board, but no `tasks.check` operation backs it, so it is no candidate for a review turn or a manual publish; the Gateway records the pushed commit on the round, and the next admission accepts that commit through the round row. The new head gets a new CI run, and the next tick admits the next round on it once the merge check is green. A step that fails, or ends with a turn that is not ready or a check that did not pass, leaves findings without a pushed commit and sends the group back to manual mode.
+The run resumes the VM and lets the reviewer judge the head. It posts the verdict and the findings as a comment of the Orbit App, so the owner can read them. The comment mints its own token when it runs. A comment that GitHub refuses does not fail the run.
+
+When the reviewer ends with `approved`, the Gateway records a pass for that head from the end of the run. The next tick admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. A run that ends in error never records a pass.
+
+When the reviewer ends with `changes_requested` in round 1 or 2, the same run goes on. The author turn runs in the thread of the author, with the findings as its prompt. Then the handoff check of the subtask runs without hosted CI. Then the run pushes the checked candidate to the branch of the pull request.
+
+The pull request runs its own CI on the pushed head, so the push has no hosted handoff CI. The row of the local check stays on the board. No `tasks.check` operation backs it, so it is no candidate for a review turn or a manual publish. The Gateway records the pushed commit on the round, and the next admission accepts that commit through the round row.
+
+The new head gets a new CI run. The next tick admits the next round on it once the merge check is green. A step that fails, or ends with a turn that is not ready or a check that did not pass, leaves findings without a pushed commit. The gate check then sends the group back to manual mode.
 
 A failed round ends with one of these codes, and the round records the verdict it reached:
 
