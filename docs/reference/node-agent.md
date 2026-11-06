@@ -259,10 +259,6 @@ Commands with binary input declare an `input_max_bytes` bound in the exported co
 
 The Gateway sends the envelope line followed by the staged file through one process input stream. It keeps the file open and rewinds it after a version mismatch, without making another disk copy. The caller owns the private staging file and leaves its contents unchanged until the command finishes. Transfer archives stay in `storage/app/transfer-staging`, including during upload.
 
-Read commands can declare bounded binary output before their result. Each chunk starts with one JSON header line, `{"stream_bytes":N}`, followed by exactly `N` raw bytes. A chunk is at most 64 KiB, and the exported contract sets the total byte limit. The runner streams each chunk to a private sink, then requires the final typed result. It rejects partial chunks, excess bytes, and output after that result. A mismatch precedes all binary data; a partial transfer is never retried.
-
-A binary producer enforces its deadline and stops its children before returning the final result. The dispatcher cannot write a timeout result over an unfinished binary frame. If the consumer stops reading, the final write gets at most one second to drain before the agent exits with a transport failure.
-
 | Envelope field | Meaning |
 | --- | --- |
 | `agent_sha256` | The SHA-256 of the binary that the Gateway pins for this Node |
@@ -323,8 +319,6 @@ These errors can come from any command:
 | `agent.supervisor_failed` | A mutation's service ended without a result |
 
 A transport loss, a missing result, a malformed result, a timeout, and an undeclared error code are runner failures: `agent.runner_failed` with a `kind`. A lost result never proves that no change happened, so the runner sends a mutation once.
-
-Binary output also reports `output_limit` when it exceeds its declared or caller limit, and `output_write_failed` when its private sink cannot accept bytes. Binary contents never appear in the diagnostic result.
 
 ### Transports
 

@@ -321,17 +321,6 @@ pub fn execute_stream(
 }
 
 fn run_in_process(entry: &'static Entry, input: Value, context: Context) -> Outcome {
-    // A binary producer owns stdout until it has stopped its children. Returning a timeout from
-    // another thread would interleave the final JSON result with unfinished binary frames.
-    if entry.output_max_bytes > 0 {
-        return std::panic::catch_unwind(|| (entry.run)(input, &context)).unwrap_or_else(|_| {
-            Outcome::refused(
-                "agent.supervisor_failed",
-                "The command ended without a result.",
-                json!({}),
-            )
-        });
-    }
     let deadline = context.deadline();
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
