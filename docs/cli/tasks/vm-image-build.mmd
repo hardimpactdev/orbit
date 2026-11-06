@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design (proposed 2026-11-06): the task image is built with the same Ansible phases as Nodes (node:converge), reading the pins of recipe.json; no orbit-agent in the build or in the image identity. Runs only for a new host or a new base OS; every release afterwards refreshes the image by converge (stage 6), using the same phases.
   %% status: reviewed
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the build never promotes an image without a seed for it. Without a seed it stops before the promote and keeps the candidate; the stage 6 refresh promotes the image together with its seed. Promoting seedless images broke all task VM provisioning (task_vm.base_image_missing).
   %% command: none · task image build for a task VM host
   %% kind: task_vm.image_build
   autonumber
@@ -39,20 +40,29 @@ sequenceDiagram
   SW->>H: Smoke the candidate<br/>boot a copy · check phase
   %%> What it does:
   %%> - boots a throwaway VM from the candidate and runs the Ansible check phase against it, then removes it
+  SW->>H: Check the seed<br/>topology seed of the candidate
+  %%> What it does:
+  %%> - Decided by the orchestrator, for Nick's review: lists the volumes of the host's pool and looks for `orbit-topology-seed-<first 12 hex of the fingerprint>`
+  %%> - the next step runs only when that seed exists
   SW->>H: Promote the image<br/>host lock · keep -previous
   %%> What it does:
   %%> - moves the host's task image alias to the candidate; the old image stays as `-previous`, the rollback copy
+  %%> - skipped when the candidate has no seed
   SW->>H: Remove builder and smoke<br/>always
-  opt the host has no topology seed yet
-    Note over SW,H: First seed<br/>stage 6 · save copies
+  opt the candidate has no topology seed
+    Note over SW,H: Promote with its seed<br/>stage 6 · save copies
     %%> What it does:
-    %%> - a refresh VM from the new image builds the first nested fleet and saves it as ready copies, as stage 6 does
+    %%> - the stage 6 refresh builds the seed for the new image and promotes the image together with it
     %%> Not designed:
-    %%> - building a nested fleet from scratch, without ready copies; the old builder was deleted (#2767)
+    %%> - building a nested fleet from scratch, without ready copies, for a host with no seed at all; the old builder was deleted (#2767)
   end
-  alt every step succeeds
+  alt the candidate has a seed and every step succeeds
     SW-->>GW: Run succeeded<br/>image fingerprint
     Note over GW: Record the image<br/>claims use it
+  else the candidate has no seed
+    SW-->>GW: Run succeeded<br/>candidate kept, not promoted
+    %%> Result:
+    %%> - the candidate and its fingerprint are recorded without a promotion; claims keep the promoted image
   else a step fails
     SW--xGW: Run failed<br/>failed step
     %%> Result:
