@@ -76,10 +76,10 @@
       loop_control:
         label: "{{ item.argv[0] }}"
       changed_when: false
-    # A reload keeps open requests.
+    # A reload keeps open requests. A unit that is not running starts: a task VM image keeps PHP-FPM off.
     - name: Reload PHP-FPM
       ansible.builtin.command:
-        argv: [timeout, "30", systemctl, reload, "{{ item.unit }}"]
+        argv: [timeout, "30", systemctl, reload-or-restart, "{{ item.unit }}"]
       loop: "{{ intent.php_reloads | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.unit }}"
