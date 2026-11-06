@@ -249,6 +249,61 @@ describe('proof:run admission', function (): void {
         expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->input)->not->toHaveKey('cases');
     });
 
+    it('ends the proof with a code when the queue refuses the job, instead of leaving it for the watchdog', function (): void {
+        proofWorld(proofSource());
+        app()->instance('queue', new class
+        {
+            /** @param  array<int, mixed>  $arguments */
+            public function __call(string $method, array $arguments): never
+            {
+                throw new RuntimeException('The queue is down.');
+            }
+        });
+
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.queue_unavailable')
+            ->and(proofFailureDetail($proof))->toContain('could not queue');
+    });
+
+    it('leaves a proof that was cancelled while the job read GitHub cancelled', function (): void {
+        proofWorld(proofSource());
+        Queue::fake();
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $armed = true;
+        // The proof is cancelled right after the job records the selection, before it admits anything.
+        Operation::updated(static function (Operation $operation) use (&$armed): void {
+            if ($armed && $operation->kind === 'proof.run' && isset($operation->input['cases'])) {
+                $armed = false;
+                Operation::query()->whereKey($operation->id)->update(['status' => OperationStatus::Cancelled->value]);
+            }
+        });
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        $armed = false;
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->error_code)->toBeNull();
+    });
+
+    it('returns the same proof for a repeated key and a proof that already has its runs is not admitted again', function (): void {
+        Queue::fake();
+        proofWorld(proofSource());
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $proof->update(['input' => [...$proof->input, 'runs' => [['command' => 'a:b', 'file' => 'f', 'group_id' => 1, 'operation_id' => 2]]]]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->input)->not->toHaveKey('cases')->and($proof->status)->toBe(OperationStatus::Running);
+        Queue::assertPushed(AdmitProofRun::class, 1);
+    });
+
+    it('queues the admission on the tasks queue of the Gateway connection and hands the proof to the intent', function (): void {
+        $job = new AdmitProofRun(7);
+
+        expect($job->connection)->toBe('gateway')->and($job->queue)->toBe('tasks')->and($job->tries)->toBe(1)->and($job->timeout)->toBe(1200)
+            ->and($job->operationId)->toBe(7);
+    });
+
     it('succeeds with nothing to prove when only documentation changed, and lists the uncovered paths', function (): void {
         $source = proofSource();
         $source->files = [new ProofChangedFile('docs/a.md', 'modified'), new ProofChangedFile('swamp/workflows/workflow-vault-sync.yaml', 'modified')];
@@ -390,7 +445,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         $armed = false;
-        expect($proof->error_code)->toBe('proof.admission_interrupted')->and(Task::query()->count())->toBe(0)
+        expect($proof->status)->toBe(OperationStatus::Failed)->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
 });

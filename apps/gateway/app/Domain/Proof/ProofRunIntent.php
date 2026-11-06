@@ -29,6 +29,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -59,9 +60,15 @@ final readonly class ProofRunIntent
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
             ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => []], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
-        AdmitProofRun::dispatch($proof->id)->afterCommit();
+        try {
+            AdmitProofRun::dispatch($proof->id)->afterCommit();
+        } catch (Throwable $exception) {
+            // The queue refused the job: end the proof with a code instead of leaving it for the watchdog.
+            report($exception);
+            $this->fail($proof, 'proof.queue_unavailable', 'The Gateway could not queue the admission of the proof. Run it again.', []);
+        }
 
-        return $proof;
+        return $proof->refresh();
     }
 
     /** The admission of a proof, in a queue job: it checks the commit, selects the cases and records and hands over one run for each. */
@@ -80,12 +87,15 @@ final readonly class ProofRunIntent
             $selection = $this->select($commit, ($input['all'] ?? false) === true);
             $uncovered = $selection->uncovered;
             $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'uncovered' => $selection->uncovered];
-            $this->store->change($proof, ['input' => $intent]);
+            // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
+            if (! $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['input' => $intent]))) {
+                return;
+            }
             if ($selection->nothingToProve()) {
-                $this->store->change($proof, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
+                $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
                     'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
                     'uncovered' => $selection->uncovered, 'receipt_url' => null,
-                ]]);
+                ]]));
 
                 return;
             }
@@ -131,9 +141,28 @@ final readonly class ProofRunIntent
      */
     private function fail(Operation $proof, string $code, string $message, array $uncovered): void
     {
-        $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code, 'current_step' => null,
-            'state' => [...($proof->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $message, 'stderr_recorded' => false]],
-            'result' => ['commit' => ValidatedData::object($proof->input)['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $uncovered, 'receipt_url' => null]]);
+        $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code, 'current_step' => null,
+            'state' => [...($current->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $message, 'stderr_recorded' => false]],
+            'result' => ['commit' => ValidatedData::object($current->input)['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $uncovered, 'receipt_url' => null]]));
+    }
+
+    /**
+     * Writes to the proof only while it is open, under its row lock, so a proof that was cancelled or ended as lost is never revived.
+     *
+     * @param  Closure(Operation): mixed  $write
+     * @return bool whether the proof was still open
+     */
+    private function whileOpen(int $id, Closure $write): bool
+    {
+        return DB::transaction(function () use ($id, $write): bool {
+            $current = Operation::query()->lockForUpdate()->find($id);
+            if (! $current instanceof Operation || $current->status->terminal()) {
+                return false;
+            }
+            $write($current);
+
+            return true;
+        });
     }
 
     /**

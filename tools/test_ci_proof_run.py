@@ -72,6 +72,15 @@ class EvaluateTest(unittest.TestCase):
         self.assertIn('Uncovered: swamp/x.yaml (none: no case yet)', lines)
 
 
+    def test_a_proof_refused_at_admission_fails_and_says_why(self):
+        output = json.dumps({'status': 'failed', 'error_code': 'tasks.capacity_unavailable', 'result': {'outcome': 'failed', 'cases': [], 'uncovered': []},
+                             'error': {'code': 'tasks.capacity_unavailable', 'detail': 'Task VM: no host has 3 free slots for a large VM.'}})
+        passed, lines = proof.evaluate(1, output)
+        self.assertFalse(passed)
+        self.assertIn('No case ran.', lines)
+        self.assertIn('Error: tasks.capacity_unavailable Task VM: no host has 3 free slots for a large VM.', lines)
+
+
 class RunTest(unittest.TestCase):
     def run_script(self, orbit_body, env=None):
         with tempfile.TemporaryDirectory() as tmp:

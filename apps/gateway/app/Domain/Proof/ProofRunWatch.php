@@ -23,15 +23,15 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofRunWatch
 {
-    /** Without a run: the job waits 60 s at most for the admission lock and then admits in about a minute. Later, it is lost. */
-    public const int AdmissionSeconds = 150;
+    /** Without a run: the job may wait in the queue, then waits 60 s at most for the admission lock and admits in about a minute. Later, it is lost. */
+    public const int AdmissionSeconds = 300;
 
     /** What the Operation says when the admission was lost. */
     public const string Lost = 'The Gateway stopped before it handed the runs to Swamp. No case ran; run the proof again.';
 
     /**
-     * With runs: the request starts them one after another, and each start is answered within 120 s. A proof whose runs have all been
-     * quiet for longer has no request that will start the rest.
+     * With runs: the job starts them one after another, and each start is answered within 120 s. A proof whose runs have all been
+     * quiet for longer has no job that will start the rest.
      */
     public const int DispatchSilenceSeconds = 300;
 

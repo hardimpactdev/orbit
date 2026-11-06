@@ -29,13 +29,24 @@ def find_result(document):
     return None
 
 
+def find_error(document):
+    """The `error` of the final operation (its code and detail), which a proof refused at admission carries instead of a case."""
+    if not isinstance(document, dict):
+        return None
+    for holder in (document, document.get('data'), document.get('operation')):
+        if isinstance(holder, dict) and isinstance(holder.get('error'), dict):
+            return holder['error']
+    return None
+
+
 def evaluate(code, output):
     """Return (passed, summary lines). Only a clean exit with a result is a pass, and only when the proof passed with at least
     one case that ran, and every case passed. Nothing to prove passes. A missing result, an unrun case or any other outcome fails."""
     try:
-        result = find_result(json.loads(output))
+        document = json.loads(output)
     except ValueError:
-        result = None
+        document = None
+    result = find_result(document)
     if result is None:
         return False, [f'The proof printed no result (exit status {code}).']
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
@@ -44,6 +55,9 @@ def evaluate(code, output):
               for case in cases]
     if not cases:
         lines.append('No case ran.')
+    error = find_error(document)
+    if error and (error.get('code') or error.get('detail')):
+        lines.append(f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip())
     for path in result.get('uncovered') or []:
         if isinstance(path, dict):
             lines.append(f"Uncovered: {path.get('path', '')} ({path.get('reason', '')})")
