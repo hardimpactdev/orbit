@@ -165,14 +165,29 @@ it('refuses non-Linux targets without records or Node work', function (): void {
         ->and($this->socket->frames)->toBe([]);
 });
 
-it('protects SSH, recovery, WireGuard and role ports even for a scoped UDP deny', function (string $port): void {
+it('protects SSH, recovery, WireGuard and role ports across protocols, sources and range boundaries', function (array $input): void {
     $this->denyNode->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
 
-    denyHttp(['port' => $port, 'protocol' => 'udp', 'source' => '192.0.2.1'])
-        ->assertStatus(422)->assertJsonPath('error.code', 'firewall.protected_port');
+    denyHttp($input)->assertStatus(422)->assertJsonPath('error.code', 'firewall.protected_port');
     expect(Operation::query()->count())->toBe(0)->and($this->denyNode->firewallRules()->count())->toBe(0)
         ->and($this->socket->frames)->toBe([]);
-})->with(['22', '21:23', '2222', '2221:2223', '51820', '51819:51821', '443', '442:444']);
+})->with([
+    'SSH with IPv4 UDP' => [['port' => '22', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'SSH range with IPv4 UDP' => [['port' => '21:23', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'recovery with IPv4 UDP' => [['port' => '2222', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'recovery range with IPv4 UDP' => [['port' => '2221:2223', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'WireGuard with IPv4 UDP' => [['port' => '51820', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'WireGuard range with IPv4 UDP' => [['port' => '51819:51821', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'role with IPv4 UDP' => [['port' => '443', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'role range with IPv4 UDP' => [['port' => '442:444', 'protocol' => 'udp', 'source' => '192.0.2.1']],
+    'SSH defaults' => [['port' => '22']],
+    'SSH with IPv4 source' => [['port' => '22', 'source' => '192.0.2.1']],
+    'SSH with UDP' => [['port' => '22', 'protocol' => 'udp']],
+    'SSH at range start' => [['port' => '22:23']],
+    'SSH at range end with IPv4 TCP' => [['port' => '21:22', 'source' => '192.0.2.1', 'protocol' => 'tcp']],
+    'SSH inside a default range' => [['port' => '21:23']],
+    'SSH with IPv6 host CIDR and UDP' => [['port' => '22', 'source' => '2001:db8::1/128', 'protocol' => 'udp']],
+]);
 
 it('refuses normalized conflicts and both-protocol overlaps without touching the existing rule', function (string $action, string $protocol, array $input, string $code): void {
     $existing = $this->denyNode->firewallRules()->create([
@@ -199,6 +214,48 @@ it('serializes all firewall writers on the Node and rolls back a busy admission'
     expect(Operation::query()->count())->toBe(1)->and($this->denyNode->firewallRules()->count())->toBe(1)
         ->and($this->socket->frames)->toHaveCount(1);
 });
+
+it('projects native deny success or failure once and releases only its own Node lock', function (string $status, string $ruleStatus, array $result, ?string $errorCode): void {
+    denyHttp(['port' => '8080'])->assertStatus(202);
+    $operation = Operation::query()->sole();
+    $rule = $this->denyNode->firewallRules()->sole();
+    $lockKey = 'node_firewall:'.$this->denyNode->id;
+    $sequence = $operation->sequence;
+    expect($operation->lock_key)->toBe($lockKey);
+
+    $receipt = [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => $result, 'error_code' => $errorCode,
+    ];
+    $projection = app(FirewallIntentProjection::class);
+    $projection->apply($operation, $receipt);
+
+    expect($operation->refresh()->status->value)->toBe($status)
+        ->and($operation->result)->toBe($result)->and($operation->error_code)->toBe($errorCode)
+        ->and($operation->lock_key)->toBeNull()->and($operation->sequence)->toBe($sequence + 1)
+        ->and($this->denyNode->firewallRules()->count())->toBe(1)
+        ->and($rule->refresh()->status->value)->toBe($ruleStatus)->and($rule->error_code)->toBe($errorCode);
+    $beforeOperation = $operation->getAttributes();
+    $beforeRule = $rule->getAttributes();
+
+    denyHttp(['port' => '8081'])->assertStatus(202);
+    $next = Operation::query()->latest('id')->firstOrFail();
+    expect($next->lock_key)->toBe($lockKey);
+
+    $projection->apply($operation, $receipt);
+    expect($operation->refresh()->getAttributes())->toBe($beforeOperation)
+        ->and($rule->refresh()->getAttributes())->toBe($beforeRule)
+        ->and(Operation::query()->where('lock_key', $lockKey)->sole()->id)->toBe($next->id);
+
+    denyHttp(['port' => '8082'])->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(2)
+        ->and($this->denyNode->firewallRules()->count())->toBe(2)
+        ->and($this->socket->frames)->toHaveCount(2);
+})->with([
+    'succeeded' => ['succeeded', 'active', ['backend' => 'active'], null],
+    'native failure' => ['failed', 'failed', ['error_code' => 'operation.native_failed'], 'operation.native_failed'],
+]);
 
 it('reuses active, failed and interrupted deny identity with a new Operation and updated label', function (string $status): void {
     denyHttp(['port' => '8080', 'label' => 'first'])->assertStatus(202);
