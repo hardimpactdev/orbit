@@ -88,15 +88,20 @@ final readonly class TaskCheckIntent
     }
 
     /**
-     * The check workflows read `fails_on_base` of every command deliverable, so the intent states it: an omitted value is false, as the
-     * Tasks reference says. Other deliverables stay as stored.
+     * The check workflows read `fails_on_base` of every command deliverable, so the intent states it: an omitted value means false.
+     * Other deliverables stay as stored.
      *
      * @param  array<int, mixed>  $deliverables
      * @return list<mixed>
      */
     public static function withFailsOnBase(array $deliverables): array
     {
-        return array_values(array_map(static fn (mixed $item): mixed => is_array($item) && ($item['type'] ?? null) === 'command' && ! array_key_exists('fails_on_base', $item)
-            ? [...$item, 'fails_on_base' => false] : $item, $deliverables));
+        $admitted = [];
+        foreach ($deliverables as $item) {
+            $isCommand = is_array($item) && ($item['type'] ?? null) === 'command';
+            $admitted[] = $isCommand && ! array_key_exists('fails_on_base', $item) ? [...$item, 'fails_on_base' => false] : $item;
+        }
+
+        return $admitted;
     }
 }
