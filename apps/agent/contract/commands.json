@@ -2294,6 +2294,5 @@
         "ai-router.source_remove_failed"
       ]
     }
-  ],
-  "output_chunk_bytes": 65536
+  ]
 }

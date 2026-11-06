@@ -14,7 +14,6 @@ pub struct Entry {
     pub summary: &'static str,
     pub mutates: bool,
     pub timeout: Duration,
-    pub output_max_bytes: u64,
     pub input_max_bytes: u64,
     pub privilege: fn(Platform) -> Option<Privilege>,
     pub errors: &'static [&'static str],
@@ -63,10 +62,6 @@ pub fn entry<C: Command>() -> Entry {
         "keyed effects require a mutation"
     );
     assert!(
-        !C::MUTATES || C::OUTPUT_MAX_BYTES == 0,
-        "binary output is read-only"
-    );
-    assert!(
         C::MUTATES || C::RESOURCES.is_empty(),
         "{}: only a mutation locks shared resources",
         C::NAME
@@ -76,7 +71,6 @@ pub fn entry<C: Command>() -> Entry {
         summary: C::SUMMARY,
         mutates: C::MUTATES,
         timeout: C::TIMEOUT,
-        output_max_bytes: C::OUTPUT_MAX_BYTES,
         input_max_bytes: C::INPUT_MAX_BYTES,
         privilege: C::privilege,
         errors: <C::Error as CommandError>::CODES,
@@ -305,16 +299,13 @@ pub fn contract() -> Value {
                 },
                 "errors": entry.errors,
             });
-            if entry.output_max_bytes > 0 {
-                definition["output_max_bytes"] = entry.output_max_bytes.into();
-            }
             if entry.input_max_bytes > 0 {
                 definition["input_max_bytes"] = entry.input_max_bytes.into();
             }
             definition
         })
         .collect();
-    json!({"common_errors": COMMON_ERRORS, "not_started_errors": super::NOT_STARTED_ERRORS, "preflight_errors": super::PREFLIGHT_ERRORS, "commands": commands, "output_chunk_bytes": super::binary_output::CHUNK_BYTES})
+    json!({"common_errors": COMMON_ERRORS, "not_started_errors": super::NOT_STARTED_ERRORS, "preflight_errors": super::PREFLIGHT_ERRORS, "commands": commands})
 }
 
 /// The input and output JSON Schema of every command. Gateway test fakes validate against them.
