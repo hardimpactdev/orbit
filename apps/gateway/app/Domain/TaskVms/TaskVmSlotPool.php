@@ -98,12 +98,13 @@ final readonly class TaskVmSlotPool
             return null;
         }
         $current = $this->currentImage($host, $location);
-        $count = $setting === null ? 0 : $setting->count;
+        $count = $setting === null ? 0 : self::count($location, $setting);
         if ($setting !== null && $slots->count() < $count) {
             $free = $this->capacity->freeSlots([[$location, $host]])[$host->id] ?? 0;
 
+            // An enrol runs a VM: it leaves room for one more VM of the slot size, for a claim, a clone or a refresh.
             return $current !== null && Project::query()->whereKey($setting->projectId)->exists()
-                && $free >= $setting->size->slots() && ! $this->recentlyFailed($host->id) ? ['enrol', null] : null;
+                && $free >= 2 * $setting->size->slots() && ! $this->recentlyFailed($host->id) ? ['enrol', null] : null;
         }
         $stale = $slots->first(fn (TaskVm $vm): bool => $this->stale($vm, $setting, $current))
             ?? ($slots->count() > $count ? $slots->first() : null);
@@ -123,6 +124,15 @@ final readonly class TaskVmSlotPool
         return $setting === null || $vm->slot_project_id !== $setting->projectId || $vm->size !== $setting->size
             || ($current !== null && $vm->image_build_id !== $current['build_id'])
             || $vm->ready_at === null || $vm->ready_at->lt(now()->subHours(self::MaxAgeHours));
+    }
+
+    /**
+     * The slots the host keeps: its `count`, at most as many VMs of the slot size as the host can run at once. A stopped
+     * slot takes no capacity, so more could never all be claimed together.
+     */
+    public static function count(TaskVmHost $location, TaskVmSlotSetting $setting): int
+    {
+        return min($setting->count, intdiv($location->maxVms, $setting->size->slots()));
     }
 
     /** @return array{build_id:int,fingerprint:string,recipe_identity:string}|null the host's last promoted image */

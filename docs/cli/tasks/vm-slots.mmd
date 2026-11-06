@@ -20,6 +20,10 @@ sequenceDiagram
   %%> - a slot is a task VM row with no group and with `slot_project_id` set
   %%> - a stopped slot that no group holds takes no capacity (`max_vms`), because it holds disk, not memory; an enrolling slot runs, so it takes capacity
   %%> - the pool counts the slots that are ready or enrolling
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06), pool size:
+  %%> - a stopped slot holds disk (a ZFS clone), not memory, so it takes no capacity, and stopped slots never block a claim or a clone
+  %%> - a pool holds at most as many slots as the host can run at once: `max_vms` ÷ the units of the slot size (beast 6 ÷ 3 = 2 large, shark 12 ÷ 3 = 4); a larger `count` is cut to that
+  %%> - an enrol runs a VM, so it starts only when the host keeps room for one more VM of the slot size beside it; live tasks, the stage 6 refresh and proof runs keep their capacity
   GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
   %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below 5.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
