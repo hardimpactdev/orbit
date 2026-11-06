@@ -51,7 +51,6 @@
   "instance.inspect-laravel-routes": "observer",
   "instance.inspect-repository-binding": "observer",
   "instance.read-application-log": "action",
-  "instance.read-queue": "action",
   "instance.rebind-repository": "action",
   "instance.run-lifecycle-step": "action",
   "instance.write-development-url": "action",

@@ -35,9 +35,9 @@ use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
-use App\Infrastructure\Instances\RemoteInstanceQueueReader;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
+use App\Infrastructure\Instances\StoreInstanceQueueReader;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -63,7 +63,7 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,
-        InstanceQueueReader::class => RemoteInstanceQueueReader::class,
+        InstanceQueueReader::class => StoreInstanceQueueReader::class,
     ];
 
     public function register(): void

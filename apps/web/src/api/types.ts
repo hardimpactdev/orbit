@@ -76,7 +76,7 @@ type QueueBody = NonNullable<
     operations["instance-queue"]["responses"][200]["content"]["application/json"]["data"]
 >;
 export type QueueJob = Required<NonNullable<QueueBody["jobs"]>[number]>;
-/** An instance's Horizon queue. Only `available` and `state` are there when it has none. */
+/** An instance's queue. Only `available` and `state` are there when it has none. */
 export type QueueReport = Omit<QueueBody, "jobs"> & { jobs?: QueueJob[] };
 export type QueueState = QueueReport["state"];
 
