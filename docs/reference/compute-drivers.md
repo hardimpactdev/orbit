@@ -876,7 +876,7 @@ Swamp runs task VM effects through recorded Operations. Each effect fixes its ho
 
 The fixed `incus.vm` agent command runs on the Operation's host Node as its managed user. `IncusTaskVmProvider` exposes observations only. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
+A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Every task VM's config on stdin sets `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait on every boot. A medium or large VM's key also turns on free page reporting for the balloon device `qemu_balloon`. Incus applies the key only when the VM starts, so the launch sets it.
 
 A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#build-the-base-image) of its `image_fingerprint`:
 

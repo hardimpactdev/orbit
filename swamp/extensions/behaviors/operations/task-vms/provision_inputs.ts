@@ -24,13 +24,17 @@ export function provisionCommandInput(raw: unknown) {
     const devices: Record<string, unknown> = create === null ? {} : {
         "cloud-init": { type: "disk", source: "cloud-init:config" },
     };
+    // OVMF waits its boot menu timeout (3 s) on every boot unless QEMU passes one (`etc/boot-menu-wait`); a task VM always
+    // boots its own disk, so it waits none. Incus adds these keys to its own `[boot-opts]` when the VM starts.
+    const bootMenu = '[boot-opts]\nmenu = "on"\nsplash-time = "0"\n';
+    if (create !== null) config["raw.qemu.conf"] = bootMenu;
     if (create?.topology) {
         devices["topology-seed"] = {
             type: "disk",
             pool: create.pool,
             source: `${input.name}-topology-seed`,
         };
-        config["raw.qemu.conf"] =
+        config["raw.qemu.conf"] = bootMenu +
             '[device "qemu_balloon"]\nfree-page-reporting = "on"\n';
     }
     // Each provider step passes this as one argument (`ORBIT_VM_INTENT=…`), which Linux caps at 128 KiB; the whole intent of a
