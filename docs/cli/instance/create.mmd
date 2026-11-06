@@ -4,7 +4,8 @@ sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work is two Ansible phases, `checkout` (clone, check out, write .env) and `setup`, behind one input step. Measured on Node 209: every placed Swamp step costs about 1.1 s of dispatch before it does any work, and the old flow ran 8 steps for the checkout and one per setup step.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the run-folder cleanup runs beside the result step, not before it (a Swamp job runs steps by dependency depth, so they were one after the other in a create without setup or Route).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route's key, CSR and signature run at the start, beside the checkout, because they touch only the certificate folder and the Route child ran them in series after the setup steps (about 7 s of a 46 s create).
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route runs beside the setup steps, not after the Processes. The checkout phase grants Caddy its access to the checkout and writes APP_URL (what setup creates inherits the default entries, so nothing races the setup), and the signature is made in the same child as the key, beside the checkout. A Laravel create spent 19 s of 42 s on the Route after the setup. The served root must exist in the checkout (`public` does). A failed setup or Process leaves the published Route until `instance:destroy` withdraws it, because the failure cleanup below is not built yet.
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route runs beside the setup steps, not after the Processes. The checkout phase grants Caddy its access to the checkout and writes APP_URL (what setup creates inherits the default entries, so nothing races the setup), and the signature is made in the same child as the key, beside the checkout. A Laravel create spent 19 s of 42 s on the Route after the setup. The served root must exist in the checkout (`public` does).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): a failed create withdraws the Route it published and nothing else. The chart said it removed everything the run made (the same steps as instance:destroy); docs/reference/instance-setup.md says a failed create retains its reserved Instance and owned checkout, and a removal there is irreversible. The Route is the part that serves traffic, so it goes; the Instance, checkout, Processes and database stay for `instance:destroy` or a fresh create.
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
@@ -42,7 +43,7 @@ sequenceDiagram
   %%> Why the vault:
   %%> - the token and `.env` reach the run only through the vault; no step calls the Gateway back
   %%> Budget:
-  %%> - 60 s, plus the Project's setup step timeouts, plus 30 s for the Processes, plus 180 s each for the Route and for a database copy; fixed at admission
+  %%> - 60 s, plus the Project's setup step timeouts, plus 30 s for the Processes, plus 240 s for the Route (180 s to publish it, 60 s to take it back if the create fails) and 180 s for a database copy; fixed at admission
   GW-->>CLI: 202 Accepted<br/>task ID
   %%> What you get:
   %%> - the task ID, at once
@@ -115,24 +116,27 @@ sequenceDiagram
     N--xSW: exit ≠ 0 or timeout
     %%> When:
     %%> - a command exits non-zero, a Process or the site does not come up, or the budget ends
-    SW->>N: Remove what the run made<br/>same steps as instance:destroy
+    SW->>N: Withdraw the Route<br/>child route-withdraw
     %%> What it does:
-    %%> - withdraws the Route, runs the Project teardown steps, then removes the Processes, the database the run created and the checkout
-    %%> - removes only what this run made; other Instances, the Database server and the default Instance's database stay
-    %%> Why remove:
-    %%> - the failed step and its output are in the task, so nothing on the Node is needed to see what failed
+    %%> - takes back what the run published, as the reverse of the publication that the Gateway captured at admission: the Caddy site, the PHP pool, the private DNS records and the certificate folders
+    %%> - it runs before the run reports the failure, and the failure it reports is the one that was read before it
+    %%> When:
+    %%> - the setup, a Process or the Route fails, or any step fails after the Route's key was made; a failure before that leaves nothing to take back
+    %%> What stays:
+    %%> - the reserved Instance, its checkout, its Processes and its database, marked failed; the failed step and its output are in the task
+    %%> - `instance:destroy` removes them; the rest of the removal is not part of a failed create (see the note at the top)
     SW--xGW: Run failed<br/>failed step, error_code
     %%> The Gateway reads:
     %%> - which step failed and its error code; a missing setup command is `instance.setup_step_unavailable`, any other setup failure `instance.setup_step_failed`
-    %%> - the original error code is kept, whether or not cleanup finished
+    %%> - the original error code is kept, whether or not the Route was withdrawn
     Note over GW: Record the failure
     %%> Result:
-    %%> - the task fails with the failed step; when cleanup finished, the Instance and its Route no longer exist
-    %%> If cleanup did not finish:
-    %%> - the Instance stays marked failed with `cleanup = incomplete`; the incomplete cleanup stays visible, and a crash is never taken as proof that cleanup ran
+    %%> - the task fails with the failed step; the Route no longer exists on the Nodes, and the Instance stays marked failed
+    %%> If the withdrawal did not finish:
+    %%> - the task still reports the original failure, the Route may stay published, and the failed withdrawal step is in the run; `instance:destroy` withdraws it
     %%> Retry:
-    %%> - run the same command again: it finishes an incomplete cleanup first, then creates; a changed `--root` or `--branch` is refused until then (`instance.placement_conflict`)
-    %%> - `instance:destroy` also finishes the cleanup
+    %%> - run the same command again; a changed `--root` or `--branch` is refused until then (`instance.placement_conflict`)
+    %%> - `instance:destroy` removes the failed Instance and anything left of its Route
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show TASK

@@ -127,6 +127,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
+        side: forward
         intent: ${{ inputs.intent }}
         execution_secrets: {}
   - name: Stop, remove Processes

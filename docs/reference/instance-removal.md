@@ -27,6 +27,8 @@ The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/m
 
 The run then withdraws the captured Route publications, so the site goes down first.
 
+The same `route-withdraw` workflow takes back the Route of a create that failed. Its `side` input is `forward` for a removal and `restore` for a failed create, which applies the captured publication in reverse.
+
 Each Node that serves the Route, answers its private DNS or holds a withdrawn certificate scope gets one Ansible read, one composition and one Ansible apply, and the Nodes run in parallel. A failure on one Node does not stop the others, so a rerun finishes what is left. Before it writes, the apply phase checks that each file still has the checksum the read found, and refuses otherwise.
 
 The checks run as one `sha256sum` command and the certificate folders go in one `rm -rf` command, because each remote task costs about 0.4 s. The run then stops and removes each Process through the canonical Process child.

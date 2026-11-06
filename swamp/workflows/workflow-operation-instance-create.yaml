@@ -287,9 +287,29 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
+      # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
+      # Gateway captured at admission (the site, the pool, the DNS records, the certificate folders). The failure the run reports is the one
+      # that finish read; the Instance and its checkout stay, marked failed. It runs before accepted, so a failing accepted does not cut it short.
+      - name: withdraw-route
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: finish, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || steps.finish.outputs.ready == true || !(("route-csr-0" in steps && steps["route-csr-0"].status != "skipped") || ("route" in steps && steps.route.status != "skipped")) }}'
+        task:
+          type: workflow
+          workflowIdOrName: route-withdraw
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            side: restore
+            intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
+            execution_secrets: {}
       - name: accepted
         labels: {role: swamp}
-        dependsOn: [{step: finish, condition: {type: succeeded}}]
+        dependsOn:
+          - {step: finish, condition: {type: succeeded}}
+          - {step: withdraw-route, condition: {type: always}}
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
       # Cleanup: the run folder of the phases, also after a failure. It sits at the depth of finish, so the two run side by side.
       - name: cleanup

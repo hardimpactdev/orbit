@@ -60,9 +60,9 @@ The Instance and its Route become active only after every step succeeds. A succe
 
 Repeating the command for an Instance that is already created succeeds with `Skipped — already created (instance.exists)`.
 
-A failed create removes what it made: it withdraws the Route, runs the Project teardown steps, then removes the Processes, the database it created and the checkout. Other Instances, the Database server and the `default` Instance's database stay. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
+A failed create withdraws the Route it published: the Caddy site, the PHP pool, the private DNS records and the certificate folders. It keeps the reserved Instance, its checkout, its Processes and its database, marked failed; `instance:destroy` removes them. The task keeps the failed step and its error code, so nothing on the Node is needed to see what failed. A setup step that is missing or not executable fails with `instance.setup_step_unavailable`, naming the step and the Node. Any other setup failure is `instance.setup_step_failed`.
 
-Once the cleanup finishes, run the command again, with a different `--branch` if you like.
+Run the command again with a new idempotency key once the task has ended, or run `instance:destroy` first.
 
 If the cleanup does not finish, the Instance stays marked failed with `details.cleanup = "incomplete"`. Run the same command again to finish the cleanup and create the Instance, or run [`instance:destroy`](/cli/instance/destroy). A changed `--root` or `--branch` is refused with `instance.placement_conflict` until the cleanup is done.
 
