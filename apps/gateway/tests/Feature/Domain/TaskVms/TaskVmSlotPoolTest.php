@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
@@ -193,3 +194,11 @@ it('fails an interrupted or cancelled enrol, so the refill rule destroys it', fu
         ->and(app(TaskVmSlotPool::class)->next($host->id)[1]->id)->toBe($slot->id);
     Bus::assertDispatched(RefillTaskVmSlots::class);
 })->with(['interrupted', 'cancelled']);
+
+it('reads the slots setting from a node update body', function (): void {
+    $body = json_decode('{"cidr": "10.252.7.0/24", "max_vms": 6, "pool": "orbit-tasks", "slots": {"count": 5, "project_id": 46, "size": "large"}}', flags: JSON_THROW_ON_ERROR);
+
+    $settings = app(NodeSettingsParser::class)->parseComplete((object) ['task_vms' => $body]);
+
+    expect($settings?->task_vms?->slots)->toBe(['count' => 5, 'project_id' => 46, 'size' => 'large']);
+});
