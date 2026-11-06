@@ -203,10 +203,39 @@ jobs:
   dependsOn:
   - {job: smoke, condition: {type: succeeded}}
   steps:
+    # The build never promotes an image without a seed for it: the stage 6 refresh promotes the image together with its seed.
+    # The seed is `orbit-topology-seed-` and the first 12 hex characters of the fingerprint; `-previous` and `-new` volumes do not count.
+  - name: Check the seed
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-image-seed-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-image-seed-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.jump.target.user }}
+          port: ${{ inputs.intent.jump.target.port }}
+          identityFile: ${{ inputs.intent.jump.identity_file }}
+        hosts:
+        - name: host
+          address: ${{ inputs.intent.jump.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
+      inputs:
+        hosts: name:host
+        sudo: true
+        argv: [timeout, '60', incus, storage, volume, list, --project, '${{ inputs.intent.project }}', --format, csv, --columns, n, '--', '${{ inputs.intent.pool }}']
+        timeoutSec: 80
     # The Operation holds the host's lock key, so no other host Operation runs while the alias moves. An alias takes a fingerprint, not another alias; `incus publish` printed it.
+    # Without the seed this step is skipped and the run still succeeds: the candidate stays, and the Gateway records it without a promotion.
   - name: Promote the image
     labels: {role: swamp}
     writes: true
+    dependsOn:
+    - {step: Check the seed, condition: {type: succeeded}}
+    guard: '${{ !steps["Check the seed"].outputs.stdout.split("\n").exists(n, n.startsWith("orbit-topology-seed-") && steps["Publish the candidate"].outputs.stdout.split("fingerprint: ")[1].trim().startsWith(n.split("orbit-topology-seed-")[1])) }}'
     task:
       type: workflow
       workflowIdOrName: task-vm-image-promote
