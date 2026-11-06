@@ -6,11 +6,15 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\TaskVms\TaskVmState;
+use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -35,11 +39,21 @@ final class EndCancelledTaskProvision implements ShouldQueue
 
     public function handle(OperationIdempotency $keys, TaskCancelIntent $cancel): void
     {
-        $group = Task::topLevel()->findOrFail($this->groupId);
+        $group = Task::topLevel()->find($this->groupId);
+        // An ending already admitted or done, by this job or the caller's own retry, leaves nothing to start.
+        if ($group === null || Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('id', '>', $this->provisionId)->where('status', '!=', OperationStatus::Failed)->exists()
+            || ($group->taskable_id === null && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists())) {
+            return;
+        }
         $key = 'provision-cancelled:'.$this->provisionId;
         try {
             $keys->under('tasks.cancel', $key, hash('sha256', $key), fn () => $cancel->start($group, 'task-provision', null));
         } catch (ResourceOperationException $refused) {
+            // An uncertain Swamp start still recorded the ending; the Gateway settles its run.
+            if (Operation::query()->where('kind', 'tasks.cancel')->where('idempotency_key', $key)->exists()) {
+                return;
+            }
             if (in_array($refused->errorCode, ['operation.target_busy', 'tasks.workspace_waiting'], true)) {
                 throw $refused;
             }
@@ -49,8 +63,10 @@ final class EndCancelledTaskProvision implements ShouldQueue
 
     public function failed(Throwable $failure): void
     {
+        $group = Task::topLevel()->find($this->groupId);
         $reason = $failure instanceof ResourceOperationException ? $failure->errorCode : $failure->getMessage();
-        TaskAssistance::apply(Task::topLevel()->findOrFail($this->groupId), AssistanceKind::RemovalFailure,
-            reason: 'The ending of the cancelled provision was not admitted: '.$reason);
+        if ($group !== null) {
+            TaskAssistance::apply($group, AssistanceKind::RemovalFailure, reason: 'The ending of the cancelled provision was not admitted: '.$reason);
+        }
     }
 }
