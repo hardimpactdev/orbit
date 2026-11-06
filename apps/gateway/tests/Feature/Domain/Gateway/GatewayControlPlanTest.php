@@ -23,6 +23,7 @@ it('renders the serve and worker units for the checkout of the machine, with the
     $plan = app(GatewayControlPlan::class)->make($checkout);
 
     expect($plan['node_id'])->toBe($node->id)
+        ->and($plan['address'])->toBe($node->wireguard_ip)
         ->and($plan['user'])->toBe('orbit')
         ->and($plan['units']['serve'])->toContain("--repo-dir {$checkout} ")->toContain("WorkingDirectory={$checkout}\n")
         ->and($plan['units']['worker'])->toContain("--label node={$node->id}")

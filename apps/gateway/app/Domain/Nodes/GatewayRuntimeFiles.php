@@ -24,7 +24,7 @@ final readonly class GatewayRuntimeFiles
     /**
      * The scheduler and Horizon run as the Gateway Node's Processes `schedule-work` and `horizon` where an operator made them. A
      * Gateway without those Processes gets the units here, so its role is all it needs to record finished runs. Horizon runs
-     * only when a queue is configured.
+     * only when a queue is configured. Both units own `/run/orbit`, which the Documents cleanup state needs under the `orbit` user.
      *
      * @return array{directories: list<array<string, string>>, files: list<array<string, string>>, units: list<array{name: string, unit: string}>}
      */
@@ -41,7 +41,7 @@ final readonly class GatewayRuntimeFiles
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
         $longRunning = static fn (string $name, string $description, string $command): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n")];
+            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\nRuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
         $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];

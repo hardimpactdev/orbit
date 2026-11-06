@@ -29,6 +29,8 @@ final readonly class GatewayControlPlan
         return [
             'user' => $node->user,
             'node_id' => $node->id,
+            // Where the Gateway reaches `swamp.orbit`: the published Route listens on the WireGuard address, not on loopback.
+            'address' => $node->wireguard_ip,
             'repository' => $checkout,
             'units' => SwampRoleUnits::for($node->user, $node->id, $checkout),
             'grants' => $this->grants->render($checkout),

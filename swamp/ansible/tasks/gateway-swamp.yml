@@ -148,7 +148,7 @@
       {
         printf 'ORBIT_SWAMP_RUN_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-run --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
         printf 'ORBIT_SWAMP_READ_TOKEN=%s\n' "$(swamp access token reveal orbit-gateway-read --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
-        printf 'ORBIT_SWAMP_ADDRESS=127.0.0.1\n'
+        printf 'ORBIT_SWAMP_ADDRESS=%s\n' "{{ control.address }}"
         printf 'ORBIT_SWAMP_SSH_PUBLIC_KEY="%s"\n' "{{ gateway_public_key.content | b64decode | trim }}"
       } >> "$env_file"
     chdir: "{{ swamp_repository }}"
