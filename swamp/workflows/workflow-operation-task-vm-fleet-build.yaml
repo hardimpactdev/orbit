@@ -120,12 +120,12 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-release-commit").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-release-commit").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['git', '-C', '/home/orbit/orbit', 'rev-parse', 'HEAD'], timeoutSec: 30}}
+      inputs: {hosts: 'name:target', argv: ['git', '-C', '${{ inputs.intent.operator_checkout }}', 'rev-parse', 'HEAD'], timeoutSec: 30}}
   - name: 'Read the release address'
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-release-address").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-read-the-release-address").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['git', '-C', '/home/orbit/orbit', 'remote', 'get-url', 'origin'], timeoutSec: 30}}
+      inputs: {hosts: 'name:target', argv: ['git', '-C', '${{ inputs.intent.operator_checkout }}', 'remote', 'get-url', 'origin'], timeoutSec: 30}}
     dependsOn: [{step: 'Read the release commit', condition: {type: succeeded}}]
   - name: 'Read the Gateway host key'
     labels: {role: swamp}
@@ -147,7 +147,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-prepare-the-gateway").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '1500', 'env', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/club-api-key', 'swamp', 'workflow', 'run', 'gateway-bootstrap', '--repo-dir', '/home/orbit/orbit/swamp', '--input', '${{ "{\"intent\":{" + inputs.intent.bootstrap.fragment + ",\"ssh\":{\"host\":\"" + inputs.intent.fleet.layout["gateway"].address + "\",\"port\":22,\"user\":\"orbit\",\"identity_file\":\"/home/orbit/.ssh/id_ed25519\",\"host_keys\":[\"" + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[1] + " " + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[2] + "\"]},\"release\":{\"repository\":\"" + steps["Read the release address"].outputs.stdout.split("\n")[0] + "\",\"commit\":\"" + steps["Read the release commit"].outputs.stdout.split("\n")[0] + "\"}}}" }}'], timeoutSec: 1510}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '1500', 'env', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/club-api-key', 'swamp', 'workflow', 'run', 'gateway-bootstrap', '--repo-dir', '${{ inputs.intent.operator_checkout + "/swamp" }}', '--input', '${{ "{\"intent\":{" + inputs.intent.bootstrap.fragment + ",\"ssh\":{\"host\":\"" + inputs.intent.fleet.layout["gateway"].address + "\",\"port\":22,\"user\":\"orbit\",\"identity_file\":\"/home/orbit/.ssh/id_ed25519\",\"host_keys\":[\"" + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[1] + " " + steps["Read the Gateway host key"].outputs.stdout.split("\n").filter(l, l.contains("ssh-ed25519"))[0].split(" ")[2] + "\"]},\"release\":{\"repository\":\"" + steps["Read the release address"].outputs.stdout.split("\n")[0] + "\",\"commit\":\"" + steps["Read the release commit"].outputs.stdout.split("\n")[0] + "\"}}}" }}'], timeoutSec: 1510}}
     dependsOn: [{step: 'Push the Swamp key', condition: {type: succeeded}}]
 - name: fleet
   labels: {role: swamp}
