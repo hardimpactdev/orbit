@@ -54,6 +54,9 @@ final readonly class OperationKinds
 
     public const string TasksPrMerge = 'tasks.pr_merge';
 
+    /** The merge of a pull request that no Task group watches; it targets its Project. */
+    public const string ProjectPrMerge = 'project.pr_merge';
+
     public const string TasksPrComment = 'tasks.pr_comment';
 
     public const string ProofRun = 'proof.run';

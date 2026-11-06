@@ -163,8 +163,9 @@ sequenceDiagram
     %%> Built:
     %%> - the operation `tasks:pr-merge`, with its chart, called by the gate check
     %%> - the call in automatic mode, after a passed round on the head
-    %%> Not built:
-    %%> - a PR that is not in a Task group still merges with `gh pr merge N --squash` as `nckrtl` (the interim)
+    %%> - a PR that no Task group watches merges through `project:pr-merge` (`docs/cli/project/pr-merge.mmd`): the same Swamp step, admitted by the Gateway for the Project, with the green merge check on the exact head as the gate
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, and a PR that a Task group watches is refused (`tasks:pr-merge` owns it)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one
