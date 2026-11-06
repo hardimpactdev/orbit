@@ -56,6 +56,7 @@ sequenceDiagram
   SW->>VM: Reset the nested topology<br/>from the seed's ready copies
   %%> Only for tasks that need the topology.
   %%> The seed clone was attached at enrol; it is the host's seed of the slot's image, because the stage 6 refresh promotes the image and its seed together and replaces older slots.
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): a large or medium slot follows the clone rule: while the image's seed holds no ready copies (a refresh with `seed=keep`), no claim takes a slot and the pool neither enrols nor destroys
   SW-->>GW: Slot claimed<br/>terminal event
   %%> Decided by the orchestrator, for Nick's review: today's provision projection; the claimed VM is `ready` and belongs to the group, and the Gateway runs the refill rule.
   Note over GW,VM: Release (the task ends)

@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
@@ -48,7 +49,18 @@ function slotPoolHost(?int $count = 2, int $maxVms = 6): array
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
         'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
 
+    slotPoolSeedRefreshed($host, $build);
+
     return [$host, $project, $build];
+}
+
+/** The succeeded refresh that promoted `$build` on `$host` with ready copies, so its seed is usable; `$seed` keep saves none. */
+function slotPoolSeedRefreshed(Node $host, TaskVmImageBuild $build, ?string $seed = null): Operation
+{
+    return Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['refresh' => ['host_node_id' => $host->id, 'seed' => $seed,
+            'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
+        'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
 }
 
 /** A slot row of the host: by default a fresh ready slot of the current image. */
@@ -217,7 +229,7 @@ it('takes no lock and starts nothing on a host without a pool', function (): voi
     [$host] = slotPoolHost(null);
 
     expect(app(TaskVmSlotPool::class)->refill($host->id))->toBeNull()
-        ->and(Operation::query()->count())->toBe(0);
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::EnrolKind)->count())->toBe(0);
 });
 
 it('fails an interrupted or cancelled enrol, so the refill rule destroys it', function (string $status): void {
@@ -284,4 +296,23 @@ it('gives a claimed slot the intent and the receipt of its enrol', function (): 
 
     expect($input)->not->toHaveKey('converge')->and($input['name'])->toBe($slot->name)->and($input['host_ssh_execution']['target']['host'])->toBe('10.44.0.7')
         ->and($input['slot']['receipt'])->toBe([...$receipt, 'result_json' => json_encode($receipt)]);
+});
+
+it('waits, and claims nothing, while the image seed holds no ready copies', function (): void {
+    [$host, $project] = slotPoolHost(2);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, app(TaskVmSettings::class)->devClusterId, '10.44.0.128/25',
+        app(TaskVmSettings::class)->hosts, 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+    // A refresh with seed=keep promotes a newer image and saves no ready copies for it.
+    $kept = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
+        'promoted_at' => now()->addMinute(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('d', 64)]]]);
+    slotPoolSeedRefreshed($host, $kept, 'keep');
+    slotPoolEnrol(slotPoolSlot($host, $project, $kept));
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
+    Bus::fake();
+
+    expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull()
+        ->and(app(TaskVmSlotPool::class)->claim($group))->toBeNull();
+
+    slotPoolSeedRefreshed($host, $kept);
+    expect(app(TaskVmSlotPool::class)->claim($group))->not->toBeNull();
 });

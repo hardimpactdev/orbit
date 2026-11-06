@@ -58,6 +58,7 @@ final readonly class TaskVmSlotPool
         private StartTaskVmDestroyAction $destroy,
         private RecipeImageBuilds $recipes,
         private SwampSshExecutionInput $ssh,
+        private TaskVmFleetSeed $seeds,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -106,6 +107,11 @@ final readonly class TaskVmSlotPool
             return null;
         }
         $current = $this->currentImage($host, $location);
+        // A large or medium VM needs the nested fleet: like a clone, the pool waits while the image's seed holds no ready copies
+        // (a refresh with `seed=keep`), so it neither enrols slots that no claim may take nor destroys the slots it has.
+        if ($setting !== null && $current !== null && $setting->size->resources()->testNodes > 0 && ! $this->seeds->usable($hostNodeId, $current['build_id'])) {
+            return null;
+        }
         $count = $setting === null ? 0 : self::count($location, $setting);
         if ($setting !== null && $slots->count() < $count) {
             $free = $this->capacity->freeSlots([[$location, $host]])[$host->id] ?? 0;
@@ -122,7 +128,8 @@ final readonly class TaskVmSlotPool
 
     /**
      * Takes the oldest ready slot that can serve the group: its Project and size are the group's, it is not stale, a
-     * group with `current_recipe` gets only a slot of the current recipe, and its host has capacity for it. The slot
+     * group with `current_recipe` gets only a slot of the current recipe, its host has capacity for it, and for a large or
+     * medium slot its image's seed holds ready copies, as a clone needs. The slot
      * joins the group at once. Null when no slot fits: the caller clones, as without a pool. Call it in the admission
      * transaction of the group.
      */
@@ -147,7 +154,8 @@ final readonly class TaskVmSlotPool
             }
             $location = $this->settings->host($hostNodeId);
             if ($this->stale($vm, $location->slots, $this->currentImage($host, $location)) || ($recipe !== null && $vm->recipe_identity !== $recipe)
-                || ($this->capacity->freeSlots([[$location, $host]])[$hostNodeId] ?? 0) < $size->slots() || $this->enrolOf($vm) === null) {
+                || ($this->capacity->freeSlots([[$location, $host]])[$hostNodeId] ?? 0) < $size->slots() || $this->enrolOf($vm) === null
+                || ($size->resources()->testNodes > 0 && ! $this->seeds->usable($hostNodeId, (int) $vm->image_build_id))) {
                 continue;
             }
             $vm->update(['group_id' => $group->id, 'claimed_at' => now()]);

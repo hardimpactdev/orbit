@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
@@ -15,6 +17,8 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -44,6 +48,43 @@ beforeEach(function (): void {
     app(TaskExtensionState::class)->enable();
     SwampNodeFixture::ensure();
     Bus::fake();
+    // The Swamp vault answers each execution copy as stored; the admission writes the proof club key.
+    app()->instance(WebSocketClient::class, new class implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        private array $frames = [];
+
+        private bool $open = false;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+
+            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    });
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
 });
 
 afterEach(function (): void {
@@ -62,7 +103,7 @@ function slotAdmissionWorld(?int $slots): array
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit',
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public', 'type' => 'monorepo', 'task_workspace_routed' => false]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
         [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB',
             slots: $slots === null ? null : new TaskVmSlotSetting($slots, $project->id, TaskVmSize::Large))],
@@ -114,9 +155,14 @@ it('clones a new VM when the host keeps no ready slot', function (): void {
 it('clones a new VM when every ready slot is stale or never enrolled', function (): void {
     [$host, $project, $build, $group] = slotAdmissionWorld(2);
     foreach ([['ready_at' => now()->subHours(21)], []] as $index => $overrides) {
-        TaskVm::query()->create([...['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
+        $slot = TaskVm::query()->create([...['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
             'size' => TaskVmSize::Large, 'name' => 'tvm-slot-'.$index, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.20'.$index,
             'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => $build->recipe_identity, 'ready_at' => now()], ...$overrides]);
+        if ($index === 0) {
+            // The stale slot was enrolled, so only its age keeps it from the claim.
+            Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+                'status' => OperationStatus::Succeeded, 'input' => [], 'result' => [], 'finished_at' => now()]);
+        }
     }
 
     $taken = slotAdmissionTakes($group);
@@ -124,13 +170,39 @@ it('clones a new VM when every ready slot is stale or never enrolled', function 
     expect($taken['claimed'])->toBe([])->and($taken['cloned'])->toHaveCount(1);
 });
 
-it('claims a ready enrolled slot and creates no VM', function (): void {
+it('claims a ready enrolled slot, creates no VM, and starts the provision with the enrol receipt', function (bool $samePins): void {
     [$host, $project, $build, $group] = slotAdmissionWorld(2);
     $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => 'tvm-slot', 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.209',
-        'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => $build->recipe_identity, 'ready_at' => now()]);
+        'size' => TaskVmSize::Large, 'name' => 'tvm-900', 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.190',
+        'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => $build->recipe_identity, 'ready_at' => now(),
+        'slot_digest' => $samePins ? app(TaskVmSlotPool::class)->releaseDigest() : str_repeat('0', 64)]);
+    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-900', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.252.7.90', 'wireguard_ip' => '10.44.0.190', 'user' => 'orbit', 'ssh_jump_node_id' => $host->id,
+        'ssh_host_fingerprint' => 'SHA256:guest', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'guest-public-key']));
+    $slot->update(['node_id' => $guest->id]);
+    // The converge of changed pins names the Gateway Node that holds the Pi server.
+    Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:gateway', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-public-key']))->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' fixture']);
+    $receipt = ['task_vm_id' => $slot->id, 'guest_node_id' => $guest->id, 'ready' => true];
     Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name], 'result' => ['task_vm_id' => $slot->id], 'finished_at' => now()]);
+        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name, 'node_id' => $host->id, 'host_node_id' => $host->id,
+            'guest_node_id' => $guest->id, 'provider' => 'incus', 'provider_id' => null, 'wireguard_ip' => $slot->wireguard_ip,
+            'image_fingerprint' => $slot->image_fingerprint, 'recipe_identity' => $slot->recipe_identity, 'create' => ['topology' => true], 'converge' => ['x' => 1]],
+        'result' => $receipt, 'finished_at' => now()]);
 
-    expect(slotAdmissionTakes($group))->toBe(['claimed' => [$slot->id], 'cloned' => []]);
-});
+    try {
+        app(TaskProvisionIntent::class)->start($group, 'test', null, SlotAdmissionCommit);
+    } catch (ResourceOperationException $e) {
+        // This fixture answers no Swamp run start; the admission has recorded its Operation by then.
+        expect($e->errorCode)->toBe('swamp.start_uncertain');
+    }
+    $operation = Operation::query()->where('kind', 'tasks.provision')->sole();
+
+    expect($operation->kind)->toBe('tasks.provision')
+        ->and($operation->input['slot']['receipt'])->toBe([...$receipt, 'result_json' => json_encode($receipt)])
+        ->and($operation->input['converge'] === null)->toBe($samePins)
+        ->and(TaskVm::query()->count())->toBe(1)
+        ->and($slot->fresh()->group_id)->toBe($group->id);
+})->with(['the pins of its enrol' => [true], 'changed pins' => [false]]);
