@@ -41,7 +41,7 @@ final readonly class TaskVmImageRefreshIntent
 
     public function __construct(private TaskProvisionIntent $provision, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private ProofSettings $proof, private RecipeImageBuilds $recipes,
-        private TaskVmReadyCopiesIntent $copies) {}
+        private TaskVmReadyCopiesIntent $copies, private TaskVmFleetBuildIntent $fleet) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -111,7 +111,7 @@ final readonly class TaskVmImageRefreshIntent
         // keeps the root disk of the host's base VM, so the image it publishes still fits a normal VM.
         $input['create'] = [...ValidatedData::object($input['create']), 'disk' => $location->disk];
         // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
-        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm)]);
+        $pinned = app(PendingSshHostKey::class)->during((int) $instance->node_id, fn (): array => ['ready_copies' => $this->copies->provisioning($vm), 'fleet_build' => $this->fleet->provisioning($vm)]);
         $candidate = $location->imageAlias.'-refresh-'.$group->id;
         $recipeIdentity = $this->recipes->currentRecipe()->identity;
         $jump = $this->ssh->forNode($host);
@@ -141,6 +141,7 @@ final readonly class TaskVmImageRefreshIntent
                     'recipe' => $converge['recipe'], 'vp_lock' => $converge['vp_lock'], 'pi' => $converge['pi'],
                 ],
                 'ready_copies' => Arr::except($pinned['ready_copies'], ['execution_secrets']),
+                'fleet_build' => Arr::except($pinned['fleet_build'], ['execution_secrets']),
             ],
         ];
     }

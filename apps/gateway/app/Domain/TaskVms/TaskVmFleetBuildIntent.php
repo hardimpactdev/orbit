@@ -60,11 +60,38 @@ final readonly class TaskVmFleetBuildIntent
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a ready Incus VM and its active guest identity with its recorded host key.', 409);
         }
 
+        return $this->build($vm, $guest, $this->club());
+    }
+
+    /**
+     * The same intent for a VM that the run itself creates, as the refresh of a task image admits it: the VM is not ready yet, so its host key
+     * is not recorded and the guest's SSH target carries `host_keys: null` until the run pins it.
+     *
+     * @return array<string,mixed>
+     */
+    public function provisioning(TaskVm $vm): array
+    {
+        $guest = $vm->node;
+        if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null) {
+            throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs an Incus VM and its guest Node.', 409);
+        }
+
+        return $this->build($vm, $guest, $this->club());
+    }
+
+    private function club(): string
+    {
         $club = config('swamp.proof_club_api_key');
         if (! is_string($club) || trim($club) === '') {
             throw new ResourceOperationException('task_vm.fleet_build_unavailable', 'Building a fleet needs the proof Swamp Club key.', 409);
         }
 
+        return $club;
+    }
+
+    /** @return array<string,mixed> */
+    private function build(TaskVm $vm, Node $guest, string $club): array
+    {
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),

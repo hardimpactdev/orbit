@@ -111,7 +111,7 @@ jobs:
       condition:
         type: succeeded
     # A seed without its three ready copies of the current format has no nested fleet: the one decision for the fleet, and the VM goes on without it.
-    # The result says `nested_fleet: none`, and the refresh of the task image refuses such a VM.
+    # The result says `nested_fleet: none`, and the refresh of the task image builds the fleet in such a VM.
   - name: Find the fleet guest
     labels: {role: swamp}
     guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
