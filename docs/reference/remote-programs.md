@@ -13,7 +13,7 @@ Node management runs through [named Rust agent commands](/reference/node-agent#c
 
 ## Program files
 
-The catalog holds no program now: the workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
+No Gateway code calls a catalogued program now: the workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
 
 `RemoteProgramCatalog` reads the program header and prepends `lib/program.py`. The header declares the program name, libraries, outcomes, and 30-second timeout. The assembled source and its JSON input travel through `SshProgramRunner` over the Node's pinned SSH connection.
 
@@ -37,7 +37,7 @@ The Gateway has an [architecture test](/reference/node-agent#commands) that perm
 
 The Gateway still sends these programs from `apps/gateway/resources` to Nodes, outside Swamp. Each moves to a Swamp flow:
 
-- The Tasks workspace scripts `tasks/check`, `tasks/composer`, `tasks/metadata`, `tasks/workspace-operation.py`, and `tasks/unit-state.py`.
+- The Tasks workspace scripts `tasks/check`, `tasks/composer`, `tasks/metadata`, and `tasks/unit-state.py`.
 - The remote runner files `remote/bootstrap.py` and `remote/lib/program.py`.
 - The CI cache import `tasks/ci-caches.sh`.
 

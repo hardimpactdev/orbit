@@ -29,7 +29,8 @@ final readonly class CancelRunningSubtaskAction
             throw new ResourceOperationException('tasks.subtask_not_running', 'Only a todo, running, or reviewing subtask in an open group can be cancelled.', 409);
         }
         $instanceId = $group->taskable_id;
-        $finish = fn (): Task => DB::transaction(function () use ($parent, $candidate, $instanceId): Task {
+
+        return DB::transaction(function () use ($parent, $candidate, $instanceId): Task {
             $group = Task::topLevel()->lockForUpdate()->findOrFail($parent->id);
             $locked = Task::query()->where('parent_id', $group->id)->lockForUpdate()->findOrFail($candidate->id);
             if ($locked->status !== $candidate->status || $group->taskable_id !== $instanceId || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
@@ -40,8 +41,6 @@ final readonly class CancelRunningSubtaskAction
 
             return $locked->fresh() ?? $locked;
         });
-
-        return $finish();
     }
 
     private function markSubtaskCancelled(Task $task): ?string

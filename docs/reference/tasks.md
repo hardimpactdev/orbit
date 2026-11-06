@@ -89,9 +89,9 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 `POST /api/v1/task-groups/{group}/park`, CLI `tasks:park GROUP --idempotency-key=KEY`, and MCP `tasks-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
 
-Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and no other unfinished operation or workspace owner. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
+Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
 
-A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running.A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
+A subtask that is still `todo` does not block the park: a prep run opens the spec PR and leaves its subtask `todo`, because the code follows. Such a subtask counts as idle only while no turn, check or prep run of the group is running. A subtask that runs or waits for review refuses the park. Operation admission serializes with other group operations and returns `operation.target_busy` for a busy target. A group execution lock wait is bounded to five seconds; contention returns HTTP 409 `tasks.workspace_waiting` for a later retry.
 
 The operation checks eligibility under the group execution lock. Swamp stops the existing VM through the canonical provider child and checks its stopped state. The Gateway reads native provider completion and retains the IDs captured at admission; no shell prints them again. It checks eligibility again after the stop and moves the group to `waiting_for_review` only if that check still passes. A child or assistance change during shutdown refuses the operation and preserves the previous group status. It preserves the checkout and disk. It neither allocates another VM nor merges the PR.
 
@@ -755,6 +755,8 @@ The Gateway retains task state, operation recovery, provider jobs and transcript
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
 
+A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
+
 ## Task workspace
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
@@ -1163,7 +1165,7 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
@@ -1267,7 +1269,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### External checks are their own operation and own their commit
 
-A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit. A lost check retains ownership because a missing supervisor does not prove its children stopped.
+A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 
