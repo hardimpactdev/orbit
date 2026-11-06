@@ -21,7 +21,7 @@ sequenceDiagram
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
-  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores `base`, sets the clocks, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
+  %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores `base`, sets the clocks, restarts the NFS server, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
   %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   GW->>SW: Start the proof<br/>cases file · this VM
@@ -29,6 +29,9 @@ sequenceDiagram
   %%> What it does:
   %%> - restores the task's Incus stateful snapshot `base` (stage 2), all three VMs in parallel
   %%> - sets each guest clock from the outer VM as soon as that VM's agent answers; a restore puts the clocks back to snapshot time
+  %%> - restarts the NFS server of the task VM, so the restored guests open new connections to the checkout
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - a stateful restore brings back each guest's TCP state from the snapshot while the NFS server has moved on, so the guest firewall drops the server's packets as invalid and the hard mount hangs every process that reads the checkout (proof 12000, VM 748); a restart of the server ends the old connections, and the guests reconnect (about 10 s once on VM 748; to be measured over more restores)
   %%> - ready when the Gateway answers, every Node agent sends a fresh heartbeat (every 5 s) and Doctor is healthy
   %%> - every restore of the snapshots has a 45 s limit, and readiness then waits at most 120 s for a healthy Doctor (one Ansible task, decided by the orchestrator, for Nick's review); a restore that fails or is not healthy in time stops the run, with no retry; the cases that did not run become `unrun` with cause `infrastructure`, and the verdicts of cases that ran stay
   %%> Built, not yet passed live:
@@ -127,7 +130,7 @@ sequenceDiagram
     %%> - the nested VMs mount that checkout over NFS, so they need no second export; a step reads `git rev-parse HEAD` in the nested Gateway and the run stops unless it is the merge base
     SW->>NT: Restore base<br/>then apply
     %%> What it does:
-    %%> - the restore of `base` that every batch uses: restore, clocks, readiness, then the apply step, now on the merge-base code
+    %%> - the restore of `base` that every batch uses: restore, clocks, NFS server restart, readiness, then the apply step, now on the merge-base code
     SW->>NT: Run the new cases<br/>only them, in their batches
     %%> What it does:
     %%> - the batches of the plan that hold a new case, in order; the first starts from the restore above, each later one restores `base` itself
@@ -147,7 +150,7 @@ sequenceDiagram
   %%> Why:
   %%> - the author keeps developing on a clean fleet that already runs the latest code; nothing switches back
   %%> Built, not yet passed live:
-  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore, clocks, readiness, apply), after the batches end, also when a case failed or a step stopped the run
+  %%> - the Swamp workflow `proof-fleet-verify` runs this restore in its job `finish`, with the child `proof-fleet-restore` (restore, clocks, NFS server restart, readiness, apply), after the batches end, also when a case failed or a step stopped the run
   %%> - it belongs to the author's own command: it runs when the intent sets `final_restore`; the proof in CI (stage 4) destroys its VM and leaves it unset
   %%> - `orbit proof COMMAND` sets `final_restore`; it also sets `restore_first`, which makes the workflow restore `base` before the first batch, because the author's fleet may have moved (CI leaves it unset: its VM has just taken `base`)
   %%> - it has the 45 s limit of every restore; one that fails or is not healthy in time fails the run, and the verdicts of the cases stay in the report
