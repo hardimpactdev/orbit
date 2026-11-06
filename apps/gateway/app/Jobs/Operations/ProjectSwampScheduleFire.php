@@ -9,6 +9,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampScheduledResults;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 /** Records one calendar fire of a Schedule's own workflow after the poll found it finished. */
 final class ProjectSwampScheduleFire implements ShouldQueue
@@ -30,5 +31,10 @@ final class ProjectSwampScheduleFire implements ShouldQueue
         }
 
         return $projected;
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        SwampScheduledResults::failed($this->runId);
     }
 }

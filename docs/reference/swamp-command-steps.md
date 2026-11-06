@@ -80,7 +80,7 @@ The existing shared observer keeps its run-authorized connection for bound-root 
 
 > Decided by the orchestrator, for Nick's review: polling replaces the commit feed until a v3 datastore is planned. The feed (`commits.subscribe`) needs a v3 commit log. The Swamp node uses the filesystem datastore, so Swamp refused the feed. A v3 datastore needs a new empty path and does not migrate existing data, so it would also drop the schedule pause state.
 
-A listed run is followed only when its workflow UUID is declared and its name matches the declared name, or when it is a `schedule-<uuid>` root of a Schedule the Gateway holds. Any other run is ignored. Each followed run queues one projection job, keyed by run ID. A run whose projector accepted it is remembered for two hours, and a run already queued is not queued again for 15 minutes, so a repeated read is a no-op and a failed projection is tried again later.
+A listed run is followed only when its workflow UUID is declared and its name matches the declared name, or when it is a `schedule-<uuid>` root of a Schedule the Gateway holds. Any other run is ignored. Each followed run queues one projection job, keyed by run ID. A run whose projector accepted it is remembered for two hours, and a run already queued is not queued again for 15 minutes. So a repeated read is a no-op. A failed projection is tried once more later, then left alone, because Swamp keeps only the latest versions of a result.
 
 The projector reads the exact history and still refuses a run that is not terminal, so the list is only a hint. A failed read or an unavailable Swamp ends the job without moving the cursor; the next minute reads again.
 
@@ -90,7 +90,7 @@ Only verified terminal histories reach the family projector. The workflow UUID/n
 
 A schedule that belongs to no Operation declares its workflow UUID, name and `terminal_result` in its domain's `scheduled-results.php`, with a `projection` that implements `ScheduledResultProjection`. The projection gets the run and the JSON its result step printed. A failed run passes that JSON too when the step printed one, and an empty result when it did not. `automatic-production-deploy` uses this: its result step prints the fire's events before a failures assert can fail the run, so the Gateway records them anyway.
 
-The shared Gateway cache stores the time of the last successful read, keyed by native address. The next read starts one hour before it, so a run that ends later than it started and a short Gateway outage lose nothing. A new cache starts one hour back; older runs are not replayed. The projection of a run is idempotent, so the overlap is safe.
+The shared Gateway cache stores the time of the last successful read, keyed by native address. The next read starts one hour before it, so a run that ends later than it started and a short Gateway outage lose nothing. A new cache starts ten minutes back; older runs are not replayed. The projection of a run is idempotent, so the overlap is safe.
 
 A fire of a Schedule's own workflow is recorded as a task when its run ends, not when it starts. The job also tells each projection about its declared workflow every ten minutes, which the feed did when it connected. There is no timer on history reads of one run and no fallback to a family search.
 

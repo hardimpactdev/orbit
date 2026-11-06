@@ -72,7 +72,7 @@ function pollRun(string $run, string $workflow = POLL_CHECK_WORKFLOW, string $na
 
 afterEach(fn () => app(SwampConnection::class)->release());
 
-it('asks Swamp for the runs that finished in the last hour, with no commit feed', function (): void {
+it('asks Swamp for the runs that finished recently, with no commit feed', function (): void {
     Bus::fake();
     $socket = pollSocket([[]]);
 
@@ -141,4 +141,37 @@ it('keeps the read cursor from one poll to the next', function (): void {
     app(SwampScheduledResults::class)->poll();
 
     expect(Cache::get('swamp:scheduled-results:'.hash('sha256', 'swamp.test').':cursor'))->toBeString();
+});
+
+it('leaves a run alone after its projection failed twice', function (): void {
+    Bus::fake();
+    $run = '986bc349-54dc-4dea-9f22-76e3353d1c87';
+    pollSocket([[pollRun($run)]]);
+    SwampScheduledResults::failed($run);
+    SwampScheduledResults::failed($run);
+
+    app(SwampScheduledResults::class)->poll();
+
+    Bus::assertNotDispatched(ProjectSwampScheduledTerminal::class);
+});
+
+it('queues a run whose projection failed once', function (): void {
+    Bus::fake();
+    $run = '986bc349-54dc-4dea-9f22-76e3353d1c88';
+    pollSocket([[pollRun($run)]]);
+    SwampScheduledResults::failed($run);
+
+    app(SwampScheduledResults::class)->poll();
+
+    Bus::assertDispatchedTimes(ProjectSwampScheduledTerminal::class, 1);
+});
+
+it('goes back ten minutes on a first read', function (): void {
+    Bus::fake();
+    $socket = pollSocket([[]]);
+
+    app(SwampScheduledResults::class)->poll();
+
+    $since = Carbon\Carbon::parse($socket->frames[0]['payload']['since']);
+    expect((int) $since->diffInMinutes(now(), true))->toBe(10);
 });

@@ -18,11 +18,17 @@ use Throwable;
 /** Finds finished scheduled runs by one read per minute. Swamp's commit feed needs a v3 datastore, so it is not used. */
 final class SwampScheduledResults
 {
+    /** A first read, with no saved read time, goes back this far. */
+    private const int FirstReadMinutes = 10;
+
     /** Finished runs are read back over this span, so a long run that ends later and a short Gateway outage lose nothing. */
     private const int WindowMinutes = 60;
 
     /** A queued projection is not queued again for this long; a projection that failed is tried again after it. */
     private const int QueuedSeconds = 900;
+
+    /** A run whose projection failed this many times is left alone: Swamp keeps only the latest versions of a result, so an old run cannot be read back. */
+    private const int MaxAttempts = 2;
 
     /** The projectors are told about the declared workflows this often, not at every read. */
     private const int ActivateSeconds = 600;
@@ -48,7 +54,8 @@ final class SwampScheduledResults
         }
         $started = Carbon::now();
         $saved = Cache::get($this->key('cursor'));
-        $since = (is_string($saved) ? Carbon::parse($saved) : $started)->subMinutes(self::WindowMinutes);
+        // With no saved read, only recent runs are listed: their results are still in Swamp.
+        $since = is_string($saved) ? Carbon::parse($saved)->subMinutes(self::WindowMinutes) : $started->copy()->subMinutes(self::FirstReadMinutes);
         $runs = $this->step->finishedRuns($since->utc()->format('Y-m-d\TH:i:s.v\Z'));
         $completed = static fn (array $run): string => is_string($run['completedAt'] ?? null) ? $run['completedAt'] : '';
         usort($runs, static fn (array $left, array $right): int => strcmp($completed($left), $completed($right)));
@@ -83,9 +90,18 @@ final class SwampScheduledResults
         Cache::put(self::scope().':done:'.$run, true, now()->addMinutes(self::WindowMinutes * 2));
     }
 
+    /** Count a failed projection of a run. */
+    public static function failed(string $run): void
+    {
+        $key = self::scope().':attempts:'.$run;
+        Cache::add($key, 0, now()->addMinutes(self::WindowMinutes * 2));
+        Cache::increment($key);
+    }
+
     private function project(ProjectSwampScheduledTerminal|ProjectSwampScheduleFire $job, string $run): void
     {
-        if (Cache::has($this->key('done:'.$run)) || ! Cache::add($this->key('queued:'.$run), true, self::QueuedSeconds)) {
+        $attempts = Cache::get($this->key('attempts:'.$run));
+        if (Cache::has($this->key('done:'.$run)) || (is_int($attempts) && $attempts >= self::MaxAttempts) || ! Cache::add($this->key('queued:'.$run), true, self::QueuedSeconds)) {
             return;
         }
         try {
