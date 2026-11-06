@@ -415,7 +415,9 @@ Missing or damaged protected files require their approved recovery procedure and
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. The playbook reads the pins of `recipe.json` from the intent and names none. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols.
+
+The playbook reads the pins of `recipe.json` from the intent and names none. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 ## Role compatibility
 
