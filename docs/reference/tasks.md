@@ -771,7 +771,7 @@ A resolution clears group assistance only when its kind, question, and reason ma
 
 ### Behavior names
 
-The local and SSH steps of `tasks.turn`, `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `tasks.check` are named by the task VM: the name ends in the VM node id. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+The local and SSH steps of `tasks.turn`, `tasks.prep`, `tasks.prep_fix`, `tasks.script` and `tasks.check` are named by the task VM: the name ends in the address of the VM (its WireGuard address). Every task VM is a new Node, so a node id would add behavior instances for ever; the addresses come from a bounded pool and are reused. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
 
 Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. The token mint and the check preparation steps are short, and the `collect` step of the scheduled check observation is one step for every VM.
 
