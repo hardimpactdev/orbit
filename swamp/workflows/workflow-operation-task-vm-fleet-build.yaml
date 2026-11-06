@@ -137,30 +137,12 @@ jobs:
   labels: {role: swamp}
   dependsOn: [{job: bootstrap, condition: {type: succeeded}}]
   steps:
-  - name: 'Admit the Gateway role'
-    labels: {role: swamp}
-    writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-role").split(".").join("-") }}', methodName: exec,
-      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-role").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:role-add', 'gateway', 'gateway', '--converge'], timeoutSec: 130}}
-  # The nested Gateway records the end of the run its own Swamp made; this waits for that record, at a fixed interval, inside a literal timeout.
-  - name: 'Wait for the Gateway role'
-    labels: {role: swamp}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}', methodName: exec,
-      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sh', '-c', 'until s=$(sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway role"].outputs.stdout.split("#")[1].split(" ")[0] }}'], timeoutSec: 610}}
-    dependsOn: [{step: 'Admit the Gateway role', condition: {type: succeeded}}]
-  - name: 'Check the Gateway role'
-    labels: {role: swamp}
-    task: {type: assert, expr: 'steps["Wait for the Gateway role"].outputs.stdout.split("\n")[0] == "succeeded"', severity: high, message: The first converge of the Gateway role did not succeed}
-    dependsOn: [{step: 'Wait for the Gateway role', condition: {type: succeeded}}]
   - name: 'Admit the Gateway Node'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-node").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-node").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:node-converge', 'gateway'], timeoutSec: 130}}
-    dependsOn: [{step: 'Check the Gateway role', condition: {type: succeeded}}]
   # The nested Gateway records the end of the run its own Swamp made; this waits for that record, at a fixed interval, inside a literal timeout.
   - name: 'Wait for the Gateway Node'
     labels: {role: swamp}
@@ -172,13 +154,31 @@ jobs:
     labels: {role: swamp}
     task: {type: assert, expr: 'steps["Wait for the Gateway Node"].outputs.stdout.split("\n")[0] == "succeeded"', severity: high, message: The converge of the Gateway Node did not succeed}
     dependsOn: [{step: 'Wait for the Gateway Node', condition: {type: succeeded}}]
+  - name: 'Admit the Gateway role'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-role").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-gateway-role").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:role-add', 'gateway', 'gateway', '--converge'], timeoutSec: 130}}
+    dependsOn: [{step: 'Check the Gateway Node', condition: {type: succeeded}}]
+  # The nested Gateway records the end of the run its own Swamp made; this waits for that record, at a fixed interval, inside a literal timeout.
+  - name: 'Wait for the Gateway role'
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-wait-for-the-gateway-role").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '600', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sh', '-c', 'until s=$(sqlite3 /home/orbit/.orbit/gateway.sqlite "select status from operations where id = $0"); [ -n "$s" ] && [ "$s" != running ]; do sleep 5; done; echo "$s"', '${{ steps["Admit the Gateway role"].outputs.stdout.split("#")[1].split(" ")[0] }}'], timeoutSec: 610}}
+    dependsOn: [{step: 'Admit the Gateway role', condition: {type: succeeded}}]
+  - name: 'Check the Gateway role'
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Wait for the Gateway role"].outputs.stdout.split("\n")[0] == "succeeded"', severity: high, message: The first converge of the Gateway role did not succeed}
+    dependsOn: [{step: 'Wait for the Gateway role', condition: {type: succeeded}}]
   - name: 'Admit the websocket role'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-websocket-role").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-the-websocket-role").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:role-add', 'gateway', 'websocket'], timeoutSec: 130}}
-    dependsOn: [{step: 'Check the Gateway Node', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check the Gateway role', condition: {type: succeeded}}]
   # The nested Gateway records the end of the run its own Swamp made; this waits for that record, at a fixed interval, inside a literal timeout.
   - name: 'Wait for the websocket role'
     labels: {role: swamp}
