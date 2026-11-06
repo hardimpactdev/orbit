@@ -740,7 +740,7 @@ The `check` phase also asserts that `orbit` has UID and GID 1000. The `template`
 
 The `clean` phase follows an image build and nothing else; it does nothing unless `intent.image` is set. The UpCloud template build runs it. The Incus build cleans through its own child workflow.
 
-The phase refuses a server that was enrolled. It masks the services of a first boot and turns ufw on with only the recovery SSH rule open (`orbit:public-ssh-recovery`). It empties the journal, the logs, the temporary files and the shell histories.
+The phase refuses a server that was enrolled. It masks the services of a first boot and turns ufw on with only the recovery SSH rule open (`orbit:public-ssh-recovery`). It empties the journal, the logs, the temporary files (not the ones of Ansible itself) and the shell histories.
 
 It ends with `cloud-init clean`, the removal of the SSH host keys and the emptying of the authorized keys. The Ansible session stays open through them. The state of Incus stays in the image.
 

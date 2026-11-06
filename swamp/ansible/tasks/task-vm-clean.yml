@@ -45,7 +45,8 @@
         - [journalctl, --vacuum-time=1s]
         - [find, /var/log, -type, f, "(", -name, "*.gz", -o, -regex, ".*[.][0-9]", ")", -delete]
         - [find, /var/log, -type, f, -exec, truncate, -s, "0", "{}", "+"]
-        - [find, /tmp, /var/tmp, -mindepth, "1", -maxdepth, "1", "!", -name, "systemd-private-*", -exec, rm, -rf, "{}", "+"]
+        # Ansible unpacks the module that runs this task into /tmp/ansible_*; removing it under the module crashes it.
+        - [find, /tmp, /var/tmp, -mindepth, "1", -maxdepth, "1", "!", -name, "systemd-private-*", "!", -name, "ansible_*", -exec, rm, -rf, "{}", "+"]
         - [find, /root, /home, -maxdepth, "2", -name, .bash_history, -delete]
       loop_control: { label: "{{ item[0] }} {{ item[1] }}" }
       changed_when: true
