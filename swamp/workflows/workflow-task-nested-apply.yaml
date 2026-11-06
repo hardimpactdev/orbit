@@ -1,7 +1,7 @@
 id: 36a4edad-7628-4889-9391-edfbf2d87b29
 name: task-nested-apply
 description: >-
-  Put the current checkout and state in the nested fleet of a task VM and make the long-running services run it (the apply step of stage 2 of the command development pipeline): the state of the Gateway and app-dev on their own disks over the NFS checkout, the migrations, a restart of the queue worker and the Swamp worker. Each step is one command over official SSH to the task VM.
+  Put the current checkout and state in the nested fleet of a task VM and make the long-running services run it (the apply step of stage 2 of the command development pipeline): the state of the Gateway and app-dev on their own disks over the NFS checkout, the migrations, a restart of Horizon, the scheduler, the agent-view subscriber and the Swamp workers. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -42,7 +42,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--user', '1000', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'migrate', '--force'], timeoutSec: 130}}
     dependsOn: [{step: 'Mount the state', condition: {type: succeeded}}]
-  # Horizon, the scheduler, the agent-view subscriber and the Swamp workers load their code once; they run the checked-out code after this.
+  # Horizon, the scheduler, the agent-view subscriber and the Swamp workers load their code once; they run the checked-out code after this. The restart does not wait for the Club key; the check of the Swamp units does.
   - name: 'Restart the services'
     labels: {role: swamp}
     writes: true

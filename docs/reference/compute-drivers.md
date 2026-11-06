@@ -1303,9 +1303,9 @@ The recovery needs every instance in the pool to have its network and devices, a
 
 The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
 
-The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts Horizon, the scheduler, the agent-view subscriber and the two Swamp workers, and checks, one unit at a time, that they and the nested Swamp serve are active.
+The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway. It restarts Horizon, the scheduler, the agent-view subscriber and the two Swamp workers.
 
-The units are the ones the `gateway` and `swamp` roles ship. The step names no per-Node worker, because Swamp workers run only on the Swamp Node.
+It then checks, one unit at a time, that Horizon, the scheduler and the agent-view subscriber are active. With the Club key it also checks the nested Swamp serve and its two workers.
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 

@@ -35,7 +35,7 @@ sequenceDiagram
   %%> - stock Incus restore and agent wait, no tuning: restore about 9 s, healthy about 16 s
   SW->>NT: Apply the code<br/>migrate · restart services
   %%> What it does:
-  %%> - runs the migrations and restarts the long-running services (queue worker, Swamp worker) in the nested Gateway, so they run the checked-out code
+  %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber and the two Swamp workers) in the nested Gateway, so they run the checked-out code
   %%> - the code itself needs no step: the nested VMs mount the task VM's checkout over NFS (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: a memory restore brings back processes that loaded older code
   opt playbooks or pins changed

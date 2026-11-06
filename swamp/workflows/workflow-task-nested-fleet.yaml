@@ -219,7 +219,7 @@ jobs:
     writes: true
     guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-restart-the-nested-swamp").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'restart', 'orbit-swamp-serve', 'orbit-node-worker'], timeoutSec: 70}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'restart', 'orbit-swamp-serve'], timeoutSec: 70}}
     dependsOn: [{step: 'Push the Club key', condition: {type: succeeded}}]
   # The checkout and the state of the Gateway and app-dev, the migrations and the restart of the long-running services (child `task-nested-apply`, which the restore of the base snapshot reuses).
   - name: 'Apply the checkout'
