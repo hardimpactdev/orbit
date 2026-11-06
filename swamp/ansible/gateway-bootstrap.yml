@@ -21,6 +21,8 @@
   handlers:
     - name: Reload units
       ansible.builtin.systemd: { daemon_reload: true }
+    - name: Restart the hub
+      ansible.builtin.systemd: { name: wg-quick@orbit.service, state: restarted }
     - name: Reload Caddy
       ansible.builtin.systemd: { name: caddy.service, state: restarted, enabled: true }
   tasks:

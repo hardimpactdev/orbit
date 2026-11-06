@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Gateway;
 
+use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
@@ -19,7 +20,7 @@ final readonly class GatewayControlPlan
 
     /**
      * @param  string  $checkout  The `swamp/` folder of the release on this machine, the Swamp repository serve reads.
-     * @return array{user:string,node_id:int,repository:string,units:array{serve:string,worker:string},grants:array<string,string>}
+     * @return array{user:string,node_id:int,repository:string,units:array{serve:string,worker:string},grants:array<string,string>,hub:array{config:string,key_file:string,peer_directory:string}}
      */
     public function make(string $checkout): array
     {
@@ -31,6 +32,9 @@ final readonly class GatewayControlPlan
             'repository' => $checkout,
             'units' => SwampRoleUnits::for($node->user, $node->id, $checkout),
             'grants' => $this->grants->render($checkout),
+            // The hub of the Gateway's own private network. Its private key is made on the machine and stays there.
+            'hub' => ['config' => NodeWireGuardHubInput::config($node), 'key_file' => NodeWireGuardHubInput::KeyFile,
+                'peer_directory' => NodeWireGuardHubInput::PeerDirectory],
         ];
     }
 }

@@ -7,21 +7,35 @@ namespace App\Console\Commands;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewayControlPlan;
 use App\Domain\Nodes\SwampNode;
+use App\Models\Node;
 use Illuminate\Console\Command;
 
-/** Prints what the Gateway's own Swamp needs on its machine, or issues the certificate of the `swamp.orbit` front. */
+/** Prints what the Gateway's own Swamp needs on its machine, issues the certificate of the `swamp.orbit` front, or records the hub key. */
 final class BootstrapControlPlanCommand extends Command
 {
     #[\Override]
     protected $signature = 'orbit:bootstrap-control-plan
         {--checkout= : The swamp/ folder of the release on this machine}
-        {--certificate : Issue the certificate of swamp.orbit and print its paths}';
+        {--certificate : Issue the certificate of swamp.orbit and print its paths}
+        {--hub-public-key= : Record the public key of the WireGuard hub the machine made}';
 
     #[\Override]
     protected $description = 'Print the Swamp control plane plan of this Gateway, or issue the swamp.orbit certificate.';
 
     public function handle(GatewayControlPlan $plan, GatewayCertificateIssuer $certificates): int
     {
+        $hubKey = $this->option('hub-public-key');
+        if (is_string($hubKey) && $hubKey !== '') {
+            if (strlen((string) base64_decode($hubKey, true)) !== 32) {
+                $this->error('The hub public key is not a WireGuard key.');
+
+                return self::FAILURE;
+            }
+            Node::withoutEvents(static fn (): bool => SwampNode::node()->update(['wireguard_public_key' => $hubKey]));
+            $this->line('Hub public key recorded.');
+
+            return self::SUCCESS;
+        }
         if ($this->option('certificate')) {
             $node = SwampNode::node();
             $paths = $certificates->issue('swamp.orbit', (string) $node->wireguard_ip);

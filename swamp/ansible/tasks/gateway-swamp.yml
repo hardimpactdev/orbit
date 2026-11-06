@@ -160,6 +160,34 @@
   no_log: true
   register: gateway_settings
   changed_when: gateway_settings.rc == 0
+# The hub of the Gateway's own private network. Swamp reaches every Node, this one too, by its WireGuard address, so the hub is up
+# before any role runs. The private key is made here and never leaves; only the public key is recorded.
+- name: Make the hub folders
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0700" }
+  loop: ["{{ control.hub.key_file | dirname }}", "{{ control.hub.peer_directory }}"]
+- name: Make the hub key
+  ansible.builtin.shell:
+    cmd: umask 077 && wg genkey > {{ control.hub.key_file }}
+    creates: "{{ control.hub.key_file }}"
+  no_log: true
+- name: Write the hub file
+  ansible.builtin.copy:
+    dest: /etc/wireguard/orbit.conf
+    content: "{{ control.hub.config }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart the hub
+- name: Start the hub
+  ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+- name: Read the hub public key
+  ansible.builtin.command: { argv: [wg, show, orbit, public-key] }
+  register: hub_public_key
+  changed_when: false
+- name: Record the hub public key
+  ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--hub-public-key={{ hub_public_key.stdout }}"] }
+  become_user: "{{ swamp_user }}"
+  changed_when: true
 # The front the Gateway starts runs through: TLS on 443 for swamp.orbit, signed by this Gateway's CA, to serve on loopback.
 - name: Issue the swamp.orbit certificate
   ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--certificate"] }
