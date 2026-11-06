@@ -43,6 +43,8 @@ sequenceDiagram
   SW->>VM: Stop the nested VMs<br/>incus stop
   %%> What it does:
   %%> - one clean stop of the three guests, so a copy holds finished file systems
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - the Gateway's Horizon unit is ordered after `valkey-server.service`: Horizon drains through its queue and never gets SIGKILL, so when both stopped together the Gateway guest hung at shutdown (op 11691)
   SW->>VM: Copy the guests<br/>incus copy --instance-only
   %%> What it does:
   %%> - deletes the earlier `fleet-ready-*` copies, then copies each guest to `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`, without the `base` snapshot of the earlier fleet
