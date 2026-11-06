@@ -584,10 +584,10 @@ The request cannot supply a domain, root or signing policy. A current leaf retur
 no new bundle. Node removal selects its admitted restoration leaves only when
 `restoring` is true.
 
-A leaf is signed while its Node is `active`. The Node that a `node.add` adds, and the new guest Node
-of a `tasks.provision` (`guest_node_id`), are also signed while they are `provisioning`, because
-the Gateway activates them only when it records the enrollment result, which for a provision is
-when its result is applied, after the Route step has asked for the leaf.
+A leaf is signed while its Node is `active`. The Node that a `node.add` adds is also signed while it
+is `provisioning`. So is the new guest Node of a `tasks.provision` (`guest_node_id`). The Gateway
+activates a guest only when it applies the provision result, and that is after the Route step has
+asked for the leaf.
 
 For registered `websocket.app_attach` and `websocket.app_detach` parents, signing reads only `websocket_attachment.route_mutations.forward.prepare_certificates` and `websocket_attachment.route_mutations.forward.certificates`. Restoration reads only `websocket_attachment.route_mutations.restore.certificates`. Other containers and the opposite phase grant no authority. Route children carry the actual parent run ID; the Operation and its bound run still scope every request.
 
