@@ -1,4 +1,4 @@
-id: 1d45717d-7700-4ca0-853a-1a1f56e2096c
+id: d7613a2f-778a-4c5e-922f-98b5bc3a761d
 name: task-vm-image-clean
 description: >-
   Clean and stop a VM so that its disk can be published as a task image: no nested guests, no WireGuard key, observer identity or secret, no Pi token, model key or Club key, no checkout, no SSH host keys, a reset machine-id and cloud-init. One argv per step over official SSH to the Incus host, through `incus exec`. The refresh of a task image (stage 6) runs it on its enrolled refresh VM; the image build runs it on its builder with `enrolled: false` and `nested: {}`.
@@ -28,7 +28,7 @@ jobs:
   - name: 'Remove the nested guests'
     labels: {role: swamp}
     writes: true
-    guard: '${{ "network" in inputs.intent.nested }}'
+    guard: '${{ !("network" in inputs.intent.nested) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -39,8 +39,8 @@ jobs:
   - name: 'Remove the nested network'
     labels: {role: swamp}
     writes: true
-    guard: '${{ "network" in inputs.intent.nested }}'
-    dependsOn: [{step: 'Remove the nested guests', condition: {type: succeeded}}]
+    guard: '${{ !("network" in inputs.intent.nested) }}'
+    dependsOn: [{step: 'Remove the nested guests', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -51,8 +51,8 @@ jobs:
   - name: 'Stop the services'
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.intent.enrolled }}'
-    dependsOn: [{step: 'Remove the nested network', condition: {type: succeeded}}]
+    guard: '${{ !inputs.intent.enrolled }}'
+    dependsOn: [{step: 'Remove the nested network', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -63,8 +63,8 @@ jobs:
   - name: 'Delete the identity'
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.intent.enrolled }}'
-    dependsOn: [{step: 'Stop the services', condition: {type: succeeded}}]
+    guard: '${{ !inputs.intent.enrolled }}'
+    dependsOn: [{step: 'Stop the services', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -75,8 +75,8 @@ jobs:
   - name: 'Delete the checkout'
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.intent.enrolled }}'
-    dependsOn: [{step: 'Delete the identity', condition: {type: succeeded}}]
+    guard: '${{ !inputs.intent.enrolled }}'
+    dependsOn: [{step: 'Delete the identity', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -87,7 +87,7 @@ jobs:
   - name: 'Reset the machine'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Delete the checkout', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Delete the checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -98,7 +98,7 @@ jobs:
   - name: 'Trim'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Reset the machine', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Reset the machine', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -109,7 +109,7 @@ jobs:
   - name: 'Stop the VM'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Trim', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Trim', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
