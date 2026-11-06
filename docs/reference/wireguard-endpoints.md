@@ -89,7 +89,7 @@ One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub
 
 1. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once; it skips this when the file exists.
 2. `@swamp/cfgmgmt/file` writes `orbit.conf` and each peer file (0600, root).
-3. One `find` command deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file, also one whose key the Gateway has not recorded yet, because its own run may have added it: a task VM records its key only when its provision ends.
+3. One `find` command deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file, whatever its status and whether or not the Gateway has recorded its key, because its own run may have written it.
 4. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then every peer file.
 
 The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.

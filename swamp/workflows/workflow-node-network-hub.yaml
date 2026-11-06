@@ -107,7 +107,7 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # A Node still provisioning keeps its file: its own run may be adding it right now.
+      # Only the files of Nodes that are gone or being removed go: any other Node keeps its file, because its own run may have written it.
       inputs: {hosts: 'name:hub', sudo: true, argv: '${{ inputs.intent.prune_argv }}'}
 - name: apply
   dependsOn: [{job: files, condition: {type: succeeded}}]
