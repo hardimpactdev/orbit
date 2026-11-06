@@ -21,6 +21,7 @@ sequenceDiagram
   Note over GW: Record intent<br/>proof group + full inputs
   %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
   %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
+  %%> - each run starts with the check of the head (stage 3 chart, "Check the head"): `proof.head_behind_platform` when the head lacks a platform change that main has, `proof.sync_needed` when the proof VM has no `origin/main` to compare with; not built yet
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start one run per command<br/>operation-proof-run · parallel
   %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
