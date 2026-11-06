@@ -31,7 +31,7 @@ final readonly class TaskSyncIntent
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'project_id' => $group->project_id, 'node_id' => $instance->node_id,
             'checkout_path' => $instance->checkout_path,
-            // The shape the clone credential of the token issuer expects: the Project repository and the vault key of the Git header.
+            // The Project repository, and the vault key that the Gateway writes the Git header to as it starts the run.
             'workspace' => ['repository' => $group->project->repository_url, 'default_branch' => $group->project->default_branch, 'branch' => 'task-'.$group->id],
             'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-'.Str::uuid()],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),

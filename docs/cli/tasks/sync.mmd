@@ -25,22 +25,19 @@ sequenceDiagram
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
   %%> - captures the repository, the default branch, the branch `task-42`, the workspace path and the SSH target of the VM
-  %%> - names the vault key of the read token; the run mints the token when its first step runs
+  %%> - names the vault key of the read token
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no Swamp step calls the Gateway: the Gateway mints the read token (`contents: read`, valid one hour) as it starts the run and writes it to that vault key, as it does for the Pi token of a turn; the run gets only the key name
   GW->>SW: Start one run, full intent<br/>operation-task-sync
   %%> Inputs:
   %%> - the whole intent above and the vault key name of the read token, never the token
-  %%> - one step of the run calls the Gateway: the token mint, with the run id of this run
+  %%> - no step of the run calls the Gateway
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
-  SW->>GW: Mint the read token<br/>task-github-mint
-  %%> What it does:
-  %%> - the Gateway checks the Operation, the run and the repository, mints a token with only `contents: read`, and writes it to the vault key that admission named
-  %%> Why here:
-  %%> - an installation token lives one hour; no task VM holds a GitHub credential
   SW->>GH: Clone the refs<br/>git clone --bare · fetch
   %%> What it does:
-  %%> - on Node 209, in a scratch directory of the run: a bare clone of the default branch and a fetch of `task-42`, with the token as an extra header of the commands and nowhere else
+  %%> - on Node 209, in a scratch directory of the run: a bare clone of the default branch and a fetch of `task-42`, with the token, read from its vault key, as an extra header of the commands and nowhere else
   SW->>SW: Bundle the refs<br/>git bundle create
   %%> What it does:
   %%> - one bundle of the default branch and `task-42`

@@ -27,19 +27,20 @@ sequenceDiagram
   %%> - records the approval (the head, the mode and the reviewer) in the intent
   %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes (the check command of the Project, or a review deliverable when the Project has none)
   %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the resume, the sync and the first turn
-  %%> - names the vault keys of the Pi token and of the read token; it mints no token
+  %%> - names the vault keys of the Pi token and of the read token
   %%> Refuses:
   %%> - a group that has started its build, a head that is not the approved one, a missing approval, or a busy group; the gate check skips it quietly and reads again at the next tick
   GW->>SW: Start one run, full intent<br/>operation-task-build
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
-  %%> - one step of the run calls the Gateway: the read-token mint of the sync child, with the run id of this run
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no step of the run calls the Gateway: as it starts the run, the Gateway mints the read token of the sync child, writes it and the Pi token to their vault keys, and passes only the key names
   SW->>VM: Resume the VM<br/>operation-task-vm-resume
   %%> What it does:
   %%> - starts the parked VM and waits for its agent and Pi; the workspace is as the park left it
   SW->>VM: Sync the refs<br/>operation-task-sync
   %%> What it does:
-  %%> - brings the default branch and the branch of the PR into `refs/remotes/origin` of the workspace, so the approved head is there; its first step mints the read token at the Gateway
+  %%> - brings the default branch and the branch of the PR into `refs/remotes/origin` of the workspace, so the approved head is there; the read token comes from its vault key
   %%> - HEAD, the working tree and the local branches are not touched
   SW->>VM: Run the first turn<br/>operation-task-turn
   %%> What it does:

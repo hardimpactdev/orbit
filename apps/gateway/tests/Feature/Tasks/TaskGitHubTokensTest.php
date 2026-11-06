@@ -136,7 +136,6 @@ function cloneOperation(string $kind, array $overrides = [], string $source = 'g
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => match ($kind) {
             'tasks.prep' => ['provision' => $intent],
-            'tasks.build' => ['sync' => $intent],
             default => $intent,
         }]);
 
@@ -164,7 +163,18 @@ it('mints the clone credential of a workspace when the clone step asks, and only
 
     expect($copies)->toBe(['git_authorization' => $reference])
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
-})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep'], 'a sync' => ['tasks.sync'], 'a build run' => ['tasks.build']]);
+})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
+
+it('writes the clone header of a sync run as the Gateway starts it, and refuses a step that asks for it', function (): void {
+    $socket = tokenWorld();
+    [$operation, $reference] = cloneOperation('tasks.sync');
+
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($input['intent']['git_authorization'])->toBe($reference)
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]])
+        ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token');
+});
 
 it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {
     $socket = tokenWorld();
@@ -357,7 +367,11 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.sync', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+
+it('gives a sync run and a build run no token mint, because the Gateway writes their read token as it starts the run', function (string $kind): void {
+    expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');
+})->with(['tasks.sync', 'tasks.build']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();

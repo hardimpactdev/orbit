@@ -2,8 +2,8 @@ id: 95cc7494-16cf-46fa-915b-4074c9ad2699
 name: operation-task-build
 description: >-
   Start the build of an approved prep group in one run from full inputs on 209: resume the task VM, sync the refs of the approved
-  head into its workspace, and run the first implementer turn. The existing resume, sync and turn workflows run as children. One
-  step calls the Gateway, the read-token mint of the sync child.
+  head into its workspace, and run the first implementer turn. The existing resume, sync and turn workflows run as children. No
+  step calls the Gateway.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -83,7 +83,6 @@ jobs:
         operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ inputs.intent.sync.node_id }}'
         kind: tasks.sync
-        run_id: '${{ run.id }}'
         intent: '${{ inputs.intent.sync }}'
         execution_secrets: {}
   - name: Run the first turn

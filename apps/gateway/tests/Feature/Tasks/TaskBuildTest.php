@@ -12,6 +12,7 @@ use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,7 +29,8 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -184,6 +186,55 @@ it('refuses a build for a group that already started one', function (): void {
     expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'build has not started');
 });
 
+/** A Swamp socket that accepts and records every vault put, and a GitHub that serves one read token. */
+function buildSwampSocket(): object
+{
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'push', 'push', 'hardimpactdev', 'organization', 'https://github.com/apps/push', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReadToken')->andReturn('read-token-value');
+    }));
+    $socket = new class implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        public array $frames = [];
+
+        private bool $open = false;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+
+            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
+}
+
 /** A build run as the Gateway records it at admission, with the VM parked. */
 function buildRun(): array
 {
@@ -191,7 +242,7 @@ function buildRun(): array
     $operation = Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => $vm->host_node_id,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => [
             'group_id' => $group->id, 'approval' => ['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => 'nick'],
-            'resume' => ['task_vm_id' => $vm->id], 'sync' => [], 'turn' => ['thread_id' => 11],
+            'resume' => ['task_vm_id' => $vm->id], 'sync' => ['git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a']], 'turn' => ['thread_id' => 11],
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]], 'resume_secrets' => [],
         ]]);
 
@@ -244,31 +295,24 @@ it('projects the end of a run once, and a replay of the terminal event changes n
     expect($first->status)->toBe(OperationStatus::Succeeded)->and($again->status)->toBe(OperationStatus::Succeeded)->and($again->result)->toBe($first->result);
 });
 
-it('reads the Operation without writing the Pi token, writes it once at run start, and sends an empty resume map as an object', function (): void {
+it('reads the Operation without writing a credential, and writes the Pi token and the read token of the sync once at run start', function (): void {
     [$operation, , $vm] = buildRun();
-    $writes = new class
-    {
-        /** @var list<array{string, string, string}> */
-        public array $calls = [];
-
-        /** @return array{vault: string, key: string} */
-        public function executionCopy(string $vault, string $key, string $value): array
-        {
-            $this->calls[] = [$vault, $key, $value];
-
-            return ['vault' => $vault, 'key' => $key];
-        }
-    };
-    app()->instance(SwampCommandStep::class, $writes);
+    Project::query()->update(['source_access' => 'github_app']);
+    $socket = buildSwampSocket();
     $projection = app(TaskBuildProjection::class);
 
     $read = $projection->input($operation);
-    expect($writes->calls)->toBe([])
+    expect($socket->frames)->toBe([])
         ->and(array_keys($read['intent']))->toBe(['resume', 'sync', 'turn'])
         ->and(json_encode($read['resume_secrets']))->toBe('{}');
 
-    $start = $projection->workflowInput($operation);
-    expect($writes->calls)->toBe([['orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, str_repeat('p', 64)]])
+    $start = app(DirectOperation::class)->workflowInputs($operation);
+    $puts = array_map(static fn (array $frame): array => [$frame['payload']['key'], $frame['payload']['value']], $socket->frames);
+
+    expect($puts)->toBe([
+        ['task-vm-pi-token-'.$vm->id, str_repeat('p', 64)],
+        ['task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')],
+    ])
         ->and($start['execution_secrets'])->toBe(['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]]);
 
     $vm->update(['pi_token' => null]);
