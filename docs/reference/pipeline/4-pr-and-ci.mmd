@@ -78,9 +78,7 @@ sequenceDiagram
     %%> - a pending or red CI result, a missing approval, a busy group or a failed read is a quiet skip; the next tick reads again
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
-    %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, and the merge after a passed round
-    %%> Not built:
-    %%> - the fix after findings: today a round with findings waits, and the group falls back to manual mode after round 3
+    %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and mints a short-lived App token
@@ -131,6 +129,8 @@ sequenceDiagram
         %%> What it does:
         %%> - a child run of the turn workflow with the role `implementer`, in the author's thread, with the findings as its prompt
         %%> - then the handoff check and a push to the same branch, as the publish step does; the new head gets a new CI run, and the gate check admits the next round once it is green
+        %%> Built:
+        %%> - the three steps, as the existing operations `tasks.turn`, `tasks.check` and `tasks.publish`; the gate check admits one for each tick and reads the end of the one before; a step that fails or ends without a pass sends the group back to manual mode
       end
       SW-->>GW: Round result<br/>terminal event
       %%> Result:
