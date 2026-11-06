@@ -13,7 +13,7 @@ inputs:
     guest_node_id: {type: integer, minimum: 1}
     ssh_execution: {type: object}
     fleet: {type: object}
-  required: [operation_id, node_id, kind, guest_node_id, ssh_execution, fleet]
+  required: [guest_node_id, ssh_execution, fleet]
   additionalProperties: false
 jobs:
 - name: apply

@@ -206,33 +206,13 @@ jobs:
     guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}'}}
     dependsOn: [{step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-  # Readiness of the nested fleet, over the operator's WireGuard address: every Node agent online, the operator known to the Gateway, Doctor healthy. The Swamp worker is checked by the apply step.
-  - name: 'Read the nodes'
+  # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
+  - name: 'Check readiness'
     labels: {role: swamp}
     writes: true
     guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-nodes").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-nodes").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'curl', '-sk', '--fail', '-m', '50', 'https://10.45.0.1/api/v1/nodes', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json'], timeoutSec: 70}}
+    task: {type: workflow, workflowIdOrName: task-nested-ready, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}'}}
     dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
-  - name: 'Check the agents'
-    labels: {role: swamp}
-    task: {type: assert, expr: 'steps["Read the nodes"].outputs.stdout.split("\"state\":\"online\"").size() == 4', severity: high, message: The three Node agents of the nested fleet are not all online}
-    dependsOn: [{step: 'Read the nodes', condition: {type: succeeded}}]
-  - name: 'Check the operator'
-    labels: {role: swamp}
-    task: {type: assert, expr: 'steps["Read the nodes"].outputs.stdout.contains("\"name\":\"operator\"") && !steps["Read the nodes"].outputs.stdout.contains("\"wireguard_public_key\":null")', severity: high, message: The nested Gateway does not know the operator and its key}
-    dependsOn: [{step: 'Read the nodes', condition: {type: succeeded}}]
-  - name: 'Run Doctor'
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-run-doctor").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-run-doctor").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '90', 'curl', '-sk', '--fail', '-m', '80', '-X', 'POST', 'https://10.45.0.1/api/v1/doctor', '-H', 'Host: gateway.orbit', '-H', 'Accept: application/json', '-H', 'Content-Type: application/json', '-d', '{}'], timeoutSec: 100}}
-    dependsOn: [{step: 'Check the operator', condition: {type: succeeded}}, {step: 'Check the agents', condition: {type: succeeded}}]
-  - name: 'Check Doctor'
-    labels: {role: swamp}
-    task: {type: assert, expr: 'steps["Run Doctor"].outputs.stdout.startsWith("{\"data\":{\"healthy\":true")', severity: high, message: Doctor of the nested fleet has a finding}
-    dependsOn: [{step: 'Run Doctor', condition: {type: succeeded}}]
   # One stateful snapshot `base` of the three nested VMs, memory included; every proof batch starts from it. It holds the proof Club key, and is destroyed with this VM.
   - name: 'Take the base snapshot'
     labels: {role: swamp}
@@ -241,7 +221,7 @@ jobs:
     forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-take-the-base-snapshot" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-take-the-base-snapshot" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'snapshot', 'create', '${{ inputs.intent.fleet.guests[self.role] }}', 'base', '--stateful'], timeoutSec: 190}}
-    dependsOn: [{step: 'Check Doctor', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Check readiness', condition: {type: succeeded}}]
   - name: result
     labels: {role: swamp}
     task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "nested-fleet-result-" + string(inputs.intent.guest_node_id) }}', methodName: execute,

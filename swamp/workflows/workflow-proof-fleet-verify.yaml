@@ -86,6 +86,7 @@ jobs:
         file: ${{ inputs.intent.file }}
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
+        restore: ${{ self._index > 0 }}
         cases: ${{ self.batch.cases }}
 - name: report
   labels: {role: swamp}

@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -1285,7 +1285,9 @@ The step `Pin the converge` fills the guest host key that the VM step pinned, an
 
 The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. It makes an empty `.env` in the shared checkout as the mount point, from each guest. It starts the three bind mount units of the Gateway and of app-dev, which put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the NFS checkout. It runs the migrations of the checked-out code on the nested Gateway, restarts its queue worker, agent-view subscriber and Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
-The fleet child then checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
+The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one stateful snapshot `base` of the three nested VMs with memory.
+
+The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested VMs statefully with a limit of 45 seconds and no retry, sets each guest clock from the task VM, calls `task-nested-ready` and then `task-nested-apply`. The batch workflow calls it before every batch but the first, and the case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
 
 The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 

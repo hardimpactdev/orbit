@@ -17,6 +17,7 @@ ORBIT = '/usr/local/bin/orbit-nested'
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
+GUEST_PREFIX = 'nested-'
 
 
 class FleetError(Exception):
@@ -101,20 +102,14 @@ def bridge_address(guest, family='inet'):
     return None
 
 
-def discover(prefix=None, guests=None, node_ids=None):
-    """Find the three nested guests. `prefix` is `orbit-e2e-task-<group>-<id>`; without it exactly one complete set must run."""
+def discover(guests=None, node_ids=None):
+    """Find the three nested guests by the names `task-nested-fleet` gives them: `nested-<role>`."""
     guests = incus_guests() if guests is None else guests
     running = {guest['name']: guest for guest in guests if guest.get('status') == 'Running'}
-    prefixes = sorted({name[:-len(role) - 1] for name in running for role in ROLES if name.endswith('-' + role) and name.startswith('orbit-e2e-task-')})
-    complete = [item for item in prefixes if all(f'{item}-{role}' in running for role in ROLES)]
-    if prefix is None:
-        if len(complete) != 1:
-            raise FleetError(f'expected one complete nested fleet, found {complete}; set PROOF_PREFIX')
-        prefix = complete[0]
     nodes = {}
     ids = node_ids if node_ids is not None else listed_node_ids()
     for role in ROLES:
-        guest = running.get(f'{prefix}-{role}')
+        guest = running.get(GUEST_PREFIX + role)
         if guest is None or role not in ids:
             raise FleetError(f'nested node missing: {role}')
         bridge = bridge_address(guest)
@@ -133,8 +128,8 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
-def from_environment(env=os.environ):
-    return discover(env.get('PROOF_PREFIX'))
+def from_environment():
+    return discover()
 
 
 def evidence_root(env=os.environ):
