@@ -261,7 +261,7 @@ The agent redacts each line with the Gateway's secret patterns before it sends i
 
 The agent drops a line that exceeds a rate and reports the count in its next event. It sends log events on a second presence channel, `presence-node-logs.{id}`, as member `agent.{id}`. Only the agent and the Gateway's subscriber join it. [Realtime events](/reference/events#log-channels) defines the events.
 
-Gateway bootstrap configures its own observer after its web service and private DNS are ready. It uses the same agent runtime as Node convergence, records the secret hash, and fails at `agent-install` if the observer cannot be configured. Repeating bootstrap converges that same service.
+Gateway bootstrap configures its own observer after its web service and private DNS are ready. It uses the same agent runtime as Node convergence, records the secret hash, and fails at `agent-install` if the observer cannot be configured. Repeating bootstrap converges that same service. Bootstrap also records the `swamp.orbit` Route and the `gateway-queue` Redis connection of the machine, as [Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites) describes.
 
 ## Commands
 
