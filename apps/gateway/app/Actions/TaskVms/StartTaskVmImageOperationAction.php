@@ -6,7 +6,6 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
@@ -73,5 +72,4 @@ final readonly class StartTaskVmImageOperationAction
             'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->keys->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
         ], 'task-vm-image', null, lockKey: OperationStore::lockKey('task_vm_host', $node->id));
     }
-
 }
