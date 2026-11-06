@@ -33,7 +33,7 @@ final readonly class GatewayControlPlan
             'units' => SwampRoleUnits::for($node->user, $node->id, $checkout),
             'grants' => $this->grants->render($checkout),
             // The hub of the Gateway's own private network. Its private key is made on the machine and stays there.
-            'hub' => ['config' => NodeWireGuardHubInput::intent($node)['config'], 'key_file' => NodeWireGuardHubInput::KeyFile,
+            'hub' => ['config' => NodeWireGuardHubInput::config($node), 'key_file' => NodeWireGuardHubInput::KeyFile,
                 'peer_directory' => NodeWireGuardHubInput::PeerDirectory],
         ];
     }

@@ -45,14 +45,26 @@ final readonly class NodeWireGuardHubInput
         // The hub's private key never leaves the Node: orbit.conf reads its key file, and the apply step composes the key
         // with the peer files on the Node at apply time. No file, the intent nor the run holds it.
         return ['hub_id' => $hub->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($hub), 'port' => $port,
-            'config' => "[Interface]\nAddress = {$hub->wireguard_ip}/".Ipv4Subnet::from($settings->subnet())->prefixLength()
-                ."\nListenPort = {$port}\nPostUp = wg set %i private-key ".self::KeyFile
-                ."\nPostUp = for f in ".self::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true'."\n",
+            'config' => self::config($hub),
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
                 'content' => self::section($peer->name, (string) $peer->wireguard_public_key, "{$peer->wireguard_ip}/32")])->values()->all()),
             'prune_argv' => ['find', self::PeerDirectory, '-maxdepth', '1', '-name', '*.conf',
                 ...array_merge(...array_map(static fn (int $id): array => ['!', '-name', "{$id}.conf"], $keep)), '-delete'],
             'peer_keys' => ValidatedData::stringList($peers->pluck('wireguard_public_key')->values()->all())];
+    }
+
+    /** The hub's wg-quick file. It holds no peer and no key: it reads the key file, and wg-quick loads every peer file. */
+    public static function config(Node $hub): string
+    {
+        $settings = app(VpnSettings::class);
+        $port = filter_var($settings->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
+        if (! is_int($port) || ! is_string($hub->wireguard_ip)) {
+            throw new ResourceOperationException('node.network_unsupported', 'The hub needs its WireGuard address and a valid port.', 422);
+        }
+
+        return "[Interface]\nAddress = {$hub->wireguard_ip}/".Ipv4Subnet::from($settings->subnet())->prefixLength()
+            ."\nListenPort = {$port}\nPostUp = wg set %i private-key ".self::KeyFile
+            ."\nPostUp = for f in ".self::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true'."\n";
     }
 
     /**
