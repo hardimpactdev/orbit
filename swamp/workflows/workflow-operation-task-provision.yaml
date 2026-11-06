@@ -84,7 +84,8 @@ jobs:
       inputs:
         receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
         guest_node_id: ${{ inputs.intent.guest_node_id }}
-        intents: '${{ {"converge": inputs.converge} }}'
+        # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
+        intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {}} }}'
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -100,7 +101,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.intent.guest_node_id }}
         kind: task_vm.converge
-        intent: '${{ steps["Pin the converge"].outputs.converge }}'
+        intent: '${{ has(inputs.converge) ? steps["Pin the converge"].outputs.converge : {} }}'
         execution_secrets: '${{ {} }}'
     dependsOn:
     - step: Pin the converge
