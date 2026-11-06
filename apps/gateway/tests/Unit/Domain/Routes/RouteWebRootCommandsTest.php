@@ -33,6 +33,10 @@ it('grants only the served root of an Instance that is not Laravel', function ()
 it('denies each checkout once and grants every site in the same three commands', function () use ($access, $site): void {
     $rows = RouteWebRootCommands::access(9, $access([$site('/fast/apps/a'), $site('/fast/apps/b')]), new Instance(['source_is_laravel' => false]));
 
+    $argv = array_column($rows, 'argv');
+    expect($argv[0])->toContain('/fast/apps/a')
+        ->and($argv[2])->toContain('/fast/apps/b')
+        ->and($argv[4])->toBe(['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/fast/apps/a', '/fast/apps', '/fast', '/fast/apps/b']);
     expect($rows)->toHaveCount(7)
         ->and(array_column($rows, 'argv')[5])->toContain('/fast/apps/a/public', '/fast/apps/b/public')
         ->and(array_column($rows, 'argv')[6])->toContain('/fast/apps/a/public', '/fast/apps/b/public');
