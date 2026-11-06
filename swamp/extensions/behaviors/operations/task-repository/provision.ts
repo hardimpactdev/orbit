@@ -286,7 +286,7 @@ export function revokeOutcome(steps: Record<string, unknown>) {
         return { state: "unrevoked" as const, reason: COULD_NOT_RUN };
     }
     if (step.status !== "succeeded") {
-        // The step failed before its command ran when the vault key could not be read; the error text says so when Swamp passes it on.
+        // Vault key unreadable: the step failed before its command ran.
         const error = typeof step.error === "string" ? step.error : "";
         return {
             state: "unrevoked" as const,

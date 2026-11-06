@@ -512,6 +512,11 @@ Deno.test("the revoke outcome tells a revoked token from one GitHub does not kno
         state: "unrevoked",
         reason: "The revoke request did not complete.",
     });
+    // A curl error text is a revoke that did not complete, not a step that could not run.
+    assertEquals(
+        revokeOutcome({ Revoke: { status: "failed", error: "curl: (6) Could not resolve host: api.github.com" } }).reason,
+        "The revoke request did not complete.",
+    );
     // The step failed before its command ran: the vault key could not be read.
     assertEquals(
         revokeOutcome({
