@@ -125,6 +125,22 @@ jobs:
         setup: ${{ self.batch.setup }}
         restore: ${{ self._index > 0 }}
         cases: ${{ self.batch.cases }}
+# Final restore for the author's command (3-proof.mmd): the intent sets `final_restore`; CI leaves it unset. It also runs after batches that failed.
+- name: finish
+  labels: {role: swamp}
+  dependsOn:
+  - job: plan
+    condition: {type: succeeded}
+  - job: prepare
+    condition: &always {type: always}
+  - job: batches
+    condition: *always
+  steps:
+  - name: 'Restore the clean fleet'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !(has(inputs.intent.final_restore) && inputs.intent.final_restore) }}'
+    task: {type: workflow, workflowIdOrName: proof-fleet-restore, inputs: {ssh_execution: '${{ inputs.intent.ssh_execution }}'}}
 - name: report
   labels: {role: swamp}
   dependsOn:
@@ -132,6 +148,8 @@ jobs:
     condition: {type: completed}
   - job: batches
     condition: {type: completed}
+  - job: finish
+    condition: *always
   steps:
   # The Gateway reads this step once, at the end of the run. Every planned case has a line: a case of a batch that did not run is unrun, cause infrastructure.
   - name: report
