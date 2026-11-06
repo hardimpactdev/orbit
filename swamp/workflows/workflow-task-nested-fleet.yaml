@@ -175,5 +175,5 @@ jobs:
   - name: result
     labels: {role: swamp}
     task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "nested-fleet-result-" + string(inputs.intent.guest_node_id) }}', methodName: execute,
-      inputs: {run: 'printf ''{"nested_fleet":"%s"}\n'' "$ORBIT_FLEET"', env: {ORBIT_FLEET: '${{ steps["Check the tunnel"].status == "succeeded" ? "started" : "none" }}'}}}
-    dependsOn: [{step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+      inputs: {run: 'printf ''{"nested_fleet":"%s"}\n'' "$ORBIT_FLEET"', env: {ORBIT_FLEET: '${{ steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 ? "none" : "started" }}'}}}
+    dependsOn: [{step: 'Check the tunnel', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Restart the nested Swamp', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
