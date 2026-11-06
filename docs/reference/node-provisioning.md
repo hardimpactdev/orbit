@@ -423,6 +423,10 @@ The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a dir
 
 A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested VMs get an address and reach the internet. Nothing else is opened; the checkout export has its own rule.
 
+## Gateway bootstrap prerequisites
+
+A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-fleet-build.mmd)), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages. The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Infrastructure\MachineSoftware;
 
 use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use InvalidArgumentException;
 
 /**
@@ -90,6 +92,27 @@ final readonly class PhpBuildInstaller
             'repack' => ['package' => $recipe->phpPolicy->rollbackTool, 'version' => $rollback->version ?? ''],
             'release' => $release,
         ];
+    }
+
+    /**
+     * The files of the PHP packages of an installer input, each with its download candidates and its path in the role cache.
+     *
+     * @param  array<string,mixed>  $build  A result of {@see self::input()}.
+     * @return list<array<string,mixed>>
+     */
+    public static function packageFiles(array $build): array
+    {
+        $files = [];
+        foreach (ValidatedData::object($build['versions']) as $version) {
+            foreach (RouteExecutionProof::objects(ValidatedData::object($version)['packages']) as $package) {
+                $artifact = new ArtifactPin(ValidatedData::string($package['url']), 'sha256', ValidatedData::string($package['sha256']));
+                $urls = $artifact->candidateUrls(ValidatedData::string($package['name']), ValidatedData::string($build['mirror']));
+                unset($package['url']);
+                $files[] = [...$package, 'urls' => $urls, 'path' => '/var/cache/orbit/role-php/'.ValidatedData::string($package['name']).'-'.ValidatedData::string($package['sha256']).'.deb'];
+            }
+        }
+
+        return $files;
     }
 
     /**
