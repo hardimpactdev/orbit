@@ -270,13 +270,12 @@ An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that
 
 A Project has no per-Node exclusions. The development Node exclusion feature was removed on 2026-11-03, and its table was dropped. `instance:create` names its Node, and task VM placement uses only hosts with a `task_vms` setting, so nothing places a Project on an `app-dev` Node by itself.
 
-A Project can be removed when all its task groups are `cancelled` or `completed`, every associated task VM row is `destroyed`, and every associated workspace lease is `released` or `cancelled`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, workspace leases and operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
+A Project can be removed when all its task groups are `cancelled` or `completed`, and every associated task VM row is `destroyed`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, old workspace lease rows and their operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
 
 If any group has another status (`backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, or `failed`), removal is blocked. The Gateway refuses the request with HTTP 409 and `project.has_task_groups` and leaves the Project and its task records unchanged.
 
 If a task VM is in `provisioning`, `ready`, `parked`, `destroying`, or `failed`, the Gateway refuses removal with HTTP 409 and `project.task_vm_not_destroyed`. The message names the VM and its state. The Gateway deletes nothing. Wait until VM destruction finishes, including model-key revocation, before retrying. Only `destroyed` VM rows are deleted with the Project.
 
-If an associated workspace lease has any status other than `released` or `cancelled`, including `held`, `queued`, or an unknown status, the Gateway refuses removal with HTTP 409 and `project.task_workspace_lease_active`. The message names the Project, lease id, kind, and status. The Project, task history, leases, and lease operations stay unchanged. A missing Instance does not prove release. Project deletion does not release leases; it deletes only released and cancelled leases and their operations. A `cancelled` lease is a withdrawn waiter that never held the workspace.
 
 Extensions take part in the removal through the `ProjectRemovalHook` [plug-in point](/reference/extensions#plug-in-points), in the same transaction. The documents extension removes the Project's documents and records their stored bytes for cleanup, whether or not its switch is on.
 
@@ -307,7 +306,6 @@ The Gateway returns these codes for Project requests.
 | `project.has_routes` | Removal found Routes. |
 | `project.has_task_groups` | Removal found a task group that is neither `cancelled` nor `completed`. |
 | `project.task_vm_not_destroyed` | Removal found a task VM that is not `destroyed`, including `failed`. The message names the VM and its state. |
-| `project.task_workspace_lease_active` | Removal found a workspace lease whose status is not `released` or `cancelled`. The message names the Project, lease id, kind, and status. |
 
 ## Why it works this way
 

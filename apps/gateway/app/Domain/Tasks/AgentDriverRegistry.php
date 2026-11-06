@@ -24,6 +24,6 @@ final readonly class AgentDriverRegistry
 
     public function get(string $key): AgentDriver
     {
-        return new LeasedAgentDriver($this->drivers[$key] ?? throw new AgentDriverException('The recorded agent driver is unavailable.'));
+        return $this->drivers[$key] ?? throw new AgentDriverException('The recorded agent driver is unavailable.');
     }
 }

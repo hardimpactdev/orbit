@@ -93,7 +93,7 @@ The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile.
 
 Existing operator masks remain in place. Convergence skips enabling `logrotate.timer` when `systemctl is-enabled` reports `masked` or `masked-runtime` for either `logrotate.service` or `logrotate.timer`, so an operator mask does not block releases. Otherwise it enables the configured timer afterward; it does not restart journald or force a rotation.
 
-Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations and keeps uncertain workspace ownership fenced. See [Workspace lease](/reference/tasks#workspace-lease) for completion receipts and recovery.
+Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations.
 
 
 The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step on eligible Nodes. Gateway provisioning and role code perform no CLI installation.

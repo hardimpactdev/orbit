@@ -432,7 +432,6 @@ Before an UpCloud template is published, the `clean` phase of the task VM role (
 
 An Incus build cleans its VM with the `task-vm-image-clean` workflow, which removes the nested guests and network, stops the services, deletes the agent, WireGuard and Pi identities, and resets the firewall. An enrolled Node cannot become a base image.
 
-The workspace Instance has one durable [workspace lease](/reference/tasks#workspace-lease). Agent turns, detached checks, publication, and teardown share that ownership even when the Gateway restarts. VM readiness and a stopped check supervisor do not prove that checkout commands stopped. An uncertain teardown retains its lease until termination is proven.
 
 ### From claim to workspace
 
@@ -685,7 +684,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 
 The imported pack follows the JSON envelope as bounded binary input, without a token, staging call, or script. The command validates the pack and approved ref names, then updates the refs in one Git transaction.
 
-The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`. Calls inside a Tasks lease retain the workspace executor and its remote operation journal, including an agent installation after a pin mismatch.
+The ref command returns at most 1,000 distinct ref object IDs, the worktree's recorded cache baseline, its branch, and its `HEAD`.
 
 [New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline. A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 

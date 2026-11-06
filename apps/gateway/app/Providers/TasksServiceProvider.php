@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
-use App\Console\Commands\ReleaseTaskWorkspaceLeaseCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\SwampRunReader;
-use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -23,21 +21,15 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskReviewReset;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
-use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
-use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
@@ -49,12 +41,7 @@ use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
-use App\Infrastructure\Tasks\RemoteTaskReviewReset;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
-use App\Infrastructure\Tasks\RemoteWorkspaceOperationJournal;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Models\Task;
@@ -69,11 +56,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
-        TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
-        TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => AgentViewTaskWorkspaceDiffReader::class,
-        TaskReviewDiff::class => RemoteTaskReviewDiff::class,
-        TaskReviewReset::class => RemoteTaskReviewReset::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
@@ -82,7 +65,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
         TaskPullRequestCheckOutput::class => GitHubTaskPullRequestCheckOutput::class,
         TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
-        TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskStartCommit::class => GitHubTaskStartCommit::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
@@ -129,7 +111,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             Config::string('swamp.ca_path'),
         ));
 
-        $this->app->bind(TaskWorkspaceOperationRecovery::class, RemoteWorkspaceOperationJournal::class);
         parent::register();
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
@@ -144,7 +125,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
     {
         $this->commands([
             FileProblemsCommand::class,
-            ReleaseTaskWorkspaceLeaseCommand::class,
             TaskPullRequestGateCommand::class,
         ]);
 
