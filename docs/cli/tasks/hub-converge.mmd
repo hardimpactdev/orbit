@@ -20,7 +20,8 @@ sequenceDiagram
   %%> - the task VM Cluster has an active Router; no Node other than a task VM holds an address in the reserved range
   %%> - Node 209 is active with an IPv4 address outside the range; Node 1 has stored SSH host keys
   %%> Builds:
-  %%> - the complete nft file and its systemd unit, the UFW rules for 209 SSH, 209's TLS probe on 443 and Router web, and the exact live rule lines the end check expects
+  %%> - the complete nft file and its systemd unit, the UFW rules for 209 SSH, 209's TLS probe on 443, the swamp Node's Pi port and Router web, and the exact live rule lines the end check expects
+  %%> Decided by the top orchestrator (2026-11-06), recorded for Nick's review: the `swamp`-role Node, selected by role, reaches the task VM range on the Pi port (3774); its workers run every task turn's Pi steps. Same direction as its SSH and 443; task VMs gain nothing. Converge 12249 dropped the earlier hand-converged `orbit:task-vm-control-pi`, and every turn failed at `message_send` until this rule
   %%> Result:
   %%> - task #5190 recorded with the full public intent; the command prints `Operation #5190`
   GW->>SW: Start run, full intent<br/>operation-task-vm-hub-converge

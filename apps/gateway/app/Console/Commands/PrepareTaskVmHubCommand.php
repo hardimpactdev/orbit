@@ -55,6 +55,7 @@ final class PrepareTaskVmHubCommand extends Command
                 'dns' => $vpn->dnsServer() ?? $this->address($hub),
                 'gateway' => $this->address($this->roleNode(RoleName::Gateway)),
                 'pi_port' => Config::integer('orbit.pi.port'),
+                'swamp' => $policy->swampAddress(),
                 'reverb' => $this->address($this->roleNode(RoleName::WebSocket)).':'.self::ReverbPort,
                 'model' => $model,
                 'routers' => $routers,

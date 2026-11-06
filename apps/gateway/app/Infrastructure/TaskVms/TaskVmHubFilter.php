@@ -16,16 +16,17 @@ final readonly class TaskVmHubFilter
 {
     public function __construct(private StartOperationAction $operations, private TaskVmHubPolicy $policy) {}
 
-    /** @param array{range:string,dns:string,gateway:string,pi_port:int,reverb:string,model:string,routers:list<string>} $input */
+    /** @param array{range:string,dns:string,gateway:string,pi_port:int,swamp?:string|null,reverb:string,model:string,routers:list<string>} $input */
     public function prepare(Node $node, array $input): Operation
     {
         $rule = $this->policy->controlRule() ?? throw new TaskVmException('task_vm.fleet_unavailable', 'The active209 SSH control Node is required.');
         $intent = ['policy' => $input, 'node_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'source' => $rule->shape->source, 'range' => $input['range'], 'nft' => $this->policy->render($input, $rule),
             'unit' => TaskVmHubPolicy::Unit, 'live_rules' => $this->policy->liveRules($input, $rule), 'control_rule' => array_slice($rule->arguments, 1),
-            // The web rules the hub applies beside the control SSH rule: the control Node's TLS probe, then each Router's web access.
+            // The rules the hub applies beside the control SSH rule: the control Node's TLS probe, the swamp Node's Pi port, then each Router's web access.
             'router_rules' => array_map(static fn (UfwManagedRule $web): array => array_slice($web->arguments, 1),
-                [$this->policy->controlWebRule($rule), ...$this->policy->routerRules($input['routers'], $input['range'])])];
+                [$this->policy->controlWebRule($rule), ...array_filter([$this->policy->swampPiRule($input['swamp'] ?? null, $input['range'], $input['pi_port'])]),
+                    ...$this->policy->routerRules($input['routers'], $input['range'])])];
 
         return $this->operations->execute('task_vm.hub_converge', 'node_firewall', $node->id, $node->id, ['intent' => $intent], 'operator', null);
     }
