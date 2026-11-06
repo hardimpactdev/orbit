@@ -210,7 +210,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     guard: '${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required }}'
-    task: {type: workflow, workflowIdOrName: task-nested-converge, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', checkout_path: '${{ inputs.intent.workspace.checkout_path }}'}}
+    task: {type: workflow, workflowIdOrName: task-nested-converge, inputs: {guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', checkout_path: '${{ inputs.intent.workspace.checkout_path }}', fleet: '${{ inputs.intent.fleet }}'}}
     dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}, {step: 'Add the CLI profile', condition: {type: succeeded}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
   - name: 'Check readiness'
