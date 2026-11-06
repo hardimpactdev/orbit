@@ -421,6 +421,8 @@ The playbook reads the pins of `recipe.json` from the intent and names none. The
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
 
+A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested VMs get an address and reach the internet. Nothing else is opened; the checkout export has its own rule.
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.
