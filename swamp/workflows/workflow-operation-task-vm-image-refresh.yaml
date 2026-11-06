@@ -84,10 +84,11 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.ready_copies }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
   # The one clean step, shared with the image build: nothing of this VM's identity reaches the image. It ends with a clean stop.
+  # A skipped save is fine only when its guard skipped it. A VM that failed its provision skips the pin and with it the save, and the clean must not go on to publish and promote the image of that VM, so it depends on the pin too.
   - name: 'Clean the refresh VM'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-image-clean

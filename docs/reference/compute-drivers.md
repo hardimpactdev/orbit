@@ -1246,7 +1246,7 @@ The refresh has no converge step of its own, because the provision converges the
 
 The firewall reset matters: enrollment denies SSH except from Node 209 over the VPN, and a clone of the image has no VPN. The image build calls the same workflow for its builder with `enrolled: false`. The nested and identity steps run only for a VM that has them, and each step waits for the one before it, whether that one ran or was skipped.
 
-The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had.
+The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The clean waits for the VM step to pass, so a VM whose fleet failed its readiness check promotes nothing.
 
 When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
 
