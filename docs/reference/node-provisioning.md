@@ -459,7 +459,7 @@ The `app` job also writes the agent delivery manifest from the `agent_delivery` 
 
 `orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool, the Caddy site, and units for the scheduler and Horizon. It adds the `caddy` user to the group of the Gateway account, because Ubuntu keeps a home at 0750 and Caddy must read the checkout in it.
 
-The control plane phase also makes the Gateway's own agent key and records only its SHA-256 verifier, so the first `orbit:node-converge` of the Gateway Node has a verifier to render. It writes the dnsmasq backend file that private DNS needs, and it puts the Orbit root certificate in the system trust of the machine.
+The control plane phase also makes the Gateway's own agent key and records only its SHA-256 verifier, so the first `orbit:node-converge` of the Gateway Node has a verifier to render. It writes the dnsmasq backend file that private DNS needs and restarts dnsmasq on it, and it starts the Gateway with empty private DNS records and an empty catalog, so the first publication of a private name finds both. It puts the Orbit root certificate in the system trust of the machine.
 
 The phase starts the firewall with the recovery SSH rule, the trust of the network members and an operator rule for the hub port; the first role converge of the Gateway retires the recovery rule.
 
