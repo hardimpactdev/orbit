@@ -10,6 +10,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -60,7 +61,7 @@ final readonly class TaskVmFleetBuildIntent
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a ready Incus VM and its active guest identity with its recorded host key.', 409);
         }
 
-        return $this->build($vm, $guest, $this->club());
+        return $this->build($vm, $guest, $this->club(), $this->workspace($vm));
     }
 
     /**
@@ -69,14 +70,25 @@ final readonly class TaskVmFleetBuildIntent
      *
      * @return array<string,mixed>
      */
-    public function provisioning(TaskVm $vm): array
+    public function provisioning(TaskVm $vm, string $workspace): array
     {
         $guest = $vm->node;
         if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null) {
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs an Incus VM and its guest Node.', 409);
         }
 
-        return $this->build($vm, $guest, $this->club());
+        return $this->build($vm, $guest, $this->club(), $workspace);
+    }
+
+    /** The checkout of the workspace of the VM's group: the checkout the build reads on the VM, and the one its nested guests mount. */
+    private function workspace(TaskVm $vm): string
+    {
+        $path = $vm->group_id === null ? null : Instance::query()->where('task_workspace_owner_id', $vm->group_id)->where('node_id', $vm->node_id)->value('checkout_path');
+        if (! is_string($path) || $path === '') {
+            throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs the checkout of the workspace of the VM.', 409);
+        }
+
+        return $path;
     }
 
     private function club(): string
@@ -90,13 +102,14 @@ final readonly class TaskVmFleetBuildIntent
     }
 
     /** @return array<string,mixed> */
-    private function build(TaskVm $vm, Node $guest, string $club): array
+    private function build(TaskVm $vm, Node $guest, string $club, string $workspace): array
     {
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout()],
-            'bootstrap' => ['fragment' => $this->fragment()],
+            'operator_checkout' => $workspace,
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
+            'bootstrap' => ['fragment' => $this->fragment($workspace)],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
         ];
@@ -109,7 +122,7 @@ final readonly class TaskVmFleetBuildIntent
      *
      * @return array{server:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
      */
-    private function checkout(): array
+    private function checkout(string $workspace): array
     {
         $server = explode('/', self::Bridge)[0];
         $units = [];
@@ -118,7 +131,7 @@ final readonly class TaskVmFleetBuildIntent
             $guest = TaskVmReadyCopiesIntent::Guests[$role];
             $units[] = ['guest' => $guest, 'name' => self::unitName(self::CheckoutPath), 'content' => implode("\n", [
                 '[Unit]', 'Description=Orbit checkout over NFS', 'After=network-online.target', 'Wants=network-online.target', '',
-                '[Mount]', "What={$server}:".self::CheckoutPath, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
+                '[Mount]', "What={$server}:".$workspace, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
                 '[Install]', 'WantedBy=multi-user.target', '',
             ])];
             $binds[$role] = [];
@@ -146,14 +159,14 @@ final readonly class TaskVmFleetBuildIntent
      * The part of the bootstrap workflow input that the Gateway knows at admission, as JSON members without their braces: the pinned Swamp
      * release, the agent delivery, the Gateway's address and the checkout that renders its plan. The run adds the machine and the commit.
      */
-    private function fragment(): string
+    private function fragment(string $workspace): string
     {
         $swamp = new RecipeLoader()->load()->tools['swamp']->artifacts['amd64'];
         $static = [
             'swamp' => ['url' => $swamp->location, 'sha256' => $swamp->digest],
             'gateway' => ['url' => 'https://'.self::Layout['gateway']['wireguard'], 'wireguard_ip' => self::Layout['gateway']['wireguard'],
                 'wireguard_subnet' => self::WireGuardSubnet],
-            'operator' => ['checkout' => '/home/orbit/orbit'],
+            'operator' => ['checkout' => $workspace],
             'agent_delivery' => json_encode(['commit' => $this->delivery->commit(), 'version' => $this->delivery->version(), 'artifacts' => $this->delivery->artifacts()],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
         ];
