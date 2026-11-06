@@ -161,10 +161,7 @@ Deno.test("every created VM boots without the firmware's boot menu wait, and a t
 });
 
 Deno.test("the provider input holds only the provider fields, so a large workspace intent stays under the argument cap", () => {
-    const result = provisionCommandInput({
-        ...intent(),
-        route: { caddy: "x".repeat(600_000) },
-    });
+    const result = provisionCommandInput({ ...intent(), route: { caddy: "x".repeat(600_000) } });
     const input = JSON.parse(result.input_json);
     assertEquals(input.route, undefined);
     assertEquals(input.vm, intent().vm);

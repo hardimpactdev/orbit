@@ -36,7 +36,7 @@ sequenceDiagram
   %%> - one `incus launch` argv on Node 13 creates and starts `tvm-333` from the admitted image, with its metadata and the read-only package cache
   %%> - a `guard` skips it when `tvm-333` already runs the admitted image, so a resumed run allocates no second VM
   %%> - a topology group clones its seed volume in the same step
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06): the VM's `raw.qemu.conf` adds `menu = "on"` and `splash-time = "0"` to the `[boot-opts]` Incus writes, so OVMF skips its 3 s boot menu wait (`etc/boot-menu-wait`) on every boot; measured 10.3 s to 7.2 s from `incus start` to the agent on shark. The firmware rewrites its `Timeout` variable from QEMU at each boot, so `efibootmgr -t 0` in the image does not hold; a slot enrolled before keeps the wait until the pool replaces it
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06): `raw.qemu.conf` skips OVMF's 3 s boot menu wait (`[boot-opts]` menu on, splash-time 0); 10.3 s to 7.2 s to the agent, measured. `efibootmgr -t 0` in the image does not hold; older slots keep the wait
   %%> Per provider:
   %%> - UpCloud overflow: the `cloud` step creates the labelled server through the API from 209, with the token from the vault
   %%> Replaces:
