@@ -93,7 +93,9 @@ jobs:
   - name: Remove stale peer files
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Write the peer files, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    # Not after the peer files: a removal writes none, a forEach over no peer leaves no step to wait for, and a step that waits for a missing step is skipped.
+    # The prune keeps every file a rewrite writes, so it needs no order with the writes.
+    dependsOn: [{step: Write the hub config, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
