@@ -468,70 +468,21 @@ jobs:
   - {job: app, condition: {type: succeeded}}
   - {job: control, condition: {type: succeeded}}
   steps:
-  - name: Read the Swamp version
+  - name: Read the machine
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-swamp-v").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-machine").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-swamp-v").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-machine").split(".").join("-") }}'}
       inputs:
         hosts: name:target
-        argv: [/usr/local/bin/swamp, --version]
-        timeoutSec: 30
-  - name: Read the Ansible version
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible-v").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible-v").split(".").join("-") }}'}
-      inputs:
-        hosts: name:target
-        argv: [/opt/orbit/ansible/venv/bin/ansible-playbook, --version]
-        timeoutSec: 30
-  - name: Read the release commit
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-commit").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-commit").split(".").join("-") }}'}
-      inputs:
-        hosts: name:target
-        argv: [git, -C, '/home/${{ inputs.intent.ssh.user }}/orbit', rev-parse, HEAD]
-        timeoutSec: 30
-  - name: Read the PHP version
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-php-v").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-php-v").split(".").join("-") }}'}
-      inputs:
-        hosts: name:target
-        argv: [php, --version]
-        timeoutSec: 30
-  - name: Read the migrations
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-migrations").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-migrations").split(".").join("-") }}'}
-      inputs:
-        hosts: name:target
-        argv: [php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'migrate:status', --no-interaction]
-        timeoutSec: 60
+        argv: [/bin/bash, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/scripts/gateway-bootstrap-check.sh']
+        timeoutSec: 120
   - name: Check the machine
-    dependsOn:
-    - {step: Read the Swamp version, condition: {type: succeeded}}
-    - {step: Read the Ansible version, condition: {type: succeeded}}
-    - {step: Read the release commit, condition: {type: succeeded}}
-    - {step: Read the PHP version, condition: {type: succeeded}}
-    - {step: Read the migrations, condition: {type: succeeded}}
+    dependsOn: [{step: Read the machine, condition: {type: succeeded}}]
     task:
       type: assert
-      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b") && steps["Read the hub address"].outputs.stdout.contains(inputs.intent.gateway.wireguard_ip)'
+      expr: 'steps["Read the machine"].outputs.stdout.contains("swamp: swamp ") && steps["Read the machine"].outputs.stdout.contains("ansible: ansible-playbook [core ") && steps["Read the machine"].outputs.stdout.contains("commit: " + inputs.intent.release.commit + "\n") && steps["Read the machine"].outputs.stdout.contains("php: PHP 8.5.") && steps["Read the machine"].outputs.stdout.contains("migrations: ok\n") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b") && steps["Read the hub address"].outputs.stdout.contains(inputs.intent.gateway.wireguard_ip)'
       severity: high
       message: The machine is not ready to converge itself.

@@ -117,6 +117,8 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 The Gateway admits the run. It needs the full commit and no other queued or running release. It verifies the commit's [agent pin](#build-and-seal-a-release) and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
 
+The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. The activate child runs its scripts from the release it installs: `/home/orbit/releases/<id>/swamp/scripts/gateway-release-*.sh`. The build, web and snapshot steps of the parent workflow run theirs from the live release, `/home/orbit/orbit/swamp/scripts/`. The workflow definition and those scripts come from the same commit, because each release loads its definitions on Node 209 and then becomes the live release. A rollback to a release from before these scripts leaves no build script for the next release: use `bin/gateway-rollback` for that rollback.
+
 The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
 
 | Step | What it does |
