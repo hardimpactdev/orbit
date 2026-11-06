@@ -249,7 +249,7 @@ The package manager changes the manifest and the lock file in the workspace; not
 
 `tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
-A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs.
+A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
 
 The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
 

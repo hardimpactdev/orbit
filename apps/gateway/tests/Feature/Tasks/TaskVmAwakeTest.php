@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Data\Tasks\StartTaskCheckData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckIntent;
@@ -82,4 +84,33 @@ it('refuses an admission of a check on a parked VM before it creates anything', 
     expect($start)->toThrow(ResourceOperationException::class, 'Resume requires the parked VM')
         ->and(Operation::query()->where('kind', 'tasks.check')->count())->toBe(0)
         ->and($subtask->checks()->count())->toBe(0);
+});
+
+it('suspends the start identity of the request and puts it back, also when the callback throws', function (): void {
+    $idempotency = app(OperationIdempotency::class);
+
+    $idempotency->under('tasks.turn', 'turn-1', 'fingerprint', function () use ($idempotency): void {
+        expect($idempotency->suspended(fn (): array => [$idempotency->kind, $idempotency->key, $idempotency->fingerprint]))->toBe([null, null, null]);
+        expect(fn () => $idempotency->suspended(static fn () => throw new RuntimeException('stop')))->toThrow(RuntimeException::class);
+        expect([$idempotency->kind, $idempotency->key, $idempotency->fingerprint])->toBe(['tasks.turn', 'turn-1', 'fingerprint']);
+    });
+});
+
+it('admits the resume of a parked VM under a keyed request without the key of the request', function (): void {
+    [$group, $vm] = awakeWorld(TaskVmState::Parked);
+    $vm->update(['pi_token' => str_repeat('p', 64)]);
+    $host = Node::query()->findOrFail($vm->host_node_id);
+    $host->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    Node::withoutEvents(fn () => $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]]));
+    config([
+        'task_vms.enabled' => true, 'task_vms.dev_cluster_id' => 1, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317',
+        'task_vms.pi.artifact_path' => '/srv/pi.tar', 'task_vms.pi.artifact_sha256' => str_repeat('a', 64),
+        'swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' fixture',
+    ]);
+
+    // With the key of the turn still bound, the store refused the resume with a LogicException (a 500). Now the resume reaches the
+    // start of its native run, which this test has no endpoint for: that refusal is the proof that the key check passed.
+    $call = fn () => app(OperationIdempotency::class)->under('tasks.turn', 'turn-1', 'fingerprint', fn () => TaskVmAwake::require($group));
+
+    expect($call)->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('swamp.start_unavailable'));
 });
