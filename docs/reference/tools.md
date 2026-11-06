@@ -587,3 +587,5 @@ The preference gives the repository's Tool packages priority 990 for each reposi
 A fresh Gateway gets its PHP packages from its [bootstrap plan](/reference/node-provisioning#gateway-bootstrap-prerequisites), not from a Tool Manager: the plan reads the machine software recipe and the role prerequisites install the pinned files.
 
 The pinned Swamp binary of a fresh Gateway comes from its [bootstrap](/reference/node-provisioning#gateway-bootstrap-prerequisites), which also starts its serve and workers; after that the swamp role keeps the pin.
+
+That bootstrap also makes the WireGuard hub key on the new Gateway's machine and brings up `wg-quick@orbit` there, so Swamp can reach the Gateway by its WireGuard address before any role runs.
