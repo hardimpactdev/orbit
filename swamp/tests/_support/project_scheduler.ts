@@ -181,15 +181,6 @@ export function fixture(token?: Record<string, unknown>) {
                 });
                 return { ok: true };
             }
-            if (
-                args.modelType === "@swamp/git" && args.method === "remote_ref"
-            ) {
-                data.set(`${args.name}/remote-ref-refs-heads-main`, {
-                    sha: "a".repeat(40),
-                    ref: "refs/heads/main",
-                });
-                return { ok: true };
-            }
             if (args.method === "start") {
                 starts++;
                 data.set(
