@@ -54,7 +54,6 @@ additionalFiles:
   - ansible/tasks/task-vm-image-cache.yml
   - ansible/tasks/task-vm-pi.yml
   - ansible/tasks/task-vm-tools.yml
-  - ansible/tasks/task-vm-nfs.yml
   - ansible/tasks/task-vm-incus.yml
   - ansible/tasks/task-vm-nested-firewall.yml
   - ansible/tasks/task-vm-shape-gate.yml

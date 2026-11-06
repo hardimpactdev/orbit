@@ -14,7 +14,7 @@ sequenceDiagram
   participant VM as Refresh VM<br/>a task VM
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`, which use `seed=build` by default; the release and daily triggers are removed (they rebuilt on the nested-VM path, which the container inner topology replaces)
+  %%> - the release projection, when the release that went live changed playbooks, pins or lock files; a daily Gateway schedule; and the operator commands `php artisan task-vms:refresh-image HOST` and `task-vms:refresh-images`. These always use `seed=build`
   %%> - only `php artisan task-vms:refresh-image HOST --seed=keep` uses `keep`
   %%> Input `seed`:
   %%> - `build` (the default): the refresh VM builds or starts the nested fleet, and its disk becomes the new seed

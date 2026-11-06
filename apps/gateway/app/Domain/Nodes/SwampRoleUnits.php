@@ -33,7 +33,11 @@ final class SwampRoleUnits
         return ['serve' => self::serve($user, $repository), 'worker' => self::worker($user, $nodeId)];
     }
 
-    /** The worker template `orbit-swamp-worker@.service`; each instance reaches serve on loopback. */
+    /**
+     * The worker template `orbit-swamp-worker@.service`; each instance reaches serve on loopback. It reads its token files directly, as the
+     * account it runs as: systemd credentials do nothing in a system container, so one unit form serves every swamp Node. The folder of a
+     * worker is `root:<account>` `0750` and its token files `root:<account>` `0640`.
+     */
     private static function worker(string $user, int $nodeId): string
     {
         $home = self::WorkerHome;
@@ -44,10 +48,8 @@ final class SwampRoleUnits
             ."WorkingDirectory={$home}\n"
             ."Environment=HOME={$home} SWAMP_HOME={$home}/home SWAMP_CONFIG_DIR={$home}/config"
             ." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
-            .'LoadCredential=enrollment:'.self::Credentials."/%i/enrollment.token\n"
-            .'LoadCredential=server:'.self::Credentials."/%i/server.token\n"
-            .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file=%d/enrollment'
-            ." --server-token-file=%d/server --cache-dir={$home}/cache"
+            .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
+            .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
             ."Restart=on-failure\nRestartSec=15\nKillMode=mixed\nTimeoutStopSec=infinity\nUMask=0077\n"
             ."StandardOutput=journal\nStandardError=journal\n\n"

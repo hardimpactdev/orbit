@@ -28,10 +28,6 @@
       APT_CONFIG: /var/tmp/orbit-image-apt/apt-cache.conf
       DEBIAN_FRONTEND: noninteractive
       NEEDRESTART_MODE: l
-  handlers:
-    - name: Reload exports
-      ansible.builtin.command: exportfs -ra
-      changed_when: true
   tasks:
     - { name: Wait for a new server, ansible.builtin.import_tasks: tasks/task-vm-ready.yml, tags: [always] }
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }

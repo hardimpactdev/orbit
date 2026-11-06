@@ -65,7 +65,7 @@ final readonly class StartTaskVmImageOperationAction
             // The host runs Incus; Node 209 reaches the builder through it. The builder's address and host key come from the host during the run.
             'jump' => $this->keys->forNode($node),
             'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
-            'profile' => 'base', 'image' => true, 'nfs' => null,
+            'profile' => 'base', 'image' => true, 'nested' => null,
             'recipe' => json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR),
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']),
             // The Pi build lives in the Gateway home; 209 copies it with the same pinned SSH as every other step.

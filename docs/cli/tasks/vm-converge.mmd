@@ -12,13 +12,13 @@ sequenceDiagram
   participant VM as Task VM<br/>running
   Note over GW: Admit the converge<br/>task-vms:converge VM
   %%> When:
-  %%> - `php artisan task-vms:converge VM [--nfs-checkout=PATH --nfs-subnet=CIDR --nfs-interface=nested]`
+  %%> - `php artisan task-vms:converge VM [--nested-subnet=CIDR --nested-interface=nested]`
   %%> Requirements:
   %%> - the task VM is `ready` and its guest Node is active with a recorded SSH host key
   %%> - no other Operation holds the VM (`operation.target_busy`)
   %%> Builds:
   %%> - the recipe.json of the release, the Vite+ lock, the VM's SSH target with its host key, and the Pi server digest with its place on the Gateway host
-  %%> - the NFS settings when named: the checkout to export, the nested subnet and the nested bridge
+  %%> - the nested settings when named: the nested subnet and the nested bridge
   GW->>SW: Start run, full intent<br/>operation-task-vm-converge
   SW->>VM: Install the software<br/>child task-vm-role-run
   %%> The child:
@@ -32,11 +32,11 @@ sequenceDiagram
   %%> - a tool that already shows its pinned version is left alone, so a VM at the pins reports no change
   SW->>VM: Install the tools<br/>child task-vm-role-run
   %%> What it does:
-  %%> - the NFS server; with NFS settings it exports the checkout to the nested subnet only (`rw,async`) and allows port 2049 from the nested bridge in UFW
+  %%> - with nested settings, the firewall rules of the nested bridge (DHCP, DNS, the package cache, routing out)
   %%> - the shape gate linters in `/opt/orbit-shape-gate`, named by the digest of their pins, so the handoff check runs offline
   SW->>VM: Check the task VM role<br/>child task-vm-role-run
   %%> What it does:
-  %%> - the one end check: every package at its pin, every runtime and tool at its version, the NFS server active, the exports as named
+  %%> - the one end check: every package at its pin, every runtime and tool at its version, the package cache active
   alt the check passes
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:

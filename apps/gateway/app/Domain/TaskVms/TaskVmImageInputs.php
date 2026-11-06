@@ -6,7 +6,8 @@ namespace App\Domain\TaskVms;
 
 /**
  * What a task image carries from a release: the playbooks of the task VM role, the pins of the recipe and the lock files of
- * the repository. A ready slot made from an older digest is stale (stage 6, docs/reference/pipeline/6-task-image-seed-refresh.mmd).
+ * the repository. A release that changed none of them needs no refresh of the image, because a task mounts its own checkout
+ * (stage 6, docs/reference/pipeline/6-task-image-seed-refresh.mmd).
  */
 final readonly class TaskVmImageInputs
 {

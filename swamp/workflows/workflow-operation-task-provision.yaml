@@ -157,7 +157,7 @@ jobs:
         conditions: [{type: succeeded}, {type: skipped}]
   - name: Pin the converge
     labels: {role: swamp}
-    # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
+    # Stage 2, "Converge once": the task VM role phases on the outer VM (Incus with the seed pool and the nested network); a VM at the pins reports no change.
     guard: '${{ !has(inputs.converge) }}'
     task:
       type: behavior

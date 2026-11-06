@@ -109,7 +109,7 @@ The workflows set the captured number as the native `timeoutSec` of each of thei
 
 The other task VM workflows (`task-workspace-source`, `task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
-The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, `composer install` where lock files differ from the seed (31 to 35 seconds for five) and the memory snapshot `base` (about 19 seconds); 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
+The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
 `proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
 

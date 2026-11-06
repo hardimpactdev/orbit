@@ -1,11 +1,12 @@
 ---
-# What a task VM needs beyond the recipe's packages: the NFS server for the checkout and the shape gate linters.
+# What a task VM needs beyond the recipe's packages: the shape gate linters. The nested fleet is Incus system containers that
+# mount the checkout as a disk device, so the VM serves nothing to them.
 # Their packages come from the same pinned snapshot, so the snapshot date is their pin.
 - name: Read installed packages
   ansible.builtin.package_facts: { manager: apt }
 - name: Find the tool packages that are missing
   ansible.builtin.set_fact:
-    tool_packages_missing: "{{ (['nfs-kernel-server'] + snapshot_packages) | reject('in', ansible_facts.packages) | list }}"
+    tool_packages_missing: "{{ snapshot_packages | reject('in', ansible_facts.packages) | list }}"
 - name: Install the tool packages
   when: tool_packages_missing | length > 0
   block:
@@ -21,9 +22,14 @@
       until: apt_install is succeeded
       retries: "{{ apt_retries }}"
       delay: "{{ apt_delay }}"
-- { name: Serve the checkout, ansible.builtin.import_tasks: task-vm-nfs.yml }
+# Images of the nested VMs exported the checkout over NFS. The export goes; absent is the end state, and the installed server may stay.
+- name: Withdraw the NFS export of the earlier nested VMs
+  ansible.builtin.file: { path: /etc/exports.d/orbit-checkout.exports, state: absent }
+- name: Stop the NFS server of the earlier nested VMs
+  ansible.builtin.systemd: { name: nfs-server.service, state: stopped, enabled: false }
+  register: tools_nfs_stopped
+  failed_when: tools_nfs_stopped.failed and 'Could not find the requested service' not in (tools_nfs_stopped.msg | default(''))
 - { name: Initialise Incus, ansible.builtin.import_tasks: task-vm-incus.yml }
 - { name: Open the firewall to the nested bridge, ansible.builtin.import_tasks: task-vm-nested-firewall.yml }
 - { name: Build the shape gate tools, ansible.builtin.import_tasks: task-vm-shape-gate.yml }
-- { name: Apply the exports before the check, ansible.builtin.meta: flush_handlers }
 - { name: Leave the downloads out of an image, ansible.builtin.import_tasks: task-vm-image-cache.yml }

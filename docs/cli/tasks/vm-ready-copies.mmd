@@ -58,7 +58,7 @@ sequenceDiagram
   %%> - container copies carry format 4, so code for containers never starts the VM copies of format 3
   SW->>VM: Boot-check the copies<br/>incus copy, start, exec
   %%> What it does:
-  %%> - starts a throwaway copy of each ready copy, waits for its agent, and checks it: no Club key, no file of a checkout but a log, the state on its own disk, no operator key in the record or on the hub
+  %%> - starts a throwaway copy of each ready copy, waits for cloud-init to finish (a container has no guest agent), and checks it: no Club key, no file of a checkout but the state the bind units mount, the state on its own disk, no operator key in the record or on the hub, a container of the current format, no NIC and no checkout device
   %%> - the ready copies themselves are never started
   SW->>VM: Remove the check copies<br/>incus delete
   %%> Why:

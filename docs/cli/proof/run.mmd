@@ -38,7 +38,7 @@ sequenceDiagram
   %%> What it does:
   %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
-  %%> - the nested Gateway and app-dev mount the VM's checkout of the commit over NFS (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
+  %%> - the nested Gateway and app-dev have the VM's checkout of the commit as a disk device (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
   %%> Built, not yet passed live:
   %%> - the reset is the workflow `task-nested-fleet` inside `operation-task-provision` (start from the ready copies, apply, readiness, take `base`); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch (`task_vm.fleet_build`) has not succeeded yet
   opt the commit changes playbooks or pins
@@ -48,9 +48,9 @@ sequenceDiagram
     %%> - the nested Orbit reads the playbooks from the mounted checkout; the proof never resets the outer VM, so this lasts the whole run
     %%> - the base images are not touched; only the merge and the seed refresh change them
   end
-  SW->>VM: Take base<br/>memory snapshot
+  SW->>VM: Take base<br/>snapshot
   %%> What it does:
-  %%> - an Incus stateful snapshot `base` of the three nested VMs, with any converged state in it
+  %%> - a plain Incus snapshot `base` of the three nested containers, with any converged state in it
   %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
   SW->>VM: Run the proof<br/>child flow · proof-fleet verify
   %%> What it does:

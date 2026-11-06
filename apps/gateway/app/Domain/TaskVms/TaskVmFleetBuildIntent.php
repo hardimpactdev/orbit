@@ -17,14 +17,14 @@ use App\Models\TaskVm;
 
 /**
  * Renders the fleet build (docs/cli/tasks/vm-fleet-build.mmd) as the full workflow input: the VM that runs the nested fleet, with
- * its SSH identity and host key pin, the fixed layout of the nested VMs and their network, and the public pins the new Gateway is
+ * its SSH identity and host key pin, the fixed layout of the nested containers and their network, and the public pins the new Gateway is
  * prepared with. No secret and no host effects.
  */
 final readonly class TaskVmFleetBuildIntent
 {
     /**
-     * The nested VMs by role: their address and MAC on the nested network, their address on the private network of the fleet, their
-     * memory, and the TLD an `app-dev` or `app-prod` Node serves. The ready copies store the address and the MAC, so a fleet that is built
+     * The nested containers by role: their address and MAC on the nested network, their address on the private network of the fleet, their
+     * memory limit, and the TLD an `app-dev` or `app-prod` Node serves. The ready copies store the address and the MAC, so a fleet that is built
      * again must have the same ones: the Gateway's records name them.
      */
     public const array Layout = [
@@ -36,7 +36,7 @@ final readonly class TaskVmFleetBuildIntent
     /** The bridge of the nested network: the first address of its subnet. */
     public const string Bridge = '10.232.2.1/24';
 
-    /** Where the guests mount the checkout of the outer VM, which exports the same path, and where their own state lives (stage 2). */
+    /** Where the guests see the checkout of the outer VM (an Incus disk device), and where their own state lives (stage 2). */
     public const string CheckoutPath = '/home/orbit/orbit';
 
     public const string StatePath = '/var/lib/orbit-checkout-state';
@@ -96,11 +96,11 @@ final readonly class TaskVmFleetBuildIntent
         return $path;
     }
 
-    /** The three nested VMs hold 10 GiB, more than a medium VM has: the build runs only in a large one, which the admission of the refresh sets. */
+    /** The three nested containers may use 10 GiB, more than a medium VM has: the build runs only in a large one, which the admission of the refresh sets. */
     private function assertLarge(TaskVm $vm): void
     {
         if ($vm->size !== TaskVmSize::Large) {
-            throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a large task VM: its nested VMs hold more memory than a '.$vm->size->value.' VM has.', 409);
+            throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a large task VM: its nested containers may use more memory than a '.$vm->size->value.' VM has.', 409);
         }
     }
 
@@ -129,37 +129,31 @@ final readonly class TaskVmFleetBuildIntent
     }
 
     /**
-     * The mount units of the shared checkout, as systemd writes them for `/home/orbit/orbit` (stock NFS and bind mounts, the names the stage 2
-     * apply step starts): the NFS mount of the outer VM's export and a bind mount of each piece of state over it. They are network mounts
-     * (`_netdev`), which orders them after the NFS mount at boot, as the ready copies need.
+     * The checkout of the outer VM and the mount units of the guests' own state. The checkout is an Incus disk device of the Gateway and
+     * app-dev containers (`source` to `path`); the build attaches it after cloud-init made the `orbit` account. A bind mount of each piece
+     * of state over it is a stock systemd unit, named as systemd names it for `/home/orbit/orbit/<piece>`, which the stage 2 apply step starts.
      *
-     * @return array{server:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
+     * @return array{source:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
      */
     private function checkout(string $workspace): array
     {
-        $server = explode('/', self::Bridge)[0];
         $units = [];
         $binds = [];
         foreach (['gateway' => self::GatewayState, 'app-dev' => self::AppDevState] as $role => $state) {
             $guest = TaskVmReadyCopiesIntent::Guests[$role];
-            $units[] = ['guest' => $guest, 'name' => self::unitName(self::CheckoutPath), 'content' => implode("\n", [
-                '[Unit]', 'Description=Orbit checkout over NFS', 'After=network-online.target', 'Wants=network-online.target', '',
-                '[Mount]', "What={$server}:".$workspace, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
-                '[Install]', 'WantedBy=multi-user.target', '',
-            ])];
             $binds[$role] = [];
             foreach ($state as $relative) {
                 $name = self::unitName(self::CheckoutPath.'/'.$relative);
                 $binds[$role][] = $name;
                 $units[] = ['guest' => $guest, 'name' => $name, 'content' => implode("\n", [
                     '[Unit]', "Description=Orbit state {$relative}", 'RequiresMountsFor='.self::CheckoutPath, '',
-                    '[Mount]', 'What='.self::StatePath.'/'.$relative, 'Where='.self::CheckoutPath.'/'.$relative, 'Type=none', 'Options=bind,_netdev', '',
+                    '[Mount]', 'What='.self::StatePath.'/'.$relative, 'Where='.self::CheckoutPath.'/'.$relative, 'Type=none', 'Options=bind', '',
                     '[Install]', 'WantedBy=multi-user.target', '',
                 ])];
             }
         }
 
-        return ['server' => $server, 'path' => self::CheckoutPath, 'state' => self::StatePath, 'units' => $units, 'binds' => $binds];
+        return ['source' => $workspace, 'path' => self::CheckoutPath, 'state' => self::StatePath, 'units' => $units, 'binds' => $binds];
     }
 
     /** The name of the mount unit of a path, as `systemd-escape --path --suffix=mount` writes it for these paths (no dash in a part, no escaped byte). */

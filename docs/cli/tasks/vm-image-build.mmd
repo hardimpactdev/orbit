@@ -31,7 +31,7 @@ sequenceDiagram
   SW->>B: Run the task image phases<br/>Ansible · same as Nodes
   %%> What it does:
   %%> - Swamp on 209 runs `ansible-playbook` over SSH to the builder through the host (ProxyJump with the recorded host keys), as node:converge reaches a Node
-  %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
+  %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters), check
   %%> - versions come from recipe.json of the release commit; the same playbooks converge a running task VM in stage 2 and the refresh VM in stage 6
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), the package cache of the task VM:
   %%> - the first software task installs stock `apt-cacher-ng` from the VM's own sources (not in the recipe: it is not a pinned tool) and starts it; a drop-in lets it ask the snapshot service again (`DlMaxRetries 10`) before it answers a client with an error: the service answers a check of a stored index with a 5xx now and then
