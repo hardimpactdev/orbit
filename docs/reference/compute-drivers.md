@@ -1224,7 +1224,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209.
 
 | Step | What it does |
 |---|---|
-| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and a clone of the current seed, the checkout of the release commit, and the nested fleet from the ready copies. |
+| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, and the nested fleet from the ready copies. |
 | `Pin the VM` | Fills the host key of the new guest into the converge and ready copies intents. |
 | `Converge once` | Runs `operation-task-vm-converge` on the refresh VM. A VM at the pins reports no change. |
 | `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
