@@ -32,7 +32,7 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Run the cases of one Orbit command on this task VM and report a verdict for each. Ctrl-C cancels the run.';
+    protected $description = 'Run the cases of one Orbit command on this task VM, or on the VM of --group, and report a verdict for each. Ctrl-C cancels the run.';
 
     public function extensionSlug(): ?string
     {
@@ -64,6 +64,11 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
             );
         }
 
+        $group = $this->option('group');
+        if ($group !== null && (! ctype_digit($group) || (int) $group < 1)) {
+            return $this->renderGatewayFailure('proof.group_invalid', 'Name the task group by its numeric ID.', details: ['field' => 'group']);
+        }
+
         $profile = $this->activeGatewayProfile($repository);
 
         if ($profile === null) {
@@ -73,10 +78,6 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.verify.'.Str::uuid();
-        $group = $this->option('group');
-        if ($group !== null && (! ctype_digit($group) || (int) $group < 1)) {
-            return $this->renderGatewayFailure('proof.group_invalid', 'Name the task group by its numeric ID.', details: ['field' => 'group']);
-        }
         $operation = $this->send($connector, new VerifyProofRequest($command, $key, $group === null ? null : (int) $group), OperationResponse::class);
 
         return $operation instanceof OperationResponse

@@ -32,7 +32,7 @@ final class ProofRunsController extends Controller
     }
 
     /** Prove one command on the task VM that calls, with its own nested fleet and no new VM; the caller's Node names the VM. */
-    #[StartsOperation(OperationKinds::ProofVerify, requiresKey: true)]
+    #[StartsOperation(OperationKinds::ProofVerify, requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function verify(StartProofVerifyRequest $request, StartProofVerifyAction $action): JsonResponse
     {

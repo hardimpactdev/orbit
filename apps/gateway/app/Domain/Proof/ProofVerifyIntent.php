@@ -44,7 +44,7 @@ final readonly class ProofVerifyIntent
             $group = TaskVm::forNode($caller)?->group;
         }
         if (! $group instanceof Task) {
-            throw new ResourceOperationException('proof.no_task_vm', 'The proof runs on the task VM that calls it, or on the group named with --group. This Node is not a task VM.', 409);
+            throw new ResourceOperationException('proof.no_task_vm', 'The proof runs on the task VM that calls it. This Node is not a task VM.', 409);
         }
 
         // The caller may be the agent of a running turn, which holds the group and waits for this proof, so the turn does not count as busy.

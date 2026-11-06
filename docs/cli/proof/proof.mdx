@@ -5,7 +5,7 @@ description: "Prove one command on the task VM you work in. Orbit runs its cases
 ---
 
 ```bash
-orbit proof <orbit-command> [--idempotency-key=KEY] [--json]
+orbit proof <orbit-command> [--group=ID] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -14,6 +14,7 @@ orbit proof <orbit-command> [--idempotency-key=KEY] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--group=ID` | the caller's own | Prove on the VM of this task group. For a Node with Gateway access, such as an operator machine. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
@@ -64,6 +65,7 @@ Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run
 | Code | Meaning |
 | --- | --- |
 | `proof.command_invalid` | The command is missing or is not `family:command`, and the CLI cannot prompt. |
+| `proof.group_invalid` | `--group` is not a positive number. The CLI sends no request. |
 | `proof.no_task_vm` | The calling Node is not a task VM, and no `--group` names one. Run the command on the VM you develop in, or name its group. |
 | `tasks.group_missing` | The group that `--group` names does not exist. |
 | `proof.wrong_project` | The task group of the VM is not on the Orbit Project; cases exist only for the Orbit repository. |
