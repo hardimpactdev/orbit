@@ -61,7 +61,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#incoming-pull-requests) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
-| `merge_status`, `merge_reason`, `merged_sha` | task | The [merge gate](#merge-on-green) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
+| `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
 | `type` | subtask | `implementation`, or `final_review` for a [final review](#final-review) |
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |

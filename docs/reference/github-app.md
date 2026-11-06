@@ -219,21 +219,14 @@ The Gateway resolves the repository's installation id, caches it, and reuses tha
 
 ## How Orbit reviews and merges a pull request
 
-A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for these calls. Each call asks GitHub for its own token, as the table shows.
+Swamp reviews and merges: the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) use the write tokens described above. The Gateway makes only the two reads that decide the merge check, each with its own token.
 
 | Call | Endpoint | Token |
 | --- | --- | --- |
-| List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
-| Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
 | Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs`, every page | `checks: read` |
 | Identify superseded and pull request suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
-| Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
 
-The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. So the flow needs no new App permission, no maintainer credential, and no webhook.
-
-A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
-
-GitHub forbids an account to review its own pull request, and that includes the App. So Orbit submits reviews only on pull requests that a person opened. It never reviews a pull request it opened. The merge needs no review: the `sha` parameter makes GitHub refuse the merge when the head moved.
+The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. The flow needs no new App permission, no maintainer credential, and no webhook.
 
 An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 
