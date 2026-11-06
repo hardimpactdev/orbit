@@ -270,6 +270,7 @@ function nativeOutputs(steps: Record<string, unknown>, name: string) {
         z.record(z.string(), z.unknown()).safeParse(step.outputs).data ?? {};
     return { step, outputs };
 }
+const COULD_NOT_RUN = "The revoke step could not run.";
 const DependencyToken = z.object({
     state: z.enum(["revoked", "none", "unrevoked"]),
     reason: z.string().max(200).optional(),
@@ -282,15 +283,16 @@ const DependencyToken = z.object({
 export function revokeOutcome(steps: Record<string, unknown>) {
     const { step, outputs } = nativeOutputs(steps, "Revoke");
     if (step.status === undefined || step.status === "skipped") {
-        return {
-            state: "unrevoked" as const,
-            reason: "The revoke step did not run.",
-        };
+        return { state: "unrevoked" as const, reason: COULD_NOT_RUN };
     }
     if (step.status !== "succeeded") {
+        // The step failed before its command ran when the vault key could not be read; the error text says so when Swamp passes it on.
+        const error = typeof step.error === "string" ? step.error : "";
         return {
             state: "unrevoked" as const,
-            reason: "The revoke request did not reach GitHub.",
+            reason: /vault expression|not found in vault/i.test(error)
+                ? COULD_NOT_RUN
+                : "The revoke request did not complete.",
         };
     }
     const code = String(outputs.stdout ?? "").trim();

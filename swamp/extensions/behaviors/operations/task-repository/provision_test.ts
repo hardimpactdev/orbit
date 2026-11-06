@@ -510,10 +510,20 @@ Deno.test("the revoke outcome tells a revoked token from one GitHub does not kno
     // The request itself failed, so a token may still be valid.
     assertEquals(revoke("failed"), {
         state: "unrevoked",
-        reason: "The revoke request did not reach GitHub.",
+        reason: "The revoke request did not complete.",
     });
+    // The step failed before its command ran: the vault key could not be read.
+    assertEquals(
+        revokeOutcome({
+            Revoke: {
+                status: "failed",
+                error: "Failed to resolve vault expression vault.get(...): Secret 'x' not found in vault 'orbit-control-inputs'",
+            },
+        }),
+        { state: "unrevoked", reason: "The revoke step could not run." },
+    );
     // No revoke step ran: nothing says the token is gone.
-    assertEquals(revokeOutcome({}).state, "unrevoked");
+    assertEquals(revokeOutcome({}), { state: "unrevoked", reason: "The revoke step could not run." });
 });
 Deno.test("the receipt names what became of the setup token, and a missing report is never a success", () => {
     const reported = { state: "revoked" };
