@@ -73,7 +73,7 @@ jobs:
   - name: Start the nested fleet
     labels: {role: swamp}
     writes: true
-    guard: '${{ has(inputs.intent.create) && inputs.intent.create != null && inputs.intent.create.topology }}'
+    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
     task:
       type: workflow
       workflowIdOrName: task-nested-fleet
