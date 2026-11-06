@@ -1,0 +1,695 @@
+---
+# The Gateway release on the Gateway Node. One tagged part per Swamp phase; `intent` is the Gateway's admitted intent.
+# `release_base` is the release folder on the Node (default /home/orbit); a test run points it elsewhere. `run_dir` is the private run
+# folder on the Swamp Node, where a phase leaves the value its Swamp step prints (the grants, the snapshot path, the cleanup generations).
+# Every refusal starts with its `gateway.release_*:` code, which the Gateway reads from the step's stderr.
+- name: Fetch the commit
+  hosts: gateway
+  tags: [fetch]
+  gather_facts: false
+  vars: &release
+    base: "{{ release_base | default('/home/orbit') }}"
+    repo: "{{ release_base | default('/home/orbit') }}/shared/orbit.git"
+    sha: "{{ intent.sha }}"
+    id: "{{ intent.id }}"
+    release: "{{ release_base | default('/home/orbit') }}/releases/{{ intent.id }}"
+    app: "{{ release_base | default('/home/orbit') }}/releases/{{ intent.id }}/apps/gateway"
+  tasks:
+    - name: Remove a token file a killed fetch left behind
+      ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: absent}
+    - name: Look for the commit in the shared repository
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", cat-file, -e, "{{ sha }}^{commit}"]}
+      register: known
+      changed_when: false
+      failed_when: false
+    - name: Fetch the commit
+      when: known.rc != 0
+      block:
+        - name: Make the private folder for the token file
+          ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: directory, mode: "0700"}
+        - name: Leave the token for git in a private file
+          ansible.builtin.copy:
+            dest: "{{ base }}/shared/.fetch/git-config"
+            content: "[http \"https://github.com/\"]\n\textraHeader = Authorization: Basic {{ ('x-access-token:' ~ secrets.github_token) | b64encode }}\n"
+            mode: "0600"
+          no_log: true
+        - name: Fetch the commit from GitHub
+          ansible.builtin.command:
+            argv:
+              - timeout
+              - "300"
+              - git
+              - -C
+              - "{{ repo }}"
+              - fetch
+              - --no-tags
+              - --quiet
+              - "{{ fetch_url | default('https://github.com/' ~ intent.repository ~ '.git') }}"
+              - "+{{ sha }}:refs/orbit/{{ sha }}"
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
+            GIT_CONFIG_GLOBAL: "{{ base }}/shared/.fetch/git-config"
+          changed_when: true
+          no_log: true
+      rescue:
+        - name: Report the failed fetch
+          ansible.builtin.fail:
+            msg: "gateway.release_fetch_failed: git fetch of {{ sha }} failed"
+      always:
+        - name: Remove the token file
+          ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: absent}
+    - name: Require the commit
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", cat-file, -e, "{{ sha }}^{commit}"]}
+      changed_when: false
+      register: present
+      failed_when: false
+    - name: Refuse a commit that origin does not hold
+      ansible.builtin.fail:
+        msg: "gateway.release_commit_unknown: {{ sha }} is not in origin"
+      when: present.rc != 0
+    - name: Pin the commit in the shared repository
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", update-ref, "refs/orbit/{{ sha }}", "{{ sha }}"]}
+      changed_when: false
+
+- name: Build the release
+  hosts: gateway
+  tags: [build]
+  gather_facts: false
+  vars: *release
+  tasks:
+    - name: Read the live release link
+      ansible.builtin.stat: {path: "{{ base }}/orbit", follow: false}
+      register: live
+    - name: Require a release link
+      ansible.builtin.fail:
+        msg: "gateway.release_not_adopted: {{ base }}/orbit is no release link"
+      when: not live.stat.islnk | default(false)
+    - name: Name the live release
+      ansible.builtin.set_fact:
+        current: "{{ live.stat.lnk_source | basename }}"
+    - name: Read the live revision
+      ansible.builtin.slurp: {src: "{{ base }}/releases/{{ current }}/REVISION"}
+      register: current_revision
+      failed_when: false
+    - name: Require a sealed live release
+      ansible.builtin.fail:
+        msg: "gateway.release_current_incomplete: release {{ current }} has no REVISION"
+      when: current_revision.content is not defined
+    - name: Name the live commit
+      ansible.builtin.set_fact:
+        current_sha: "{{ (current_revision.content | b64decode).strip() }}"
+    - name: Check that the commit descends from the live release
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", merge-base, --is-ancestor, "{{ current_sha }}", "{{ sha }}"]}
+      register: descends
+      changed_when: false
+      failed_when: false
+      when: not intent.force | bool and sha != current_sha
+    - name: Refuse a downgrade
+      ansible.builtin.fail:
+        msg: "gateway.release_downgrade: {{ sha }} does not descend from the current {{ current_sha }}"
+      when: descends.rc | default(0) != 0
+    - name: Read the revision of this release
+      ansible.builtin.slurp: {src: "{{ release }}/REVISION"}
+      register: revision
+      failed_when: false
+    - name: Name the build state
+      ansible.builtin.set_fact:
+        sealed: "{{ revision.content is defined and (revision.content | b64decode).strip() == sha }}"
+    - name: Build the release
+      when: not sealed | bool
+      block:
+        - name: Require another release than the live one
+          ansible.builtin.fail:
+            msg: "gateway.release_current_incomplete: the current release {{ id }} is not sealed"
+          when: current == id
+        - name: Find the database of the live release
+          ansible.builtin.command:
+            argv:
+              - php8.5
+              - -r
+              - '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];'
+              - "{{ base }}/releases/{{ current }}/apps/gateway/bootstrap/cache/config.php"
+          register: database_path
+          changed_when: false
+        - name: Measure the database
+          ansible.builtin.stat: {path: "{{ database_path.stdout }}"}
+          register: database
+        - name: Read the free space
+          ansible.builtin.command: {argv: [df, --output=avail, -B1, "{{ base }}"]}
+          register: free
+          changed_when: false
+        - name: Require space for the release and a snapshot
+          ansible.builtin.fail:
+            msg: "gateway.release_disk_low: less than {{ database.stat.size + 1073741824 }} bytes free on {{ base }}"
+          when: free.stdout_lines[-1] | int < database.stat.size + 1073741824
+        - name: Make the releases folder
+          ansible.builtin.file: {path: "{{ base }}/releases", state: directory, mode: "0710", group: caddy}
+        - name: Look for a stopped build of this release
+          ansible.builtin.stat: {path: "{{ release }}"}
+          register: stopped
+        - name: Make a stopped build writable
+          ansible.builtin.file: {path: "{{ release }}", state: directory, recurse: true, follow: false, mode: "u+w"}
+          when: stopped.stat.exists
+        - name: Remove a stopped build
+          ansible.builtin.file: {path: "{{ release }}", state: absent}
+        - name: Clone the commit from the shared repository
+          ansible.builtin.git:
+            repo: "file://{{ repo }}"
+            dest: "{{ release }}"
+            version: "{{ sha }}"
+            refspec: "+refs/orbit/{{ sha }}:refs/orbit/{{ sha }}"
+            reference: "{{ repo }}"
+          register: cloned
+          ignore_errors: true  # noqa: ignore-errors
+        - name: Report a failed clone
+          ansible.builtin.fail:
+            msg: "gateway.release_worktree_failed: cloning {{ sha }} failed"
+          when: cloned.failed | default(false)
+        - name: Make the cached configuration folder private
+          ansible.builtin.file: {path: "{{ app }}/bootstrap/cache", state: directory, mode: "0700"}
+        - name: Make the shared storage folders
+          ansible.builtin.command:
+            argv:
+              - install
+              - -d
+              - -m
+              - "0750"
+              - "{{ base }}/shared/gateway-storage/app/private"
+              - "{{ base }}/shared/gateway-storage/app/public"
+              - "{{ base }}/shared/gateway-storage/framework/cache/data"
+              - "{{ base }}/shared/gateway-storage/framework/sessions"
+              - "{{ base }}/shared/gateway-storage/framework/views"
+              - "{{ base }}/shared/gateway-storage/logs"
+          changed_when: false
+        - name: Link the shared environment file
+          ansible.builtin.file: {src: "{{ base }}/shared/gateway.env", dest: "{{ app }}/.env", state: link, force: true}
+        - name: Keep the tracked storage files out of git status
+          ansible.builtin.shell:
+            cmd: |
+              set -o pipefail
+              git -C "{{ release }}" ls-files -z -- apps/gateway/storage | xargs -0 -r git -C "{{ release }}" update-index --skip-worktree --
+            executable: /bin/bash
+          changed_when: false
+        - name: Remove the storage folder of the commit
+          ansible.builtin.file: {path: "{{ app }}/storage", state: absent}
+        - name: Keep the storage link out of git status
+          ansible.builtin.lineinfile:
+            path: "{{ release }}/.git/info/exclude"
+            line: /apps/gateway/storage
+            create: true
+            mode: "0644"
+        - name: Link the shared storage
+          ansible.builtin.file: {src: "{{ base }}/shared/gateway-storage", dest: "{{ app }}/storage", state: link}
+        - name: Install the dependencies
+          community.general.composer:
+            command: install
+            working_dir: "{{ release }}/{{ item }}"
+            no_dev: true
+            prefer_dist: true
+            optimize_autoloader: false
+          loop: [apps/cli, apps/gateway]
+          register: dependencies
+          ignore_errors: true  # noqa: ignore-errors
+        - name: Report failed dependencies
+          ansible.builtin.fail:
+            msg: "gateway.release_dependencies_failed: composer install failed in {{ item.item }}: {{ (item.msg | default('')).splitlines()[-1:] | join }}"
+          when: item.failed | default(false)
+          loop: "{{ dependencies.results }}"
+          loop_control: {label: "{{ item.item }}"}
+        - name: Check the platform requirements
+          community.general.composer:
+            command: check-platform-reqs
+            working_dir: "{{ release }}/{{ item }}"
+            arguments: --no-dev
+          loop: [apps/cli, apps/gateway]
+          register: platform
+          changed_when: false
+          ignore_errors: true  # noqa: ignore-errors
+        - name: Report failed platform requirements
+          ansible.builtin.fail:
+            msg: "gateway.release_dependencies_failed: platform requirements failed in {{ item.item }}"
+          when: item.failed | default(false)
+          loop: "{{ platform.results }}"
+          loop_control: {label: "{{ item.item }}"}
+        - name: Make the agent delivery folder
+          ansible.builtin.file: {path: "{{ release }}/apps/agent/delivery", state: directory, mode: "0755"}
+        - name: Write the agent delivery manifest
+          ansible.builtin.copy:
+            dest: "{{ release }}/apps/agent/delivery/manifest.json"
+            content: "{{ intent.manifest }}"
+            mode: "0444"
+        - name: Give the web server the release folders
+          ansible.builtin.file: {path: "{{ item }}", state: directory, group: caddy, mode: "0710"}
+          loop: ["{{ release }}", "{{ release }}/apps", "{{ app }}"]
+        - name: Keep the shared environment file private
+          ansible.builtin.file: {path: "{{ base }}/shared/gateway.env", mode: "0600"}
+        - name: Take the write bit from the release
+          ansible.builtin.command:
+            argv:
+              - find
+              - "{{ release }}"
+              - -path
+              - "{{ app }}/bootstrap/cache"
+              - -prune
+              - -o
+              - -path
+              - "{{ release }}/apps/cli/storage"
+              - -prune
+              - -o
+              - "("
+              - -type
+              - f
+              - -o
+              - -type
+              - d
+              - ")"
+              - "!"
+              - -type
+              - l
+              - -exec
+              - chmod
+              - a-w
+              - "{}"
+              - "+"
+          changed_when: true
+        - name: Let the owner seal the release
+          ansible.builtin.file: {path: "{{ release }}", state: directory, mode: "u+w"}
+        - name: Seal the release
+          ansible.builtin.copy: {dest: "{{ release }}/REVISION", content: "{{ sha }}\n", mode: "0644"}
+        - name: Cache the configuration
+          ansible.builtin.import_tasks: tasks/gateway-release-cache.yml
+        - name: Take the owner's write bit from the sealed release
+          ansible.builtin.file: {path: "{{ release }}", state: directory, mode: "u-w"}
+    - name: Cache the configuration of a sealed release
+      ansible.builtin.import_tasks: tasks/gateway-release-cache.yml
+      when: sealed | bool
+    - name: Render the grants of the new code
+      ansible.builtin.command:
+        argv:
+          - php8.5
+          - -r
+          - 'require $argv[1]."/vendor/autoload.php";
+            $g = (new App\Infrastructure\GatewayReleases\SwampGrantRenderer)->render($argv[2]);
+            echo $g["grants/orbit-gateway.yaml"], "---\n", $g["grants/orbit-serve.yaml"];'
+          - "{{ app }}"
+          - "{{ release }}/swamp"
+      register: grants
+      changed_when: false
+    - name: Leave the grants for the Swamp step
+      ansible.builtin.copy: {dest: "{{ run_dir }}/grants", content: "{{ grants.stdout }}", mode: "0600"}
+      delegate_to: swamp
+
+- name: Install the web build
+  hosts: gateway
+  tags: [web]
+  gather_facts: false
+  become: true
+  vars: *release
+  tasks:
+    - name: Look for the web build
+      ansible.builtin.stat: {path: "{{ base }}/web/releases/{{ id }}/index.html"}
+      register: web_build
+    - name: Install the web build
+      when: not web_build.stat.exists
+      block:
+        - name: Refuse an artifact above 128 MiB
+          ansible.builtin.fail:
+            msg: "gateway.release_web_build_invalid: artifact of {{ intent.web.size }} bytes is above 128 MiB"
+          when: intent.web.size | int > 134217728
+        - name: Read the owner of the web folder
+          ansible.builtin.stat: {path: "{{ base }}/web"}
+          register: web_folder
+        - name: Make the work folder
+          ansible.builtin.tempfile: {state: directory, prefix: orbit-web-}
+          register: work
+        - name: Install the artifact
+          block:
+            - name: Ask GitHub where the artifact is
+              ansible.builtin.uri:
+                url: "https://api.github.com/repos/{{ intent.repository }}/actions/artifacts/{{ intent.web.artifact_id }}/zip"
+                headers: {Authorization: "Bearer {{ secrets.github_token }}"}
+                follow_redirects: none
+                status_code: 302
+              register: location
+              no_log: true
+            - name: Download the artifact from its storage
+              ansible.builtin.get_url:
+                url: "{{ location.location }}"
+                dest: "{{ work.path }}/web.zip"
+                mode: "0600"
+              no_log: true
+            - name: Read the digest of the artifact
+              ansible.builtin.stat: {path: "{{ work.path }}/web.zip", checksum_algorithm: sha256}
+              register: downloaded
+            - name: Refuse an artifact that does not match its digest
+              ansible.builtin.fail:
+                msg: "gateway.release_web_build_invalid: artifact {{ intent.web.artifact_id }} does not match its digest"
+              when: downloaded.stat.checksum != intent.web.digest | regex_replace('^sha256:', '')
+            - name: Make the web builds folder
+              ansible.builtin.file:
+                path: "{{ base }}/web/releases"
+                state: directory
+                owner: "{{ web_folder.stat.pw_name }}"
+                group: caddy
+                mode: "0750"
+            - name: Publish the web build
+              orbit_web_build:
+                src: "{{ work.path }}/web.zip"
+                dest: "{{ base }}/web/releases/{{ id }}"
+                owner: "{{ web_folder.stat.pw_name }}"
+                group: caddy
+          rescue:
+            - name: Report the failed artifact
+              ansible.builtin.fail:
+                msg: >-
+                  {{ ansible_failed_result.msg | default('')
+                  if (ansible_failed_result.msg | default('')).startswith('gateway.release_')
+                  else 'gateway.release_web_build_unavailable: artifact ' ~ intent.web.artifact_id
+                  ~ ' could not be downloaded or does not match its digest' }}
+          always:
+            - name: Remove the work folder
+              ansible.builtin.file: {path: "{{ work.path }}", state: absent}
+
+- name: Snapshot the database
+  hosts: gateway
+  tags: [snapshot]
+  gather_facts: false
+  vars: *release
+  tasks:
+    - name: Make the backups folder
+      ansible.builtin.file: {path: "{{ base }}/.orbit/backups", state: directory, mode: "0700"}
+    - name: Name the snapshot
+      ansible.builtin.set_fact:
+        snapshot: "{{ base }}/.orbit/backups/pre-{{ id }}-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}-{{ '%016x' | format((2**62) | random) }}.sqlite"
+    - name: Copy the database into the snapshot
+      block:
+        - name: Write the snapshot
+          ansible.builtin.command:
+            argv:
+              - php8.5
+              - -r
+              - '$c = require $argv[1];
+                $db = new PDO("sqlite:".$c["database"]["connections"]["sqlite"]["database"], null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+                $db->exec("VACUUM INTO ".$db->quote($argv[2]));'
+              - "{{ app }}/bootstrap/cache/config.php"
+              - "{{ snapshot }}.partial"
+          changed_when: true
+        - name: Keep the snapshot private
+          ansible.builtin.file: {path: "{{ snapshot }}.partial", mode: "0600"}
+        - name: Publish the snapshot
+          ansible.builtin.command: {argv: [mv, -T, "{{ snapshot }}.partial", "{{ snapshot }}"]}
+          changed_when: true
+      rescue:
+        - name: Remove the partial snapshot
+          ansible.builtin.file: {path: "{{ snapshot }}.partial", state: absent}
+        - name: Report the failed snapshot
+          ansible.builtin.fail:
+            msg: "gateway.release_snapshot_failed: VACUUM INTO failed"
+    - name: Read the snapshot a pause names
+      ansible.builtin.slurp: {src: "{{ base }}/.orbit/gateway-release.paused"}
+      register: paused
+      failed_when: false
+    - name: List the snapshots
+      ansible.builtin.find: {paths: "{{ base }}/.orbit/backups", patterns: ["pre-*.sqlite"]}
+      register: snapshots
+    - name: Remove the snapshots beyond the newest three and the one a pause names
+      ansible.builtin.file: {path: "{{ item.path }}", state: absent}
+      loop: "{{ (snapshots.files | sort(attribute='mtime', reverse=true))[3:] }}"
+      loop_control: {label: "{{ item.path }}"}
+      when: item.path != ((paused.content | default('e30=') | b64decode | from_json).snapshot | default(''))
+    - name: Leave the snapshot path for the Swamp step
+      ansible.builtin.copy: {dest: "{{ run_dir }}/snapshot", content: "{{ snapshot }}\n", mode: "0600"}
+      delegate_to: swamp
+
+- name: Drain Horizon
+  hosts: gateway
+  tags: [drain]
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read the Horizon unit
+      ansible.builtin.systemd: {name: "{{ intent.horizon_unit }}"}
+      register: horizon
+    - name: Refuse a unit that would kill a running job
+      ansible.builtin.fail:
+        msg: "gateway.release_horizon_unit_stale: {{ intent.horizon_unit }} lacks the stop policy; update the Horizon Process"
+      when: horizon.status.KillMode != 'mixed' or horizon.status.SendSIGKILL != 'no'
+    - name: Stop Horizon and wait for its jobs
+      ansible.builtin.systemd: {name: "{{ intent.horizon_unit }}", state: stopped}
+      register: stopped
+      failed_when: false
+    - name: Require the unit to be inactive
+      ansible.builtin.systemd: {name: "{{ intent.horizon_unit }}"}
+      register: after
+      failed_when: false
+    - name: Report a unit that did not stop
+      ansible.builtin.fail:
+        msg: "gateway.release_horizon_not_drained: {{ intent.horizon_unit }} is not stopped"
+      when: after.status.ActiveState | default('unknown') != 'inactive'
+
+- name: Switch the release
+  hosts: gateway
+  tags: [switch]
+  gather_facts: false
+  vars:
+    base: "{{ release_base | default('/home/orbit') }}"
+    target: "{{ target_id | default(intent.id) }}"
+    live_application: "{{ release_base | default('/home/orbit') }}/orbit/apps/gateway"
+  tasks:
+    - name: Read the revision of the release to switch to
+      ansible.builtin.slurp: {src: "{{ base }}/releases/{{ target }}/REVISION"}
+      register: sealed_revision
+      failed_when: false
+    - name: Require a sealed release
+      ansible.builtin.fail:
+        msg: "gateway.release_not_prepared: release {{ target }} is not sealed"
+      when: >-
+        sealed_revision.content is not defined
+        or not (sealed_revision.content | b64decode).strip().startswith(target)
+        or (expected_sha is defined and (sealed_revision.content | b64decode).strip() != expected_sha)
+    - name: Pass the cleanup generations to the Swamp step
+      when: expected_sha is defined
+      block:
+        - name: Read the cleanup generations before the switch
+          ansible.builtin.command:
+            argv: [php8.5, "{{ base }}/releases/{{ target }}/apps/gateway/artisan", "gateway:release:cleanup", "--no-interaction"]
+          register: cleanup
+          changed_when: false
+        - name: Leave the generations for the Swamp step
+          ansible.builtin.copy:
+            dest: "{{ run_dir }}/generations"
+            content: "{{ (cleanup.stdout | from_json).generations | to_json(separators=(',', ':')) }}"
+            mode: "0600"
+          delegate_to: swamp
+      rescue:
+        - name: Report unreadable generations
+          ansible.builtin.fail:
+            msg: "gateway.release_cleanup_unreadable: the release cleanup generations could not be read"
+    - name: Switch the application link
+      ansible.builtin.file: {src: "releases/{{ target }}", dest: "{{ base }}/orbit", state: link, force: true}
+    - name: Look for the web build of the release
+      ansible.builtin.stat: {path: "{{ base }}/web/releases/{{ target }}/index.html"}
+      register: web
+    - name: Switch the web link
+      ansible.builtin.file: {src: "releases/{{ target }}", dest: "{{ base }}/web/current", state: link, force: true}
+      when: web.stat.exists
+    - name: Reload PHP-FPM
+      ansible.builtin.systemd: {name: php8.5-fpm.service, state: reloaded}
+      become: true
+    - name: Read the working directory of each running service
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          systemctl list-units --type=service --state=active --plain --no-legend | awk '{print $1}' | while read -r unit; do
+            printf '%s\t%s\n' "$unit" "$(systemctl show -p WorkingDirectory --value "$unit")"
+          done
+        executable: /bin/bash
+      register: units
+      changed_when: false
+    - name: Restart the services that run from the application
+      ansible.builtin.systemd: {name: "{{ item.split('\t')[0] }}", state: restarted}
+      become: true
+      loop: "{{ units.stdout_lines }}"
+      loop_control: {label: "{{ item.split('\t')[0] }}"}
+      when: >-
+        (item.split('\t')[1] | default('')) == live_application
+        or (item.split('\t')[1] | default('')).startswith(live_application ~ '/')
+
+- name: Verify the Gateway
+  hosts: gateway
+  tags: [verify]
+  gather_facts: false
+  tasks:
+    - name: Ask the Gateway whether it is up
+      ansible.builtin.uri:
+        url: https://gateway.orbit/up
+        ca_path: /etc/caddy/orbit-cert-current/root-ca.pem
+        timeout: 15
+        return_content: false
+      register: up
+      until: up.status == 200
+      retries: 5
+      delay: 4
+      failed_when: false
+    - name: Require the Gateway to answer
+      ansible.builtin.fail:
+        msg: "gateway.release_verify_failed: /up does not answer"
+      when: up.status | default(0) != 200
+    - name: Ask the Gateway for its version
+      ansible.builtin.uri:
+        url: https://gateway.orbit/api/v1/gateway/status
+        ca_path: /etc/caddy/orbit-cert-current/root-ca.pem
+        timeout: 15
+        return_content: true
+      register: status
+      until: status.status == 200
+      retries: 5
+      delay: 4
+      failed_when: false
+    - name: Require the released version
+      ansible.builtin.fail:
+        msg: "gateway.release_verify_failed: status is not ok on {{ intent.sha }}"
+      when: >-
+        status.status | default(0) != 200
+        or (status.json.data | default(status.json)).status | default('') != 'ok'
+        or (status.json.data | default(status.json)).version | default('') not in [intent.sha, intent.sha[0:12]]
+
+- name: Prune old releases
+  hosts: gateway
+  tags: [prune]
+  gather_facts: false
+  vars: *release
+  tasks:
+    - name: Read the live links
+      ansible.builtin.stat: {path: "{{ item }}", follow: false}
+      loop: ["{{ base }}/orbit", "{{ base }}/web/current"]
+      register: links
+    - name: Name the releases to keep
+      ansible.builtin.set_fact:
+        live: "{{ links.results[0].stat.lnk_source | default('') | basename }}"
+        web_live: "{{ links.results[1].stat.lnk_source | default('') | basename }}"
+    - name: List the sealed releases
+      ansible.builtin.find: {paths: "{{ base }}/releases", patterns: [REVISION], recurse: true, depth: 2}
+      register: sealed
+    - name: Name the newest sealed releases
+      ansible.builtin.set_fact:
+        kept: >-
+          {{ (sealed.files | sort(attribute='mtime', reverse=true))[: intent.keep | int]
+          | map(attribute='path') | map('dirname') | map('basename') | list }}
+    - name: List the release folders
+      ansible.builtin.find: {paths: "{{ base }}/releases", file_type: directory, recurse: false}
+      register: folders
+    - name: Name the releases to remove
+      ansible.builtin.set_fact:
+        stale: >-
+          {{ folders.files | map(attribute='path') | map('basename')
+             | reject('in', [live, id, intent.previous, web_live] + kept) | list }}
+    - name: Look at each unsealed folder
+      ansible.builtin.stat: {path: "{{ base }}/releases/{{ item }}/REVISION"}
+      loop: "{{ stale }}"
+      register: seals
+    - name: Find the stopped builds
+      ansible.builtin.find: {paths: "{{ base }}/releases", file_type: directory, age: 1h, recurse: false}
+      register: old_folders
+    - name: Name what to remove
+      ansible.builtin.set_fact:
+        removable: >-
+          {{ seals.results | selectattr('stat.exists') | map(attribute='item') | list
+             + (seals.results | rejectattr('stat.exists') | map(attribute='item')
+                | select('in', old_folders.files | map(attribute='path') | map('basename') | list) | list) }}
+    - name: Make the old releases writable
+      ansible.builtin.file: {path: "{{ base }}/releases/{{ item }}", state: directory, recurse: true, follow: false, mode: "u+w"}
+      loop: "{{ removable }}"
+    - name: Remove the old releases and their web builds
+      ansible.builtin.file: {path: "{{ item.0 }}/{{ item.1 }}", state: absent}
+      loop: "{{ [base ~ '/releases', base ~ '/web/releases'] | product(removable) | list }}"
+      loop_control: {label: "{{ item.0 }}/{{ item.1 }}"}
+    - name: List the release folders that remain
+      ansible.builtin.find: {paths: "{{ base }}/releases", file_type: directory, recurse: false}
+      register: remaining
+    - name: List the web builds
+      ansible.builtin.find: {paths: "{{ base }}/web/releases", file_type: directory, recurse: false}
+      register: web_builds
+    - name: Remove the web builds whose release is gone
+      ansible.builtin.file: {path: "{{ item.path }}", state: absent}
+      loop: "{{ web_builds.files }}"
+      loop_control: {label: "{{ item.path }}"}
+      when: >-
+        item.path | basename != web_live
+        and item.path | basename not in (remaining.files | map(attribute='path') | map('basename') | list)
+    - name: Forget the worktree records of removed releases
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", worktree, prune]}
+      changed_when: false
+    - name: List the commit pins
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", for-each-ref, "--format=%(refname)", refs/orbit]}
+      register: pins
+      changed_when: false
+    - name: Remove the pins of removed releases
+      ansible.builtin.command: {argv: [git, -C, "{{ repo }}", update-ref, -d, "{{ item }}"]}
+      loop: >-
+        {{ (pins.stdout_lines | select('search', '^refs/orbit/(' ~ (removed_ids | join('|')) ~ ')[0-9a-f]{28}$') | list)
+        if removed_ids | length > 0 else [] }}
+      vars:
+        removed_ids: "{{ removable | select('match', '^[0-9a-f]{12}$') | list }}"
+      changed_when: true
+
+- name: Render the grants of the previous release
+  hosts: gateway
+  tags: [previous]
+  gather_facts: false
+  vars: *release
+  tasks:
+    - name: Read the live release link
+      ansible.builtin.stat: {path: "{{ base }}/orbit", follow: false}
+      register: live_link
+    - name: Refuse to restore Swamp while the Gateway runs another release
+      ansible.builtin.fail:
+        msg: "gateway.release_restore_refused: the Gateway runs {{ live_link.stat.lnk_source | default('') | basename }}, not {{ intent.previous }}"
+      when: live_link.stat.lnk_source | default('') | basename != intent.previous
+    - name: Read the revision of the previous release
+      ansible.builtin.slurp: {src: "{{ base }}/releases/{{ intent.previous }}/REVISION"}
+      register: previous_revision
+      failed_when: false
+    - name: Require a sealed previous release
+      ansible.builtin.fail:
+        msg: "gateway.release_previous_unavailable: release {{ intent.previous }} has no REVISION"
+      when: previous_revision.content is not defined
+    - name: Render the grants of the previous code
+      ansible.builtin.command:
+        argv:
+          - php8.5
+          - -r
+          - 'require $argv[1]."/vendor/autoload.php";
+            $g = (new App\Infrastructure\GatewayReleases\SwampGrantRenderer)->render($argv[2]);
+            echo $g["grants/orbit-gateway.yaml"], "---\n", $g["grants/orbit-serve.yaml"];'
+          - "{{ base }}/releases/{{ intent.previous }}/apps/gateway"
+          - "{{ base }}/releases/{{ intent.previous }}/swamp"
+      register: previous_grants
+      changed_when: false
+    - name: Leave the previous commit and its grants for the Swamp step
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/previous"
+        content: "{{ (previous_revision.content | b64decode).strip() }}---\n{{ previous_grants.stdout }}"
+        mode: "0600"
+      delegate_to: swamp
+
+- name: Re-seed the start cache of Swamp
+  hosts: controller
+  tags: [seed]
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read the start cache
+      ansible.builtin.stat: {path: /tmp/deno-compile-swamp.cache}
+      register: cache
+    - name: Read the Swamp binary
+      ansible.builtin.stat: {path: /usr/local/bin/swamp, follow: true}
+      register: binary
+    - name: Remove a start cache older than the binary
+      ansible.builtin.file: {path: /tmp/deno-compile-swamp.cache, state: absent}
+      when: cache.stat.exists and binary.stat.exists and cache.stat.mtime < binary.stat.ctime
+      notify: Seed the start cache as root
+  handlers:
+    - name: Seed the start cache as root
+      ansible.builtin.command: {argv: [/usr/local/bin/swamp, --version]}
+      changed_when: true
