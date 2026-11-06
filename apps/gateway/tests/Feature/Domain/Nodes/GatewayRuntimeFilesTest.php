@@ -61,7 +61,7 @@ it('runs the scheduler and, with a queue, Horizon as units unless the Node has t
     config(['orbit.gateway_queue.connection' => 'gateway-queue']);
     $units = collect(app(GatewayRuntimeFiles::class)->render($node)['units'])->keyBy('name');
 
-    expect($units['orbit-gateway-horizon.service']['unit'])->toContain("ExecStart=\"/usr/bin/php8.5\" \"/home/orbit/orbit/apps/gateway/artisan\" \"horizon\"\n", "Restart=always\n",
+    expect($units['orbit-gateway-horizon.service']['unit'])->toContain("After=network-online.target valkey-server.service\n", "ExecStart=\"/usr/bin/php8.5\" \"/home/orbit/orbit/apps/gateway/artisan\" \"horizon\"\n", "Restart=always\n",
         "KillMode=mixed\nKillSignal=SIGTERM\nSendSIGKILL=no\nTimeoutStopSec=")
         ->and($units['orbit-gateway-schedule.service']['unit'])->toContain('"schedule:work"', "RuntimeDirectory=orbit\n")->not->toContain('KillMode');
 
