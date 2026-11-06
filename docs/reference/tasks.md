@@ -769,6 +769,12 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 A resolution clears group assistance only when its kind, question, and reason match the resolved subtask request and no sibling still needs assistance. A different or newer request stays open.
 
+### Behavior names
+
+The task workflows that run on Node 209 name their local and SSH steps by the task VM: the name ends in the VM node id, never in a run or a group. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+
+Two kinds of step keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and `tasks.pr_comment` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. The `collect` step of the scheduled check observation is one step for every VM.
+
 ## Task workspace
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
