@@ -62,6 +62,7 @@ jobs:
               ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
               ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
               ORBIT_ENVIRONMENT_TESTING: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.environment_testing ? inputs.execution_secrets.environment_testing.key : inputs.execution_secrets.environment.key) }}'
@@ -191,7 +192,13 @@ jobs:
           methodName: execute
           inputs:
             run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags setup "$ORBIT_ANSIBLE/operation-instance-create.yml"
-            env: *ansible
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
       # Processes: create and start the development Processes through the shared Process create workflow.
       - name: processes
         labels: {role: swamp}

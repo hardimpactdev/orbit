@@ -30,7 +30,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order. Steps 1 and 2 are one Ansible phase, `checkout`, and step 5 is another, `setup`, so each costs one Swamp step however many tasks it holds. A failed setup step stops the phase, and the task's error names the step that failed.
+In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
 
 1. Clone the repository and check out the branch. Orbit mints a read token for this one repository, valid one hour. The token is never part of a command line and is removed from the Node after the clone.
 2. Write `.env` from the Project's env template, with `APP_URL`, a new `APP_KEY` and the database keys. The file has mode 0640 and group `orbit-env`. An owned MySQL or PostgreSQL database also gets `.env.testing`.

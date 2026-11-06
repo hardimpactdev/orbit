@@ -68,7 +68,6 @@
       ansible.builtin.file:
         path: "{{ (checkout | dirname) if seeded else checkout }}"
         state: directory
-        mode: "0755"
     - name: Add the worktree of the seed
       ansible.builtin.command:
         argv: "{{ git + ['-C', intent.source.seed_repository, 'worktree', 'add', '--no-checkout', '--detach', '--', checkout, seed_commit] }}"

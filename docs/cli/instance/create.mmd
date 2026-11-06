@@ -50,7 +50,7 @@ sequenceDiagram
   %%> - the intent is too large for an environment variable, and the same file serves both phases
   SW->>N: Clone, write .env<br/>Ansible · tags checkout
   %%> Why one phase:
-  %%> - the old flow ran eight placed steps for these tasks; each placed step costs about 1.1 s before it works, one Ansible phase costs it once
+  %%> - one placed step and one Ansible start cover every task of it
   %%> Why the file:
   %%> - git reads the token from a 0600 file, so the token never enters argv; the file is removed after the fetch, success or failure
   %%> Branch:

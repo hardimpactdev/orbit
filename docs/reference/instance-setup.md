@@ -21,7 +21,7 @@ With `--domain`, registration publishes the prepared checkout's Route after setu
 
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
-Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. The commands run in order as one Ansible phase, `setup`, each as `bash -eu -c <command>` in the checkout as the account; the first failure stops the phase, the failure names the step, and the phase keeps the exit code and stderr for failure diagnosis. A Project without setup steps runs no setup phase. Command stdout is discarded on the Node.
+Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. The commands run in order as one Ansible phase, `setup`, each as `bash -eu -c <command>` in the checkout as the account; the first failure stops the phase, the failure names the step, and the phase keeps its log and stderr for failure diagnosis. A Project without setup steps runs no setup phase. Command stdout is discarded on the Node.
 
 Stderr stays in Swamp's native run history on Node 209. When the Gateway reads a failure, it redacts the Instance's stored environment values and credential-shaped values before it keeps a tail of at most 4 KiB. A nonzero exit still fails create.
 
@@ -79,7 +79,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. Native steps prepare the owned checkout, validate its configured origin, resolve the admitted branch and inspect the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
+The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. The checkout phase prepares the owned checkout, validates its configured origin, resolves the admitted branch and inspects the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
 
 A seeded create returns `instance.branch_in_use` before preparing a target when the requested branch is already checked out in another worktree. Choose a new branch; Orbit does not force shared refs to move.
 
