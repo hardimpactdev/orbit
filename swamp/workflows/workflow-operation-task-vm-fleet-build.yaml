@@ -248,9 +248,91 @@ jobs:
     labels: {role: swamp}
     task: {type: assert, expr: 'steps["Wait for app-prod"].outputs.stdout.split("\n")[0] == "succeeded"', severity: high, message: app-prod was not added}
     dependsOn: [{step: 'Wait for app-prod', condition: {type: succeeded}}]
-- name: end
+- name: checkout
   labels: {role: swamp}
   dependsOn: [{job: fleet, condition: {type: succeeded}}]
+  steps:
+  # The services of the Gateway guest hold files of the checkout it built, so they stop before the state moves.
+  - name: 'Stop the Gateway services'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-stop-the-gateway-services").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-stop-the-gateway-services").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'stop', 'orbit-gateway-horizon.service', 'orbit-gateway-schedule.service', 'orbit-agent-view.service', 'orbit-swamp-worker@a.service', 'orbit-swamp-worker@b.service', 'orbit-swamp-serve.service', 'caddy.service', 'php8.5-fpm.service'], timeoutSec: 140}}
+  # The state stays on the guest disk (`.env`, `storage`, `bootstrap/cache`, and the Swamp repository state), and the checkout the guest built goes: the shared one replaces it.
+  - name: 'Move the state'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-move-the-state").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-move-the-state").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '300', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'sh', '-c', 'set -eu; s=$0; c=$1; mkdir -p "$s/apps/gateway/bootstrap" "$s/swamp"; mv "$c/apps/gateway/.env" "$s/apps/gateway/.env"; mv "$c/apps/gateway/storage" "$s/apps/gateway/storage"; mv "$c/apps/gateway/bootstrap/cache" "$s/apps/gateway/bootstrap/cache"; for d in .swamp vaults grants; do mv "$c/swamp/$d" "$s/swamp/$d"; done; chown -R orbit:orbit "$s"; rm -rf "$c"; install -d -o orbit -g orbit "$c"', '${{ inputs.intent.fleet.checkout.state }}', '${{ inputs.intent.fleet.checkout.path }}'], timeoutSec: 320}}
+    dependsOn: [{step: 'Stop the Gateway services', condition: {type: succeeded}}]
+  - name: 'Make the state'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-state").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-state").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests["app-dev"] }}', '--', 'sh', '-c', 'set -eu; s=$0; mkdir -p "$s/apps/gateway/storage" "$s/apps/gateway/bootstrap/cache"; : > "$s/apps/gateway/.env"; chown -R orbit:orbit "$s"; install -d -o orbit -g orbit "$1"', '${{ inputs.intent.fleet.checkout.state }}', '${{ inputs.intent.fleet.checkout.path }}'], timeoutSec: 80}}
+    dependsOn: [{step: 'Stop the Gateway services', condition: {type: succeeded}}]
+  - name: 'Write the mount units'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: unit, in: '${{ inputs.intent.fleet.checkout.units }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-write-the-mount-units" + "-" + string(self._index)).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-write-the-mount-units" + "-" + string(self._index)).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'file', 'push', '-', '${{ self.unit.guest + "/etc/systemd/system/" + self.unit.name }}', '--mode', '0644'], stdin: '${{ self.unit.content }}', timeoutSec: 40}}
+    dependsOn: [{step: 'Move the state', condition: {type: succeeded}}, {step: 'Make the state', condition: {type: succeeded}}]
+  - name: 'Load the mount units'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-load-the-mount-units" + "-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-load-the-mount-units" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'systemctl', 'daemon-reload'], timeoutSec: 70}}
+    dependsOn: [{step: 'Write the mount units', condition: {type: succeeded}}]
+  - name: 'Enable the mounts'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-enable-the-mounts" + "-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-enable-the-mounts" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout", "120", "incus", "exec", inputs.intent.fleet.guests[self.role], "--", "systemctl", "enable", "home-orbit-orbit.mount"] + inputs.intent.fleet.checkout.binds[self.role] }}', timeoutSec: 140}}
+    dependsOn: [{step: 'Load the mount units', condition: {type: succeeded}}]
+  - name: 'Mount the checkout'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-checkout" + "-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-checkout" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'systemctl', 'start', 'home-orbit-orbit.mount'], timeoutSec: 200}}
+    dependsOn: [{step: 'Enable the mounts', condition: {type: succeeded}}]
+  # The mount points of the state are in the shared checkout; the ones it lacks are made as the orbit user, whose NFS identity can write there.
+  - name: 'Make the mount points'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-mount-points" + "-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-make-the-mount-points" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--user', '1000', '--', 'sh', '-c', 'set -eu; cd "$0"; touch apps/gateway/.env; if [ "$1" = gateway ]; then mkdir -p swamp/.swamp swamp/vaults swamp/grants; fi', '${{ inputs.intent.fleet.checkout.path }}', '${{ self.role }}'], timeoutSec: 140}}
+    dependsOn: [{step: 'Mount the checkout', condition: {type: succeeded}}]
+  - name: 'Mount the state'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout", "120", "incus", "exec", inputs.intent.fleet.guests[self.role], "--", "systemctl", "start"] + inputs.intent.fleet.checkout.binds[self.role] }}', timeoutSec: 140}}
+    dependsOn: [{step: 'Make the mount points', condition: {type: succeeded}}]
+  - name: 'Start the Gateway services'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-start-the-gateway-services").split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-start-the-gateway-services").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '180', 'incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--', 'systemctl', 'start', 'php8.5-fpm.service', 'caddy.service', 'orbit-swamp-serve.service', 'orbit-swamp-worker@a.service', 'orbit-swamp-worker@b.service', 'orbit-gateway-horizon.service', 'orbit-gateway-schedule.service', 'orbit-agent-view.service'], timeoutSec: 200}}
+    dependsOn: [{step: 'Mount the state', condition: {type: succeeded}}]
+- name: end
+  labels: {role: swamp}
+  dependsOn: [{job: checkout, condition: {type: succeeded}}]
   steps:
   # The same check as stage 2: every agent online, the Swamp workers enrolled, Doctor without a finding. The agents report a few minutes after they start.
   - name: 'Wait for Doctor'

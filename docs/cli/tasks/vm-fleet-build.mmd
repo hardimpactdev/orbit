@@ -65,6 +65,13 @@ sequenceDiagram
   %%> - the nested Gateway's own `node:add` with the roles `app-dev` and `app-prod`; its own Swamp converges them over SSH
   %%> - so a fleet build also proves node:add and the role phases on fresh machines
   NG->>NN: Enrol and converge<br/>WireGuard · roles · agent
+  SW->>NG: Mount the checkout<br/>NFS from the outer VM
+  %%> What it does:
+  %%> - the Gateway and app-dev guests stop the Gateway services, move `.env`, `storage` and `bootstrap/cache` (and the Swamp repository's own state) to `/var/lib/orbit-checkout-state` on their own disk, and drop the checkout they built
+  %%> - the stock systemd units of stage 2 then mount the outer VM's export at `/home/orbit/orbit` and the state over it, and the services start again, now on the shared checkout
+  %%> - the export, its firewall rule and the nested network come from the task VM role phases of the outer VM (`task-vms:converge`); the build adds no mechanism
+  %%> Why:
+  %%> - the ready copies keep no checkout: every task VM mounts its own over NFS, so a fleet that is saved must already run that way
   SW->>NG: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
   %%> - the same check as stage 2: every agent online, the Swamp worker enrolled, Doctor has no finding
@@ -72,7 +79,7 @@ sequenceDiagram
   %%> - the kind targets a ready task VM, as `task_vm.ready_copies` does, and ends at the Doctor check of the nested Gateway; the save of the ready copies follows as its own kind
   %%> - the nested VMs have fixed addresses and MACs in the Gateway's intent, because the ready copies store them and the records of the nested Gateway name them
   %%> - each Operation of the nested Gateway is admitted with an artisan command (`orbit:role-add`, `orbit:node-converge`, `orbit:node-add`), and a step waits for its end at a fixed 5-second interval inside a literal timeout; the nested Gateway has no CLI to follow it
-  %%> - the fleet keeps its checkout on its own disk, while the format-2 ready copies keep it on the NFS mount of the task VM and their state under `/var/lib/orbit-checkout-state`; moving the checkout out of the guests before the save is open
+  %%> - the guests take their checkout from the outer VM's NFS export, as in stage 2, before the copies are saved: the build uses the same stock mount units as the copies, so the save finds them in place
   alt the fleet is ready
     SW->>VM: Save the ready copies<br/>stage 6 · task_vm.ready_copies
     %%> What it does:
