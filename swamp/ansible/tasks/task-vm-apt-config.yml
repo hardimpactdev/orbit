@@ -1,5 +1,6 @@
 ---
-# apt reads the snapshot through the package cache of the VM (task-vm-apt-cache.yml, the first task of the software phase): plain http to the cache, which fetches over https. The signatures are still checked.
+# apt reads the snapshot through the package cache of the VM (task-vm-apt-cache.yml, the first task of the software phase): plain http to
+# the cache, which fetches over https. The signatures are still checked.
 - name: Create the apt configuration folder
   ansible.builtin.file: { path: "{{ apt_directory }}", state: directory, owner: root, group: root, mode: "0755" }
 - name: Point apt at the Ubuntu snapshot
