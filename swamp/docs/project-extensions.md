@@ -34,7 +34,7 @@ longer publish a pair of workflows or a baked-in Project schedule. Producers
 supply the Project and group state when they admit a run.
 
 The native-host dispatcher's `project_scan` and `project_routine` actions are
-removed. The `package_admit`, `project_work` and dependency scan dispatcher branches are also removed. Generic Tasks factory and dependency-merge callers remain. Their existing launcher stays until those complete consumer groups move.
+removed. The `package_admit`, `project_work` and dependency scan dispatcher branches are also removed.
 
 ## Gateway inputs and native project results
 

@@ -4,7 +4,6 @@ import {
     readProjectConfiguration,
 } from "../extensions/behaviors/_lib/project_configuration.ts";
 import { projectConfig } from "../extensions/behaviors/_lib/project_extension.ts";
-import { inputIdentity } from "../extensions/behaviors/_lib/gateway_stage.ts";
 import {
     assert,
     assertEquals,
@@ -20,7 +19,7 @@ import {
     projectFindings,
     scheduleKey,
 } from "../extensions/behaviors/_lib/project_schedule.ts";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 const original: DependencyProject = JSON.parse(
     await Deno.readTextFile(
         new URL(
@@ -152,27 +151,6 @@ Deno.test("project findings retain reports and blocked reasons and create one de
         Error,
         "not configured",
     );
-});
-
-Deno.test("detection cannot reuse a routine stage key with another maintenance mode", () => {
-    const args = {
-        workItem: "tg-7",
-        stage: "script" as const,
-        key: "tg-7.script.c1",
-        routine: true,
-        dependencyProject: original,
-    };
-    const identity = inputIdentity(args);
-    assertEquals(JSON.parse(identity), {
-        schema: 2,
-        routine: true,
-        dependencyProject: Object.fromEntries(
-            Object.entries(original).filter(([key]) =>
-                !["exceptions", "dependencyAutoMerge"].includes(key)
-            ),
-        ),
-    });
-    assert(inputIdentity({ ...args, detection: true }) !== identity);
 });
 
 Deno.test("unchanged config reads reuse the resource and changed config writes one new version", async () => {

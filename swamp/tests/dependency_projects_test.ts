@@ -1,16 +1,9 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_projects.ts";
-import {
-    type Http,
-    type Job,
-    runStage,
-    type StageArgs,
-} from "../extensions/behaviors/_lib/gateway_stage.ts";
+import { DependencyProjectsSchema } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 import {
     SECOND_PROJECT,
     WEBSITE_PROJECT,
 } from "./_support/dependency_projects.ts";
-import { startFakeGateway } from "./_support/fake_gateway.ts";
 
 Deno.test("dependency project config requires worker paths and rejects the retired script field", () => {
     assert(

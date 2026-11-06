@@ -1,7 +1,7 @@
 import { readProjectConfiguration } from "../extensions/behaviors/_lib/project_configuration.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_projects.ts";
+import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 
 import {
     batchReceipt,
