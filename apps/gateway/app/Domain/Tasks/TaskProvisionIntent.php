@@ -33,6 +33,7 @@ use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -162,7 +163,8 @@ final readonly class TaskProvisionIntent
      */
     private function converge(TaskVm $vm, Node $node, string $checkout, array $input): ?array
     {
-        if (($input['create']['topology'] ?? false) !== true) {
+        $create = $input['create'] ?? null;
+        if (! is_array($create) || ($create['topology'] ?? false) !== true) {
             return null;
         }
 
