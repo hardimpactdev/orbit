@@ -96,7 +96,7 @@ class GatewayReleaseTest(unittest.TestCase):
         # git reads it from a private file named by GIT_CONFIG_GLOBAL, removed after the fetch, and no task puts it in an environment.
         self.assertIn('GIT_CONFIG_GLOBAL', text)
         self.assertNotIn('GIT_CONFIG_VALUE', text)
-        self.assertIn('fetch-git-config', text)
+        self.assertIn('shared/.fetch/git-config', text)
         fetch = next(play for play in playbook if play['tags'] == ['fetch'])
         block = next(task for task in fetch['tasks'] if 'block' in task)
         self.assertEqual(block['always'][0]['ansible.builtin.file']['state'], 'absent')

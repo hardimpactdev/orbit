@@ -16,7 +16,7 @@
     app: "{{ release_base | default('/home/orbit') }}/releases/{{ intent.id }}/apps/gateway"
   tasks:
     - name: Remove a token file a killed fetch left behind
-      ansible.builtin.file: {path: "{{ base }}/shared/fetch-git-config", state: absent}
+      ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: absent}
     - name: Look for the commit in the shared repository
       ansible.builtin.command: {argv: [git, -C, "{{ repo }}", cat-file, -e, "{{ sha }}^{commit}"]}
       register: known
@@ -25,15 +25,19 @@
     - name: Fetch the commit
       when: known.rc != 0
       block:
+        - name: Make the private folder for the token file
+          ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: directory, mode: "0700"}
         - name: Leave the token for git in a private file
           ansible.builtin.copy:
-            dest: "{{ base }}/shared/fetch-git-config"
+            dest: "{{ base }}/shared/.fetch/git-config"
             content: "[http \"https://github.com/\"]\n\textraHeader = Authorization: Basic {{ ('x-access-token:' ~ secrets.github_token) | b64encode }}\n"
             mode: "0600"
           no_log: true
         - name: Fetch the commit from GitHub
           ansible.builtin.command:
             argv:
+              - timeout
+              - "300"
               - git
               - -C
               - "{{ repo }}"
@@ -44,7 +48,7 @@
               - "+{{ sha }}:refs/orbit/{{ sha }}"
           environment:
             GIT_TERMINAL_PROMPT: "0"
-            GIT_CONFIG_GLOBAL: "{{ base }}/shared/fetch-git-config"
+            GIT_CONFIG_GLOBAL: "{{ base }}/shared/.fetch/git-config"
           changed_when: true
           no_log: true
       rescue:
@@ -53,7 +57,7 @@
             msg: "gateway.release_fetch_failed: git fetch of {{ sha }} failed"
       always:
         - name: Remove the token file
-          ansible.builtin.file: {path: "{{ base }}/shared/fetch-git-config", state: absent}
+          ansible.builtin.file: {path: "{{ base }}/shared/.fetch", state: absent}
     - name: Require the commit
       ansible.builtin.command: {argv: [git, -C, "{{ repo }}", cat-file, -e, "{{ sha }}^{commit}"]}
       changed_when: false
@@ -388,13 +392,16 @@
                 $db = new PDO("sqlite:".$c["database"]["connections"]["sqlite"]["database"], null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
                 $db->exec("VACUUM INTO ".$db->quote($argv[2]));'
               - "{{ app }}/bootstrap/cache/config.php"
-              - "{{ snapshot }}"
+              - "{{ snapshot }}.partial"
           changed_when: true
         - name: Keep the snapshot private
-          ansible.builtin.file: {path: "{{ snapshot }}", mode: "0600"}
+          ansible.builtin.file: {path: "{{ snapshot }}.partial", mode: "0600"}
+        - name: Publish the snapshot
+          ansible.builtin.command: {argv: [mv, -T, "{{ snapshot }}.partial", "{{ snapshot }}"]}
+          changed_when: true
       rescue:
         - name: Remove the partial snapshot
-          ansible.builtin.file: {path: "{{ snapshot }}", state: absent}
+          ansible.builtin.file: {path: "{{ snapshot }}.partial", state: absent}
         - name: Report the failed snapshot
           ansible.builtin.fail:
             msg: "gateway.release_snapshot_failed: VACUUM INTO failed"
@@ -619,7 +626,11 @@
       changed_when: false
     - name: Remove the pins of removed releases
       ansible.builtin.command: {argv: [git, -C, "{{ repo }}", update-ref, -d, "{{ item }}"]}
-      loop: "{{ (pins.stdout_lines | select('search', '^refs/orbit/(' ~ (removable | join('|')) ~ ')') | list) if removable | length > 0 else [] }}"
+      loop: >-
+        {{ (pins.stdout_lines | select('search', '^refs/orbit/(' ~ (removed_ids | join('|')) ~ ')[0-9a-f]{28}$') | list)
+        if removed_ids | length > 0 else [] }}
+      vars:
+        removed_ids: "{{ removable | select('match', '^[0-9a-f]{12}$') | list }}"
       changed_when: true
 
 - name: Render the grants of the previous release
@@ -676,7 +687,7 @@
       register: binary
     - name: Remove a start cache older than the binary
       ansible.builtin.file: {path: /tmp/deno-compile-swamp.cache, state: absent}
-      when: cache.stat.exists and binary.stat.exists and cache.stat.mtime < binary.stat.mtime
+      when: cache.stat.exists and binary.stat.exists and cache.stat.mtime < binary.stat.ctime
       notify: Seed the start cache as root
   handlers:
     - name: Seed the start cache as root

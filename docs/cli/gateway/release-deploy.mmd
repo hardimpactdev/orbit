@@ -77,6 +77,8 @@ sequenceDiagram
   %%> Why:
   %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
   AC->>GN: Prune old releases<br/>best effort
+  %%> What it does:
+  %%> - keeps the live, previous and newest sealed releases and their web builds; removes the rest with their commit pins and worktree records
   AC->>SW: Re-seed Swamp cache<br/>best effort
   %%> Why:
   %%> - a start cache older than the Swamp binary adds about 0.4 s to every dispatch; root owns the cache, so the phase removes a stale one and seeds it again as root
