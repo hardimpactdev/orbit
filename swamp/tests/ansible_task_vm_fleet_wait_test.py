@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -71,6 +72,16 @@ class TaskVmFleetWaitTest(unittest.TestCase):
             count = int((folder / 'count').read_text()) if (folder / 'count').exists() else 0
             return result.returncode, result.stdout + result.stderr, count
 
+    def test_the_reason_query_reads_the_failed_step_and_error_code_of_the_operation(self):
+        tasks = {task['name']: task for task in yaml.safe_load(PLAYBOOK.read_text())[0]['tasks']}
+        query = tasks['Read why the Operation did not succeed']['ansible.builtin.command']['argv'][-1].replace('{{ wait_operation | int }}', '7')
+        database = sqlite3.connect(':memory:')
+        database.execute('create table operations (id integer, status text, failed_step text, error_code text)')
+        database.executemany('insert into operations values (?, ?, ?, ?)', [
+            (7, 'failed', 'Enroll app-dev', 'task_vm_enroll_failed'), (8, 'cancelled', None, None)])
+        self.assertEqual(database.execute(query).fetchone()[0], 'at Enroll app-dev code task_vm_enroll_failed')
+        self.assertEqual(database.execute(query.replace('= 7', '= 8')).fetchone()[0], '')
+
     @NEEDS_ANSIBLE
     def test_an_operation_that_ends_succeeded_passes_after_its_checks(self):
         code, output, checks = self.wait(['running', 'running', 'succeeded'], wait_kind='operation', wait_operation=7, wait_seconds=10)
@@ -87,9 +98,10 @@ class TaskVmFleetWaitTest(unittest.TestCase):
 
     @NEEDS_ANSIBLE
     def test_an_operation_that_ends_failed_fails_the_wait(self):
-        code, output, _ = self.wait(['failed'], wait_kind='operation', wait_operation=7, wait_seconds=10)
+        code, output, checks = self.wait(['failed', 'at Enroll app-dev code task_vm_enroll_failed'], wait_kind='operation', wait_operation=7, wait_seconds=10)
         self.assertNotEqual(code, 0)
-        self.assertIn('ended failed', output)
+        self.assertEqual(checks, 2)
+        self.assertIn('ended failed at Enroll app-dev code task_vm_enroll_failed', output)
 
     @NEEDS_ANSIBLE
     def test_an_operation_that_does_not_end_fails_when_the_checks_run_out(self):
@@ -101,9 +113,9 @@ class TaskVmFleetWaitTest(unittest.TestCase):
     @NEEDS_ANSIBLE
     def test_an_operation_that_is_cancelled_or_interrupted_ends_the_wait_and_fails_it(self):
         for status in ('cancelled', 'interrupted'):
-            code, output, checks = self.wait([status], wait_kind='operation', wait_operation=7, wait_seconds=10)
+            code, output, checks = self.wait([status, ''], wait_kind='operation', wait_operation=7, wait_seconds=10)
             self.assertNotEqual(code, 0, status)
-            self.assertEqual(checks, 1, status)
+            self.assertEqual(checks, 2, status)
             self.assertIn(f'ended {status}', output)
 
     @NEEDS_ANSIBLE
