@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review: a pull request that no Task group watches is merged by the same Swamp step as a task pull request. The Gateway admits and names the vault key, the step mints its token when it runs, and Swamp calls GitHub. No review is read: the authorized caller is the reviewer, and the green merge check on the exact head is the gate. The gate is the same for a pull request from a fork; the caller has reviewed it.
+  %% Decided by the orchestrator, for Nick's review: a pull request that no Task group watches is merged by the same Swamp step as a task pull request. The Gateway admits and names the vault key, the step mints its token when it runs, and Swamp calls GitHub. No review is read: the authorized caller is the reviewer, and the green merge check on the exact head is the gate. Two further gates: the PR targets the default branch of the Project, and it comes from a branch of the repository itself. A fork can define its own workflow that reports a passing merge check, so a fork PR is refused until Nick decides how to trust it.
   %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Merge the PR"), for a PR that is not in a Task group. The pattern of tasks:pr-merge.
   %% status: draft
   %% command: none · API / MCP (project-pr-merge)
@@ -27,6 +27,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the Project has review and merge enabled and a GitHub App repository
   %%> - the PR is open, no longer a draft, and its head is exactly `head_sha`
+  %%> - the PR targets the default branch of the Project and comes from a branch of the repository itself, not from a fork
   %%> - the Project's merge check (`Required checks`) passed on that head
   %%> - no open Task group watches the PR (a task PR merges through `tasks:pr-merge`; a group that ended no longer holds its PR) and no other merge of the Project runs
   %%> What it does:

@@ -114,8 +114,9 @@ final readonly class TaskPullRequestEvidence
     }
 
     /**
-     * A pull request that no Task group watches: open, out of draft, on the exact head, with the merge check passed on it. The call to merge
-     * it is the approval, so no review is read.
+     * A pull request that no Task group watches: open, out of draft, into the default branch, from a branch of the repository itself, on the exact head,
+     * with the merge check passed on it. The call to merge it is the approval,
+     * so no review is read.
      */
     public function outside(Project $project, int $number, string $head): TaskPullRequestTarget
     {
@@ -126,6 +127,12 @@ final readonly class TaskPullRequestEvidence
         $target = $this->read($project, $repository, $number, $head, checks: true);
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft.', 409);
+        }
+        if ($target->pull->baseRef !== $project->default_branch) {
+            throw new ResourceOperationException('tasks_pr.wrong_base', 'The pull request does not target the default branch of the Project.', 409);
+        }
+        if ($target->pull->fromFork) {
+            throw new ResourceOperationException('tasks_pr.from_fork', 'A pull request from a fork is not merged here: its own workflow can report the merge check.', 409);
         }
 
         return $target;

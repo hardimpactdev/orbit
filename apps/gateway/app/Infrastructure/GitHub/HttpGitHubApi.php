@@ -482,6 +482,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             mergedAt: $this->text($response->json('merged_at')),
             draft: $response->json('draft') === true,
             authorLogin: $this->text($response->json('user.login')),
+            fromFork: $response->json('head.repo.full_name') !== $response->json('base.repo.full_name'),
         );
     }
 

@@ -21,10 +21,12 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPullRequestMergeProjection;
 use App\Domain\Tasks\TaskPullRequestTarget;
 use App\Http\Requests\Projects\ProjectPullRequestMergeRequest;
+use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
@@ -37,14 +39,14 @@ beforeEach(fn () => SwampNodeFixture::ensure());
 const OUTSIDE_HEAD = 'c1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 
 /** The GitHub App stored and a GitHub that serves one pull request with the merge check green or red on the head. */
-function outsideWorld(bool $draft = false, bool $green = true, string $head = OUTSIDE_HEAD, bool $reviewAndMerge = true, GitHubPullRequestState $state = GitHubPullRequestState::Open): Project
+function outsideWorld(bool $draft = false, bool $green = true, string $head = OUTSIDE_HEAD, bool $reviewAndMerge = true, GitHubPullRequestState $state = GitHubPullRequestState::Open, string $base = 'main', bool $fork = false): Project
 {
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($draft, $green, $head, $state): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($draft, $green, $head, $state, $base, $fork): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('repositoryChecksToken')->andReturn('checks-token');
-        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest($state, true, 'clean', $head, 'main', draft: $draft, authorLogin: 'nckrtl'));
+        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest($state, true, 'clean', $head, $base, draft: $draft, authorLogin: 'nckrtl', fromFork: $fork));
         $github->shouldReceive('checkRuns')->andReturn($green ? [new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: OUTSIDE_HEAD, appSlug: 'github-actions')] : []);
     }));
 
@@ -106,6 +108,8 @@ it('refuses a draft, a closed pull request, a moved head and a merge check that 
     'a closed pull request' => [['state' => GitHubPullRequestState::Closed], 'tasks_pr.no_pull_request'],
     'a moved head' => [['head' => str_repeat('9', 40)], 'tasks_pr.head_moved'],
     'a red check' => [['green' => false], 'tasks_pr.checks_not_passed'],
+    'another base branch' => [['base' => 'release'], 'tasks_pr.wrong_base'],
+    'a fork' => [['fork' => true], 'tasks_pr.from_fork'],
 ]);
 
 it('passes every gate for an open pull request with a green merge check on the exact head and records the intent with a token key name only', function (): void {
@@ -171,3 +175,18 @@ it('keeps the group in the intent of a task merge, which the workflow schema no 
 
     expect($target->intent($group))->toBe(['project_id' => 7, 'group_id' => 5, 'repository' => 'hardimpactdev/orbit', 'pr_number' => 57]);
 });
+
+it('reads a pull request from another repository, and one whose fork was deleted, as a fork', function (?string $head, bool $fork): void {
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/pulls/2981' => Http::response([
+        'state' => 'open', 'merged' => false, 'mergeable' => true, 'mergeable_state' => 'clean', 'draft' => false, 'user' => ['login' => 'someone'],
+        'head' => ['sha' => OUTSIDE_HEAD, 'repo' => $head === null ? null : ['full_name' => $head]], 'base' => ['ref' => 'main', 'repo' => ['full_name' => 'hardimpactdev/orbit']],
+    ])]);
+
+    $pull = app(HttpGitHubApi::class)->pullRequest('token', GitHubRepository::fromOrigin('https://github.com/hardimpactdev/orbit.git'), 2981);
+
+    expect($pull->fromFork)->toBe($fork);
+})->with([
+    'a branch of the repository' => ['hardimpactdev/orbit', false],
+    'another repository' => ['someone/orbit', true],
+    'a deleted fork' => [null, true],
+]);

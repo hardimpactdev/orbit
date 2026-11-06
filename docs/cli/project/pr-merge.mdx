@@ -16,7 +16,7 @@ curl -X POST "$GATEWAY/api/v1/projects/7/pr-merge" \
 
 The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation; follow it with `operation:show` until it ends. A refusal at admission starts nothing, so a caller can call the command again every few seconds until the merge check is green. The Gateway has no webhooks.
 
-The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. This includes a pull request from a fork: the caller has reviewed it. A Task group that has ended does not hold its PR.
+The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. The pull request must target the default branch of the Project and come from a branch of the repository itself: a fork can define its own workflow that reports a passing merge check, so a fork PR is refused. A Task group that has ended does not hold its PR.
 
 | Input | Meaning |
 | --- | --- |
@@ -39,6 +39,8 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | `operation.target_busy` | 409 | Another merge of the Project is running. |
 | `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. |
+| `tasks_pr.wrong_base` | 409 | The PR does not target the default branch of the Project. |
+| `tasks_pr.from_fork` | 409 | The PR comes from a fork. |
 | `tasks_pr.head_moved` | 409 | The PR head is not `head_sha` at admission. A head that moves after admission ends the run with `tasks_pr.merge_refused`. |
 | `tasks_pr.checks_not_passed` | 409 | The Project's merge check is not configured, or it did not pass on the head. |
 | `tasks_pr.github_unreadable` | 502 | The Gateway could not read the PR or its checks. |
