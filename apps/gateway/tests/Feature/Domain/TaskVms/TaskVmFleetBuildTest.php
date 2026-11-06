@@ -30,7 +30,7 @@ beforeEach(function (): void {
 });
 
 /** A ready task VM with its host and active guest Node. */
-function fleetBuildWorld(TaskVmState $state = TaskVmState::Ready): TaskVm
+function fleetBuildWorld(TaskVmState $state = TaskVmState::Ready, TaskVmSize $size = TaskVmSize::Large): TaskVm
 {
     $node = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
@@ -46,7 +46,7 @@ function fleetBuildWorld(TaskVmState $state = TaskVmState::Ready): TaskVm
         'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
 
     return TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-554',
-        'state' => $state, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.131', 'size' => TaskVmSize::Normal]);
+        'state' => $state, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.131', 'size' => $size]);
 }
 
 /** A vault that records its puts. */
@@ -130,6 +130,27 @@ it('renders the intent of a VM that is still being provisioned, for the refresh 
         ->and($input['ssh_execution']['target']['host_keys'])->toBeNull()
         ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])
         ->and(json_encode($input))->not->toContain('proof-club-key');
+});
+
+it('refuses a VM that is not large, because the nested VMs hold more memory than a medium VM has', function (): void {
+    $memory = static fn (string $gib): int => (int) $gib;
+    $nested = array_sum(array_map(static fn (array $node): int => $memory($node['memory']), TaskVmFleetBuildIntent::Layout));
+    expect($memory(TaskVmSize::Large->resources()->memory))->toBeGreaterThan($nested)
+        ->and($memory(TaskVmSize::Medium->resources()->memory))->toBeLessThanOrEqual($nested);
+    app()->instance(WebSocketClient::class, fleetBuildVault());
+
+    $vm = fleetBuildWorld();
+    foreach ([TaskVmSize::Normal, TaskVmSize::Medium] as $size) {
+        $vm->update(['size' => $size]);
+        expect(fn () => app(TaskVmFleetBuildIntent::class)->capture($vm))->toThrow(
+            fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('task_vm.fleet_build_refused'),
+        );
+    }
+
+    $vm->update(['state' => TaskVmState::Provisioning, 'size' => TaskVmSize::Medium]);
+    expect(fn () => app(TaskVmFleetBuildIntent::class)->provisioning($vm, '/home/orbit/apps/orbit/workspace'))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('task_vm.fleet_build_refused'),
+    );
 });
 
 it('refuses a VM that is not ready', function (): void {

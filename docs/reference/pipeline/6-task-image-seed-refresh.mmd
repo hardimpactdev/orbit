@@ -40,6 +40,9 @@ sequenceDiagram
     %%> Built: the child `operation-task-provision`, which does this step and the next; the VM starts from the image the host promoted last, whatever its recipe or age
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the refresh VM keeps the root disk of the host's base VM (20 GiB), not the larger disk of a topology VM, because a published image is as large as its VM's root disk and no VM can be smaller than its image; the first smoke of a 40 GiB image failed on it
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - the refresh VM is always a large task VM (12 GiB, 6 CPUs, 3 slots), because it holds the nested fleet (10 GiB of VMs) and builds it when the seed has no ready copies; the Gateway sets the size at the admission of the refresh, so no Project size list decides it (a group cannot declare a topology, so the size is passed to the placement, not declared); a medium VM (8 GiB) lost its nested Gateway to the out-of-memory killer in two runs on beast
+    %%> - a refresh therefore needs 3 free slots of its host and is refused with `tasks.capacity_unavailable` otherwise; the daily trigger tries again
     SW->>VM: Start and mount<br/>the release commit
     %%> What it does:
     %%> - checks out the release commit in the refresh VM, with `composer install` and `bun install` where a lock file changed
@@ -51,6 +54,7 @@ sequenceDiagram
       %%> - a refresh of a host whose seed holds no usable ready copies (a new host, a new image or copies of an older format) runs the nested fleet build as a child in the refresh VM (chart `docs/cli/tasks/vm-fleet-build.mmd`), automatically and with no flag; the save of the ready copies follows
       %%> - the step is skipped when the provision started the fleet from ready copies; the run needs no check of its own, because a failed build fails the run before the save
       %%> - the refresh admits the fleet-build intent with the rest of its intent, before its VM exists: the host keys of the guest are pinned by the VM step, as for the ready copies, and the build takes the proof Club key as the save does
+      %%> - the waits of the build stop at once when the nested Gateway guest is not running (an Ansible task with `until` and `retries`, chart `docs/cli/tasks/vm-fleet-build.mmd`), and then name every nested VM that is not running; a dead app VM ends the Operation it enrolls
       %%> Built: the step `Build the fleet`, the child `operation-task-vm-fleet-build`
     end
     opt playbooks or pins changed since the current image

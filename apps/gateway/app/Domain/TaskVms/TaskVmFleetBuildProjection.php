@@ -19,7 +19,7 @@ use App\Support\ValidatedData;
  */
 final readonly class TaskVmFleetBuildProjection implements DirectOperationProjection, NativeOperationProjection
 {
-    /** The end check: a native assert over the Doctor report of the nested Gateway. */
+    /** The end check: the Ansible wait that asserts Doctor of the nested Gateway is healthy. */
     public const string EndCheck = 'Check the nested fleet';
 
     public function __construct(private TaskVmFleetBuildIntent $intent) {}

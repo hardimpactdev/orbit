@@ -96,7 +96,8 @@ final class OperationRunBudgets
         'task_vm.ready_copies' => 3600,
         // No run yet. Basis: the stage-2 timings of a fresh nested fleet (docs/cli/tasks/vm-fleet-build.mmd): the VMs and their first boot,
         // the Gateway bootstrap (about 3 minutes), its first role and Node converges, the two Node enrollments (about 6 minutes each) and
-        // the readiness wait, at their step bounds, plus margin. Replace with the 14-day p95 after the first successes.
+        // the readiness wait, plus margin. A wait ends when its Operation ends or a nested VM is not running; the literal timeouts of the
+        // waits only guard a hung connection, so this budget is the bound of the run. Replace with the 14-day p95 after the first successes.
         'task_vm.fleet_build' => 3600,
         // Provisional. Basis: the provision of a task VM (tasks.provision, 3,900 s), the fleet build when the seed has no ready copies
         // (3,600 s at its bound, about 25 min in practice), the ready copies (3,600 s at their bound, about 10 min in practice), the clean
