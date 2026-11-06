@@ -138,8 +138,9 @@ sequenceDiagram
     %%> Why:
     %%> - a case that passes without the code it covers proves nothing; ADR 0163 asks the same of a task deliverable (`fails_on_base`)
     %%> - the VM is destroyed after the run, so no live checkout is changed
+    %%> Built, not yet passed live:
+    %%> - all of the above: the jobs `can-fail` and `can-fail-batches` of the Swamp workflow `proof-fleet-verify`, and `merge_base` and `head` in the intent of `proof:run`; the checkout is switched with `git checkout --force --detach` and `git checkout COMMIT -- FILE`
     %%> Not built:
-    %%> - all of the above in `proof-fleet-verify`, and `merge_base` and `head` in the intent of `proof:run`
     %%> - exercising the CI gate with a known failing case (stage 4)
   end
   SW->>NT: Restore base<br/>fleet clean on the author's code
