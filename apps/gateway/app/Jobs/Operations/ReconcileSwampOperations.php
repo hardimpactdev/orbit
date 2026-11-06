@@ -11,6 +11,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -80,6 +81,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             }
         });
         $expire->releaseStaleHolds();
+        app(RoutePublicationHolds::class)->sweep();
     }
 
     /** Remote text can contain inputs: log identity and type only. */
