@@ -419,6 +419,8 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
+The role reads the package indexes of the Ubuntu snapshot with up to eight tries, 30 seconds apart. The snapshot service answers 503 now and then, and one failed index fails the read.
+
 The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` from the same Ubuntu snapshot, which the shape gate linters need. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 
 The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a directory storage pool and the default profile's root disk, so a VM made from the image can launch nested VMs. A task VM that names a nested subnet also gets the nested bridge, with the first address of the subnet and NAT on. It reads the pools and networks first and applies a preseed only for what is missing, so a repeat changes nothing.
