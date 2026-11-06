@@ -15,7 +15,7 @@ export const NodeRelease = CliConvergePlan.extend({
     daytime: z.boolean(),
     // Public SSH descriptor the native CLI child uses; the private key stays on Node 209.
     ssh: z.object({
-        control_node_id: z.literal(209),
+        control_node_id: z.number().int().positive(),
         identity_file: z.string().startsWith("/"),
         target: z.object({
             host: z.string().min(1),

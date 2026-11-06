@@ -17,7 +17,7 @@ export const CaddyPublication = z.object({
     node_id: z.number().int().positive(),
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
     caddy: CaddyInput,
-    control_node_id: z.literal(209),
+    control_node_id: z.number().int().positive(),
     host_keys: z.array(z.string().min(1)).min(1),
     connection: PublicationConnection,
 }).strict();

@@ -11,7 +11,7 @@ const Version = z.string().regex(/^[1-9][0-9]*\.[0-9]+$/);
 const Placement = z.object({
     node_id: z.number().int().positive(),
     user: Name,
-    control_node_id: z.literal(209),
+    control_node_id: z.number().int().positive(),
     host_keys: z.array(z.string().min(1)).min(1),
     connection: PublicationConnection,
     direction: z.enum(["forward", "restore"]),

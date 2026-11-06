@@ -67,7 +67,7 @@ export const ProjectIntent = z.object({
 }).strict();
 const Envelope = z.object({
     operation_id: z.number().int().positive(),
-    node_id: z.literal(209),
+    node_id: z.number().int().positive(),
     kind: z.enum(["project.detect", "project.routine", "project.observe"]),
     intent: ProjectIntent,
 }).strict();

@@ -3,7 +3,7 @@ import { z } from "npm:zod@4.4.3";
 const Id = z.number().int().positive();
 const Name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/);
 export const Ssh = z.object({
-    control_node_id: z.literal(209),
+    control_node_id: z.number().int().positive(),
     identity_file: z.string().startsWith("/"),
     public_key: z.string().min(1),
     target: z.object({

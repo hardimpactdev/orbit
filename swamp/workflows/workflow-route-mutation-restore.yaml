@@ -62,7 +62,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent:
-          {"leaves":"${{ inputs.intent.route_mutations.restore.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":209,"connection":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
+          {"leaves":"${{ inputs.intent.route_mutations.restore.certificates.filter(leaf,leaf.node_id == self.part.node_id) }}","control_node_id":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}","connection":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection }}","host_keys":"${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys }}","node_id":"${{ self.part.node_id }}"}
         execution_secrets: {}
         parent_run_id: ${{ inputs.parent_run_id }}
         restoring: true
@@ -109,7 +109,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -134,7 +134,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -160,7 +160,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           write: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -312,7 +312,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           leaf: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -346,7 +346,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
@@ -379,7 +379,7 @@ jobs:
         kind: ${{ inputs.kind }}
         intent:
           rule: ${{ self.part }}
-          control_node_id: 209
+          control_node_id: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].control_node_id }}
           connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
             }}
           host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
