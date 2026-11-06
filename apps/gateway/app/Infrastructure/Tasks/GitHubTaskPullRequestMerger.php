@@ -8,11 +8,8 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCheckSuite;
-use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
-use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Infrastructure\GitHub\GitHubActionsReader;
@@ -23,9 +20,8 @@ use Closure;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Reviews and merges through the Project's App installation (ADR 0203). The write token is the publishing
- * token: `contents`, `pull_requests`, and `workflows` write. Uncached commit snapshots use separate `checks: read`
- * and `actions: read` tokens. The pull request list uses the cached `pull_requests: read` token.
+ * Reads the check runs of a commit through the Project's App installation (ADR 0203). Uncached commit snapshots use
+ * separate `checks: read` and `actions: read` tokens.
  */
 final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerger
 {
@@ -42,36 +38,6 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         private GitHubActionsReader $actions,
     ) {}
 
-    public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState
-    {
-        try {
-            $runs = $this->checkRuns($group, $sha);
-        } catch (TaskPullRequestException) {
-            return RequiredCheckState::Unreadable;
-        }
-
-        return $runs === null ? RequiredCheckState::Unreadable : RequiredCheckState::of($runs, $sha, $checkName);
-    }
-
-    public function pullRequestCheck(Task $group, string $sha, string $checkName): RequiredCheckState
-    {
-        try {
-            $snapshot = $this->commitChecks($group, $sha);
-            if ($snapshot === null) {
-                return RequiredCheckState::Unreadable;
-            }
-            $runs = $snapshot['runs'];
-            $suites = $snapshot['pull_request_suites'];
-        } catch (TaskPullRequestException) {
-            return RequiredCheckState::Unreadable;
-        }
-        // Another App's run of the name still disqualifies the commit, as the green-commit rules say.
-        $counted = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name !== $checkName
-            || $run->appSlug !== RequiredCheckState::CheckApp || in_array($run->checkSuiteId, $suites, true)));
-
-        return RequiredCheckState::of($counted, $sha, $checkName);
-    }
-
     public function checkRuns(Task $group, string $sha): ?array
     {
         return $this->commitChecks($group, $sha)['runs'] ?? null;
@@ -83,7 +49,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
      *
      * @return array{runs: list<GitHubCheckRun>, suites: list<GitHubCheckSuite>, pull_request_suites: list<int>}|null
      */
-    public function commitChecks(Task $group, string $sha): ?array
+    private function commitChecks(Task $group, string $sha): ?array
     {
         $repository = $this->githubRepository($group);
         $key = 'tasks:commit-checks:v3:'.$repository->owner.'/'.$repository->name.'@'.$sha;
@@ -199,79 +165,6 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         }
 
         return $items;
-    }
-
-    public function merge(Task $group, string $sha): GitHubMergeResult
-    {
-        [$repository, $number] = $this->storedPullRequest($group);
-
-        try {
-            return $this->github->mergePullRequest($this->access->token($repository), $repository, $number, $sha);
-        } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('The pull request could not be merged: '.$exception->getMessage(), previous: $exception);
-        }
-    }
-
-    public function review(Task $group, string $sha, GitHubReviewEvent $event, string $body): int
-    {
-        [$repository, $number] = $this->storedPullRequest($group);
-
-        try {
-            return $this->github->submitReview($this->access->token($repository), $repository, $number, $sha, $event, $body);
-        } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('The pull request review could not be submitted: '.$exception->getMessage(), previous: $exception);
-        }
-    }
-
-    public function openPullRequests(Project $project): array
-    {
-        $repository = $this->repository($project);
-        if (! $repository instanceof GitHubRepository) {
-            throw new TaskPullRequestException('The Project repository is not on github.com.');
-        }
-
-        try {
-            return $this->github->openPullRequests($this->access->cachedReadToken($repository), $repository);
-        } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('The open pull requests could not be listed: '.$exception->getMessage(), previous: $exception);
-        }
-    }
-
-    public function greenDefaultTipAfter(Task $group, string $sha, string $checkName): ?string
-    {
-        $repository = $this->repository($group->project);
-        $default = $group->project->default_branch;
-        if (! $repository instanceof GitHubRepository || ! is_string($default) || $default === '') {
-            return null;
-        }
-
-        try {
-            $token = $this->access->readToken($repository);
-            $tip = array_first($this->github->branchCommits($token, $repository, $default))?->sha;
-            if (! is_string($tip) || ! $this->github->compareCommits($token, $repository, $sha, $tip)->headDescendsFromBase()) {
-                return null;
-            }
-        } catch (GitHubApiException) {
-            return null;
-        }
-
-        return $this->requiredCheck($group, $tip, $checkName) === RequiredCheckState::Passed ? $tip : null;
-    }
-
-    /**
-     * @return array{GitHubRepository, int}
-     *
-     * @throws TaskPullRequestException
-     */
-    private function storedPullRequest(Task $group): array
-    {
-        $repository = $this->repository($group->project);
-        $number = $repository instanceof GitHubRepository && is_string($group->pr_url) ? $repository->pullRequestNumber($group->pr_url) : null;
-        if (! $repository instanceof GitHubRepository || $number === null) {
-            throw new TaskPullRequestException('The task has no pull request on its Project repository.');
-        }
-
-        return [$repository, $number];
     }
 
     private function repository(Project $project): ?GitHubRepository

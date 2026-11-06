@@ -7,13 +7,11 @@ namespace App\Infrastructure\GitHub;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubCommitComparison;
-use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
-use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\Tasks\TaskBranchUpdate;
 use SensitiveParameter;
 
@@ -172,20 +170,5 @@ final readonly class CachedGitHubApi implements GitHubApi
     public function blobContents(#[SensitiveParameter] string $token, GitHubRepository $repository, string $blob): string
     {
         return $this->github->blobContents($token, $repository, $blob);
-    }
-
-    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array
-    {
-        return $this->github->openPullRequests($token, $repository);
-    }
-
-    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int
-    {
-        return $this->github->submitReview($token, $repository, $number, $commitId, $event, $body);
-    }
-
-    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
-    {
-        return $this->github->mergePullRequest($token, $repository, $number, $sha);
     }
 }
