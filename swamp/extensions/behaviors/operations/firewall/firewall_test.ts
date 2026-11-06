@@ -255,6 +255,12 @@ Deno.test("deny defaults cover both families and protocols, and a partial retry 
         ["8000:8100/udp (v6)", "deny", "Anywhere (v6)"],
     ]);
     const before = structuredClone(ufw.rows);
+    const repeat = converge(ufw, changes);
+    assertEquals(repeat.commands, []);
+    assertEquals(repeat.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
     assertEquals(converge(ufw, { ...changes, comment: "orbit new-label" }).commands, []);
     assertEquals(ufw.rows, before);
 });
