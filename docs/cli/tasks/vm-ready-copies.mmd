@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - the key belongs to the VM that made the copies; a task VM that starts them makes its own (stage 2), so the old key works nowhere else
   SW->>VM: Delete and scan, trim<br/>incus exec · grep, fstrim
   %%> What it does:
-  %%> - deletes the proof Swamp Club key from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
+  %%> - deletes the proof Swamp Club key (`/home/orbit/.config/swamp/api-key`) from the nested Gateway, then searches every file of all three guests for it by value, with the key on standard input
   %%> - runs `fstrim` so the freed blocks of the deleted key are discarded from the disk image that every task VM clones
   %%> Why:
   %%> - the seed is cloned into every task VM of the host; a key in it would reach all of them
