@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Domain\TaskVms\TaskVmAptCache;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Tools\VpToolManager;
@@ -49,8 +50,11 @@ final readonly class ToolManagerIntent
                     'artifact' => $artifactInput];
             }
 
+            // A package cache is named only for a Node of a task VM's nested fleet; other Nodes read the snapshot directly.
+            $proxy = TaskVmAptCache::for($node);
+
             return ['manager' => 'composer', 'packages' => [], 'input' => ['user' => $node->user, 'version' => $recipe->tools['composer']->version],
-                'apt' => ['snapshot' => $recipe->snapshot, 'packages' => $packages]];
+                'apt' => ['snapshot' => $recipe->snapshot, ...($proxy === null ? [] : ['proxy' => $proxy]), 'packages' => $packages]];
         }
 
         return ['manager' => 'homebrew', 'packages' => ['build-essential', 'procps', 'curl', 'file', 'git', 'ca-certificates'],

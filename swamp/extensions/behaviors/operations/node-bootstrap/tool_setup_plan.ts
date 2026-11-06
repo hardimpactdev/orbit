@@ -51,22 +51,23 @@ export async function toolSetupPlan(raw: unknown, home: string) {
         return path;
     };
     const apt = setup.apt;
-    let aptArgs: string[] = [], aptOptions: string[] = [];
+    let aptArgs: string[] = [],
+        aptOptions: string[] = [],
+        aptUpdateOptions: string[] = [];
     if (apt !== null) {
-        const source = cache + "/sources.list";
-        file(
-            source,
+        const sources = (scheme: string) =>
             ["resolute", "resolute-updates", "resolute-security"].map((suite) =>
-                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://snapshot.ubuntu.com/ubuntu/" +
+                "deb [check-valid-until=no signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] " +
+                scheme + "://snapshot.ubuntu.com/ubuntu/" +
                 apt.snapshot + "/ " + suite +
                 " main restricted universe multiverse\n"
-            ).join(""),
-            "root",
-        );
+            ).join("");
+        const source = cache + "/sources.list";
+        file(source, sources("https"), "root");
         dir(cache + "/lists/partial", "root");
-        aptOptions = [
+        const lists = (list: string) => [
             "-o",
-            "Dir::Etc::sourcelist=" + source,
+            "Dir::Etc::sourcelist=" + list,
             "-o",
             "Dir::Etc::sourceparts=-",
             "-o",
@@ -74,6 +75,26 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "-o",
             "APT::Get::List-Cleanup=false",
         ];
+        aptOptions = lists(source);
+        aptUpdateOptions = aptOptions;
+        // A package cache serves the indexes only. The Node speaks plain http to it and it follows the redirect of the service to https; apt still checks the
+        // signatures. The packages stay a direct download: through the cache most of them failed. The Node asks for the index files
+        // the image build asked for (it ignores the drop-ins of apt.conf.d, which add the appstream and command-not-found files),
+        // and one request at a time: the cache answers some of several requests in flight with the body of another file.
+        const proxy = apt.proxy ?? null;
+        if (proxy !== null) {
+            const cached = cache + "/sources-cache.list";
+            file(cached, sources("http"), "root");
+            aptUpdateOptions = [
+                ...lists(cached),
+                "-o",
+                "Acquire::http::Proxy=" + proxy,
+                "-o",
+                "Dir::Etc::parts=-",
+                "-o",
+                "Acquire::http::Pipeline-Depth=0",
+            ];
+        }
         aptArgs = apt.packages.map((pkg, index) =>
             pkg.artifact === null
                 ? pkg.name + "=" + pkg.version
@@ -335,7 +356,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
             "apt-get",
             "-o",
             "DPkg::Lock::Timeout=300",
-            ...aptOptions,
+            ...aptUpdateOptions,
             "update",
         ],
         apt_install: apt === null ? [] : [...aptInstallPrefix, ...aptArgs],
