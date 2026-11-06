@@ -14,6 +14,7 @@ additionalFiles:
   - ansible/gateway-bootstrap.yml
   - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/gateway-swamp.yml
+  - ansible/tasks/gateway-swamp-remint.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml

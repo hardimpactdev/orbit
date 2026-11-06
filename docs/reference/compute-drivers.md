@@ -1258,7 +1258,7 @@ The chart lists what the run still lacks:
 
 - The call of `task_vm.fleet_build` by the refresh of a host whose seed has no ready copies. Until it exists, the run skips the save and the result says `ready_copies: false`.
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
-- The re-mint of the nested Swamp tokens. It is the product command that the fleet build uses.
+- The re-mint of the nested Swamp tokens in a proof run (stage 3). The provision already renews them.
 - The replacement of old ready slots. Ready slots do not exist yet.
 
 ##### Save the ready copies
@@ -1319,7 +1319,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
 
-The age of a set counts from `user.ready.made`, and a set older than 20 hours is stale: the refresh mints the Swamp tokens just before it saves the copies.
+The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 3 carry the control plan that the play reads; copies of another format are not used.
 
 The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
 

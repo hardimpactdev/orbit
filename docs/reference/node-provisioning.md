@@ -445,7 +445,7 @@ Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It reco
 
 ### The Swamp control plane
 
-The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout and the release grants. The phase writes them, mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`.
+The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout and the release grants. The phase writes them, mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 

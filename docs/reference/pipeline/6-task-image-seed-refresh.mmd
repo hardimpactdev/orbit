@@ -62,12 +62,10 @@ sequenceDiagram
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
     %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` over the NFS mount) are the last piece, with the NFS child of stage 2
     end
-    SW->>VM: Re-mint Swamp tokens<br/>in the nested Gateway
-    %%> Decided by the orchestrator, for Nick's review:
-    %%> - an SSH step into the nested Gateway that runs the product command the fleet build uses to mint its Swamp serve and worker tokens; it is the last piece to wire, because that command does not exist yet
-    %%> Why:
-    %%> - the tokens of the ready copies last 24 hours, so every refresh starts them fresh
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - the refresh has no token step: every provision that starts a fleet renews the Swamp tokens of the nested Gateway (stage 2), so the age of the copies does not matter
+    %%> - the copies carry format 3: the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
     SW->>VM: Withdraw the enrollment<br/>files of enrolment out
     %%> Decided by the orchestrator, for Nick's review:
