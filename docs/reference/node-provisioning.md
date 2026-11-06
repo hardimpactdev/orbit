@@ -460,7 +460,9 @@ With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no rol
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
-The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies. The `remint` play prints no token either, so a failed renewal shows its command and its error.
+The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+
+The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
