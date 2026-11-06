@@ -28,7 +28,7 @@ class TaskVmRoleTest(unittest.TestCase):
         play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
         self.assertEqual(play['hosts'], 'task_vm')
         self.assertEqual({task['name']: task['tags'] for task in play['tasks']},
-                         {'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'], 'Check': ['check'], 'Clean': ['clean']})
+                         {'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'], 'Check': ['check'], 'Clean': ['clean'], 'Template': ['template']})
 
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
@@ -82,7 +82,7 @@ class TaskVmRoleTest(unittest.TestCase):
         def conditions(node, where):
             if isinstance(node, dict):
                 for key, value in node.items():
-                    if key in ('when', 'that', 'failed_when', 'changed_when'):
+                    if key in ('when', 'that', 'failed_when', 'changed_when', 'until'):
                         for item in value if isinstance(value, list) else [value]:
                             self.assertIsInstance(item, (str, bool), f'{where}: a {key} is {type(item).__name__}, not a string')
                     conditions(value, where)

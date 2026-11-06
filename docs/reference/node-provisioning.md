@@ -415,9 +415,9 @@ Missing or damaged protected files require their approved recovery procedure and
 
 A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only. The [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) runs it to make the server ready for a template.
 
-A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
+The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
-The role reads the package indexes of the Ubuntu snapshot with up to eight tries, 30 seconds apart. The snapshot service answers 503 now and then, and one failed index fails the read.
+The role reads the package indexes of the Ubuntu snapshot with up to eight retries, 30 seconds apart. The snapshot service answers 503 now and then, for an index and for a package. A 503 on a package fails the phase, and a resumed run repeats it.
 
 The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` from the same Ubuntu snapshot, which the shape gate linters need. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 

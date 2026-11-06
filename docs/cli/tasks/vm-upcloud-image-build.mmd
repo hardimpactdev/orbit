@@ -67,10 +67,11 @@ sequenceDiagram
   %%> - TypeScript on 209 reads the template UUID and title from the templatize answer
   %%> Returns:
   %%> - the template UUID, which the Gateway reads from this step's output (rule 4)
-  SW->>UC: Smoke the template<br/>launch from template · check
+  SW->>UC: Smoke the template<br/>launch from template · checks
   %%> How:
   %%> - child `task-vm-upcloud-image-smoke`: the same server child with the task VM user-data and the same host key; the create waits with curl's bounded retry while UpCloud still prepares the template
-  %%> - boots as in step 3, then the child `task-vm-upcloud-image-ansible` runs the `check` phase against it; the builder stays until the cleanup removes it
+  %%> - boots as in step 3, then the child `task-vm-upcloud-image-ansible` runs the `check` phase and the `template` phase against it; the `template` phase asserts that ufw is on, denies incoming connections by default and has the recovery rule
+  %%> - the builder stays until the cleanup removes it
   %%> Result:
   %%> - a failed smoke check stops the build before promotion
   SW->>UC: Promote the template<br/>PUT title, labels
