@@ -9,7 +9,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant GH as GitHub<br/>repository · PRs
-  Note over GW: Admit the comment<br/>head · body · mint token
+  Note over GW: Admit the comment<br/>head · body · key name
   %%> Who calls it:
   %%> - the gate check `tasks:pr-gate`, once for each review round, after the reviewer turn ended; there is no command, route or MCP tool
   %%> Requirements:
@@ -17,13 +17,19 @@ sequenceDiagram
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
   %%> - builds the body from the verdict and the findings of the round
-  %%> - mints a write token with only `pull_requests: write` and pushes it to the vault as `pr-comment-write-<uuid>` after commit
+  %%> - names the vault key `pr-comment-write-<uuid>` for the write token; it mints no token
   GW->>SW: Start run, full intent<br/>operation-task-pr-comment
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209); no Node is a target
   %%> Inputs:
   %%> - the repository, PR number, expected head and the comment body
   %%> - the vault key name of the token, never the token
+  SW->>GW: Mint the token<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - the first step posts the run id to the Gateway; the Gateway checks the Operation, the run and the repository, mints a token with only `pull_requests: write`, and writes it to the vault key that admission named
+  %%> Why here and not at admission:
+  %%> - an installation token lives one hour; the token is minted when the step that uses it runs
+  %%> - no task VM holds a GitHub credential
   SW->>GH: Read the PR
   %%> What it does:
   %%> - one `gh api` read of the state and the head SHA

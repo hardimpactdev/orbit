@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\GitHub\NativeGitHubTokenIssuer;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RepositoryReadAccess;
@@ -27,7 +30,8 @@ use Illuminate\Support\Str;
  * A task VM never receives a token. The clone, the push and the pull request calls run on Node 209, and the VM gets the clone as a bundle.
  *
  * - `clone` writes the Git authorization header of a read of the Project repository, or an empty value for a repository that needs none.
- * - `publish` writes the write token for the pull request and its Git authorization header.
+ * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
+ * - `pull_request` writes the write token of one pull request step: ready, comment or merge.
  */
 final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
 {
@@ -35,6 +39,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         private DirectOperation $direct,
         private RepositoryPullRequestAccess $access,
         private RepositoryReadAccess $reads,
+        private GitHubAppStore $store,
         private SwampCommandStep $step,
     ) {}
 
@@ -54,6 +59,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return match ($purpose) {
             'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
             'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
+            'pull_request' => $this->pullRequest($operation, $group, $callerNodeId, $runId),
             default => throw $this->forbidden(),
         };
     }
@@ -85,9 +91,13 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     private function publish(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
         // A publish holds the token names in its own intent; a prep run holds them in the intent of its publish step.
-        [$name, $references] = match ($operation->kind) {
-            'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null],
-            'tasks.prep' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null],
+        // The approved push of a cancel holds the token name beside its remote and takes no Git authorization header.
+        $push = ValidatedData::object($operation->input['push'] ?? []);
+        $cancelled = GitHubRepository::fromOrigin(is_string($push['remote'] ?? null) ? $push['remote'] : '');
+        [$name, $references, $members] = match ($operation->kind) {
+            'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
+            'tasks.prep' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
+            'tasks.cancel' => [$cancelled === null ? null : $cancelled->owner.'/'.$cancelled->name, isset($push['github_token']) ? ['github_token' => $push['github_token']] : null, ['github_token']],
             default => throw $this->forbidden(),
         };
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
@@ -100,7 +110,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             throw new ResourceOperationException('tasks.publish_failed', 'The GitHub App cannot publish to this repository.', 503);
         }
         $references = ValidatedData::object($references);
-        $values = ['github_token' => $token, 'git_authorization' => 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token)];
+        $values = array_intersect_key(['github_token' => $token, 'git_authorization' => 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token)], array_flip($members));
         $copies = [];
         foreach ($values as $member => $value) {
             $reference = ValidatedData::object($references[$member] ?? null);
@@ -110,6 +120,35 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             [['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']]);
 
         return $copies;
+    }
+
+    /** @return array<string,array{vault:string,key:string}> */
+    private function pullRequest(Operation $operation, Task $group, int $callerNodeId, string $runId): array
+    {
+        $permissions = match ($operation->kind) {
+            'tasks.pr_ready', 'tasks.pr_comment' => ['pull_requests' => 'write'],
+            'tasks.pr_merge' => ['contents' => 'write', 'pull_requests' => 'write'],
+            default => throw $this->forbidden(),
+        };
+        $name = $operation->input['repository'] ?? null;
+        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $reference = ValidatedData::object($operation->input['execution_secrets'] ?? [])['write_token'] ?? null;
+        if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name || ! is_array($reference)) {
+            throw $this->forbidden();
+        }
+        $credentials = $this->store->credentials()
+            ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before merging a task pull request.', 409);
+        try {
+            $token = app(GitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $name, 'permissions' => $permissions]));
+        } catch (GitHubApiException $exception) {
+            report($exception);
+            throw new ResourceOperationException('tasks_pr.github_unreadable', 'The Gateway could not mint a GitHub token for the step.', 502);
+        }
+        $reference = ValidatedData::object($reference);
+        $copy = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $token->reveal());
+        $this->record($operation, 'Issued the scoped token of a Task pull request step.', $callerNodeId, $runId, $name, [$permissions]);
+
+        return ['write_token' => $copy];
     }
 
     /** @param list<array<string,string>> $permissions */

@@ -19,7 +19,7 @@ use App\Domain\Tasks\TaskTurnProjection;
 
 $vmProvision = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.provision'];
 
-return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => [...(require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
+return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => [...(require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
     'workflow_inputs' => true, 'terminal_result' => ['job' => 'provision', 'step' => 'Check the workspace',
         'captures' => ['receipt' => ['job' => 'provision', 'step' => 'Set up the workspace', 'field' => 'result']]],
@@ -35,17 +35,17 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['merge_receipt' => ['job' => 'squash', 'step' => 'Read merge result', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^dependency-merge-(read|write)-[a-f0-9-]{36}$']],
         ], 'tasks.pr_ready' => [
-            'workflow' => 'operation-task-pr-ready', 'projection' => TaskPullRequestReadyProjection::class,
+            'workflow' => 'operation-task-pr-ready', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskPullRequestReadyProjection::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the ready step', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'ready', 'step' => 'Read the PR result', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-ready-write-[a-f0-9-]{36}$']],
         ], 'tasks.pr_merge' => [
-            'workflow' => 'operation-task-pr-merge', 'projection' => TaskPullRequestMergeProjection::class,
+            'workflow' => 'operation-task-pr-merge', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskPullRequestMergeProjection::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'merge', 'step' => 'Squash on expected head', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-merge-write-[a-f0-9-]{36}$']],
         ], 'tasks.pr_comment' => [
-            'workflow' => 'operation-task-pr-comment', 'projection' => TaskPullRequestCommentProjection::class,
+            'workflow' => 'operation-task-pr-comment', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskPullRequestCommentProjection::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the comment step', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'comment', 'step' => 'Post the comment', 'field' => 'stdout']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-comment-write-[a-f0-9-]{36}$']],

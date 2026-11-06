@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StartTaskPullRequestStepAction;
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepIntent;
@@ -30,14 +35,19 @@ uses(LazilyRefreshDatabase::class);
 const TOKEN_RUN = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
 
 /** A GitHub that serves one write token and one read token, and a Swamp socket that records every vault put. */
-function tokenWorld(bool $installed = true): object
+function tokenWorld(bool $installed = true, ?array &$scoped = []): object
 {
     SwampNodeFixture::ensure();
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'push', 'push', 'hardimpactdev', 'organization', 'https://github.com/apps/push', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($installed): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($installed, &$scoped): void {
         $github->shouldReceive('repositoryInstallation')->andReturn($installed ? 7 : null);
         $github->shouldReceive('repositoryPullRequestToken')->andReturn('push-token-value');
         $github->shouldReceive('repositoryReadToken')->andReturn('read-token-value');
+        $github->shouldReceive('scopedRepositoryToken')->andReturnUsing(function ($credentials, GitHubTokenGrant $grant) use (&$scoped): GitHubAccessToken {
+            $scoped[] = $grant;
+
+            return new GitHubAccessToken('step-token-value', '2026-11-06T08:00:00Z');
+        });
     }));
     $socket = new class implements WebSocketClient
     {
@@ -148,9 +158,69 @@ it('writes an empty clone credential for a repository the App does not cover, so
     expect(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], '']]);
 });
 
+it('mints the write token of a pull request step when the step asks, with the permissions of its kind', function (string $kind, array $permissions): void {
+    $grants = [];
+    $socket = tokenWorld(scoped: $grants);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Step', 'brief' => 'Step it', 'status' => TaskGroupStatus::WaitingForReview]);
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'pr-step-write-'.fake()->uuid()];
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => ['write_token' => $reference]]]);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'pull_request');
+
+    expect($copies)->toBe(['write_token' => $reference])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'step-token-value']])
+        ->and($grants)->toHaveCount(1)
+        ->and($grants[0]->permissions)->toBe($permissions);
+})->with([
+    'ready' => ['tasks.pr_ready', ['pull_requests' => 'write']],
+    'comment' => ['tasks.pr_comment', ['pull_requests' => 'write']],
+    'merge' => ['tasks.pr_merge', ['contents' => 'write', 'pull_requests' => 'write']],
+]);
+
+it('mints the approved push of a cancel with the token only, for the remote the group publishes to', function (): void {
+    $socket = tokenWorld();
+    [$operation, $names] = pushOperation('tasks.cancel', ['push' => ['remote' => 'https://github.com/hardimpactdev/orbit.git',
+        'github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()]]]);
+    $key = $operation->input['push']['github_token']['key'];
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
+
+    expect(array_keys($copies))->toBe(['github_token'])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $key, 'push-token-value']]);
+});
+
+it('refuses a pull request token for a kind that holds no pull request step, and a step token for another repository', function (): void {
+    $socket = tokenWorld();
+    [$publish] = pushOperation('tasks.publish');
+    [$elsewhere] = pushOperation('tasks.pr_ready', ['repository' => 'someone/else', 'execution_secrets' => ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-ready-write-'.fake()->uuid()]]]);
+    $issue = fn (Operation $subject) => fn () => app(TaskGitHubTokens::class)->issue($subject, SwampNodeFixture::Id, TOKEN_RUN, 'pull_request');
+
+    expect($issue($publish))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($elsewhere))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});
+
+it('reports a step token the App cannot mint as an unreadable GitHub', function (): void {
+    tokenWorld();
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github): void {
+        $github->shouldReceive('scopedRepositoryToken')->andThrow(GitHubApiException::unavailable());
+    }));
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Step', 'brief' => 'Step it', 'status' => TaskGroupStatus::WaitingForReview]);
+    $operation = Operation::query()->create(['kind' => 'tasks.pr_merge', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.fake()->uuid()]]]]);
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'pull_request'))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks_pr.github_unreadable'));
+});
+
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
 
 it('refuses a run that is not the Operation run, a caller that is not Swamp, an Operation that ended, and a missing or unknown purpose', function (): void {
     $socket = tokenWorld();
@@ -199,3 +269,7 @@ arch('the admission of a publish, a prep run and a provision mints nothing and w
 arch('the admission of a publish and of a prep run writes no vault value')
     ->expect([TaskPublishIntent::class, TaskPrepIntent::class])
     ->not->toUse([SwampCommandStep::class]);
+
+arch('the admission of a pull request step and of a cancel mints no token')
+    ->expect([StartTaskPullRequestStepAction::class, TaskCancelIntent::class])
+    ->not->toUse([RepositoryPullRequestAccess::class, GitHubApi::class, GitHubAppStore::class]);
