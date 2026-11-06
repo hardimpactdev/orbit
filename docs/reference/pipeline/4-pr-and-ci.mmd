@@ -58,6 +58,7 @@ sequenceDiagram
     %%> - the job `proof-run` runs only when a changed path selects a command in `selection.txt`, passes only the SHA and an idempotency key, and a new push cancels the run of the previous push; it follows the one `proof.run` record until the last command run ended
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
     %%> Not built:
+    %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; not built, see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and the job joins it once a run passes end to end
     GW-->>CI: Verdict per case
     %%> Result:
