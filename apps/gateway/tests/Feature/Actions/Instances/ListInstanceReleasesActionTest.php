@@ -81,3 +81,33 @@ it('lists nothing for a development default', function (): void {
 it('refuses any other development Instance', function (): void {
     app(ListInstanceReleasesAction::class)->execute(release_list_instance(RoleName::AppDev, 'feature'));
 })->throws(ResourceOperationException::class, 'The production deployment identity is invalid.');
+
+it('keeps the new selection, the one before it and the newest other release, so a fourth deploy drops the oldest', function (): void {
+    $instance = release_list_instance(RoleName::AppProd);
+    foreach (['20261101-a', '20261102-b', '20261103-c', '20261104-d'] as $release) {
+        release_list_deployment($instance, 'deploy', 'succeeded', $release);
+    }
+
+    $state = app(ListInstanceReleasesAction::class)->execute($instance);
+
+    expect($state->releases)->toBe(['20261102-b', '20261103-c', '20261104-d'])
+        ->and($state->selectedRelease)->toBe('20261104-d');
+});
+
+it('selects a failed deploy only when it activated its release', function (bool $activated): void {
+    $instance = release_list_instance(RoleName::AppProd);
+    release_list_deployment($instance, 'deploy', 'succeeded', '20261101-a');
+    release_list_deployment($instance, 'deploy', 'failed', '20261102-b', $activated ? '20261102-b' : '20261101-a');
+
+    $state = app(ListInstanceReleasesAction::class)->execute($instance);
+
+    expect($state->releases)->toContain('20261102-b')
+        ->and($state->selectedRelease)->toBe($activated ? '20261102-b' : '20261101-a');
+})->with([true, false]);
+
+it('refuses a production Instance that is not active', function (): void {
+    $instance = release_list_instance(RoleName::AppProd);
+    $instance->update(['status' => 'reserved']);
+
+    app(ListInstanceReleasesAction::class)->execute($instance);
+})->throws(ResourceOperationException::class, 'The production deployment identity is invalid.');

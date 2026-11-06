@@ -28,7 +28,7 @@ sequenceDiagram
     GW-->>CLI: 200 releases<br/>selected release
     %%> Result:
     %%> - the retained release names sorted by name, and the selected one
-    %%> - a release that someone removed by hand on the Node is still listed; the list is what Orbit retained
+    %%> - the list is what the history retains, not a scan of the Node: a release removed by hand is still listed, and one kept only because a running process uses it is not
   else development default
     GW-->>CLI: 200 empty list
     %%> Result:

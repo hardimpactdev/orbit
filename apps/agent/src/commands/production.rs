@@ -1,7 +1,7 @@
 //! `instance.*-release`: the release layout of a production Instance. A home `/home/<user>` holds `releases/<name>`
 //! checkouts, a `current` link to the selected one, and the stable `.env`. Each command checks the root-owned layout
 //! marker first. It runs as root, and Git and every file it writes in the home run as the production user, so the
-//! release stays the user's alone. These replace the Bash that `RemoteProductionDeployment` sent, check for check.
+//! release stays the user's alone.
 
 use super::git_read::GitRead;
 use super::source::{is_real_directory, is_symlink, realpath};
@@ -648,8 +648,6 @@ impl Command for ActivateRelease {
         activate(&input, &Layout::system())
     }
 }
-
-// ---- inspect and list -------------------------------------------------------------------------------------------
 
 // ---- repository binding -----------------------------------------------------------------------------------------
 
