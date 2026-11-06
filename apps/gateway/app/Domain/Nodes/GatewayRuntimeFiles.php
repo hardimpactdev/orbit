@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Models\Node;
 use App\Models\Process;
@@ -40,8 +41,8 @@ final readonly class GatewayRuntimeFiles
         $owned = $node instanceof Node
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
-        $longRunning = static fn (string $name, string $description, string $command): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\nRuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
+        $longRunning = static fn (string $name, string $description, string $command, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
         $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
@@ -66,7 +67,7 @@ final readonly class GatewayRuntimeFiles
                 ['name' => 'orbit-agent-view.service', 'unit' => $service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
                     "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n")],
                 ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
-                ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon')],
+                ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']))],
                 ['name' => 'orbit-runtime-hibernator.timer', 'unit' => "[Unit]\nDescription=Orbit runtime hibernator timer\n\n[Timer]\nOnBootSec=2min\n"
                     .'OnUnitActiveSec='.Config::integer('orbit.hibernation.sweep_seconds')."s\nPersistent=true\nUnit=orbit-runtime-hibernator.service\n\n[Install]\nWantedBy=timers.target\n"],
             ],
