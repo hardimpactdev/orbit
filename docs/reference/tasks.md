@@ -1021,7 +1021,9 @@ The gate is the reviewer's latest review that approves, requests changes or is d
 
 After the gate, the Gateway records `tasks.pr_merge` with the vault key `pr-merge-write-<uuid>`. The first step of the run asks for a token with `contents: write` and `pull_requests: write`. An approval can take longer than the hour that a token lives, so the merge never reuses the ready token.
 
-Swamp reads the pull request again, refuses a moved head, and merges with a squash merge that carries the expected `sha`. If the head moved or the pull request conflicts with the base branch, the merge is refused and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
+Swamp reads nothing before the merge: admission read the head, and the squash merge carries the expected `sha`, so GitHub refuses a head that moved in the seconds between. If the head moved or the pull request conflicts with the base branch, the merge is refused with `tasks_pr.merge_refused` and the pull request stays open. The author rebases, and the gate starts again. There is no merge queue and no GitHub auto-merge. The result holds the pull request number, head and merge commit.
+
+The ready, comment and merge steps end with the shared child `task-github-cleanup`. It revokes the token when the mint step succeeded, as a best effort, and removes the private GitHub CLI configuration directory of the run.
 
 ### Gate check
 
