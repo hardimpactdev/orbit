@@ -537,7 +537,11 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `amd64` `.de
 
 New assignments from `node:role:add` run through one Swamp workflow. A native SSH step checks the Ubuntu release. Ansible phases apply prerequisites, role state, publications, firewall rules and Metrics changes, then check the result.
 
-A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter. A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` before its first apt call: `Acquire::http::Proxy` with the cache, no pipelining, and `Acquire::https::Proxy "DIRECT"`, because the cache refuses https tunnels. A play without one removes that file. Every other Node has no `apt_proxy` and reads the archive. The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
+A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.232.2.0/24`) reads its apt packages through the `apt-cacher-ng` of that VM, at `http://10.232.2.1:3142`. The Gateway puts that address in the `apt_proxy` field of the intent of the Node enrollment (`node.add`), of each role add and converge, and of each metrics exporter.
+
+A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` before its first apt call: `Acquire::http::Proxy` with the cache, no pipelining, and `Acquire::https::Proxy "DIRECT"`, because the cache refuses https tunnels. A play without one removes that file. Every other Node has no `apt_proxy` and reads the archive.
+
+The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
 
 Application roles fetch the recipe's PHP packages and Bun archive with checksums, install PHP in one APT transaction, and converge the shared Tool Managers. Role add applies role-owned resources even when an earlier Node footprint has the same digest. It leaves the observer and Orbit CLI to `node:converge`.
 
