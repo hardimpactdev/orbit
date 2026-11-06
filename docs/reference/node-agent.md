@@ -415,6 +415,8 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
 
 When the `gateway` role moves, the Gateway's WireGuard address changes. Every agent then loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node. The Reverb address needs no converge, because each realtime response carries it.
 
+The Gateway signs no operation channel for an agent, because no agent publishes operation output.
+
 Every agent endpoint call requires an active WireGuard peer and a valid [agent secret](#agent-secret); there is no exemption for older agents or Nodes without a stored secret. Agent endpoints need no access grant and record no Activity.
 
 | Code | HTTP | Meaning |
