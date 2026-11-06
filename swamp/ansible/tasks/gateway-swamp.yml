@@ -80,6 +80,16 @@
     owner: "{{ swamp_user }}"
     group: "{{ swamp_user }}"
     mode: "0600"
+# The pins of the Nodes this Swamp reaches live in the account's known_hosts; enrollment removes an old pin from it, so the file exists.
+- name: Make the known hosts file
+  ansible.builtin.file:
+    path: "{{ swamp_home }}/.ssh/known_hosts"
+    state: touch
+    modification_time: preserve
+    access_time: preserve
+    owner: "{{ swamp_user }}"
+    group: "{{ swamp_user }}"
+    mode: "0600"
 # The vault the Gateway puts the material of a run in: it names it, and its runs read it (docs/reference/operations.md). The key of the
 # vault is made by Swamp and stays on this machine.
 - name: Make the control vault

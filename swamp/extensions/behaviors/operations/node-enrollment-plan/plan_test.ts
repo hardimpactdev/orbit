@@ -89,3 +89,10 @@ Deno.test("enrollment refuses a platform mismatch before binding role effects", 
         "node.platform_mismatch",
     );
 });
+Deno.test("enrollment reads a role without secrets, which PHP sends as an empty list", () => {
+    const result = bindEnrollment({
+        ...input,
+        roles: [{ ...input.roles[0], execution_secrets: [] }],
+    });
+    assertEquals(result.roles[0].execution_secrets, {});
+});

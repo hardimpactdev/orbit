@@ -445,7 +445,7 @@ The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phas
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
-The phase creates the control vault `orbit-control-inputs` before serve starts, and the hub step also writes the hub public key to `wireguard/public.key` in the Orbit home, which every Node peer configuration names.
+The phase creates the account's `known_hosts` file, which enrollment edits to replace the pin of a Node. It also creates the control vault `orbit-control-inputs` before serve starts. The hub step writes the hub public key to `wireguard/public.key` in the Orbit home, which every Node peer configuration names.
 
 The phase issues the Gateway's own certificate from the same CA and installs it with the root certificate in `/etc/caddy/orbit-cert-current`, the paths the Gateway Caddyfile names. `orbit:bootstrap` records the `swamp.orbit` Route, so the first Caddyfile the Gateway publishes keeps that front. It also records the Redis Database connection `gateway-queue` for the Valkey server on the machine.
 

@@ -7,10 +7,15 @@ const Copy = z.object({
     vault: z.literal("orbit-control-inputs"),
     key: z.string(),
 }).strict();
+// PHP encodes a role without secrets as an empty list, not as an empty map.
+const Secrets = z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.record(z.string(), Copy),
+);
 const Role = z.object({
     kind: z.enum(["node.role_add", "node.role_converge"]),
     intent: z.record(z.string(), z.unknown()),
-    execution_secrets: z.record(z.string(), Copy),
+    execution_secrets: Secrets,
 }).strict();
 const Args = z.object({
     platform: z.enum(["linux", "macos"]),
