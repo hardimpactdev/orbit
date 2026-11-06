@@ -25,7 +25,8 @@ jobs:
     # The same runner as the proof job of ci.yml: an enrolled Node that may reach the Gateway.
     runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
     timeout-minutes: 45
-    # One group for the pull request, shared with the job `unlabel`: a new push cancels the proof run of the previous head, and a new label cancels a running `unlabel`, which is harmless because the Gateway checks the approval per commit. ci.yml uses the same
+    # One group for the pull request, shared with the job `unlabel`: a new push cancels the proof run of the previous head.
+    # A new label cancels a running `unlabel`; that is harmless, because the Gateway checks the approval per commit. ci.yml uses the same
     # group name for a pull request from a branch of this repository; one pull request is never both.
     concurrency:
       group: proof-run-${{ github.event.pull_request.number }}
