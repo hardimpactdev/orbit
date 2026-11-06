@@ -96,7 +96,7 @@ it('renders the whole public intent of the fleet build, with the layout of the n
     $input = app(TaskVmFleetBuildIntent::class)->capture($vm);
 
     expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $vm->node_id, 'operator_checkout' => '/home/orbit/apps/orbit/workspace'])
-        ->and($input['fleet'])->toMatchArray(['network' => TaskVmReadyCopiesIntent::Network, 'format' => TaskVmReadyCopiesIntent::Format, 'bridge' => '10.232.2.1/24'])
+        ->and($input['fleet'])->toMatchArray(['network' => TaskVmReadyCopiesIntent::Network, 'format' => TaskVmReadyCopiesIntent::Format, 'bridge' => '10.232.2.1/24', 'proof_network' => '10.232.2.0/24'])
         ->and(array_keys($input['fleet']['layout']))->toBe(['gateway', 'app-dev', 'app-prod'])
         ->and($input['fleet']['guests'])->toBe(TaskVmReadyCopiesIntent::Guests)
         ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])

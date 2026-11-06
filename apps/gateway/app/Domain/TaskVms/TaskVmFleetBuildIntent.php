@@ -121,7 +121,7 @@ final readonly class TaskVmFleetBuildIntent
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
             'operator_checkout' => $workspace,
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'proof_network' => TaskVmReadyCopiesIntent::Subnet, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
             'bootstrap' => ['fragment' => $this->fragment($workspace)],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],

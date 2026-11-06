@@ -303,7 +303,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-app-dev").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-app-dev").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:node-add', '${{ inputs.intent.fleet.guests["app-dev"] }}', '${{ inputs.intent.fleet.layout["app-dev"].address }}', '${{ "--role=app-dev" }}', '${{ "--wireguard-ip=" + inputs.intent.fleet.layout["app-dev"].wireguard }}', '${{ "--tld=" + inputs.intent.fleet.layout["app-dev"].tld }}', '${{ "--host-key-fingerprint=" + steps["Read the Node host keys-app-dev"].outputs.stdout.split(" ")[1] }}'], timeoutSec: 130}}
+      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:node-add', 'app-dev', '${{ inputs.intent.fleet.layout["app-dev"].address }}', '${{ "--role=app-dev" }}', '${{ "--wireguard-ip=" + inputs.intent.fleet.layout["app-dev"].wireguard }}', '${{ "--tld=" + inputs.intent.fleet.layout["app-dev"].tld }}', '${{ "--host-key-fingerprint=" + steps["Read the Node host keys-app-dev"].outputs.stdout.split(" ")[1] }}'], timeoutSec: 130}}
     dependsOn: [{step: 'Read the Node host keys', condition: {type: succeeded}}]
   - name: 'Wait for app-dev'
     labels: {role: swamp}
@@ -323,7 +323,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-app-prod").split(".").join("-") }}', methodName: exec,
       globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-admit-app-prod").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:node-add', '${{ inputs.intent.fleet.guests["app-prod"] }}', '${{ inputs.intent.fleet.layout["app-prod"].address }}', '${{ "--role=app-prod" }}', '${{ "--wireguard-ip=" + inputs.intent.fleet.layout["app-prod"].wireguard }}', '${{ "--tld=" + inputs.intent.fleet.layout["app-prod"].tld }}', '${{ "--host-key-fingerprint=" + steps["Read the Node host keys-app-prod"].outputs.stdout.split(" ")[1] }}'], timeoutSec: 130}}
+      inputs: {hosts: 'name:target', argv: ['incus', 'exec', '${{ inputs.intent.fleet.guests.gateway }}', '--user', '1000', '--env', 'HOME=/home/orbit', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'orbit:node-add', 'app-prod', '${{ inputs.intent.fleet.layout["app-prod"].address }}', '${{ "--role=app-prod" }}', '${{ "--wireguard-ip=" + inputs.intent.fleet.layout["app-prod"].wireguard }}', '${{ "--tld=" + inputs.intent.fleet.layout["app-prod"].tld }}', '${{ "--host-key-fingerprint=" + steps["Read the Node host keys-app-prod"].outputs.stdout.split(" ")[1] }}'], timeoutSec: 130}}
     dependsOn: [{step: 'Wait for app-dev', condition: {type: succeeded}}]
   - name: 'Wait for app-prod'
     labels: {role: swamp}
@@ -338,6 +338,16 @@ jobs:
           <<: *ansible
           ORBIT_WAIT_OPERATION: '${{ steps["Admit app-prod"].outputs.stdout.split("#")[1].split(" ")[0] }}'
     dependsOn: [{step: 'Admit app-prod', condition: {type: succeeded}}]
+  # The proof starts from a fleet where only Orbit's own rules and the proof-network allowance exist (swamp/proof/batches.yaml, fresh-fleet):
+  # each guest admits the nested subnet, and a case places its test rules above that row.
+  - name: 'Open the proof network'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: role, in: '${{ ["gateway", "app-dev", "app-prod"] }}'}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-open-the-proof-network-" + self.role).split(".").join("-") }}', methodName: exec,
+      globalArgs: {<<: *vm, name: '${{ ("fleet-build-" + string(inputs.intent.guest_node_id) + "-open-the-proof-network-" + self.role).split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', '${{ inputs.intent.fleet.guests[self.role] }}', '--', 'ufw', 'allow', 'from', '${{ inputs.intent.fleet.proof_network }}', 'comment', 'proof-network'], timeoutSec: 70}}
+    dependsOn: [{step: 'Wait for app-prod', condition: {type: succeeded}}]
 - name: checkout
   labels: {role: swamp}
   dependsOn: [{job: fleet, condition: {type: succeeded}}]
