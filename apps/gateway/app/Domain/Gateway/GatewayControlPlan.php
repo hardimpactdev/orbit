@@ -1,0 +1,36 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Gateway;
+
+use App\Domain\Nodes\SwampNode;
+use App\Domain\Nodes\SwampRoleUnits;
+use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
+
+/**
+ * What a new Gateway's own Swamp needs on its machine (docs/cli/tasks/vm-fleet-build.mmd, "Converge itself"): the serve and
+ * worker units for the machine's checkout, and the grants of the release. No secret is in it: the tokens are minted on the
+ * machine and stay there.
+ */
+final readonly class GatewayControlPlan
+{
+    public function __construct(private SwampGrantRenderer $grants) {}
+
+    /**
+     * @param  string  $checkout  The `swamp/` folder of the release on this machine, the Swamp repository serve reads.
+     * @return array{user:string,node_id:int,repository:string,units:array{serve:string,worker:string},grants:array<string,string>}
+     */
+    public function make(string $checkout): array
+    {
+        $node = SwampNode::node();
+
+        return [
+            'user' => $node->user,
+            'node_id' => $node->id,
+            'repository' => $checkout,
+            'units' => SwampRoleUnits::for($node->user, $node->id, $checkout),
+            'grants' => $this->grants->render($checkout),
+        ];
+    }
+}

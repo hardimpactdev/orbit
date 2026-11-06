@@ -13,6 +13,7 @@ additionalFiles:
   - ansible/operation-node-role-add.yml
   - ansible/gateway-bootstrap.yml
   - ansible/tasks/role-prerequisites.yml
+  - ansible/tasks/gateway-swamp.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml

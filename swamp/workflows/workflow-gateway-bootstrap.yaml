@@ -351,6 +351,68 @@ jobs:
         hosts: name:target
         argv: [timeout, '300', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'orbit:bootstrap', '${{ inputs.intent.ssh.host }}', '--wireguard-ip=${{ inputs.intent.gateway.wireguard_ip }}', '--wireguard-subnet=${{ inputs.intent.gateway.wireguard_subnet }}', --no-interaction]
         timeoutSec: 305
+# The Swamp control plane of the new Gateway, on its own machine: units, tokens minted there, grants, the swamp.orbit front, then serve and two workers.
+- name: control
+  dependsOn: [{job: app, condition: {type: succeeded}}]
+  steps:
+  - name: Render the control plan
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-plan").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-control-plan").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '120', php, '/home/${{ inputs.intent.ssh.user }}/orbit/apps/gateway/artisan', 'orbit:bootstrap-control-plan', '--checkout=/home/${{ inputs.intent.ssh.user }}/orbit/swamp']
+        timeoutSec: 125
+  - name: Write the control plan
+    writes: true
+    dependsOn: [{step: Render the control plan, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-file").split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.host }}'
+        nodeUser: '${{ inputs.intent.ssh.user }}'
+        nodePort: '${{ inputs.intent.ssh.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /opt/orbit/bootstrap/control.yml
+        content: '${{ "{\"control\": " + steps["Render the control plan"].outputs.stdout + "}" }}'
+        owner: root
+        group: root
+        mode: '0644'
+        ensure: present
+      inputs: {}
+  - name: Apply the Swamp control plane
+    writes: true
+    dependsOn: [{step: Write the control plan, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-control-apply").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-control-apply").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', env, 'ANSIBLE_CONFIG=/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/ansible.cfg', /opt/orbit/ansible/venv/bin/ansible-playbook, -i, 'localhost,', -e, '@/opt/orbit/bootstrap/control.yml', --tags, swamp, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/gateway-bootstrap.yml']
+        timeoutSec: 905
+  - name: Read the workers
+    dependsOn: [{step: Apply the Swamp control plane, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-workers").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-workers").split(".").join("-") }}'}
+      inputs:
+        hosts: name:target
+        argv: [timeout, '60', env, 'SWAMP_API_KEY_FILE=/home/${{ inputs.intent.ssh.user }}/.config/swamp/api-key', swamp, worker, list, --server, 'ws://127.0.0.1:9418', --token-file, '/home/${{ inputs.intent.ssh.user }}/.config/swamp/serve-driver-token', --json]
+        timeoutSec: 65
 # The end check: the pinned Swamp runs, the venv runs the pinned Ansible, and the checkout is at the release.
 - name: check
   dependsOn:
@@ -358,6 +420,7 @@ jobs:
   - {job: swamp, condition: {type: succeeded}}
   - {job: machine, condition: {type: succeeded}}
   - {job: app, condition: {type: succeeded}}
+  - {job: control, condition: {type: succeeded}}
   steps:
   - name: Read the Swamp version
     task:
@@ -423,6 +486,6 @@ jobs:
     - {step: Read the migrations, condition: {type: succeeded}}
     task:
       type: assert
-      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.")'
+      expr: 'steps["Read the Swamp version"].outputs.stdout.startsWith("swamp ") && steps["Read the Ansible version"].outputs.stdout.contains("ansible-playbook [core ") && steps["Read the release commit"].outputs.stdout.split("\n")[0] == inputs.intent.release.commit && steps["Read the PHP version"].outputs.stdout.startsWith("PHP 8.5.") && steps["Read the migrations"].outputs.stdout.contains("Ran") && !steps["Read the migrations"].outputs.stdout.contains("Pending") && steps["Bootstrap the Gateway"].outputs.stdout.contains("Gateway [gateway] initialized.") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-a") && steps["Read the workers"].outputs.stdout.contains("orbit-worker-b")'
       severity: high
       message: The machine is not ready to converge itself.

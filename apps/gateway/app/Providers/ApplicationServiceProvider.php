@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Console\Commands\AgentViewCommand;
 use App\Console\Commands\AgentViewPublishCommand;
+use App\Console\Commands\BootstrapControlPlanCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
@@ -37,6 +38,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             AgentViewCommand::class,
             AgentViewPublishCommand::class,
             BootstrapGatewayCommand::class,
+            BootstrapControlPlanCommand::class,
             BootstrapPlanCommand::class,
             CaddyBuildCommand::class,
             ConvergeGatewayWebCommand::class,
