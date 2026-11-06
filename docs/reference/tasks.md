@@ -1109,7 +1109,7 @@ A group switches to manual mode after round 3 with findings. It also switches af
 
 A pending or red check, a missing approval, a busy group, a moved head or a failed read is a quiet skip, and the next tick reads again.
 
-Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key.
+Every admission carries the Idempotency-Key `pr-gate:<step>:<group>:<head>`, so a repeat tick on the same head replays the recorded step and starts nothing. A step that failed is not tried again on the same head. A push moves the head and the check starts again, or the operator calls the step by hand with a new key. The gate sets the key with `OperationIdempotency::under`, so the key never outlives its admission.
 
 The command prints one JSON object with a result for each group: `admitted`, `replayed`, or `skipped` with the refusal code. The scheduler log keeps these results.
 

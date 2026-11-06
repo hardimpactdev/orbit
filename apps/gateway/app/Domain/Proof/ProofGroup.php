@@ -17,18 +17,16 @@ use Closure;
 /** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM, so a cancelled proof must cancel it. */
 final readonly class ProofGroup
 {
-    /** Admits one task operation under its own key, because the request key of proof:run belongs to the proof.run Operation. */
+    /**
+     * Admits one task operation under its own key, because the request key of proof:run belongs to the proof.run Operation.
+     *
+     * @param  Closure(): Operation  $start
+     */
     public function admit(Task $group, string $kind, Closure $start): Operation
     {
-        $identity = app(OperationIdempotency::class);
-        $prior = [$identity->kind, $identity->key, $identity->fingerprint];
         $key = 'proof:'.$group->id.':'.$kind;
-        [$identity->kind, $identity->key, $identity->fingerprint] = [$kind, $key, hash('sha256', $key)];
-        try {
-            return $start();
-        } finally {
-            [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
-        }
+
+        return app(OperationIdempotency::class)->under($kind, $key, hash('sha256', $key), $start);
     }
 
     /**
