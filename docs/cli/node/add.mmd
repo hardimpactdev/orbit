@@ -72,7 +72,7 @@ sequenceDiagram
   SW->>N: Set up the machine<br/>Ansible phase: baseline
   %%> What it does:
   %%> - pins the Node for later operations and appends the Swamp control public key to the bootstrap account when it is absent
-  %%> - base packages, the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
+  %%> - base packages (read through the package cache of the task VM for a Node of its nested fleet, else from the archive; `apt_proxy` in the intent), the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
   %%> - the public recovery SSH rule, then the firewall
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:

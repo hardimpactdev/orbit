@@ -12,6 +12,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmAptCache;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -56,7 +57,7 @@ final readonly class NativeNodeEnrollmentInput
             'bootstrap' => ['host' => $candidate['public_ssh_host'], 'port' => $candidate['public_ssh_port'],
                 'user' => $bootstrapUser, 'fingerprint' => $spec['fingerprint']],
             'identity' => $identity,
-            'packages' => [], 'sudo' => ['path' => '', 'content' => ''],
+            'packages' => [], 'apt_proxy' => null, 'sudo' => ['path' => '', 'content' => ''],
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
             'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
@@ -91,6 +92,8 @@ final readonly class NativeNodeEnrollmentInput
                 ...($request->settingsProvided ? ['settings' => app(NodeSettingsNormalizer::class)->storedOver($node->settings, $request->settings)] : [])])->saveQuietly();
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
             $intent['packages'] = $base['packages'];
+            // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
+            $intent['apt_proxy'] = TaskVmAptCache::for($node);
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,
                 'content' => $node->user." ALL=(ALL) NOPASSWD: ALL\n"];
             $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;

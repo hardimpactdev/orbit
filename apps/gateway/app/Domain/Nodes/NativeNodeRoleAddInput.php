@@ -12,6 +12,7 @@ use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmAptCache;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
@@ -141,6 +142,7 @@ final readonly class NativeNodeRoleAddInput
                     $service['caddy'] = null;
                 }
                 $exporters[] = ['exporter_node_id' => $target->id, 'enabled' => $enabled, 'metrics_address' => $metrics->wireguard_ip,
+                    'apt_proxy' => TaskVmAptCache::for($target),
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                     'runtime' => ['ssh_execution' => $metricsSsh, 'configuration' => $configuration], 'compose_only' => true,
                     'service' => $service];
@@ -157,6 +159,8 @@ final readonly class NativeNodeRoleAddInput
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'releases' => ValidatedData::object($snapshot['prerequisites'])['releases'],
             'packages' => array_values(array_diff($packages, ['caddy'])),
+            // The package cache of the task VM for a Node of its nested fleet; null for every other Node, which reads the archive directly.
+            'apt_proxy' => TaskVmAptCache::for($node),
             'caddy_package' => $caddy ? NativeCaddyPackageInput::make() : null,
             'directories' => $directories, 'files' => $files, 'php_packages' => $phpPackages, 'php' => $php,
             'managers' => $managers, 'bun' => $bun, 'certificates' => $snapshot['certificates'], 'publications' => $publications, 'runtime' => $runtime['intent'],

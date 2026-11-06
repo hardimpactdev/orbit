@@ -41,7 +41,7 @@ BASES = ('origin/main', 'main')
 ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py', 'tests/ansible_firewall_test.py',
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
                  'tests/ansible_task_vm_model_key_test.py',
-                 'tests/ansible_task_vm_runtime_test.py', 'tests/ansible_task_vm_fleet_wait_test.py')
+                 'tests/ansible_task_vm_runtime_test.py', 'tests/ansible_task_vm_fleet_wait_test.py', 'tests/ansible_apt_proxy_test.py')
 DENO_UNIT_TESTS = (
     ('--allow-env', '--allow-read', '--allow-run', '--allow-write', 'bin/check-swamp-shape_test.ts'),
     ('--allow-read', '--allow-run', 'bin/lint-behavior-names_test.ts'),

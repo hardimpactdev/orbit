@@ -20,6 +20,7 @@ additionalFiles:
   - ansible/operation-node-add.yml
   - ansible/gateway-bootstrap.yml
   - ansible/tasks/role-prerequisites.yml
+  - ansible/tasks/apt-proxy.yml
   - ansible/tasks/gateway-swamp.yml
   - ansible/tasks/gateway-swamp-remint.yml
   - ansible/tasks/php.yml

@@ -81,6 +81,7 @@ class NodeAddTest(unittest.TestCase):
         names = [task['name'] for task in play['tasks']]
         # The control key goes in first; the firewall comes up last, after the recovery rule that keeps SSH open.
         self.assertLess(names.index('Authorize the Swamp control key'), names.index('Install the base packages'))
+        self.assertLess(names.index('Point apt at the package cache'), names.index('Install the base packages'))
         self.assertLess(names.index('Open public recovery SSH'), names.index('Enable the firewall'))
         self.assertLess(names.index('Create the managed account'), names.index('Write the Orbit keys'))
 
