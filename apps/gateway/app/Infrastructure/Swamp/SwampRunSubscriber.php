@@ -49,7 +49,7 @@ final class SwampRunSubscriber
     private readonly Closure $clock;
 
     /** @param (Closure():float)|null $clock */
-    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log, ?Closure $clock = null, private readonly ?SwampScheduledResults $scheduled = null)
+    public function __construct(private readonly WebSocketClient $socket, private readonly LoggerInterface $log, ?Closure $clock = null)
     {
         $this->clock = $clock ?? static fn (): float => microtime(true);
     }
@@ -137,7 +137,6 @@ final class SwampRunSubscriber
             unset($this->deadlines[$operationId]);
             $this->follow($operationId);
         }
-        $this->scheduled?->pass();
         if ($this->following === [] || ($this->clock)() < $this->nextConnection) {
             return;
         }

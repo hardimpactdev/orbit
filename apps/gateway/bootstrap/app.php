@@ -20,6 +20,8 @@ use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Infrastructure\Swamp\SwampScheduledResults;
+use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
@@ -68,6 +70,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // Runs that finished in Swamp are read once a minute and projected; Swamp's commit feed needs a v3 datastore.
+        GatewaySchedule::job($schedule, new PollSwampScheduledResults)->everyMinute()
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && app(SwampScheduledResults::class)->enabled());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);

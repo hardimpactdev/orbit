@@ -10,14 +10,14 @@ use App\Infrastructure\Swamp\SwampScheduledResults;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-/** Records one calendar fire of a Schedule's own workflow after a native commit notice. */
+/** Records one calendar fire of a Schedule's own workflow after the poll found it finished. */
 final class ProjectSwampScheduleFire implements ShouldQueue
 {
     use Queueable;
 
     public int $tries = 1;
 
-    public function __construct(public string $workflowId, public string $runId, public string $checkpoint)
+    public function __construct(public string $workflowId, public string $runId)
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
@@ -26,7 +26,7 @@ final class ProjectSwampScheduleFire implements ShouldQueue
     {
         $projected = $step->projectScheduleFire($this->workflowId, $this->runId);
         if ($projected) {
-            SwampScheduledResults::acknowledge($this->checkpoint, $this->runId);
+            SwampScheduledResults::done($this->runId);
         }
 
         return $projected;

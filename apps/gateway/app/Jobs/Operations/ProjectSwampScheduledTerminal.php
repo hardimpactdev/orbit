@@ -10,14 +10,14 @@ use App\Infrastructure\Swamp\SwampScheduledResults;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-/** Projects exact scheduled history after a native commit notice. */
+/** Projects exact scheduled history after the poll found the run finished. */
 final class ProjectSwampScheduledTerminal implements ShouldQueue
 {
     use Queueable;
 
     public int $tries = 1;
 
-    public function __construct(public string $workflowId, public string $runId, public ?string $status, public ?string $checkpoint = null)
+    public function __construct(public string $workflowId, public string $runId, public ?string $status)
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
@@ -26,8 +26,8 @@ final class ProjectSwampScheduledTerminal implements ShouldQueue
     {
         $projected = $step->projectScheduledTerminal($this->workflowId, ['id' => $this->runId,
             ...($this->status !== null ? ['status' => $this->status] : [])]);
-        if ($projected && $this->checkpoint !== null) {
-            SwampScheduledResults::acknowledge($this->checkpoint, $this->runId);
+        if ($projected) {
+            SwampScheduledResults::done($this->runId);
         }
 
         return $projected;

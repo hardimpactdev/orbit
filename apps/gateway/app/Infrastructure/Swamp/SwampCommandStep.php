@@ -98,7 +98,7 @@ final readonly class SwampCommandStep
         });
     }
 
-    /** Called by the shared native terminal subscriber, never by a family step or a poller.
+    /** Called by the shared native terminal subscriber, never by a family step.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
      * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector  The fixed family terminal_result declaration.
      */
@@ -215,6 +215,34 @@ final readonly class SwampCommandStep
         }
 
         return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'schedule.run_failed'];
+    }
+
+    /** Root runs that finished since a time, oldest page first, for the once-a-minute scheduled read.
+     * @return list<array<string,mixed>>
+     */
+    public function finishedRuns(string $since): array
+    {
+        $runs = [];
+        for ($offset = 0; $offset < 2000; $offset += 200) {
+            $reply = $this->read('workflow.run.search', ['statuses' => ['succeeded', 'failed', 'cancelled', 'interrupted'],
+                'since' => $since, 'limit' => 200, 'offset' => $offset]);
+            $data = $reply['data'] ?? null;
+            $page = is_array($data) ? ($data['results'] ?? null) : null;
+            if (! is_array($page) || ! array_is_list($page)) {
+                throw $this->unavailable();
+            }
+            foreach ($page as $run) {
+                if (is_array($run)) {
+                    $runs[] = ValidatedData::object($run);
+                }
+            }
+            $total = $data['total'] ?? $reply['total'] ?? null;
+            if (count($page) < 200 || (is_int($total) && $offset + count($page) >= $total)) {
+                break;
+            }
+        }
+
+        return $runs;
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.
