@@ -44,7 +44,7 @@
       ansible.builtin.set_fact:
         account_gid: "{{ account.stdout.split(':')[3] }}"
         account_home: "{{ account.stdout.split(':')[5] }}"
-    # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one setfacl each).
+    # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one command for each kind of path).
     - name: Grant Caddy access to the served roots
       ansible.builtin.command:
         argv: "{{ ['timeout', '120'] + item.argv }}"

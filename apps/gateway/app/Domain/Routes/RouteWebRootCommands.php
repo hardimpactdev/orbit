@@ -11,8 +11,9 @@ use App\Support\ValidatedData;
 final readonly class RouteWebRootCommands
 {
     /**
-     * The grant as ordered commands: deny Caddy each checkout, open passage through every directory above each served
-     * root, then grant read on the root and, for a Laravel public root, on storage/app/public behind its link.
+     * The grant as ordered commands: deny Caddy each checkout, open passage through every directory above the served
+     * roots, then grant read on the roots and, for a Laravel public root, on storage/app/public behind its link. Each
+     * kind is one command for all its paths: every command costs one Ansible task on the Node.
      *
      * @param  array<string,mixed>  $access
      * @return list<array{node_id:int,argv:list<string>}>
@@ -27,25 +28,26 @@ final readonly class RouteWebRootCommands
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', $checkout, '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:---', '--', '{}', '+']];
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', $checkout]];
         }
+        $passage = $served = [];
         foreach ($sites as $site) {
             $root = rtrim(ValidatedData::string($site['checkout']), '/').'/'.trim(ValidatedData::string($site['relative_root']), '/');
-            $served = [$root];
+            $paths = [$root];
             if ($instance->source_is_laravel && str_ends_with($root, '/public')) {
-                $served[] = rtrim(ValidatedData::string($site['application']), '/').'/storage/app/public';
+                $paths[] = rtrim(ValidatedData::string($site['application']), '/').'/storage/app/public';
             }
-            $passage = [];
-            foreach ($served as $path) {
+            foreach ($paths as $path) {
+                $served[$path] = true;
                 for ($directory = dirname($path); $directory !== '/' && $directory !== '.'; $directory = dirname($directory)) {
                     $passage[$directory] = true;
                 }
             }
-            foreach (array_keys($passage) as $directory) {
-                $rows[] = ['node_id' => $nodeId, 'argv' => ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', $directory]];
+        }
+        if ($served !== []) {
+            if ($passage !== []) {
+                $rows[] = ['node_id' => $nodeId, 'argv' => ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', ...array_keys($passage)]];
             }
-            foreach ($served as $path) {
-                $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', $path, '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:r-x', '--', '{}', '+']];
-                $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', $path]];
-            }
+            $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', ...array_keys($served), '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:r-x', '--', '{}', '+']];
+            $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', ...array_keys($served)]];
         }
 
         return $rows;
