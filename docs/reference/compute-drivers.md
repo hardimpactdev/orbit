@@ -49,39 +49,17 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. Every pin must equal the newest version across the release's archive, updates, and security pockets on every declared architecture. An older pin or one available only from today's rolling archive fails online validation.
 
-Ubuntu pins are version floors on installed machines. The same Debian package on the native architecture (or `all`) satisfies the recipe at the pinned version. A newer version also satisfies it when `dpkg --compare-versions` orders it above the pin and local APT policy confirms Ubuntu origin in the same release, updates, or security pocket. Convergence and base and role image verification use this rule. Plans and results label accepted newer packages `newer_than_recipe` and include both versions. Older or missing packages install the snapshot pin.
-
-A newer package from another release, a third-party source, or an unproved origin is refused before package changes; it is never downgraded. An installed version listed in any untrusted index is refused even if a trusted index also lists it or offers a newer candidate. Plans label it `unsupported_newer` with a `refusal` field naming `origin:<tool>`.
-
-APT policy must associate the installed version with a trusted Ubuntu index. Evidence can come from the normal sources, the refreshed generic Ubuntu pockets during application, or the cached recipe snapshot. The index's release metadata must name `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
-
-Rolling pocket indexes drop superseded builds. When the installed version appears only in dpkg status, convergence dates it by the earliest matching `install` or `upgrade` action in `/var/log/dpkg.log*`, including compressed rotations. Without an action, it uses the earliest `status installed` record for that version. Later trigger runs do not change the date. It must find that exact package version in a trusted index at `snapshot.ubuntu.com` at that time. A newer Ubuntu candidate alone is not proof.
-
-Snapshot checks use temporary sources and indexes without changing the system APT configuration or indexes. Each run caches indexes and failures by timestamp, including for the post-install assessment. A run permits at most three lookups by install timestamp, each with a 60-second update timeout. Refusals name the cause after `origin:<tool>`: `dpkg-log-missing`, `snapshot-unavailable`, `snapshot-unproved`, or `snapshot-lookup-limit`. Restore retained install logs for missing history. For other refusals, inspect the package's provenance and snapshot availability before retrying; the recipe does not downgrade an unproved build.
-
-There is a known fail-closed window between `apt update` and installation. If Ubuntu supersedes a build during that window, the snapshot at its install time can omit it. Convergence then refuses with `snapshot-unproved`, even for a real Ubuntu build. It does not infer provenance from a newer candidate or guess an earlier update time.
-
 Recipe installs use a temporary snapshot source and leave the normal Ubuntu sources in place, so unattended-upgrades can continue installing security updates. Application repairs the exact snapshot source file written by earlier Orbit convergence. It first saves that file beside the APT configuration as `ubuntu.sources.orbit-snapshot-backup`, then restores archive, updates, backports, and security sources with the Ubuntu archive keyring, and logs the repair through `logger` with the `orbit-recipe` tag. Other source content is preserved.
 
 Node convergence and image installs refuse Ubuntu downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
 The recipe pins both Ubuntu `docker.io` and `containerd` for Docker roles and the base image. Migration reads those pins rather than choosing a separate containerd version.
 
-Docker CE is not the recipe's Ubuntu `docker.io` provider. Convergence refuses it with `docker-provider:docker-ce` before planning or installing packages. It never stops containers to change providers, and it refuses Docker and containerd downgrades.
-
 An `artifact` tool has an `artifacts` object with exactly one key, `amd64`. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
-Git and `git-man` are exact Debian artifacts from Launchpad's `ppa:git-core/ppa`, built for the recipe's Ubuntu release. The `git.packages` list names the owned packages. Both belong to `common`, so every Node profile and task VM image gets the same build. The loader requires matching versions and SHA-256 pins for both packages. Convergence accepts the pinned build already installed, replaces an Ubuntu build after proving its origin, and refuses a different third-party build with `origin:git` or `origin:git-man`. The Ubuntu provenance rules for other tools stay unchanged.
-
-After verifying both installed package versions, convergence and image builds save their versions in root-owned `/etc/apt/orbit-git.json`. A later recipe pin may replace that recorded build. A missing, malformed, writable, or unowned receipt proves no ownership; an installed version that differs from its receipt still needs Ubuntu provenance or the current exact pin.
-
-Convergence backs up and removes git-core PPA entries for `resolute main`, including deb822 sources with inline signing keys. It preserves unrelated source entries and refuses mixed or unexpected git-core entries. Dry runs report `retire_git_source` and `pin_git` without writing. An Orbit APT preference permits only the pinned Git version, so unattended upgrades cannot introduce a second owner. The APT Tool Manager protects both packages from adoption and removal.
-
-Image builds refresh the snapshot indexes before assessing Git with the Ubuntu tools. Both installers retire the PPA before installation and publish the preference only after the install succeeds. Backups live in `/etc/apt/`, outside APT source directories. A source file with no remaining entries is removed.
-
-Installed binaries built from source package `git` but absent from `git.packages` are refused as `git-dependency:<package>` before Git source or package changes. This includes siblings such as `gitk` and `git-gui`, even at the pinned version. An operator must remove these unmanaged siblings before convergence; the recipe owns only its declared package set.
+Git and `git-man` are exact Debian artifacts from Launchpad's `ppa:git-core/ppa`, built for the recipe's Ubuntu release. The `git.packages` list names the owned packages. Both belong to `common`, so every Node profile and task VM image gets the same build. The loader requires matching versions and SHA-256 pins for both packages.
 
 PPAs delete superseded builds. The recipe-level `artifact_mirror` serves every external Debian artifact as `<package>_<digest>.deb`. The `php-build-mirror` release holds all these artifacts. `bin/php-build mirror` and its workflow skip assets already published. Each installer and the validator tries the mirror before the original URL. A transport failure permits fallback; an integrity failure stops the operation.
 
@@ -140,7 +118,7 @@ The base also holds `fcgiwrap` for a topology's `gateway` VM. It serves the topo
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership.
 
-Builder cloud-init declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. Before preparing either an Incus or UpCloud builder, the Gateway installs the pinned agent and calls `image.owner`. That command requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. This check runs before recipe packages or workspace volumes can use the account. Image smoke checks require the same IDs again.
+Builder cloud-init declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. The `check` phase of the image build requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. Image smoke checks require the same IDs again.
 
 ### PHP build
 
@@ -380,7 +358,7 @@ The `ci-runner` role selects the CI host recipe and replaces the recorded-profil
 
 #### Git from exact artifacts
 
-A live PPA would be a second owner of Git, and an exact APT version alone does not last, because Launchpad deletes superseded builds. The cost is that Orbit, not unattended-upgrades, delivers Git security fixes, so the daily `Git build watch` workflow signals each one for review.
+Tracking a live PPA would make it a second owner of Git, and an exact APT version alone does not last, because Launchpad deletes superseded builds. The cost is that Orbit, not unattended-upgrades, delivers Git security fixes, so the daily `Git build watch` workflow signals each one for review.
 
 ## Task VMs
 
@@ -419,8 +397,6 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 `incus.instance-images` reads the original image fingerprint of each instance.
 
 The image builder verifies the guest account before publication. Cloud-init uses the configuration disk on its first boot; publication needs no guest service ordering drop-in.
-
-`image.owner` verifies the fixed `orbit` UID and GID.
 
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
@@ -595,7 +571,7 @@ Each configured task VM host has one Gateway-owned package cache at `/var/lib/or
 
 Swamp fills the host cache from Node 209 over official SSH with the host's recorded host key. Each step runs the pinned agent's `package-cache.host` as one argv, `timeout 1530 sudo -n -- orbit-agent command package-cache.host`. The agent validates archive identities, downloads approved HTTPS URLs with checked redirects, checks lockfile integrity, enforces the byte budget and atomically records verified files and the inventory. No script or TypeScript runs on the host, and the host needs no Swamp worker. Guest mounting and seeding require their native Task parent steps.
 
-Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. The existing assessment owns version policy; Rust and Cargo must also report their pinned versions. Guest wrappers use the compiled agent contract to identify mutations: image owner, smoke and recipe verification reads receive only their declared inputs; mutations retain keyed effect receipts. Builder, smoke and seed boot observations stay pending until their own agent installation child succeeds. Only then does the Gateway probe cloud-init; real probe failures remain errors.
+Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. Rust and Cargo must also report their pinned versions. Guest wrappers use the compiled agent contract to identify mutations: smoke and recipe verification reads receive only their declared inputs; mutations retain keyed effect receipts. Builder, smoke and seed boot observations stay pending until their own agent installation child succeeds. Only then does the Gateway probe cloud-init; real probe failures remain errors.
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
 

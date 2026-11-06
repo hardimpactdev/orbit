@@ -632,7 +632,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and The native convergence result records the drift. |
 
-Commands that no Gateway or Swamp code calls leave the agent in small pull requests. The Gateway release, Doctor, image, Pi, sqlite, source transfer and source removal commands have left. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
+Commands that no Gateway or Swamp code calls leave the agent in small pull requests. The Gateway release, Doctor, image, Pi, sqlite, source transfer and source removal commands have left, and so have the firewall inspection, Metrics runtime and exporter, recipe apply and image owner commands. The last action commands leave with their Swamp ports; then one release ships the observer. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). `orbit self-update` itself replaces only the CLI.
 
 The rollout leaves out the Gateway's own Node. Gateway release runs leave its agent unchanged. Its CLI comes from the current release's `apps/cli`.
 
@@ -733,7 +733,7 @@ Moving source into named Python programs improved linting but kept source assemb
 
 The exact binary digest identifies the contract. Version ranges and compatibility commands would keep multiple implementations active. The frozen mismatch response lets a released agent refuse a newer command before understanding its name or input. The Gateway can then install the pinned implementation once.
 
-Ordinary commands run from their open executable and do not hold the update lock. Atomic replacement leaves them valid while an update proceeds. Holding the lock throughout a long deploy would block updates unnecessarily. Installers and final recipe verification take it exclusively, so verification cannot record a pin while it is being replaced.
+Ordinary commands run from their open executable and do not hold the update lock. Atomic replacement leaves them valid while an update proceeds. Holding the lock throughout a long deploy would block updates unnecessarily. Installers and `agent.configure` take it exclusively.
 
 ### Rust
 
