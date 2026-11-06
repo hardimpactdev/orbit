@@ -51,6 +51,7 @@ sequenceDiagram
   %%> - removes the NIC from each copy
   %%> Self-contained:
   %%> - a copy keeps its `.env`, `storage`, `bootstrap/cache` and database on its own disk and holds no checkout; every task VM mounts its own over NFS (stage 2)
+  %%> - its NFS mount names the export path that every task VM has, `/srv/checkout`, never a workspace path, so one set serves a task VM of any Project (decided by the orchestrator, for Nick's review, 2026-11-06)
   SW->>VM: Record the network<br/>incus config set
   %%> What it does:
   %%> - stores on each copy `user.ready.subnet`, `user.ready.hwaddr` and `user.ready.ipv4`, its role and the time; a task VM creates the network from the subnet

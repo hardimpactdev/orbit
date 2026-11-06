@@ -62,6 +62,7 @@
       - stats.pi.checksum == recipe.tools.pi.artifacts.amd64.sha256
       - stats['shape gate'].exists
       - ansible_facts.getent_passwd.orbit[1] == '1000' and ansible_facts.getent_passwd.orbit[2] == '1000'
+      - intent.nfs is none or check_exports.stdout_lines | select("match", nfs_export ~ "\\s") | list | length == 1
       - intent.nfs is none or intent.nfs.subnet in check_exports.stdout
     fail_msg: The task VM role is not at the pins of the recipe.
     quiet: true

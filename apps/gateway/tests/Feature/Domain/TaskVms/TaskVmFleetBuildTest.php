@@ -20,6 +20,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -177,5 +178,28 @@ it('renders the mount units of the shared checkout under the names the stage 2 a
         expect($unit['content'])->toContain('_netdev', "[Install]\nWantedBy=multi-user.target\n");
     }
     $nfs = collect($checkout['units'])->firstWhere('name', 'home-orbit-orbit.mount');
-    expect($nfs['content'])->toContain("What=10.232.2.1:/home/orbit/apps/orbit/workspace\n", "Where=/home/orbit/orbit\n", "Type=nfs\n");
+    expect($nfs['content'])->toContain("What=10.232.2.1:/srv/checkout\n", "Where=/home/orbit/orbit\n", "Type=nfs\n");
+});
+
+it('names no workspace path in the mount units, so the ready copies serve a task VM of any Project', function (): void {
+    $vm = fleetBuildWorld();
+    app()->instance(WebSocketClient::class, fleetBuildVault());
+    Instance::query()->where('task_workspace_owner_id', $vm->group_id)->update(['checkout_path' => '/home/orbit/apps/swamp-proof/workspace']);
+
+    $input = app(TaskVmFleetBuildIntent::class)->capture($vm);
+
+    expect($input['operator_checkout'])->toBe('/home/orbit/apps/swamp-proof/workspace');
+    foreach ($input['fleet']['checkout']['units'] as $unit) {
+        expect($unit['content'])->not->toContain('/home/orbit/apps/');
+    }
+});
+
+it('mounts the path where the task VM role exports every checkout', function (): void {
+    $role = Yaml::parseFile(base_path('../../swamp/ansible/task-vm-role.yml'))[0];
+    $nfs = Yaml::parseFile(base_path('../../swamp/ansible/tasks/task-vm-nfs.yml'));
+    $task = fn (string $name): array => collect($nfs)->firstWhere('name', $name);
+
+    expect($role['vars']['nfs_export'])->toBe(TaskVmFleetBuildIntent::ExportPath)
+        ->and($task('Bind the checkout at the export path')['ansible.builtin.copy']['content'])->toContain("What={{ intent.nfs.checkout }}\n", "Where={{ nfs_export }}\n", "Options=bind\n")
+        ->and($task('Export the checkout to the nested subnet')['ansible.builtin.copy']['content'])->toStartWith('{{ nfs_export }} ');
 });

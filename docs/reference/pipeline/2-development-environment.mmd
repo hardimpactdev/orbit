@@ -75,6 +75,10 @@ sequenceDiagram
   %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
   %%> - then the re-mint below and the apply step: migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
   %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - every task VM exports its checkout at one path, `/srv/checkout`: the converge of the provision (`Converge once`) binds the workspace checkout named by the provision intent there (a stock systemd bind mount) and exports that path; the ready copies mount `/srv/checkout`, so they hold no project path and serve a task VM of any Project
+  %%> - the fleet start adds no step: the path comes from the intent through the converge that already runs before it, and nothing else in the copies is project-specific (`.env`, Caddy roots and the nested Gateway's records use the fixed mount point `/home/orbit/orbit`)
+  %%> - copies saved before this mounted the proof Project's workspace path, so a task VM of Project 62 found no export (op 11916); their format is raised to 4, so they count as not usable until the next seed refresh saves new ones
   %%> Why:
   %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
   %%> - Incus turns a shared folder into 9p when memory snapshots are on, and QEMU cannot snapshot a VM with 9p mounted; NFS is network traffic, so snapshots work

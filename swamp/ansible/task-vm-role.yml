@@ -14,6 +14,8 @@
     profile: "{{ intent.profile | default('base') }}"
     orbit_user: orbit
     orbit_home: "/home/orbit"
+    # The one path where a task VM exports its checkout; the ready copies mount it (TaskVmFleetBuildIntent::ExportPath).
+    nfs_export: /srv/checkout
     vp_home: "/home/orbit/.local/share/vite-plus"
     apt_directory: /var/tmp/orbit-image-apt
     # Package downloads retry on a transient error of the snapshot service: four retries, 30 seconds apart (swamp-shape rule 6).

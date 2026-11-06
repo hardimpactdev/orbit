@@ -1,15 +1,40 @@
 ---
 # The task VM exports its checkout to the nested fleet and to nothing else.
 # intent.nfs is null on an image, which only holds the server; a task VM names its checkout, the nested subnet and the nested bridge.
+# The export has one path on every task VM (nfs_export): the checkout is bound there, so the ready copies mount the same path whatever the
+# Project, and no copy names a workspace path. A task VM keeps one checkout for its life, so the binding is written once and never moves.
 - name: Enable the NFS server
   ansible.builtin.systemd: { name: nfs-server.service, enabled: true, state: started }
 - name: Create the exports folder
   ansible.builtin.file: { path: /etc/exports.d, state: directory, owner: root, group: root, mode: "0755" }
+- name: Bind the checkout at the export path
+  when: intent.nfs is not none
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/srv-checkout.mount
+    content: |
+      [Unit]
+      Description=The workspace checkout at the path the nested fleet mounts
+      Before=nfs-server.service
+
+      [Mount]
+      What={{ intent.nfs.checkout }}
+      Where={{ nfs_export }}
+      Type=none
+      Options=bind
+
+      [Install]
+      WantedBy=local-fs.target
+    owner: root
+    group: root
+    mode: "0644"
+- name: Mount the checkout at the export path
+  when: intent.nfs is not none
+  ansible.builtin.systemd: { name: srv-checkout.mount, enabled: true, state: started, daemon_reload: true }
 - name: Export the checkout to the nested subnet
   when: intent.nfs is not none
   ansible.builtin.copy:
     dest: /etc/exports.d/orbit-checkout.exports
-    content: "{{ intent.nfs.checkout }} {{ intent.nfs.subnet }}(rw,async,no_subtree_check)\n"
+    content: "{{ nfs_export }} {{ intent.nfs.subnet }}(rw,async,no_subtree_check)\n"
     owner: root
     group: root
     mode: "0644"

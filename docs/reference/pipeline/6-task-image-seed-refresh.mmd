@@ -69,7 +69,8 @@ sequenceDiagram
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
     %%> - the refresh has no token step: every provision that starts a fleet renews the Swamp tokens of the nested Gateway (stage 2), so the age of the copies does not matter
-    %%> - the copies carry format 3: the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
+    %%> - format 3 put the control plan the renewal reads on the nested Gateway; copies of an older format than the current one are not used
+    %%> - the copies carry format 4: their NFS mount names the export path that every task VM has (`/srv/checkout`), not the refresh VM's workspace path, so one set serves a task VM of any Project; copies of format 3 named the proof Project's path and are not used
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
     SW->>VM: Stop the refresh VM<br/>its seed disk is complete
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):

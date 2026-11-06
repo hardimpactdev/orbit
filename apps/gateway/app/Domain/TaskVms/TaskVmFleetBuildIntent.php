@@ -36,8 +36,14 @@ final readonly class TaskVmFleetBuildIntent
     /** The bridge of the nested network: the first address of its subnet. */
     public const string Bridge = '10.232.2.1/24';
 
-    /** Where the guests mount the checkout of the outer VM, which exports the same path, and where their own state lives (stage 2). */
+    /** Where the guests mount the checkout of the outer VM, and where their own state lives (stage 2). */
     public const string CheckoutPath = '/home/orbit/orbit';
+
+    /**
+     * Where every task VM exports its checkout: the task VM role binds the workspace checkout there (`nfs_export` of `task-vm-role.yml`). One path
+     * for every Project, so the mount units of the ready copies name no workspace path and serve a task VM of any Project.
+     */
+    public const string ExportPath = '/srv/checkout';
 
     public const string StatePath = '/var/lib/orbit-checkout-state';
 
@@ -85,7 +91,7 @@ final readonly class TaskVmFleetBuildIntent
         return $this->build($vm, $guest, $this->club(), $workspace);
     }
 
-    /** The checkout of the workspace of the VM's group: the checkout the build reads on the VM, and the one its nested guests mount. */
+    /** The checkout of the workspace of the VM's group: the checkout the build reads on the VM; the nested guests mount it through the export path. */
     private function workspace(TaskVm $vm): string
     {
         $path = $vm->group_id === null ? null : Instance::query()->where('task_workspace_owner_id', $vm->group_id)->where('node_id', $vm->node_id)->value('checkout_path');
@@ -121,7 +127,7 @@ final readonly class TaskVmFleetBuildIntent
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
             'operator_checkout' => $workspace,
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'proof_network' => TaskVmReadyCopiesIntent::Subnet, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'proof_network' => TaskVmReadyCopiesIntent::Subnet, 'layout' => self::Layout, 'checkout' => $this->checkout()],
             'bootstrap' => ['fragment' => $this->fragment($workspace)],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
@@ -130,12 +136,12 @@ final readonly class TaskVmFleetBuildIntent
 
     /**
      * The mount units of the shared checkout, as systemd writes them for `/home/orbit/orbit` (stock NFS and bind mounts, the names the stage 2
-     * apply step starts): the NFS mount of the outer VM's export and a bind mount of each piece of state over it. They are network mounts
-     * (`_netdev`), which orders them after the NFS mount at boot, as the ready copies need.
+     * apply step starts): the NFS mount of the outer VM's export path, the same on every task VM, and a bind mount of each piece of state over
+     * it. They are network mounts (`_netdev`), which orders them after the NFS mount at boot, as the ready copies need.
      *
      * @return array{server:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
      */
-    private function checkout(string $workspace): array
+    private function checkout(): array
     {
         $server = explode('/', self::Bridge)[0];
         $units = [];
@@ -144,7 +150,7 @@ final readonly class TaskVmFleetBuildIntent
             $guest = TaskVmReadyCopiesIntent::Guests[$role];
             $units[] = ['guest' => $guest, 'name' => self::unitName(self::CheckoutPath), 'content' => implode("\n", [
                 '[Unit]', 'Description=Orbit checkout over NFS', 'After=network-online.target', 'Wants=network-online.target', '',
-                '[Mount]', "What={$server}:".$workspace, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
+                '[Mount]', "What={$server}:".self::ExportPath, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
                 '[Install]', 'WantedBy=multi-user.target', '',
             ])];
             $binds[$role] = [];
