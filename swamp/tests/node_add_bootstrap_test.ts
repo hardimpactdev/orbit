@@ -74,7 +74,7 @@ Deno.test("first host-key read bypasses worker pins, while later bootstrap conne
 });
 
 Deno.test("approved fingerprint gates bootstrap mutations and pins every enrolled-host connection", () => {
-    const approval = workflow.jobs.find((job) => job.name === "phase_1")!;
+    const approval = workflow.jobs.find((job) => job.name === "approval")!;
     assertEquals(approval.steps[0].name, "Require approved host key");
     assertEquals(approval.steps[0].task.type, "assert");
     assertEquals(
@@ -82,11 +82,11 @@ Deno.test("approved fingerprint gates bootstrap mutations and pins every enrolle
         'steps["Read the host key"].outputs.fingerprint == inputs.intent.bootstrap.fingerprint',
     );
     assertEquals(approval.dependsOn, [{
-        job: "phase_0",
+        job: "host_key",
         condition: { type: "succeeded" },
     }]);
     function requiresApproval(name: string): boolean {
-        if (name === "phase_1") return true;
+        if (name === "approval") return true;
         const job = workflow.jobs.find((candidate) => candidate.name === name)!;
         return (job.dependsOn ?? []).some((dependency) =>
             dependency.condition.type === "succeeded" &&
@@ -125,37 +125,51 @@ Deno.test("approved fingerprint gates bootstrap mutations and pins every enrolle
         }
     }
     assert(pinned > 0, "enrollment must pin its SSH hosts");
-    const pin = steps.find((step) => step.name === "Pin the bootstrap host")!;
-    const content = String(pin.task.inputs?.stdin).replace(/\s+/g, " ");
-    assertEquals(
-        content,
-        '${{ (inputs.intent.bootstrap.port == 22 ? inputs.intent.bootstrap.host : "["+inputs.intent.bootstrap.host+"]:"+string(inputs.intent.bootstrap.port))+" "+steps["Read the host key"].outputs.publicKey+"\\n"+inputs.intent.address+" "+steps["Read the host key"].outputs.publicKey+"\\n" }}',
-    );
-    assertEquals(
-        pin.task.globalArgs.hosts?.[0].transport?.hostKeys,
-        "${{ inputs.intent.control_ssh.target.host_keys }}",
-    );
 });
 
-Deno.test("bootstrap key guard skips grep success and leaves absence to append", () => {
-    // Swamp's truthy guard means already done, documented in execution-semantics.md.
-    assertEquals(
-        steps.find((step) => step.name === "Authorize the control key")!.guard,
-        '${{ steps["Read bootstrap keys-0"].outputs.exitCode == 0 }}',
+Deno.test("every Ansible phase is a bounded playbook run with pinned host keys and the shared environment", () => {
+    const phases = steps.filter((step) =>
+        String(step.task.inputs?.run ?? "").includes("ansible-playbook")
     );
+    assertEquals(
+        phases.map((step) => step.name),
+        [
+            "Set up the machine",
+            "Set up the tunnel",
+            "Add the peer",
+            "Install the Node agent",
+            "Configure DNS backend",
+            "Check the Node state",
+        ],
+    );
+    for (const step of phases) {
+        assert(
+            /^timeout [1-9][0-9]* \/opt\/orbit\/ansible\/venv\/bin\/ansible-playbook /.test(
+                String(step.task.inputs?.run),
+            ),
+            `${step.name} must run under a literal timeout`,
+        );
+        assertEquals(step.guard !== undefined, true, `${step.name} needs a guard`);
+        const env = step.task.inputs?.env as Record<string, string>;
+        assert(
+            env.ANSIBLE_SSH_ARGS.includes("UserKnownHostsFile=/tmp/orbit-ansible-"),
+            `${step.name} must use the per-run pins`,
+        );
+        assertFalse(
+            JSON.stringify(env).includes("accept-new") ||
+                JSON.stringify(env).includes("StrictHostKeyChecking=no"),
+        );
+    }
 });
 
-Deno.test("observer starts only after its declared environment group is created", () => {
-    const group = steps.find((step) => step.name === "Create observer group");
+Deno.test("the Gateway reads the end check and the cleanup removes the private files", () => {
+    const node = workflow.jobs.find((job) => job.name === "node")!;
+    assertEquals(node.steps.map((step) => step.name), ["Check the Node"]);
+    assertEquals(node.steps[0].task.type, "assert");
+    const cleanup = workflow.jobs.find((job) => job.name === "cleanup")!;
+    assertEquals(cleanup.steps.map((step) => step.name), ["Remove the playbook input"]);
     assertEquals(
-        group?.task.globalArgs.groupname,
-        "${{ inputs.intent.agent.environment_group }}",
-    );
-    assertEquals(group?.task.globalArgs.ensure, "present");
-    assertEquals(
-        workflow.jobs.find((job) => job.name === "phase_30")?.dependsOn?.map((
-            dependency,
-        ) => dependency.job),
-        ["observer_group"],
+        cleanup.dependsOn?.map((dependency) => dependency.job).sort(),
+        workflow.jobs.map((job) => job.name).filter((name) => name !== "cleanup").sort(),
     );
 });

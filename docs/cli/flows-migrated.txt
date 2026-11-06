@@ -30,6 +30,7 @@ metrics.disable
 metrics.enable
 metrics.exporter_disable
 metrics.exporter_enable
+node.add
 node.agent_rekey
 node.ssh_access_converge
 node.update

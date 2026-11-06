@@ -49,32 +49,44 @@ sequenceDiagram
   %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check the host key<br/>SSH argv · native assert
+  SW->>N: Read the host key<br/>SSH · first contact
   %%> Why first:
   %%> - first contact ignores the worker's known hosts, so nothing on the machine changes until the host key matches the approved fingerprint
-  SW->>N: Authorize the control key<br/>SSH argv
+  SW->>SW: Require approved host key<br/>native assert
+  SW->>N: Read the platform<br/>SSH argv
+  SW->>N: Read the bootstrap account<br/>SSH argv
+  %%> Linux machines:
+  %%> - the account tells where its authorized keys live; macOS skips this step
+  SW->>SW: Bind the Node identity<br/>native
   %%> What it does:
-  %%> - appends the Swamp control public key to the bootstrap account when it is absent
-  %%> - pins the machine's host key for the run
+  %%> - binds the observed host key into the frozen role, CLI and DNS plans
+  SW->>SW: Write the intent<br/>ansible-input
+  %%> Linux machines:
+  %%> - writes the admitted intent to a private run folder on the Swamp Node and ships the playbook; macOS runs no Ansible phase
+  SW->>SW: Write the private input<br/>0600 files from the vault
+  %%> Secrets:
+  %%> - the bootstrap key and the Node agent secret go to private files in the run folder; the cleanup step removes them, also after a failure
+  SW->>SW: Write the playbook input<br/>inventory · pinned host keys
+  %%> What it does:
+  %%> - builds the inventory and `known_hosts` from the intent and the observed host key; nothing is scanned and host key checking stays on
   SW->>N: Set up the machine<br/>Ansible phase: baseline
   %%> What it does:
+  %%> - pins the Node for later operations and appends the Swamp control public key to the bootstrap account when it is absent
   %%> - base packages, the managed account, a sudo rule that is validated before it replaces the old one, so no staged file stays, and the Orbit SSH keys
   %%> - the public recovery SSH rule, then the firewall
-  %%> Linux machines:
-  %%> - with `--platform=macos` the Linux steps are skipped and `opt --platform=macos` runs instead
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:
-  %%> - creates the WireGuard key, writes the tunnel files and starts the tunnel
-  %%> - sets the tunnel address and trusts the WireGuard members
+  %%> - creates the WireGuard key and requires its public key to be unique, before any tunnel change: two Nodes with the same public key cannot both be peers, and an existing hub must keep its peer-facing key
+  %%> - writes the tunnel files, starts the tunnel, sets the tunnel address and trusts the WireGuard members
   %%> Secrets:
   %%> - the private key stays in a key file on the Node; only the public key leaves it
-  SW->>SW: Require unique tunnel key<br/>native assert
-  %%> Why:
-  %%> - two Nodes with the same public key cannot both be peers
+  SW->>N: Read WireGuard public key<br/>SSH argv
+  %%> What it does:
+  %%> - hands the public key to the hub phase and to the Gateway
   opt Linux peer joins the VPN hub
     SW->>HUB: Add the peer<br/>Ansible phase: hub
     %%> What it does:
-    %%> - writes the peer entry and applies the hub peers
+    %%> - writes the peer entry, applies the hub peers and checks that the hub key did not change
     %%> - the hub peer stays after a failure; it is harmless and a rerun reuses it
   end
   SW->>N: Install the Node agent<br/>Ansible phase: agent
@@ -82,7 +94,7 @@ sequenceDiagram
   %%> - installs the pinned `orbit-agent` release, its configuration and the observer secret, and starts it
   SW->>N: Verify managed access<br/>SSH argv
   %%> What it does:
-  %%> - logs in as the managed user and runs a passwordless sudo command
+  %%> - logs in as the managed user over the tunnel; on Linux it runs the command with passwordless sudo
   opt eligible CLI plan
     SW->>N: Publish the Orbit CLI<br/>native child workflow
     %%> Best effort:
@@ -97,20 +109,30 @@ sequenceDiagram
     %%> - the `vpn` role also enables forwarding on the hub
   end
   opt DNS needs publication
+    SW->>HUB: Configure DNS backend<br/>Ansible phase: dns
+    SW->>HUB: Install DNS listener<br/>native child workflow
     SW->>N: Publish private DNS<br/>native child workflow
     %%> When:
     %%> - a new VPN hub needs its DNS listener first, or private DNS records need publication
   end
   opt --platform=macos
-    SW->>N: Verify managed SSH<br/>SSH argv
     SW->>N: Inspect the Mac tunnel<br/>SSH argv
     %%> What it does:
-    %%> - macOS runs the host key check, these two steps and a native check; it has no sudo check, no Ansible check phase and no handshake read
+    %%> - macOS runs the host key check, the platform read, the identity bind, the managed access check, this step and the native check
+    %%> - it has no Ansible phase, no sudo and no handshake read, so the input steps and the cleanup are skipped
   end
-  SW->>N: Check the Node<br/>Ansible phase: check
+  SW->>N: Check the Node state<br/>Ansible phase: check
   %%> What it does:
   %%> - the agent and its binary run, the observer secret is in place, and the tunnel handshakes with the hub; the hub itself is exempt
+  %%> - the phase waits up to 20 s for the first handshake
+  SW->>SW: Check the Node<br/>native assert
+  %%> What it does:
+  %%> - the managed login reaches the machine that the first login reached
+  %%> - on macOS, the tunnel address is up
   %%> - it is the one end check the Gateway reads
+  SW->>SW: Remove the playbook input<br/>cleanup
+  %%> When:
+  %%> - on Linux, always, also after a failure: the run folder holds the private files
   alt every step passes
     N-->>SW: arch · host key · WG key
     %%> Returns:

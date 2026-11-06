@@ -55,7 +55,7 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
                 'Read the host key' => 'node.ssh_host_key_scan_failed',
                 'Require approved host key' => 'node.ssh_host_key_mismatch',
                 'Read the bootstrap account' => 'node.bootstrap_account_unavailable',
-                'Verify managed SSH' => 'node.orbit_ssh_failed',
+                'Verify managed access' => 'node.orbit_ssh_failed',
                 default => 'node.enrollment_failed',
             };
             if (! $proven && ($data['status'] ?? null) === 'failed') {
@@ -99,7 +99,7 @@ final readonly class NativeNodeEnrollmentProjection implements DirectOperationPr
                     'error_code' => $data['error_code'] ?? 'node.enrollment_failed']);
             }
             $node->save();
-            if (NativeRunResult::stepStatus($raw, 'Install base packages-0') === 'succeeded') {
+            if (NativeRunResult::stepStatus($raw, 'Set up the machine') === 'succeeded') {
                 ToolManagerRecord::query()->updateOrCreate(['node_id' => $node->id, 'name' => ToolManagerName::Apt->value], ['status' => LifecycleStatus::Active]);
             }
             foreach (RouteExecutionProof::objects($plan['role_snapshots']) as $index => $snapshot) {
