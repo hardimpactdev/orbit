@@ -155,6 +155,12 @@ final class OperationRunBudgets
         'tool.update' => 1500,
     ];
 
+    /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a run the Gateway still allows. */
+    public static function longestFixedSeconds(): int
+    {
+        return max(array_filter(self::SecondsByKind, is_int(...)));
+    }
+
     /**
      * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the budget of the history. The workflow sets
      * it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the Operation. The Gateway does

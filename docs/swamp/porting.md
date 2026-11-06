@@ -137,7 +137,7 @@ A phase script may hold one fixed literal sleep shorter than a literal timeout, 
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live or disposable topology runs. State the sample size. |
 | Run budget | Every kind expires; a measured p95 with headroom wins. Otherwise 30 minutes until the first success, then 1.5× the longest success. `instance.create` has 60 s (PLAN: under 10 s; policy, not proof). |
-| Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
+| Enforcement | Serve `--max-run-duration` caps runs at the longest fixed budget in `OperationRunBudgets`. `SwampRoleUnits` renders it into the serve unit, and a flag beats `max-run-duration` in `.swamp/serve.yaml`, which the Gateway rewrites for triggers. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | No-run rows | Expire after 600 s but keep the lock until the exact native lookup by Operation id proves no run (L17-2300-OD1). Timeouts and transport errors prove nothing. |
 | Phase timeout | Each phase command starts with a literal `timeout <phase budget>`. On exit 124 the shared F1 projector renders `<step> timed out after <N>s`, with no wrapper or epilogue (OD2; pending, lane 16). A remote read may use per-host `timeoutSec` or `defaultTimeoutSec` (#2334). |
 | `queueTimeout` | Explicit on every step (guide rule 6), never the serve's 600 s default. A workflow value reaches every step; a job or step may override it. Keep it below the run budget. |
