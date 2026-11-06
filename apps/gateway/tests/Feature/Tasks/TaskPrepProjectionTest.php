@@ -205,7 +205,7 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
     $turn = static fn (int $tokens): array => ['shape_result' => ['result_json' => json_encode(['state' => 'done', 'metrics' => ['tokens' => $tokens]])]];
     $end = [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinutes(30)->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40),
+        'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40), 'findings' => 'Approved; runner tests pin the old file.',
             'author' => $turn(100), 'review_1' => $turn(20), 'review_2' => $turn(30)],
     ];
     // A park that counts its calls and is refused, as it is for a group that is not parkable yet.
@@ -226,7 +226,7 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
     $again = app(TaskPrepFixProjection::class)->apply($projected, $end);
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 2, 'park_refused' => 'tasks.park_refused'])
+        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 2, 'notes' => 'Approved; runner tests pin the old file.', 'park_refused' => 'tasks.park_refused'])
         ->and($parks->calls)->toBe(1)
         ->and($again->result)->toBe($projected->result)
         ->and([$author->refresh()->tokens, $reviews[0]->refresh()->tokens, $reviews[1]->refresh()->tokens])->toBe([100, 20, 30])

@@ -105,7 +105,9 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
             }
             $result = ['error_code' => $code, 'failed_step' => $step];
             if ($status === 'succeeded') {
-                $result = ['branch' => ValidatedData::string(ValidatedData::object($intent['publish'])['branch']), 'commit' => is_string($native['head'] ?? null) ? $native['head'] : null, 'rounds' => $rounds];
+                $result = ['branch' => ValidatedData::string(ValidatedData::object($intent['publish'])['branch']), 'commit' => is_string($native['head'] ?? null) ? $native['head'] : null, 'rounds' => $rounds,
+                    // The last review approved; its notes, such as runner tests the owner defers, stay readable here.
+                    'notes' => is_string($native['findings'] ?? null) ? mb_strcut($native['findings'], 0, 4000, 'UTF-8') : null];
             } elseif ($step === 'Review has no findings' && is_string($native['findings'] ?? null)) {
                 $result['findings'] = mb_strcut($native['findings'], 0, 4000, 'UTF-8');
             }

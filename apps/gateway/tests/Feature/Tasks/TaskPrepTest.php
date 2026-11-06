@@ -99,8 +99,18 @@ it('builds the prompts of the corrections around the review of the owner', funct
 
     expect($prompts->corrections($review))->toContain($review, 'ONE new commit', 'Never amend', 'not yours to make', $prompts->plan())
         ->and($prompts->reviewCorrections($review))->toContain($review, 'each correction that the owner asked for', $prompts->plan(), 'do not approve', 'origin/main..HEAD')
-        ->and($prompts->reviewCorrections($review))->toContain('Every case id that runs on the default branch', 'A defect copied from the reference text', 'reserves for a separate change or an owner decision')
-        ->and($prompts->review())->not->toContain('reserves for a separate change')
+        ->and($prompts->reviewCorrections($review))->toContain('Every case id that runs on the default branch', 'A defect copied from the reference text')
         ->and($prompts->corrections($review))->toContain('Keep every case that runs on the default branch', 'python3 -m unittest discover', 'Put no PR or issue number in the files')
         ->and($prompts->fixCorrections())->toContain('amend only your own corrections commit', 'Never amend or rewrite a commit that is already on the branch');
+});
+
+it('keeps the unit-test blocker in the first review and gives the corrections review one exception to it', function (): void {
+    $prompts = TaskPrepPrompts::for('firewall:allow');
+    $first = $prompts->review();
+    $corrections = $prompts->reviewCorrections('Finding 1.');
+
+    expect($first)->toContain('the author must name the failing tests as a blocker, which is a finding')
+        ->and($first)->not->toContain('One exception')
+        ->and($corrections)->toContain('the unit tests must pass. One exception: runner tests that fail only because they pin the old content of the cases file', 'are not a finding of this review', 'still judge the rest')
+        ->and($corrections)->not->toContain('as a blocker, which is a finding');
 });

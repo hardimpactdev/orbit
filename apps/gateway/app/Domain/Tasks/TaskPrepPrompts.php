@@ -70,11 +70,12 @@ final readonly class TaskPrepPrompts
     public function review(): string
     {
         return $this->reviewText('The spec is the commit at HEAD of this workspace. It holds three files:',
-            'Check that the commit holds these three files and nothing else.', '').$this->briefText(false);
+            'Check that the commit holds these three files and nothing else.', '',
+            'the unit tests must pass, or the author must name the failing tests as a blocker, which is a finding.').$this->briefText(false);
     }
 
     /** The one review prompt: a first review of the spec commit, or a review after corrections, which adds the owner's review. */
-    private function reviewText(string $scope, string $holds, string $extra): string
+    private function reviewText(string $scope, string $holds, string $extra, string $tests): string
     {
         return <<<TEXT
         You are an independent reviewer of the spec of the Orbit command `{$this->command}`. You did not write it. You edit no file.
@@ -88,7 +89,7 @@ final readonly class TaskPrepPrompts
 
         The author already ran `bin/check-flows`, `composer docs-build` and `composer docs-lint`. Run them again only to check a doubt.
 
-        Run `{$this->plan()}` yourself. It reads the cases file and runs no case. If it exits with anything but 0, that is a finding: quote the refusal line, and do not approve. Run no other proof than the plan and `python3 -m unittest discover -s swamp/proof/runner/tests`; the unit tests must pass, or the author must name the failing tests as a blocker, which is a finding.
+        Run `{$this->plan()}` yourself. It reads the cases file and runs no case. If it exits with anything but 0, that is a finding: quote the refusal line, and do not approve. Run no other proof than the plan and `python3 -m unittest discover -s swamp/proof/runner/tests`; {$tests}
 
         Also check each of these; a break is a finding. Every case id that runs on the default branch (`git show origin/main:<cases file>`) is still a case with the same batch, and none moved to `uncovered`. `fails_today` is not used for a step the runner refuses. Every behavior the page states as fact exists in the code or has a `fails_today` case. Behavior that is the same for every command is not charted, repeated or cased per command. A rule is said once per page, with a link to the family page. The chart status and header lines follow the skill. No file holds a PR or issue number. A defect copied from the reference text or the sibling is a finding, even though the sibling has it.
 
@@ -152,10 +153,11 @@ final readonly class TaskPrepPrompts
     /** The review of a round after the corrections: the same review as the first, plus whether each correction of the owner is applied. */
     public function reviewCorrections(string $review): string
     {
-        $extra = "This is a review after the owner asked for corrections. The first commit of the branch holds the spec; the commits after it are the corrections. Check with `git log --stat origin/main..HEAD` that the branch changes these three files and nothing else. Then check each correction that the owner asked for: it is applied, or the author's summary or the file gives a reason that a rule or a decision settles. A correction that needs another file or an owner decision may be left out. A requested correction left undone without a reason is a finding. A point that the review of the owner itself reserves for a separate change or an owner decision, such as a change of the runner unit tests that pin the old content of the cases file, is not a finding of this review: when the runner tests fail only because of such a pin, name them in your notes and still judge the rest.\n\nThe review of the owner:\n\n".$review."\n\n";
+        $extra = "This is a review after the owner asked for corrections. The first commit of the branch holds the spec; the commits after it are the corrections. Check with `git log --stat origin/main..HEAD` that the branch changes these three files and nothing else. Then check each correction that the owner asked for: it is applied, or the author's summary or the file gives a reason that a rule or a decision settles. A correction that needs another file or an owner decision may be left out. A requested correction left undone without a reason is a finding.\n\nThe review of the owner:\n\n".$review."\n\n";
 
         return $this->reviewText('The spec is the branch of this workspace, as it stands at HEAD. It holds three files:',
-            'Check that the branch changes these three files and nothing else.', $extra);
+            'Check that the branch changes these three files and nothing else.', $extra,
+            'the unit tests must pass. One exception: runner tests that fail only because they pin the old content of the cases file are not a finding of this review when the review of the owner defers that change to a separate decision. Name them in your notes and still judge the rest.');
     }
 
     /** The fix turn of a round after the corrections: it keeps the one corrections commit and never touches the pushed ones. */
