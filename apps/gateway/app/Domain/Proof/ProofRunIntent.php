@@ -73,7 +73,7 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
             // transaction, so a router teardown never sees a half-admitted proof.
-            $runs = app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly): array {
+            app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
                 $runs = [];
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
@@ -81,6 +81,9 @@ final readonly class ProofRunIntent
                         fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, reserveSlots: $reportOnly ? TaskVmPlacementPolicy::reportOnlyReserve() : 0));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
+
+                // The run list commits with the groups. A request that stops after the commit leaves a proof that names its runs.
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
 
                 return $runs;
             }));
@@ -91,7 +94,6 @@ final readonly class ProofRunIntent
 
             throw $exception;
         }
-        $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
 
         return $proof;
     }

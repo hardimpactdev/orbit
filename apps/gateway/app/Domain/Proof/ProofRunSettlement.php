@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -17,14 +18,20 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofRunSettlement
 {
+    /** The code of a proof whose runs never started because the request that admitted them stopped. */
+    public const string AdmissionInterrupted = 'proof.admission_interrupted';
+
     public function __construct(private OperationStore $store) {}
 
-    /** @return list<mixed> the runs the proof admitted: command, cases file, group and Operation of each */
-    public static function runs(Operation $proof): array
+    /**
+     * The runs of a proof: the `proof.command` Operations whose input names it. This is the one key of ownership. It does not depend on
+     * the run list in the proof, which a stopped request may never have written, and it never matches by commit, title or kind alone.
+     *
+     * @return Collection<int, Operation>
+     */
+    public static function children(int $proofId): Collection
     {
-        $runs = ValidatedData::object($proof->input)['runs'] ?? [];
-
-        return is_array($runs) ? array_values($runs) : [];
+        return Operation::query()->where('kind', ProofGroup::OwnerKind)->where('input->proof_operation_id', $proofId)->orderBy('id')->get();
     }
 
     public function settle(int $proofId): void
@@ -35,31 +42,29 @@ final readonly class ProofRunSettlement
                 return;
             }
             $input = ValidatedData::object($proof->input);
-            $runs = array_map(ValidatedData::object(...), self::runs($proof));
-            if ($runs === []) {
-                return;
-            }
-            $ids = array_map(static fn (array $run): int => ValidatedData::integer($run['operation_id']), $runs);
-            $children = Operation::query()->whereIn('id', $ids)->get()->keyBy('id');
-            if ($children->count() !== count($ids) || $children->contains(static fn (Operation $child): bool => ! $child->status->terminal())) {
+            $children = self::children($proofId);
+            if ($children->isEmpty() || $children->contains(static fn (Operation $child): bool => ! $child->status->terminal())) {
                 return;
             }
 
             $cases = [];
             $ran = false;
             $passed = true;
-            foreach ($runs as $index => $run) {
-                $child = $children->get($ids[$index]);
+            $interrupted = false;
+            foreach ($children as $child) {
                 $rows = self::cases($child);
-                $passed = $passed && $child instanceof Operation && $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
+                $passed = $passed && $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
                 $ran = $ran || array_any($rows, static fn (array $row): bool => ($row['verdict'] ?? 'unrun') !== 'unrun');
+                // A run that no Swamp run ever started, because the request that admitted it stopped, timed out unstarted.
+                $interrupted = $interrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
+                $childInput = ValidatedData::object($child->input);
                 // A run that ended with no record of its cases, such as one the Gateway timed out, is one unrun row.
-                $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $run['file'], 'command' => $run['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
+                $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
             }
 
             $this->store->change($proof, [
                 'status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
-                'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : 'proof.run_failed'),
+                'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : ($interrupted ? self::AdmissionInterrupted : 'proof.run_failed')),
                 'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null],
             ]);
         });

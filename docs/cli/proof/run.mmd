@@ -38,6 +38,14 @@ sequenceDiagram
   %%> - the flag goes when the proof CI becomes a required check
   %%> - a report-only VM is always a clone (it claims no ready slot), so a host of 6 slots, such as beast, takes one only when idle (one per idle host); a report-only proof of more commands fails at admission and the job goes red, which is acceptable for a job that is not required
   %%> - the reserve keeps one large VM free; a critical proof of several commands, which admits one large VM for each, can still be refused while report-only VMs run, and nothing queues
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06; cause found in the stall of proof.run 12343):
+  %%> - what happened: the `proof:run` request was killed while it admitted (activity `activity.interrupted`; it overlapped Gateway release 1737, which switches the code). The groups and the `proof.command` Operations were already committed, but the request died before it started their Swamp runs and before it wrote the run list into `proof.run`. The proof stayed `running` with `runs: []`; nothing watches a `proof.run` (it has no Swamp run), and the children expired unstarted at the 600 s admission limit. The admission lock, which the dead request still held, refused every other proof for 10 minutes (`ai_router.keys_busy`)
+  %%> - the runs of a proof are the `proof.command` Operations whose input names the proof (`proof_operation_id`); the Gateway reads, settles and cancels them by that key, never from a list in the proof and never by commit, title or kind
+  %%> - the run list is written inside the admission transaction, with the groups, so it commits with them
+  %%> - an admitted run that no Swamp run has started after 180 s expires (not 600 s) and cancels its group
+  %%> - the admission lock keeps its 600 s limit, which is longer than a request may run, so a request killed with no shutdown code holds it until then; a proof that meets it fails after 60 s with `ai_router.keys_busy`, visibly
+  %%> - a watchdog in the reconcile pass fails a `proof.run` that has no run 180 s after it started with `proof.admission_interrupted`, and closes a `proof.run` whose runs have all ended; so a proof either dispatches its runs, ends with that code, or shows its runs, and never sits at `runs: []`
+  %%> - there is no capacity wait to show: capacity is decided at admission and refused at once with `tasks.capacity_unavailable`; a run that waits unstarted was never handed to Swamp
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and mount<br/>ready copies · the commit
@@ -70,6 +78,7 @@ sequenceDiagram
   %%> Runs after success or failure, so no proof VM is left behind.
   %%> Built:
   %%> - the child `operation-task-cancel` with the input that the Gateway captured with the VM at admission; if it did not run or failed, the Gateway cancels the group the normal way, which destroys the VM
+  %%> - the Gateway cancels the group of a run with the trigger `proof-run`; a group is cancelled only through the Operation that owns it (its `proof.command`, or its image refresh with the trigger `image-refresh`)
   alt every case of every command passes
     SW-->>GW: Run succeeded<br/>verdicts + receipt
     Note over GW: Record the result once<br/>PASS

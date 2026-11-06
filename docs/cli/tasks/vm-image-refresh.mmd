@@ -77,5 +77,5 @@ sequenceDiagram
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the host keeps the image and the seed it had; the group is cancelled and the refresh VM destroyed
+    %%> - the host keeps the image and the seed it had; the group is cancelled with the trigger `image-refresh` (not `proof-run`, which the cancels of proof groups carry) and the refresh VM destroyed
   end

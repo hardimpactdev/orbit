@@ -22,13 +22,14 @@ final class CancelProofGroup implements ShouldQueue
 
     public int $backoff = 10;
 
-    public function __construct(public int $operationId)
+    /** @param string $trigger who cancels: the Activity trigger of the cancel, such as `proof-run` or `image-refresh` */
+    public function __construct(public int $operationId, public string $trigger = ProofGroup::Trigger)
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
 
     public function handle(ProofGroup $group): void
     {
-        $group->cancel(Operation::query()->findOrFail($this->operationId));
+        $group->cancel(Operation::query()->findOrFail($this->operationId), $this->trigger);
     }
 }

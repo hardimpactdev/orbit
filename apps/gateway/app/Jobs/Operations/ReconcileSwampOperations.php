@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Proof\ProofRunWatch;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -81,6 +82,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             }
         });
         $expire->releaseStaleHolds();
+        // A proof.run has no Swamp run, so no budget of its own: this ends one whose request stopped, and closes one whose runs have ended.
+        app(ProofRunWatch::class)->sweep();
         app(RoutePublicationHolds::class)->sweep();
     }
 
