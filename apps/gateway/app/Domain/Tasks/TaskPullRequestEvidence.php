@@ -59,6 +59,27 @@ final readonly class TaskPullRequestEvidence
 
             return $passed ? $target : throw new ResourceOperationException('tasks_pr.approval_missing', 'No review round passed this head.', 409, details: ['state' => 'round_missing']);
         }
+        $this->requireApproval($target, $head);
+
+        return $target;
+    }
+
+    /** The approval of a spec: the open pull request is a draft on the exact head, and in manual mode the latest review of the reviewer approves it. */
+    public function build(Task $group, string $head): TaskPullRequestTarget
+    {
+        $target = $this->target($group, $head, checks: false);
+        if (! $target->pull->draft) {
+            throw new ResourceOperationException('tasks_pr.not_draft', 'The pull request is not a draft, so the spec is not waiting for approval.', 409);
+        }
+        if ($group->review_mode === TaskReviewMode::Manual) {
+            $this->requireApproval($target, $head);
+        }
+
+        return $target;
+    }
+
+    private function requireApproval(TaskPullRequestTarget $target, string $head): void
+    {
         try {
             $reviews = $this->github->reviews($this->access->reviewsToken($target->repository), $target->repository, $target->number);
         } catch (GitHubApiException|GitHubReviewOverflowException $exception) {
@@ -68,8 +89,6 @@ final readonly class TaskPullRequestEvidence
         if ($gate !== PullRequestGateState::Approved) {
             throw new ResourceOperationException('tasks_pr.approval_missing', 'The reviewer has not approved this head.', 409, details: ['state' => $gate->value]);
         }
-
-        return $target;
     }
 
     /** A comment needs the open pull request on the exact head; the merge check does not matter. */

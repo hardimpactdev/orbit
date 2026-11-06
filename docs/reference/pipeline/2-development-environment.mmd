@@ -19,6 +19,8 @@ sequenceDiagram
   %%> - an external task group in `todo` and a free task VM host
   %%> Result:
   %%> - the full intent is recorded; the group is reserved
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - a parked prep group is admitted by the gate check when the owner approves its spec: the Gateway appends the implementation subtask, moves the group to `running` and starts `tasks.build`, which resumes the VM, syncs the refs and runs the first implementer turn
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof

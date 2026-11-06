@@ -48,6 +48,8 @@ final readonly class OperationKinds
 
     public const string TasksSync = 'tasks.sync';
 
+    public const string TasksBuild = 'tasks.build';
+
     public const string TasksPrReady = 'tasks.pr_ready';
 
     public const string TasksPrMerge = 'tasks.pr_merge';

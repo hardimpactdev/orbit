@@ -125,7 +125,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child.
+     * A provision holds its workspace in its own intent. A prep run, a proof run and an image refresh hold the intent of their provision child, and a build run the intent of its sync child.
      *
      * @return array<string,mixed>
      */
@@ -135,6 +135,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             'tasks.provision', 'tasks.package' => $operation->input,
             'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
             'tasks.sync' => $operation->input,
+            'tasks.build' => ValidatedData::object($operation->input['sync'] ?? []),
             default => throw $this->forbidden(),
         };
     }

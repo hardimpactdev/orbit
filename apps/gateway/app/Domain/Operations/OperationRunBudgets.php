@@ -123,6 +123,10 @@ final class OperationRunBudgets
         // `observe` step of `operation-task-turn` ends 5 minutes earlier (3,300 seconds) so the snapshots and the receipt still run.
         // Replace with the longest run x 1.5 once the history holds author turns.
         'tasks.turn' => 3600,
+        // No run yet. Basis: the task VM resume (about 90 s), the sync of the refs (about 2 minutes) and the first implementer turn, which
+        // the one-hour bound of `tasks.turn` limits, so 1 hour and 5 minutes, rounded to 75 minutes. Replace with the 14-day p95 after the
+        // first success.
+        'tasks.build' => 4500,
         // No run yet. Basis: a bare clone of one branch and a fetch of another (about 60 s for this repository), one bundle, one copy
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.

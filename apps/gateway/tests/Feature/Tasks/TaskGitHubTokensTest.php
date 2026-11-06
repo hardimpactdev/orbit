@@ -134,7 +134,11 @@ function cloneOperation(string $kind, array $overrides = [], string $source = 'g
     $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.fake()->numberBetween(1, 900)];
     $intent = [...['project_id' => $project->id, 'git_authorization' => $reference, 'workspace' => ['repository' => $project->repository_url]], ...$overrides];
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
-        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $kind === 'tasks.prep' ? ['provision' => $intent] : $intent]);
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => match ($kind) {
+            'tasks.prep' => ['provision' => $intent],
+            'tasks.build' => ['sync' => $intent],
+            default => $intent,
+        }]);
 
     return [$operation, $reference];
 }
@@ -160,7 +164,7 @@ it('mints the clone credential of a workspace when the clone step asks, and only
 
     expect($copies)->toBe(['git_authorization' => $reference])
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
-})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep'], 'a sync' => ['tasks.sync']]);
+})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep'], 'a sync' => ['tasks.sync'], 'a build run' => ['tasks.build']]);
 
 it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {
     $socket = tokenWorld();
