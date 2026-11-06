@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofRuleKind;
 use App\Domain\Proof\ProofSelection;
 use App\Domain\Proof\ProofSelectionList;
 use App\Domain\Shared\ResourceOperationException;
@@ -205,3 +206,34 @@ it('classifies every tracked path of the repository with the checked-in selectio
     $unmapped = array_values(array_filter($tracked, static fn (string $path): bool => $list->match($path) === null));
     expect($unmapped)->toBe([]);
 });
+
+it('maps the code of the firewall commands to them in the checked-in selection list', function (string $path, array $commands): void {
+    $root = dirname(base_path(), 2);
+    if (! is_file($root.'/swamp/proof/selection.txt')) {
+        $this->markTestSkipped('Needs the repository checkout.');
+    }
+    $rule = ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt'))->match($path);
+
+    expect($rule?->commands)->toBe($commands);
+})->with([
+    'the store action' => ['apps/gateway/app/Actions/Firewall/StoreFirewallRuleAction.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the route file' => ['apps/gateway/routes/api/firewall.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the controller' => ['apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the managed rule catalog' => ['apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the rule migration' => ['apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the allow CLI command' => ['apps/cli/app/Commands/Firewall/AllowFirewallRuleCommand.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the SDK request' => ['packages/php-sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+]);
+
+it('keeps the router LAN ingress code out of the firewall commands', function (string $path): void {
+    $root = dirname(base_path(), 2);
+    if (! is_file($root.'/swamp/proof/selection.txt')) {
+        $this->markTestSkipped('Needs the repository checkout.');
+    }
+    $rule = ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt'))->match($path);
+
+    expect($rule?->kind)->toBe(ProofRuleKind::Skip);
+})->with([
+    'the domain policy' => ['apps/gateway/app/Domain/Firewall/RouterLanIngressPolicy.php'],
+    'the native reconciler' => ['apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php'],
+]);
