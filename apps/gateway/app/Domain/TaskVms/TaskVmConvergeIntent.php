@@ -9,6 +9,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
@@ -30,6 +31,33 @@ final readonly class TaskVmConvergeIntent
             || $guest->status !== LifecycleStatus::Active || $guest->ssh_host_key === null) {
             throw new ResourceOperationException('task_vm.converge_refused', 'A converge needs the ready VM and its active guest identity with its recorded host key.', 409);
         }
+
+        return $this->build($vm, $guest, $nfs);
+    }
+
+    /**
+     * The same intent for a VM that a run is still provisioning, as the refresh of a task image captures it at its
+     * admission. The caller wraps the call in {@see PendingSshHostKey::during()}: the run pins the guest key.
+     *
+     * @param  array{checkout:string,subnet:string,interface:string}|null  $nfs
+     * @return array<string,mixed>
+     */
+    public function provisioning(TaskVm $vm, ?array $nfs): array
+    {
+        $guest = $vm->node;
+        if (! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit') {
+            throw new ResourceOperationException('task_vm.converge_refused', 'A converge needs the guest identity of its VM.', 409);
+        }
+
+        return $this->build($vm, $guest, $nfs);
+    }
+
+    /**
+     * @param  array{checkout:string,subnet:string,interface:string}|null  $nfs
+     * @return array<string,mixed>
+     */
+    private function build(TaskVm $vm, Node $guest, ?array $nfs): array
+    {
         $architecture = MachineRecipe::architecture($guest->architecture)
             ?? throw new ResourceOperationException('task_vm.converge_refused', 'The guest architecture is unsupported.', 409);
         $recipe = $this->recipes->currentRecipe();

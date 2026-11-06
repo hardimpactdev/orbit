@@ -88,7 +88,7 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
 
-`task_vm.seed_refresh` has a provisional 3,600 seconds. Two live runs on beast, with the host at load 5 to 9, took 7 minutes 31 seconds and 10 minutes 2 seconds. The proof reset is most of it. The host steps are bounded at 340 to 1,710 seconds each, and a loaded host stretches the reset and the boot checks. The budget is one hour. A 14-day p95 replaces it after the first successes.
+`task_vm.image_refresh` has a provisional 7,200 seconds, the serial children of the run with margin: the provision of a task VM with its nested fleet (3,900), the converge (3,300; a VM at its pins takes about a minute), the ready copies (3,600; about ten minutes in practice) and the clean, publication, boot check and promotion (a few minutes each). A 14-day p95 replaces it after the first successes.
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 

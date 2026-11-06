@@ -1,0 +1,243 @@
+id: 43a8f3b8-1450-49c5-857b-a4f63fe226d3
+name: operation-task-vm-image-refresh
+description: >-
+  Refresh the task image and the topology seed of one task VM host (stage 6 of the command development pipeline) in one run from full inputs on 209. A refresh VM starts from the current image and seed as any task VM does, converges to the release, saves the nested fleet as ready copies, and is cleaned and published as the new image. The new image and its seed are promoted under the host lock and the old ones stay as `-previous`. No step calls the Gateway; the Gateway cancels the group of the run afterwards, which destroys the refresh VM.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: task_vm.image_refresh}
+    intent:
+      type: object
+      properties:
+        provision: {type: object}
+        refresh: {type: object}
+      required: [provision, refresh]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*|swamp-proof-club-api-key)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: refresh
+  labels: {role: swamp}
+  steps:
+  - name: Create the VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: tasks.provision
+        intent: ${{ inputs.intent.provision }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  # The guests' host keys are pinned only by the VM step; the converge and ready copies intents carry `host_keys: null` until here.
+  - name: Pin the VM
+    labels: {role: swamp}
+    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: image-refresh-pin
+      methodName: pin
+      inputs:
+        receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
+        guest_node_id: '${{ inputs.intent.provision.guest_node_id }}'
+        intents: '${{ {"converge": inputs.intent.refresh.converge, "ready_copies": inputs.intent.refresh.ready_copies} }}'
+  # The image playbooks on the outer VM; the same run as stage 2 and the proof CI. A VM at the pins reports no change.
+  - name: 'Converge once'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-converge
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.provision.guest_node_id }}
+        kind: task_vm.converge
+        intent: '${{ steps["Pin the VM"].outputs.converge }}'
+        execution_secrets: '${{ {} }}'
+  # Stops the nested VMs and copies them into the seed disk as key-free ready copies, then boot-checks them.
+  - name: 'Save the ready copies'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Converge once', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-ready-copies
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.intent.provision.guest_node_id }}
+        kind: task_vm.ready_copies
+        intent: '${{ steps["Pin the VM"].outputs.ready_copies }}'
+        execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
+  # One clean step for the refresh VM and for the image build: nothing of this VM's identity reaches the image. It ends with a clean stop.
+  - name: 'Clean the refresh VM'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Save the ready copies', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-image-clean
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: task_vm.image_refresh
+        intent: '${{ {"host_ssh_execution": inputs.intent.refresh.host_ssh_execution, "vm": inputs.intent.refresh.vm, "enrolled": true, "nested": inputs.intent.refresh.ready_copies.fleet} }}'
+        execution_secrets: '${{ {} }}'
+  - name: 'Publish the image'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Clean the refresh VM', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-publish").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-publish").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'publish', '${{ inputs.intent.refresh.vm.name }}', '--alias', '${{ inputs.intent.refresh.names.candidate_alias }}', '--reuse'], timeoutSec: 960}
+  - name: 'Read the fingerprint'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Publish the image', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-fingerprint").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-fingerprint").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'incus --project "$1" image info -- "$2" | sed -n ''s/^Fingerprint: //p''', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.names.candidate_alias }}'], timeoutSec: 60}
+  - name: 'Start the check VM'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Read the fingerprint', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-init").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-init").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'init', '--vm', '-c', 'limits.cpu=2', '-c', 'limits.memory=4GiB', '-n', '${{ inputs.intent.refresh.check.network }}', '--', '${{ steps["Read the fingerprint"].outputs.stdout.split("\n")[0] }}', '${{ inputs.intent.refresh.names.check_vm }}'], timeoutSec: 300}
+  - name: 'Boot the check VM'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the check VM', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-boot").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-boot").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'incus --project "$1" start "$2" && incus --project "$1" wait "$2" agent --timeout 180', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.names.check_vm }}'], timeoutSec: 240}
+  - name: 'Check the image'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Boot the check VM', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-image").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-check-image").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'exec', '${{ inputs.intent.refresh.names.check_vm }}', '--', 'sh', '-c', 'test ! -e /etc/wireguard/orbit.key && test ! -d /etc/orbit/agent && test ! -e /home/orbit/.pi/agent/orbit-token && test ! -e /home/orbit/.config/swamp/club-api-key && test -x /usr/bin/incus && test -d /var/lib/incus'], timeoutSec: 60}
+  - name: 'Copy the seed'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Check the image', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-copy").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-copy").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock', 'incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'storage', 'volume', 'copy', '${{ inputs.intent.refresh.vm.pool + "/" + inputs.intent.refresh.vm.seed_volume }}', '${{ inputs.intent.refresh.vm.pool + "/" + inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12) }}'], timeoutSec: 700}
+  - name: 'Detach the seed'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Copy the seed', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-promote").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-promote").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'zfs promote "$(incus storage get "$2" zfs.pool_name)/custom/${1}_$3"', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.vm.pool }}', '${{ inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12) }}'], timeoutSec: 300}
+  - name: 'Promote the image'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Detach the seed', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-promote").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-promote").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock', 'sh', '-c', 'set -eu
+project=$1 alias=$2 previous=$3 candidate=$4 fingerprint=$5
+incus --project "$project" image alias delete -- "$previous" 2>/dev/null || true
+incus --project "$project" image alias rename -- "$alias" "$previous"
+if ! incus --project "$project" image alias create -- "$alias" "$fingerprint"; then
+  incus --project "$project" image alias rename -- "$previous" "$alias"
+  exit 1
+fi
+incus --project "$project" image alias delete -- "$candidate"', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.names.alias }}', '${{ inputs.intent.refresh.names.previous_alias }}', '${{ inputs.intent.refresh.names.candidate_alias }}', '${{ steps["Read the fingerprint"].outputs.stdout.split("\n")[0] }}'], timeoutSec: 700}
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn: [{job: refresh, condition: {type: completed}}]
+  steps:
+  - name: 'Remove the check VM'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-check").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-check").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'delete', '--force', '${{ inputs.intent.refresh.names.check_vm }}'], okExitCodes: any, timeoutSec: 120}
+  - name: 'Remove the leftovers'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !("Promote the image" in steps && "outputs" in steps["Promote the image"] && steps["Promote the image"].outputs.exitCode == 0) }}'
+    dependsOn: [{step: 'Remove the check VM', condition: {type: completed}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-leftovers").split(".").join("-") }}'
+      methodName: exec
+      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-leftovers").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'project=$1 pool=$2 candidate=$3 seed=$4
+incus --project "$project" image delete -- "$candidate" || true
+[ -z "$seed" ] || incus --project "$project" storage volume delete "$pool" "$seed" || true', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.vm.pool }}', '${{ inputs.intent.refresh.names.candidate_alias }}', '${{ ("Read the fingerprint" in steps && "outputs" in steps["Read the fingerprint"]) ? (inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12)) : "" }}'], timeoutSec: 300}
+- name: check
+  labels: {role: swamp}
+  dependsOn: [{job: refresh, condition: {type: succeeded}}, {job: cleanup, condition: {type: succeeded}}]
+  steps:
+  # The image booted without the identity of the refresh VM, the fingerprint is a full one, and the promotion moved the alias.
+  - name: Check the refresh
+    labels: {role: swamp}
+    task:
+      type: assert
+      expr: 'steps["Check the image"].outputs.exitCode == 0 && steps["Read the fingerprint"].outputs.stdout.split("\n")[0].size() == 64 && steps["Promote the image"].outputs.exitCode == 0 && steps["Remove the check VM"].outputs.exitCode == 0'
+      severity: high
+      message: The task image is not refreshed; the clean, the boot check or the promotion did not pass.

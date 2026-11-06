@@ -389,16 +389,11 @@ export const behavior = {
         },
         pin: {
             description:
-                "Pin the guest targets of the intents of a prep run to the host key the VM step observed",
+                "Pin the guest targets of the named intents of a run (prep, image refresh) to the host key the VM step observed",
             arguments: z.object({
                 receipt: z.string(),
                 guest_node_id: z.number().int().positive(),
-                intents: z.object({
-                    draft: z.unknown(),
-                    fix: z.unknown(),
-                    reviews: z.array(z.unknown()),
-                    publish: z.unknown(),
-                }),
+                intents: z.record(z.string(), z.unknown()),
             }),
             execute: (
                 args: {

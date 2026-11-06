@@ -12,8 +12,8 @@ use App\Models\Node;
  *
  * - `orbit-topology-seed-<12 hex>`: the topology seed of the base image with that fingerprint. The image build creates
  *   it as `orbit-topology-seed-<12 hex>-new` and renames it when it is finished, and pruning deletes it with its image.
- *   A seed refresh builds the next seed as `-refresh`, the clone that its builder VM boots with, and promotes it by
- *   renaming: the old seed becomes `-previous` for one refresh, and the clone takes the seed name.
+ *   An image refresh copies the seed disk of its refresh VM to the seed name of the new image, so the old seed keeps its own
+ *   name with the old image. Volumes that earlier refreshes left as `-refresh` or `-previous` are still owned, and pruned with their image.
  * - `tvm-<id>-topology-seed`: the clone of its base image's topology seed that a VM whose size runs a topology boots
  *   with. It goes with the VM.
  *
@@ -27,6 +27,9 @@ final readonly class TaskVmVolumes
     /** The size of every topology seed. ZFS volumes are thin, so a clone uses only what its Nodes write. */
     public const string SeedSize = '45GiB';
 
+    /** The start of the name of every topology seed. */
+    public const string SeedPrefix = 'orbit-topology-seed-';
+
     private const string Clone = '/\A(tvm-[0-9]+)-topology-seed\z/D';
 
     private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?\z/D';
@@ -36,25 +39,13 @@ final readonly class TaskVmVolumes
     /** The topology seed of the base image `$fingerprint`. */
     public static function seed(string $fingerprint): string
     {
-        return 'orbit-topology-seed-'.substr($fingerprint, 0, 12);
+        return self::SeedPrefix.substr($fingerprint, 0, 12);
     }
 
     /** The name a topology seed has while the image build creates it. */
     public static function newSeed(string $fingerprint): string
     {
         return self::seed($fingerprint).'-new';
-    }
-
-    /** The name of the clone that a seed refresh builds the next seed in. */
-    public static function refreshSeed(string $fingerprint): string
-    {
-        return self::seed($fingerprint).'-refresh';
-    }
-
-    /** The name the replaced seed keeps until the next refresh. */
-    public static function previousSeed(string $fingerprint): string
-    {
-        return self::seed($fingerprint).'-previous';
     }
 
     /**

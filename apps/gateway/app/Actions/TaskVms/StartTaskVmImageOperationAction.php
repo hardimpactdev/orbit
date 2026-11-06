@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -36,10 +37,9 @@ final readonly class StartTaskVmImageOperationAction
         if ($existing !== null) {
             return $existing;
         }
-        if (Operation::query()->where('kind', 'task_vm.seed_refresh')->where('target_type', 'task_vm_host')->where('target_id', $build->host_node_id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+        if (TaskVmImageRefreshIntent::open($build->host_node_id) instanceof Operation) {
             // The caller's transaction rolls the build row back; the scheduler tries again after the refresh.
-            throw new TaskVmException('task_vm.image_build_running', 'A seed refresh is running on this host. The image build starts after it ends.', 409);
+            throw new TaskVmException('task_vm.image_build_running', 'An image refresh is running on this host. The image build starts after it ends.', 409);
         }
         $host = $this->settings->host($build->host_node_id);
         $node = $build->hostNode;

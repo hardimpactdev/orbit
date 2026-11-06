@@ -91,11 +91,11 @@ final class OperationRunBudgets
         // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
         // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
         'task_vm.ready_copies' => 3600,
-        // No successful run yet. Basis: two live runs on beast with the host at load 5 to 9, 7 min 31 s and 10 min 2 s. The host
-        // steps are bounded by 340 s (cleanup), 640 s (clone), 310 s (start), 310 s (fetch), 910 s (dependencies),
-        // 610 s (copies), 910 s (check), 210 s (stop) and 410 s (promote). A loaded host stretches the boot checks, so the
-        // budget is 1 h, not 2 x the longer run. Replace with the 14-day p95 after the first successes.
-        'task_vm.seed_refresh' => 3600,
+        // No run yet. Basis: the provision of a task VM with its nested fleet (tasks.provision, 3,900 s), the converge (3,300 s at its
+        // step bounds; a VM at its pins takes a minute), the ready copies (3,600 s at their step bounds, about 10 min in practice), the
+        // clean, the publication of the image and its boot check (a few minutes each), plus margin. Replace with the 14-day p95 after
+        // the first successes.
+        'task_vm.image_refresh' => 7200,
         'task_vm.sweep_host' => 600,
         'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,

@@ -6,6 +6,7 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -50,6 +51,29 @@ final readonly class TaskVmReadyCopiesIntent
             throw new ResourceOperationException('task_vm.ready_copies_unavailable', 'Saving ready copies needs the proof Swamp Club key.', 409);
         }
 
+        return $this->build($vm, $guest, $club);
+    }
+
+    /**
+     * The same intent for a VM that a run is still provisioning, as the refresh of a task image captures it at its
+     * admission. The caller wraps the call in {@see PendingSshHostKey::during()}: the run pins the guest key.
+     *
+     * @return array<string,mixed>
+     */
+    public function provisioning(TaskVm $vm): array
+    {
+        $guest = $vm->node;
+        $club = config('swamp.proof_club_api_key');
+        if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null || ! is_string($club) || trim($club) === '') {
+            throw new ResourceOperationException('task_vm.ready_copies_unavailable', 'Saving ready copies needs an Incus VM with its guest and the proof Swamp Club key.', 409);
+        }
+
+        return $this->build($vm, $guest, $club);
+    }
+
+    /** @return array<string,mixed> */
+    private function build(TaskVm $vm, Node $guest, string $club): array
+    {
         return [
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
