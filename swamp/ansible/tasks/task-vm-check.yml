@@ -33,6 +33,12 @@
   ansible.builtin.command: { argv: [exportfs, -s] }
   register: check_exports
   changed_when: false
+- name: Read the binding of the checkout
+  when: intent.nfs is not none
+  ansible.builtin.command: { argv: [findmnt, --noheadings, --output, TARGET, --mountpoint, "{{ nfs_export }}"] }
+  register: check_bind
+  changed_when: false
+  failed_when: false
 - name: Check the role
   vars:
     installed: "{{ ansible_facts.packages }}"
@@ -64,5 +70,6 @@
       - ansible_facts.getent_passwd.orbit[1] == '1000' and ansible_facts.getent_passwd.orbit[2] == '1000'
       - intent.nfs is none or check_exports.stdout_lines | select("match", nfs_export ~ "\\s") | list | length == 1
       - intent.nfs is none or intent.nfs.subnet in check_exports.stdout
+      - intent.nfs is none or check_bind.rc == 0
     fail_msg: The task VM role is not at the pins of the recipe.
     quiet: true

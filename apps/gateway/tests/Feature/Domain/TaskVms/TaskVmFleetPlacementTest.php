@@ -193,6 +193,13 @@ it('gives the nested fleet only to the Orbit Project, known by its repository an
         ->and($seeds->forProject($project(46, 'https://github.com/hardimpactdev/swamp-proof-fixture.git')))->toBeFalse();
 });
 
+it('counts the Project of the proof and the image refresh as Orbit, so the refresh builds and saves a fleet', function (): void {
+    $project = Project::query()->forceCreate(['id' => config('proof.project'), 'name' => 'orbit', 'slug' => 'orbit',
+        'repository_url' => 'https://github.com/'.config('proof.repository').'.git', 'default_branch' => 'main', 'root' => 'public']);
+
+    expect(app(TaskVmFleetSeed::class)->forProject($project))->toBeTrue();
+});
+
 it('places a large VM of another Project without usable copies, because it gets no nested fleet', function (): void {
     [$beast] = fleetPlacementHosts(beastMax: 6, sharkMax: 6);
 
@@ -205,6 +212,6 @@ it('skips the fleet steps of the provision for a task whose Project is not Orbit
     $steps = collect(Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-task-provision.yaml'))['jobs'])->flatMap(fn (array $job): array => $job['steps']);
 
     foreach (['Find the fleet guest', 'Look for ready copies', 'Start the nested fleet'] as $name) {
-        expect($steps->firstWhere('name', $name)['guard'])->toContain('!inputs.intent.orbit_project');
+        expect($steps->firstWhere('name', $name)['guard'])->toContain('|| !has(inputs.intent.orbit_project) || !inputs.intent.orbit_project');
     }
 });

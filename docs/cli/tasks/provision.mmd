@@ -58,6 +58,8 @@ sequenceDiagram
     %%> Why:
     %%> - the image may predate these phases; a VM at the pins reports no change
     SW->>VM: Find the fleet guest<br/>its address and host key
+    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+    %%> - this step, the look for ready copies and the fleet start run only for a task of the Orbit Project (`orbit_project` in the intent, from the Project's repository): the fleet runs Orbit from the checkout; another Project's VM records `nested_fleet: none`
     %%> What it does:
     %%> - the behavior `tp-data-guest-fleet` reads the guest's SSH target from the VM step, as the fleet child does
     SW->>VM: Look for ready copies<br/>current format only
