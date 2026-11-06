@@ -35,10 +35,16 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>task #5140
   SW->>H: Create and prepare the VM<br/>launch · WireGuard · Pi server
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
+  %%> Private dependencies:
+  %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` and the `.npmrc` of the task account from it, mode 0600
+  %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
+  %%> - a cancelled or timed-out run keeps them until the token expires, within the hour, or until `tasks:cancel` removes the VM
+  %%> - the token is minted for these steps only, reads the repositories that the GitHub App installation covers, and expires within the hour
+  %%> - when the App cannot supply a token, both files hold an empty configuration and setup runs without private access
   %%> The clone credential:
   %%> - the first step asks the Gateway for it (`operation:direct:github-token`, `purpose: clone`), not admission: the VM step before it can wait for capacity for longer than the hour an installation token lives
   %%> - the Gateway writes a read-only Git authorization header, or an empty value for a repository the App does not cover, to the vault key that admission named
-  %%> - no task VM holds a GitHub credential: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
+  %%> - the clone credential never reaches the VM, and the VM holds no other, outside the setup token files above: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
   opt the task declares a topology
