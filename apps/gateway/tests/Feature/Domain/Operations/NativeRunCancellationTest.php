@@ -6,15 +6,17 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOperations;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Operations\CancelNativeRun;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -76,12 +78,87 @@ it('asks Swamp to cancel the timed out runs of a group that ends', function (): 
     Queue::assertPushed(CancelNativeRun::class, 2);
 });
 
-it('posts the cancellation of the run to Swamp from the queue', function (): void {
-    config(['swamp.run_token' => 'token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
-    Http::fake(['https://swamp.orbit/*' => Http::response([], 200)]);
+/** A run-token connection that answers a `workflow.cancel` request with the frame the test names. */
+function cancelSocket(array $reply): WebSocketClient
+{
+    $socket = new class($reply) implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        public array $frames = [];
+
+        public ?WebSocketEndpoint $endpoint = null;
+
+        private bool $open = false;
+
+        /** @param array<string,mixed> $reply */
+        public function __construct(private readonly array $reply) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->endpoint = $endpoint;
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+
+            return $frame === false ? [] : [['id' => $frame['id'], ...$this->reply]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
+
+    return $socket;
+}
+
+it('asks Swamp to cancel the run with a workflow.cancel request on the run token', function (): void {
+    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancellation_requested']]]);
     $operation = runningScript();
 
     (new CancelNativeRun($operation->id))->handle(app(CancelSwampRun::class));
 
-    Http::assertSent(fn ($request): bool => $request->url() === 'https://swamp.orbit/api/v1/cancel/workflow-run/'.RUN);
+    expect($socket->frames)->toHaveCount(1)
+        ->and($socket->frames[0]['type'])->toBe('workflow.cancel')
+        ->and($socket->frames[0]['payload']['runId'])->toBe(RUN)
+        ->and($socket->endpoint?->bearerToken)->toBe('run-token')
+        ->and($socket->isConnected())->toBeFalse();
+});
+
+it('accepts a cancel that already settled the run', function (): void {
+    cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancelled']]]);
+
+    app(CancelSwampRun::class)->execute(runningScript());
+
+    expect(true)->toBeTrue();
+});
+
+it('reports swamp.cancel_unavailable when Swamp answers with an error', function (): void {
+    cancelSocket(['type' => 'error', 'error' => ['code' => 'workflow_cancel_failed', 'message' => 'No cancellable run']]);
+
+    expect(fn () => app(CancelSwampRun::class)->execute(runningScript()))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'swamp.cancel_unavailable');
+});
+
+it('reports swamp.cancel_unavailable without a bound run and sends nothing', function (): void {
+    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => []]]);
+
+    expect(fn () => app(CancelSwampRun::class)->execute(runningScript(null)))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'swamp.cancel_unavailable')
+        ->and($socket->frames)->toBe([]);
 });
