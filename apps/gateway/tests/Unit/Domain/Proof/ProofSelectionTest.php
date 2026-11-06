@@ -207,33 +207,62 @@ it('classifies every tracked path of the repository with the checked-in selectio
     expect($unmapped)->toBe([]);
 });
 
-it('maps the code of the firewall commands to them in the checked-in selection list', function (string $path, array $commands): void {
-    $root = dirname(base_path(), 2);
-    if (! is_file($root.'/swamp/proof/selection.txt')) {
-        $this->markTestSkipped('Needs the repository checkout.');
-    }
-    $rule = ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt'))->match($path);
+const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
 
-    expect($rule?->commands)->toBe($commands);
+/** The family directories whose every file implements the firewall commands; the router LAN ingress files are the exception. */
+const FIREWALL_DIRECTORIES = [
+    'apps/gateway/app/Actions/Firewall/',
+    'apps/gateway/app/Data/Firewall/',
+    'apps/gateway/app/Domain/Firewall/',
+    'apps/gateway/app/Http/Requests/Firewall/',
+    'apps/gateway/app/Infrastructure/Firewall/',
+    'apps/cli/app/Commands/Firewall/',
+    'packages/php-sdk/src/Requests/Firewall/',
+    'packages/php-sdk/src/Responses/Firewall/',
+];
+
+function firewallSelectionList(): ?ProofSelectionList
+{
+    $root = dirname(base_path(), 2);
+
+    return is_file($root.'/swamp/proof/selection.txt')
+        ? ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt')) : null;
+}
+
+it('maps the code of the firewall commands to them in the checked-in selection list', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->commands)->toBe(FIREWALL_COMMANDS);
 })->with([
-    'the store action' => ['apps/gateway/app/Actions/Firewall/StoreFirewallRuleAction.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the route file' => ['apps/gateway/routes/api/firewall.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the controller' => ['apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the managed rule catalog' => ['apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the rule migration' => ['apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the allow CLI command' => ['apps/cli/app/Commands/Firewall/AllowFirewallRuleCommand.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
-    'the SDK request' => ['packages/php-sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php', ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove']],
+    'the store action' => ['apps/gateway/app/Actions/Firewall/StoreFirewallRuleAction.php'],
+    'the data' => ['apps/gateway/app/Data/Firewall/FirewallRuleData.php'],
+    'the route file' => ['apps/gateway/routes/api/firewall.php'],
+    'the controller' => ['apps/gateway/app/Http/Controllers/Api/FirewallRulesController.php'],
+    'the managed rule catalog' => ['apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php'],
+    'the rule migration' => ['apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php'],
+    'the allow CLI command' => ['apps/cli/app/Commands/Firewall/AllowFirewallRuleCommand.php'],
+    'the CLI vocabulary' => ['apps/cli/app/Support/CommandVocabulary/firewall.php'],
+    'the SDK request' => ['packages/php-sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php'],
 ]);
 
 it('keeps the router LAN ingress code out of the firewall commands', function (string $path): void {
-    $root = dirname(base_path(), 2);
-    if (! is_file($root.'/swamp/proof/selection.txt')) {
-        $this->markTestSkipped('Needs the repository checkout.');
-    }
-    $rule = ProofSelectionList::parse((string) file_get_contents($root.'/swamp/proof/selection.txt'))->match($path);
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
 
-    expect($rule?->kind)->toBe(ProofRuleKind::Skip);
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Skip);
 })->with([
     'the domain policy' => ['apps/gateway/app/Domain/Firewall/RouterLanIngressPolicy.php'],
     'the native reconciler' => ['apps/gateway/app/Infrastructure/Firewall/NativeRouterLanIngressReconciler.php'],
+    'the service provider, which binds only the router LAN classes' => ['apps/gateway/app/Providers/Domains/FirewallServiceProvider.php'],
 ]);
+
+it('selects the firewall commands for every tracked file of the firewall directories', function (): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $root = dirname(base_path(), 2);
+    $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_contains($path, 'RouterLanIngress')
+        && array_filter(FIREWALL_DIRECTORIES, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
+
+    expect($files)->not->toBeEmpty();
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->commands !== FIREWALL_COMMANDS));
+    expect($unselected)->toBe([]);
+});

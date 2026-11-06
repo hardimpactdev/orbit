@@ -34,10 +34,11 @@ sequenceDiagram
   %%> - command code (workflows, extensions, playbooks, roles, versions): fast checks and the proof CI
   %%> - the proof CI starts only when a changed path selects a command in `swamp/proof/selection.txt`, the same list `proof:run` reads; docs, charts and case descriptions never start it
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select the commands of the family; code that serves another command stays out
-  %%> - a command's PR adds its block in the same PR as its cases file, because a path that selects a command with no cases file only starts a proof run that reports the command as uncovered; `apps/**` stays `skip` until then
-  %%> - code that every command shares (the Operation machinery, the CLI base classes) is not mapped to one family; it needs a rule from Nick for the commands that have cases
+  %%> - the mapping is data in `selection.txt`, one block per command family: its Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, its CLI command and vocabulary files, and its SDK request and response files select every command of the family; code that serves another family stays out (for example the router LAN ingress files)
+  %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that reports them as uncovered and proves nothing; `apps/**` stays `skip` until then. Commands of a mapped family that have no cases file yet are listed as uncovered
   %%> Built: the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`), checked by a Pest test against the checked-in list
+  %%> Not built:
+  %%> - code that every command shares (the Operation machinery, the CLI base classes) maps to no family; it needs a rule from Nick for the commands that have cases
   Note over CI: Fast checks<br/>about 2 minutes
   %%> What it does:
   %%> - the Project check fails on formatter drift: Rector and Pint run in fix mode, and a commit that they would change fails the check, so main stays formatter-clean and `composer check` in a task rewrites only the files the task touched
