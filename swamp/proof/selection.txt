@@ -55,6 +55,17 @@ apps/gateway/app/Actions/Operations/**                     *
 apps/gateway/app/Data/Operations/**                        *
 apps/gateway/app/Domain/Operations/**                      *
 apps/gateway/app/Domain/Shared/ResourceOperationException.php  *
+apps/gateway/app/Domain/Activity/ActivityInputRedaction.php  *
+apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php     *
+apps/gateway/app/Infrastructure/Activity/ActivityShutdownFinalizer.php  *
+apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php  *
+apps/gateway/app/Infrastructure/Activity/CommandActivityTargetResolver.php  *
+apps/gateway/app/Infrastructure/Logging/GatewayExceptionStatus.php  *
+apps/gateway/app/Infrastructure/Logging/RequestLogContext.php  *
+apps/gateway/app/Infrastructure/Processes/CommandDeadline.php  *
+apps/gateway/app/Http/Controllers/Api/DirectCertificatesController.php  *
+apps/gateway/app/Http/Controllers/Api/DirectGitHubTokenController.php  *
+apps/gateway/app/Http/Controllers/Api/DirectOperationsController.php  *
 apps/gateway/app/Http/Authorization/**                     *
 apps/gateway/app/Http/Controllers/Api/OperationsController.php  *
 apps/gateway/app/Http/Controllers/Controller.php           *
