@@ -23,6 +23,7 @@ use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Swamp\SwampScheduledResults;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
@@ -75,6 +76,10 @@ $app = Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => GatewayQueueRedis::configured() && app(SwampScheduledResults::class)->enabled());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        // Stage 6: every task VM host brings its image and seed up to date once a day. The release trigger is in the release projection.
+        // A host with a refresh open returns it, so a repeat starts nothing.
+        GatewaySchedule::job($schedule, new RefreshTaskVmImages)->dailyAt('03:20')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. Background maintenance, so every
         // thirty minutes; Swamp runs one host sweep at a time. It also runs while only the
