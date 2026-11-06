@@ -29,7 +29,6 @@ use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotPool;
-use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -94,13 +93,13 @@ final readonly class TaskProvisionIntent
             }
             try {
                 // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) always clones.
-                $vm = ($host === null ? $this->slots->claim($group) : null) ?? $this->allocate->capture($group, $host, $size);
+                $slot = $host === null ? $this->slots->claim($group) : null;
+                $vm = $slot ?? $this->allocate->capture($group, $host, $size);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);
             }
-            $claimed = $vm->state === TaskVmState::Parked;
-            $input = $claimed ? $this->slots->claimInput($vm) : $this->vms->capture($vm);
+            $input = $slot !== null ? $this->slots->claimInput($slot) : $this->vms->capture($vm);
             $node = $vm->node;
             assert($node !== null);
             $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
@@ -133,6 +132,8 @@ final readonly class TaskProvisionIntent
 
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
+            // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
+            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $checkout->value, $input);
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
             $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
@@ -150,8 +151,7 @@ final readonly class TaskProvisionIntent
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup],
-                // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
-                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $claimed && $vm->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $checkout->value, $input),
+                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $converge,
                 'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
                 'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
             $group->taskable()->associate($instance);

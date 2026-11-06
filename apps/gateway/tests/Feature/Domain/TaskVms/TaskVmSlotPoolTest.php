@@ -29,6 +29,7 @@ use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -37,7 +38,8 @@ function slotPoolHost(?int $count = 2, int $maxVms = 6): array
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
-        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $slots = $count === null ? null : new TaskVmSlotSetting($count, $project->id, TaskVmSize::Large);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
@@ -58,6 +60,14 @@ function slotPoolSlot(Node $host, Project $project, TaskVmImageBuild $build, arr
     return TaskVm::query()->create([...['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'provider' => TaskVmProviderKind::Incus,
         'size' => TaskVmSize::Large, 'name' => 'tvm-slot-'.$id, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(200 + $id),
         'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => 'recipe-1', 'ready_at' => now()], ...$overrides]);
+}
+
+/** The succeeded enrol Operation of a slot, as its claim reads it. */
+function slotPoolEnrol(TaskVm $slot, array $result = []): Operation
+{
+    return Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name, 'converge' => ['x' => 1]],
+        'result' => $result, 'finished_at' => now()]);
 }
 
 it('keeps no pool on a host without the slots setting', function (): void {
@@ -239,15 +249,17 @@ it('registers the operator command that runs the refill rule', function (): void
     expect(array_keys(Artisan::all()))->toContain('task-vms:fill-slots');
 });
 
-it('claims the oldest fitting ready slot for a group, and none of another Project, size, recipe or a stale one', function (): void {
+it('claims the oldest fitting enrolled slot for a group, and none of another Project, a stale one, one with no enrol, or another recipe', function (): void {
     [$host, $project, $build] = slotPoolHost(3);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, app(TaskVmSettings::class)->devClusterId, '10.44.0.128/25',
         app(TaskVmSettings::class)->hosts, 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
     $other = Project::query()->create(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'root' => 'public']);
     slotPoolSlot($host, $other, $build);
     slotPoolSlot($host, $project, $build, ['ready_at' => now()->subHours(21)]);
-    $fit = slotPoolSlot($host, $project, $build);
     slotPoolSlot($host, $project, $build);
+    $fit = slotPoolSlot($host, $project, $build);
+    slotPoolEnrol($fit);
+    slotPoolEnrol(slotPoolSlot($host, $project, $build));
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
     Bus::fake();
 
@@ -262,15 +274,14 @@ it('claims the oldest fitting ready slot for a group, and none of another Projec
 });
 
 it('gives a claimed slot the intent and the receipt of its enrol', function (): void {
+    SwampNodeFixture::ensure();
     [$host, $project, $build] = slotPoolHost(2);
     $slot = slotPoolSlot($host, $project, $build);
     $receipt = ['task_vm_id' => $slot->id, 'guest_node_id' => 77, 'ready' => true, 'provider' => ['running' => true], 'enrollment' => ['ready' => true]];
-    Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name, 'converge' => ['x' => 1]],
-        'result' => [...$receipt, 'image' => ['fallback' => false]], 'finished_at' => now()]);
+    slotPoolEnrol($slot, [...$receipt, 'image' => ['fallback' => false]]);
 
     $input = app(TaskVmSlotPool::class)->claimInput($slot);
 
-    expect($input)->not->toHaveKey('converge')->and($input['name'])->toBe($slot->name)
+    expect($input)->not->toHaveKey('converge')->and($input['name'])->toBe($slot->name)->and($input['host_ssh_execution']['target']['host'])->toBe('10.44.0.7')
         ->and($input['slot']['receipt'])->toBe([...$receipt, 'result_json' => json_encode($receipt)]);
 });

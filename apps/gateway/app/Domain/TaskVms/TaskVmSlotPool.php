@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\PendingSshHostKey;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Node;
@@ -56,6 +57,7 @@ final readonly class TaskVmSlotPool
         private PendingSshHostKey $pendingKeys,
         private StartTaskVmDestroyAction $destroy,
         private RecipeImageBuilds $recipes,
+        private SwampSshExecutionInput $ssh,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -126,7 +128,9 @@ final readonly class TaskVmSlotPool
      */
     public function claim(Task $group): ?TaskVm
     {
-        if (! $this->settings->enabled || TaskVm::forGroup($group) instanceof TaskVm) {
+        $ready = TaskVm::query()->unclaimedSlots()->where('state', TaskVmState::Parked)->where('slot_project_id', $group->project_id);
+        // Most provisions find no ready slot of their Project: they take no lock.
+        if (! $this->settings->enabled || ! $ready->exists() || TaskVm::forGroup($group) instanceof TaskVm) {
             return null;
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
@@ -143,7 +147,7 @@ final readonly class TaskVmSlotPool
             }
             $location = $this->settings->host($hostNodeId);
             if ($this->stale($vm, $location->slots, $this->currentImage($host, $location)) || ($recipe !== null && $vm->recipe_identity !== $recipe)
-                || ($this->capacity->freeSlots([[$location, $host]])[$hostNodeId] ?? 0) < $size->slots()) {
+                || ($this->capacity->freeSlots([[$location, $host]])[$hostNodeId] ?? 0) < $size->slots() || $this->enrolOf($vm) === null) {
                 continue;
             }
             $vm->update(['group_id' => $group->id, 'claimed_at' => now()]);
@@ -163,13 +167,21 @@ final readonly class TaskVmSlotPool
      */
     public function claimInput(TaskVm $vm): array
     {
-        $enrol = Operation::query()->where('kind', self::EnrolKind)->where('target_type', 'task_vm')->where('target_id', $vm->id)
-            ->where('status', OperationStatus::Succeeded->value)->latest('id')->first()
-            ?? throw new ResourceOperationException('task_vm.provision_refused', 'A claimed slot needs the receipt of its enrol.', 409);
+        $enrol = $this->enrolOf($vm) ?? throw new ResourceOperationException('task_vm.provision_refused', 'A claimed slot needs the receipt of its enrol.', 409);
         $receipt = Arr::except(ValidatedData::object($enrol->result ?? []), ['image']);
         $input = Arr::except(ValidatedData::object($enrol->input), ['converge']);
+        $host = $vm->hostNode ?? throw new ResourceOperationException('task_vm.provision_refused', 'A claimed slot needs its host.', 409);
 
-        return [...$input, 'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
+        // The host target as it is now; the enrol captured it up to {@see self::MaxAgeHours} ago.
+        return [...$input, 'host_ssh_execution' => $this->ssh->forNode($host),
+            'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
+    }
+
+    /** The succeeded enrol of a slot, whose intent and receipt its claim reuses. */
+    private function enrolOf(TaskVm $vm): ?Operation
+    {
+        return Operation::query()->where('kind', self::EnrolKind)->where('target_type', 'task_vm')->where('target_id', $vm->id)
+            ->where('status', OperationStatus::Succeeded->value)->latest('id')->first();
     }
 
     /**
