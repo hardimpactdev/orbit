@@ -110,6 +110,30 @@ it('captures normalized deny intent and submits only the native workflow', funct
     Http::assertNothingSent();
 });
 
+it('replays a keyed deny without a second Operation and refuses changed keyed input', function (): void {
+    $this->withHeader('Idempotency-Key', 'deny-key-8080');
+
+    $first = denyHttp(['port' => '8080'])->assertStatus(202);
+    $operation = Operation::query()->sole();
+    $rule = $this->denyNode->firewallRules()->sole();
+    $beforeOperation = $operation->getAttributes();
+    $beforeRule = $rule->getAttributes();
+    $first->assertJsonPath('data.id', $operation->id);
+
+    denyHttp(['port' => '8080'])->assertStatus(202)->assertJsonPath('data.id', $operation->id);
+    expect(Operation::query()->count())->toBe(1)
+        ->and($this->denyNode->firewallRules()->count())->toBe(1)
+        ->and($this->socket->frames)->toHaveCount(1);
+
+    denyHttp(['port' => '8081'])->assertStatus(409)->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    expect(Operation::query()->count())->toBe(1)
+        ->and($operation->refresh()->getAttributes())->toBe($beforeOperation)
+        ->and($this->denyNode->firewallRules()->count())->toBe(1)
+        ->and($rule->refresh()->getAttributes())->toBe($beforeRule)
+        ->and($this->socket->frames)->toHaveCount(1)
+        ->and($this->socket->frames[0]['type'])->toBe('workflow.run');
+});
+
 it('rejects invalid HTTP inputs without records or a native submission', function (array $input): void {
     denyHttp($input)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
 
