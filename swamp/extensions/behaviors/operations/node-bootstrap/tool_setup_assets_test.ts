@@ -43,63 +43,6 @@ Deno.test("Composer setup preserves its scope and installs exact snapshot packag
         true,
     );
 });
-Deno.test("Composer setup reads the snapshot over https by itself and through a package cache over http", async () => {
-    const direct = await toolSetupPlan(composer, "/home/orbit");
-    const content = (plan: typeof direct) =>
-        plan.files.filter((f) => String(f.path).endsWith("/sources.list")).map((
-            f,
-        ) => String(f.content)).join("");
-    assertEquals(
-        content(direct).includes("] https://snapshot.ubuntu.com/"),
-        true,
-    );
-    assertEquals(
-        direct.apt_update.some((a) => a.startsWith("Acquire::http::Proxy")),
-        false,
-    );
-    const cached = await toolSetupPlan({
-        ...composer,
-        apt: { ...composer.apt, proxy: "http://10.232.2.1:3142" },
-    }, "/home/orbit");
-    assertEquals(
-        content(cached).includes("] http://snapshot.ubuntu.com/"),
-        true,
-    );
-    assertEquals(content(cached).includes("https://"), false);
-    for (const argv of [cached.apt_update, cached.apt_install_prefix]) {
-        assertEquals(
-            argv.includes("Acquire::http::Proxy=http://10.232.2.1:3142"),
-            true,
-        );
-        assertEquals(argv.includes("Dir::Etc::parts=-"), true);
-        assertEquals(argv.includes("Acquire::Retries=5"), true);
-    }
-    assertEquals(direct.apt_update.includes("Dir::Etc::parts=-"), false);
-});
-Deno.test("A package cache of another kind than plain http is refused", () => {
-    for (
-        const proxy of [
-            "https://10.232.2.1:3142",
-            "10.232.2.1:3142",
-            "ftp://10.232.2.1",
-        ]
-    ) {
-        assertEquals(
-            Setup.safeParse({ ...composer, apt: { ...composer.apt, proxy } })
-                .success,
-            false,
-            proxy,
-        );
-    }
-    assertEquals(
-        Setup.safeParse({
-            ...composer,
-            apt: { ...composer.apt, proxy: "http://10.232.2.1:3142" },
-        }).success,
-        true,
-    );
-    assertEquals(Setup.safeParse(composer).success, true);
-});
 Deno.test("Homebrew setup describes one pinned repository and retains other package managers", async () => {
     const plan = await toolSetupPlan({
         manager: "homebrew",

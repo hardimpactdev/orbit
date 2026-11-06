@@ -15,8 +15,6 @@ const Pin = z.object({
 }).strict();
 const Apt = z.object({
     snapshot: z.string().regex(/^[0-9]{8}T[0-9]{6}Z$/),
-    // A package cache the Node reads the snapshot through, such as the apt-cacher-ng of its task VM; null reads it directly.
-    proxy: z.url({ protocol: /^http$/ }).nullable().optional(),
     packages: z.array(
         z.object({
             name: z.string().regex(/^[a-z0-9][a-z0-9+.-]*$/),

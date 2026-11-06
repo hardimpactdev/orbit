@@ -12,7 +12,6 @@
     - { name: rustc, argv: [/opt/orbit/rust/bin/rustc, --version] }
     - { name: cargo, argv: [/opt/orbit/rust/bin/cargo, --version] }
     - { name: nfs, argv: [systemctl, is-active, nfs-server.service] }
-    - { name: cache, argv: [systemctl, is-active, apt-cacher-ng.service] }
   loop_control: { label: "{{ item.name }}" }
   register: check_versions
   changed_when: false
@@ -57,7 +56,6 @@
       - ('rustc ' ~ recipe.tools.rust.version) in seen.rustc
       - ('cargo ' ~ recipe.tools.cargo.version) in seen.cargo
       - seen.nfs == 'active'
-      - seen.cache == 'active'
       - stats.swamp.checksum == recipe.tools.swamp.artifacts.amd64.sha256
       - stats.pi.checksum == recipe.tools.pi.artifacts.amd64.sha256
       - stats['shape gate'].exists

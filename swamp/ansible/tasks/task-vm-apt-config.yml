@@ -1,6 +1,4 @@
 ---
-# apt reads the snapshot through the package cache of the VM (task-vm-apt-cache.yml, the first task of the software phase): plain http to
-# the cache, which fetches over https. The signatures are still checked.
 - name: Create the apt configuration folder
   ansible.builtin.file: { path: "{{ apt_directory }}", state: directory, owner: root, group: root, mode: "0755" }
 - name: Point apt at the Ubuntu snapshot
@@ -8,7 +6,7 @@
     dest: "{{ apt_directory }}/ubuntu.sources"
     content: |
       Types: deb
-      URIs: http://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/
+      URIs: https://snapshot.ubuntu.com/ubuntu/{{ recipe.ubuntu.snapshot }}/
       Suites: {{ ansible_facts.distribution_release }} {{ ansible_facts.distribution_release }}-updates {{ ansible_facts.distribution_release }}-security
       Components: main universe restricted multiverse
       Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -24,7 +22,6 @@
       Dir::Etc::main "";
       Dir::Etc::sourcelist "{{ apt_directory }}/ubuntu.sources";
       Dir::Etc::sourceparts "";
-      Acquire::http::Proxy "http://localhost:3142";
       APT::Get::Always-Include-Phased-Updates "true";
       APT::Get::List-Cleanup "false";
       APT::Update::Error-Mode "any";

@@ -56,13 +56,7 @@ describe('HostCapacity', function () {
             ['10.232.1.1/24', '10.232.3.1/24', '192.168.1.1/24'],
         );
 
-        expect(new HostCapacity(new IncusHost, 7)->reserveSlot(4))->toBe(4);
-    });
-
-    it('never hands out the slot of the nested network of a task VM', function () {
-        fakeCapacityHost([], ['10.232.1.1/24']);
-
-        expect(new HostCapacity(new IncusHost, 7)->reserveSlot(4))->toBe(3);
+        expect(new HostCapacity(new IncusHost, 7)->reserveSlot(4))->toBe(2);
     });
 
     it('refuses when every network slot is taken', function () {
