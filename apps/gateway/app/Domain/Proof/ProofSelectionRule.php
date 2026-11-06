@@ -7,17 +7,21 @@ namespace App\Domain\Proof;
 /** One line of the selection list: a path glob and the value it selects. */
 final readonly class ProofSelectionRule
 {
+    private string $pattern;
+
     /** @param list<string> $commands */
     public function __construct(
         public string $glob,
         public ProofRuleKind $kind,
         public array $commands = [],
         public ?string $reason = null,
-    ) {}
+    ) {
+        $this->pattern = self::regex($glob);
+    }
 
     public function matches(string $path): bool
     {
-        return preg_match(self::regex($this->glob), $path) === 1;
+        return preg_match($this->pattern, $path) === 1;
     }
 
     /** `**` crosses directories, `*` and `?` stay inside one name, and `**` followed by `/` also matches no directory. */

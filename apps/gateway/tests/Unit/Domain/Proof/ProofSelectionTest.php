@@ -278,6 +278,8 @@ it('runs every case for the code that every command runs through', function (str
     'the operations controller' => ['apps/gateway/app/Http/Controllers/Api/OperationsController.php'],
     'the operation model' => ['apps/gateway/app/Models/Operation.php'],
     'the Swamp run starter' => ['apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php'],
+    'a request middleware' => ['apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php'],
+    'the proof runner' => ['swamp/proof/runner/runner.py'],
     'the CLI base command' => ['apps/cli/app/Commands/GatewayCommand.php'],
     'the CLI operation follower' => ['apps/cli/app/Commands/Concerns/FollowsOperations.php'],
     'the CLI connector factory' => ['apps/cli/app/Services/GatewayConnectorFactory.php'],
@@ -286,12 +288,34 @@ it('runs every case for the code that every command runs through', function (str
     'the SDK operation response' => ['packages/php-sdk/src/Responses/Operations/OperationResponse.php'],
 ]);
 
-it('selects every case for every tracked file of the shared Operation directories', function (): void {
+it('keeps documentation and the unit tests of the proof tooling out of the shared code', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Skip);
+})->with([
+    'a README in a shared directory' => ['apps/cli/app/Support/Console/README.md'],
+    'a proof runner test' => ['swamp/proof/runner/tests/test_runner.py'],
+    'a firewall extension test' => ['swamp/extensions/behaviors/operations/firewall/firewall_test.ts'],
+]);
+
+it('runs every case when a shared file changes', function (): void {
+    $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationStore.php'], list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
+
+    expect($selected['because'])->not->toBeNull()->and($selected['files'])->toBe(PROOF_CASES_FILES);
+});
+
+it('selects every case for every tracked file of the shared directories', function (): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $root = dirname(base_path(), 2);
     $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
-    $directories = ['apps/gateway/app/Actions/Operations/', 'apps/gateway/app/Domain/Operations/', 'apps/gateway/app/Http/Requests/Operations/', 'apps/cli/app/Commands/Operations/'];
-    $files = array_values(array_filter($tracked, static fn (string $path): bool => array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
+    $directories = [
+        'apps/gateway/app/Actions/Operations/', 'apps/gateway/app/Data/Operations/', 'apps/gateway/app/Domain/Operations/', 'apps/gateway/app/Http/Requests/Operations/',
+        'apps/cli/app/Commands/Operations/', 'apps/cli/app/Console/', 'apps/cli/app/Exceptions/', 'apps/cli/app/Repositories/', 'apps/cli/app/Services/Profile/',
+        'apps/cli/app/Support/Console/', 'apps/cli/app/Support/Operations/', 'packages/php-sdk/src/Support/', 'packages/php-sdk/src/Requests/Operations/',
+        'packages/php-sdk/src/Responses/Operations/',
+    ];
+    $files = array_values(array_filter($tracked, static fn (string $path): bool => ! str_ends_with($path, '.md')
+        && array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
 
     expect($files)->not->toBeEmpty();
     $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
