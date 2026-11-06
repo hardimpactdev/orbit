@@ -16,7 +16,6 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
@@ -103,7 +102,6 @@ final readonly class TaskReviewRoundIntent
     private function candidate(Task $group, Task $subtask, string $head): bool
     {
         return TaskReviewRound::query()->where('task_group_id', $group->id)->where('pushed_commit', $head)->exists()
-            || TaskCheck::query()->where('task_id', $subtask->id)->where('kind', TaskCheckKind::Handoff->value)->where('commit_sha', $head)
-                ->orderByDesc('id')->get()->contains(fn (TaskCheck $check): bool => $this->candidates->eligible($group, $check));
+            || $this->candidates->onHead($group, [$subtask->id], $head);
     }
 }

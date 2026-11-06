@@ -16,7 +16,7 @@ sequenceDiagram
   %%> - the gate check `tasks:pr-gate`, once for each head of a group in automatic mode; there is no command, route or MCP tool
   %%> Requirements:
   %%> - the group is an open external group of a review-and-merge Project, with a published PR that is out of draft, and no running operation
-  %%> - the PR head is eligible: a passed handoff candidate of the current subtask, or the `pushed_commit` of an earlier round of this group; a pushed fix has no handoff check on its commit, because the PR's own CI is the merge check below
+  %%> - the PR head is eligible: a passed handoff candidate of the current subtask, or the `pushed_commit` of an earlier round of this group; a pushed fix has no hosted handoff CI, because the PR's own CI is the merge check below, and the row of its local check is no candidate for a review turn or a manual publish, because no `tasks.check` operation backs it
   %%> - the group used fewer than 3 rounds, and the merge check of the PR is green on the head
   %%> - the task VM of the group is parked or running, and its Pi credential is there
   %%> What it does:
@@ -52,7 +52,7 @@ sequenceDiagram
   %%> - mints a token with only `pull_requests: write` into the vault key that admission named
   SW->>GH: Check the PR head
   %%> What it does:
-  %%> - refuses a PR that is not open or whose head is not the head of the round, with `tasks_pr.head_moved`; the step may fail without failing the run, because the push refuses a moved branch itself
+  %%> - the step `Read the PR` reads the state and head of the PR, and this step refuses a PR that is not open or whose head is not the head of the round, with `tasks_pr.head_moved`; both may fail without failing the run, because the push refuses a moved branch itself
   SW->>GH: Post the comment
   %%> What it does:
   %%> - posts the verdict and the findings as a comment of the App, so Nick can read them
@@ -75,8 +75,10 @@ sequenceDiagram
     %%> What it does:
     %%> - the new `checked` method of `@nckrtl/task-turn-data` reads the output of the check: passed, and the commit and tree to push
     %%> Refuses:
-    %%> - a check that did not pass, or that ends `changed`, because the author must make the commit, with `tasks.review_fix_not_passed`: nothing is pushed
+    %%> - a check that did not pass, or that ends `changed`, because the author must make the commit; the step `Check the fix passed` fails with `tasks.review_fix_not_passed`: nothing is pushed
     SW->>GW: Mint the push token<br/>operation:direct:github-token
+    %%> What it does:
+    %%> - the child `operation-task-publish` mints the token when it starts, with the run id of this run
     SW->>GH: Push the fix<br/>operation-task-publish
     %%> What it does:
     %%> - pushes the checked commit to the branch of the PR without force, with `check: null` as `tasks:prep-fix` does; the commit, tree and refspec come from the output of the check
@@ -84,6 +86,10 @@ sequenceDiagram
     %%> Refuses:
     %%> - a branch that moved since the park, with `tasks.not_fast_forward`; nothing is overwritten
   end
+  Note over SW: Confirm the round<br/>verdict · push
+  %%> What it does:
+  %%> - the last step ends the run in error, with `tasks.review_round_failed`, when the reviewer left no verdict, or when a round that captured a fix has findings and the push did not succeed
+  %%> - round 3 captured no fix, so findings there end the run well, and the gate check sends the group back to manual mode
   alt the run succeeded
     SW-->>GW: Native terminal result<br/>verdict · commit
     %%> How the Gateway learns it:
@@ -101,6 +107,7 @@ sequenceDiagram
     Note over GW: Record the round<br/>failed · fall back
     %%> Result:
     %%> - every end records the round: the verdict the run reached, or `failed` when it reached none, so the gate never waits on a round that ended; the check row is closed as `failed` or `cancelled`
+    %%> - a budget expiry or a start that Swamp refused ends the round as `failed` the same way, with no terminal event of the run
     %%> - after round 3 with findings, a failed round, or a failed fix, the gate check switches the group to manual mode; the ready step then requests the review of Nick
     %%> Not built:
     %%> - the same switch when the merge check is red on a head that a round pushed: the gate check keeps skipping that head, as it did before this run existed

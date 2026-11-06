@@ -6,6 +6,8 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
@@ -23,13 +25,14 @@ use Illuminate\Support\Facades\DB;
  * the metrics of the reviewer and author threads, the verdict and the pushed commit on the round, and the check row of the fix.
  * Every end records the round, so the gate check never waits on a round that ended. See docs/cli/tasks/review-round.mmd.
  */
-final readonly class TaskReviewRoundProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskReviewRoundProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput
 {
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
         'Resume the VM' => 'task_vm.resume_failed',
-        'Check the fix turn' => 'tasks.review_fix_not_ready', 'Check the fix passed' => 'tasks.review_fix_not_passed',
-        'Confirm the round' => 'tasks.review_round_failed',
+        'Check the fix turn' => 'tasks.review_fix_not_ready',
+        'Check the fix' => 'tasks.review_fix_not_passed', 'Settle the check' => 'tasks.review_fix_not_passed', 'Check the fix passed' => 'tasks.review_fix_not_passed',
+        'Clean up the token' => 'tasks.review_round_failed', 'Confirm the round' => 'tasks.review_round_failed',
     ];
 
     /**
@@ -117,6 +120,27 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** The budget ran out before the terminal event: the round ends as failed, so the gate check falls back instead of waiting for it. */
+    public function timedOut(Operation $operation): void
+    {
+        $this->abandon($operation);
+    }
+
+    /** Swamp refused the start, so no run began: the round ends as failed. */
+    public function refused(Operation $operation): void
+    {
+        $this->abandon($operation);
+    }
+
+    private function abandon(Operation $operation): void
+    {
+        $round = TaskReviewRound::query()->where('operation_id', $operation->id)->whereNull('verdict')->first();
+        if ($round instanceof TaskReviewRound) {
+            $round->update(['verdict' => TaskReviewRoundVerdict::Failed]);
+            $this->closeCheck($round, [], true);
+        }
     }
 
     /**

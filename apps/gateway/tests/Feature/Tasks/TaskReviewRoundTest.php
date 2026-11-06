@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -42,6 +43,7 @@ use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Mockery\MockInterface;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -140,7 +142,8 @@ it('admits one round with the whole intent of the resume, the review, the fix, t
         ->and(json_encode($input))->not->toContain(str_repeat('p', 64))
         ->and($input['review'])->not->toHaveKey('execution_secrets')
         ->and([$round->head_sha, $round->round, $round->operation_id, $round->check_id])->toBe([ROUND_HEAD, 1, $operation->id, $input['check']['check_id']])
-        ->and(TaskCheck::query()->findOrFail($round->check_id)->status)->toBe(TaskCheckStatus::Running)
+        // A test has no Swamp, so the start is refused, and the refusal ends the round and closes its check row.
+        ->and([$round->verdict, TaskCheck::query()->findOrFail($round->check_id)->status])->toBe([TaskReviewRoundVerdict::Failed, TaskCheckStatus::Cancelled])
         ->and(AgentThread::query()->where('role', 'reviewer')->count())->toBe(1);
 });
 
@@ -298,9 +301,9 @@ it('keeps findings when the fix failed, never a pass when the run ended in error
 })->with([
     'the fix turn did not end ready' => ['Check the fix turn', 'tasks.review_fix_not_ready', [], ['verdict' => 'findings', 'findings' => 'x: y'], 'findings', 'cancelled'],
     'the check did not pass' => ['Check the fix passed', 'tasks.review_fix_not_passed', ['Check the fix' => ['status' => 'succeeded']], ['verdict' => 'findings', 'findings' => 'x: y', 'checked' => json_encode(['outcome' => 'failed', 'commit' => null])], 'findings', 'failed'],
-    'a pass followed by a failed run' => ['Clean up the token', 'tasks.turn_failed', [], ['verdict' => 'pass', 'findings' => ''], 'failed', 'cancelled'],
+    'a pass followed by a failed run' => ['Clean up the token', 'tasks.review_round_failed', [], ['verdict' => 'pass', 'findings' => ''], 'failed', 'cancelled'],
     'no verdict at all' => ['Review the head', 'tasks.turn_failed', [], [], 'failed', 'cancelled'],
-    'a check that left no result' => ['Check the fix', 'tasks.turn_failed', ['Check the fix' => ['status' => 'failed']], ['verdict' => 'findings', 'findings' => 'x: y'], 'findings', 'failed'],
+    'a check that left no result' => ['Check the fix', 'tasks.review_fix_not_passed', ['Check the fix' => ['status' => 'failed']], ['verdict' => 'findings', 'findings' => 'x: y'], 'findings', 'failed'],
 ]);
 
 it('projects the terminal event of a round once', function (): void {
@@ -324,4 +327,85 @@ it('writes the result of a check onto its row the way the check operation does',
     expect($check->refresh()->status)->toBe(TaskCheckStatus::Changed)
         ->and([$check->head_after, $check->output])->toBe([str_repeat('a', 40), 'x'])
         ->and($check->finished_at)->not->toBeNull();
+});
+
+it('replays the admission of the same key and records one round', function (): void {
+    [$group, $subtask] = roundWorld();
+    roundCandidate($group, $subtask);
+    $admit = fn (): Operation => app(OperationIdempotency::class)->under(OperationKinds::TasksReviewRound, 'pr-gate:review:'.$group->id.':'.ROUND_HEAD, 'fingerprint', fn (): Operation => app(TaskReviewRoundIntent::class)->start($group, ROUND_HEAD, 'test', null));
+    $first = null;
+    try {
+        $admit();
+    } catch (ResourceOperationException) {
+        $first = Operation::query()->where('kind', OperationKinds::TasksReviewRound)->sole();
+    }
+
+    expect($admit()->id)->toBe($first->id)
+        ->and(Operation::query()->where('kind', OperationKinds::TasksReviewRound)->count())->toBe(1)
+        ->and(TaskReviewRound::query()->count())->toBe(1);
+});
+
+it('refuses a round that fixes when the current subtask has no author thread', function (): void {
+    [$group, $subtask] = roundWorld();
+    roundCandidate($group, $subtask);
+    $subtask->update(['implementer_agent_thread_id' => null]);
+
+    expect(fn () => app(TaskReviewRoundIntent::class)->start($group, ROUND_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'no author thread')
+        ->and(TaskReviewRound::query()->count())->toBe(0);
+});
+
+it('names the failed push by its detail and keeps the findings', function (): void {
+    [$operation, , , , $round] = runningRound();
+
+    $pushed = app(TaskReviewRoundProjection::class)->apply($operation, roundEnd('failed', ['steps' => ['Resume the VM' => ['status' => 'succeeded'], 'Push the fix' => ['status' => 'failed']],
+        'verdict' => 'findings', 'findings' => 'x: y'], ['failed_step' => 'Push the fix', 'detail' => 'tasks.not_fast_forward', 'stderr_recorded' => false]));
+
+    expect($pushed->error_code)->toBe('tasks.not_fast_forward')
+        ->and($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Findings)
+        ->and($round->pushed_commit)->toBeNull();
+});
+
+it('leaves the VM parked when the resume failed', function (): void {
+    [$operation, , $vm] = runningRound();
+    $resumed = app(TaskReviewRoundProjection::class)->apply($operation, roundEnd('failed', ['steps' => ['Resume the VM' => ['status' => 'failed']]],
+        ['failed_step' => 'Resume the VM', 'detail' => 'x', 'stderr_recorded' => false]));
+
+    expect($resumed->error_code)->toBe('task_vm.resume_failed')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('ends a cancelled round as failed, so the gate check falls back instead of waiting', function (): void {
+    [$operation, , , , $round] = runningRound();
+
+    $projected = app(TaskReviewRoundProjection::class)->apply($operation, roundEnd('cancelled', ['steps' => []]));
+
+    expect($projected->status)->toBe(OperationStatus::Cancelled)
+        ->and($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Failed)
+        ->and(TaskCheck::query()->findOrFail($round->check_id)->status)->toBe(TaskCheckStatus::Cancelled);
+});
+
+it('ends the round as failed when the budget runs out or Swamp refuses the start, and a late event changes nothing', function (string $end): void {
+    [$operation, , , , $round] = runningRound();
+    $round->update(['verdict' => null]);
+
+    app(TaskReviewRoundProjection::class)->{$end}($operation);
+
+    expect($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Failed)
+        ->and(TaskCheck::query()->findOrFail($round->check_id)->status)->toBe(TaskCheckStatus::Cancelled);
+
+    $round->update(['verdict' => TaskReviewRoundVerdict::Pass]);
+    app(TaskReviewRoundProjection::class)->{$end}($operation);
+
+    expect($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Pass);
+})->with(['timedOut', 'refused']);
+
+it('sends the workflow an intent that its input schema accepts', function (): void {
+    [$operation] = runningRound();
+    $schema = Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-task-review-round.yaml'))['inputs']['properties'];
+    $input = app(TaskReviewRoundProjection::class)->input($operation);
+
+    expect(array_keys($input['intent']))->each->toBeIn(array_keys($schema['intent']['properties']))
+        ->and(array_diff($schema['intent']['required'], array_keys($input['intent'])))->toBe([])
+        ->and(array_keys($input['execution_secrets']))->toEqualCanonicalizing(array_keys($schema['execution_secrets']['properties']))
+        ->and(array_keys($input['publish_secrets']))->toEqualCanonicalizing(array_keys($schema['publish_secrets']['properties']));
 });

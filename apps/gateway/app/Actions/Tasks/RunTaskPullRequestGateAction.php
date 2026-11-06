@@ -17,7 +17,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\PullRequestGate;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskCheckedCandidate;
-use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPrepOwnerReview;
@@ -27,7 +26,6 @@ use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Closure;
@@ -160,8 +158,7 @@ final readonly class RunTaskPullRequestGateAction
     /** A draft leaves draft only when a passed handoff check of the group, with its required CI, is on exactly this head. */
     private function checked(Task $group, string $head): bool
     {
-        return TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->where('kind', TaskCheckKind::Handoff->value)
-            ->where('commit_sha', $head)->orderByDesc('id')->get()->contains(fn (TaskCheck $check): bool => $this->candidates->eligible($group, $check));
+        return $this->candidates->onHead($group, $group->tasks()->pluck('id')->all(), $head);
     }
 
     /**
