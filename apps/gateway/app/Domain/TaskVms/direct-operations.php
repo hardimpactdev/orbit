@@ -72,7 +72,7 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-fleet-build',
     'projection' => TaskVmFleetBuildProjection::class,
     'workflow_inputs' => true,
-    // No result step: the projector reads the run's step statuses; the native assert is the end check.
+    // No result step: the projector reads the run's step statuses; the Ansible wait that asserts the nested Doctor is the end check.
     'terminal_result' => ['job' => 'end', 'step' => TaskVmFleetBuildProjection::EndCheck, 'native' => true],
     // The proof Swamp Club key, which the new Gateway's Swamp runs with.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],

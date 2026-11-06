@@ -45,21 +45,24 @@ final readonly class AllocateTaskVmAction
         return $this->enrollment->admit(fn () => $this->allocate($group, static fn (TaskVm $vm) => app(StartTaskVmProvisionAction::class)->execute($vm->id)));
     }
 
-    /** State-only placement for an owning Task admission transaction. Starts no Operation or job. */
-    public function capture(Task $group, ?int $hostNodeId = null): TaskVm
+    /**
+     * State-only placement for an owning Task admission transaction. Starts no Operation or job. An admission that needs a size sets it
+     * in `$size`, as the refresh of a task image does for a large VM; otherwise the group's topology and Project decide it.
+     */
+    public function capture(Task $group, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
     {
-        return $this->allocate($group, null, $hostNodeId);
+        return $this->allocate($group, null, $hostNodeId, $size);
     }
 
     /** @param null|Closure(TaskVm):mixed $admit */
-    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null): TaskVm
+    private function allocate(Task $group, ?Closure $admit = null, ?int $hostNodeId = null, ?TaskVmSize $size = null): TaskVm
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
 
             return $existing;
         }
-        $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
+        $size ??= TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
         try {
             $vm = $this->place($group, $size, $admit, $hostNodeId);
         } catch (Throwable $exception) {

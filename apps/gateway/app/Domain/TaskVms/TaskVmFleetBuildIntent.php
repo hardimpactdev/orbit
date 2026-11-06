@@ -58,6 +58,7 @@ final readonly class TaskVmFleetBuildIntent
     /** @return array<string,mixed> one flat array that `TaskVmProviderWorkflowInput::envelope()` splits into its `intent` and its `execution_secrets` */
     public function capture(TaskVm $vm): array
     {
+        $this->assertLarge($vm);
         $guest = $vm->node;
         if ($vm->state !== TaskVmState::Ready || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null || ! $guest instanceof Node
             || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->status !== LifecycleStatus::Active || $guest->ssh_host_key === null) {
@@ -75,6 +76,7 @@ final readonly class TaskVmFleetBuildIntent
      */
     public function provisioning(TaskVm $vm, string $workspace): array
     {
+        $this->assertLarge($vm);
         $guest = $vm->node;
         if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null) {
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs an Incus VM and its guest Node.', 409);
@@ -92,6 +94,14 @@ final readonly class TaskVmFleetBuildIntent
         }
 
         return $path;
+    }
+
+    /** The three nested VMs hold 10 GiB, more than a medium VM has: the build runs only in a large one, which the admission of the refresh sets. */
+    private function assertLarge(TaskVm $vm): void
+    {
+        if ($vm->size !== TaskVmSize::Large) {
+            throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a large task VM: its nested VMs hold more memory than a '.$vm->size->value.' VM has.', 409);
+        }
     }
 
     private function club(): string

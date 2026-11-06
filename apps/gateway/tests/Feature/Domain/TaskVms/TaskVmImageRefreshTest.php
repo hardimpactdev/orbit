@@ -2,16 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -99,6 +103,21 @@ it('returns the open refresh of a host for a second admission, and none once it 
 
     $operation->update(['status' => OperationStatus::Succeeded]);
     expect(TaskVmImageRefreshIntent::open($host))->toBeNull();
+});
+
+it('places the VM of a refresh in a large size that the admission sets, whatever the Project size lists say', function (): void {
+    $host = imageRefreshHost();
+    // The recipe of the release the layout names; the allocation records its identity on the VM.
+    $recipe = $this->base.'/orbit/apps/gateway/resources/machine-software';
+    mkdir($recipe, 0700, true);
+    copy(base_path('resources/machine-software/recipe.json'), $recipe.'/recipe.json');
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Refresh', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
+
+    $vm = app(AllocateTaskVmAction::class)->capture($group, $host->id, TaskVmSize::Large);
+
+    expect($vm->size)->toBe(TaskVmSize::Large)
+        ->and($vm->host_node_id)->toBe($host->id);
 });
 
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {

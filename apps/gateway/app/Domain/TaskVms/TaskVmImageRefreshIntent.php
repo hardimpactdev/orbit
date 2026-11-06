@@ -92,7 +92,7 @@ final readonly class TaskVmImageRefreshIntent
             'Bring the task image and the topology seed of '.$host->name.' up to commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Refresh the image',
                 'The Swamp run task_vm.image_refresh refreshes the image and the seed of the host.', [['id' => 'refreshed', 'type' => 'review', 'description' => 'The host promotes a new image and seed.']])]));
         try {
-            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit), $caller, $request, $host->id);
+            return $this->provision->admit($group, $commit, self::Kind, fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->input($input, $group, $instance, $vm, $host, $location, $image, $commit), $caller, $request, $host->id, TaskVmSize::Large);
         } catch (\Throwable $exception) {
             app(CancelTaskGroupAction::class)->execute($group);
 
