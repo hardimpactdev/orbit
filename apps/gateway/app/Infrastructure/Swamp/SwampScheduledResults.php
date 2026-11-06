@@ -16,7 +16,7 @@ use Psr\Log\LoggerInterface;
 use Throwable;
 
 /** Finds finished scheduled runs by one read per minute. Swamp's commit feed needs a v3 datastore, so it is not used. */
-final class SwampScheduledResults
+final readonly class SwampScheduledResults
 {
     /** A first read, with no saved read time, goes back this far. */
     private const int FirstReadMinutes = 10;
@@ -33,7 +33,7 @@ final class SwampScheduledResults
     /** The projectors are told about the declared workflows this often, not at every read. */
     private const int ActivateSeconds = 600;
 
-    public function __construct(private readonly SwampCommandStep $step, private readonly LoggerInterface $log) {}
+    public function __construct(private SwampCommandStep $step, private LoggerInterface $log) {}
 
     public function enabled(): bool
     {
