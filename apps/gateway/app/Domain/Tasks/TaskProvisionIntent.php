@@ -84,7 +84,8 @@ final readonly class TaskProvisionIntent
             }
             $this->assertProvisionable($group);
             $project = $group->project;
-            // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
+            // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) need the proof club key before placement;
+            // every other VM that starts the nested fleet gets it too, after placement decides that (below).
             $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
             $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
             if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
@@ -97,6 +98,13 @@ final readonly class TaskProvisionIntent
                     previous: $exception, details: ['reason' => $exception->wait->value]);
             }
             $input = $this->vms->capture($vm);
+            // The nested Gateway's Swamp serve and the re-mint of its tokens need the key, and `orbit proof` runs on this fleet. The key stays in
+            // this VM and its `base`, which are destroyed with it; the ready copies stay key-free (stage 2).
+            $keyed = $proof || $vm->size->resources()->testNodes > 0;
+            $proofClub = $keyed ? config('swamp.proof_club_api_key') : null;
+            if ($keyed && (! is_string($proofClub) || trim($proofClub) === '')) {
+                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A nested fleet requires its Gateway-held sandbox club credential.', 503);
+            }
             $node = $vm->node;
             assert($node !== null);
             $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
@@ -130,7 +138,7 @@ final readonly class TaskProvisionIntent
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
             // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
-            $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+            $proofKey = $keyed ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                 'swamp-proof-club-api-key', $proofClub) : null;
             // Only the vault key name is admitted. The clone step mints the credential when it runs ({@see TaskGitHubTokens}):
             // the VM step before it can wait for capacity longer than the hour that an installation token lives.
@@ -138,7 +146,7 @@ final readonly class TaskProvisionIntent
             // The setup steps get the same: the key names of the Composer and npm configuration, written when the step runs.
             $dependencyAuth = TaskGitHubTokens::dependencyAuth($vm);
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
+                'project_id' => $project->id, 'eligible' => true, ...($keyed ? ['proof_club_required' => true] : []),
                 'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization, 'dependency_auth' => $dependencyAuth,
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,

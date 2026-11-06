@@ -48,7 +48,9 @@ sequenceDiagram
   %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, starts all three
   %%> - each ready copy is self-contained: its own `.env`, storage, `bootstrap/cache` and database on its own disk (stage 6 saves them so); the code comes from the outer VM's checkout
   %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three VMs
-  %%> - then pushes the proof Swamp Club key into the nested Gateway, as today
+  %%> - then pushes the proof Swamp Club key into the nested Gateway
+  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
+  %%> - every task VM whose provision starts the nested fleet gets the key, not only a proof task: the nested Gateway's Swamp serve cannot start without it, the re-mint needs it, and `orbit proof` runs on the author's own fleet; the key stays inside the task VM and its `base`, is destroyed with them, and the ready copies stay key-free
   %%> Proposed 2026-11-05:
   %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
   %%> Time:
@@ -92,7 +94,7 @@ sequenceDiagram
   %%> Why:
   %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
   %%> - the same fleet start does it every time, from the same mounted code the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
-  %%> - runs only when the VM has the proof Swamp Club key (a proof task): the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
+  %%> - runs on every fleet start, which always has the proof Swamp Club key: the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
   %%> - the certificates last 397 days and are issued again by the seed refresh; nothing else in the fleet expires within the life of a task
   %%> Time:
   %%> - not yet measured; recorded here when the first provision with it has run

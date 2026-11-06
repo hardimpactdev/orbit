@@ -14,7 +14,7 @@ Check this page before you build on something. Each row is code that still runs,
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
 | Recipe image build: `RecipeImageBuilds`, `RecipeImageBuildSteps`, `BuildTaskVmRecipeCommand`, `task-vms:build-*` | The per-host refresh by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)); a recipe build stays only for a new host or a new base OS | Stage 6 |
-| The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups. The `$size` the refresh passes to the same intent stays | When no Project 62 group is open |
+| The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups. The `$size` the refresh passes to the same intent stays, and so does the club key of a VM that starts the nested fleet | When no Project 62 group is open |
 | `bin/e2e-topology` and the per-issue topology of a subtask that declares `topology`, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When no subtask declares a topology |
 
 The provision of a task with a topology carries the converge intent, and its `Converge once` step runs before the nested fleet, so a VM from an older image gets the NFS server, Incus and the seed pool without a new image.
