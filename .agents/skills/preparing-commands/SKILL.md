@@ -32,7 +32,7 @@ The spec describes the ideal state, even where the code differs. The gap is the 
 ## Check, review, open
 
 1. Read the code each claim relies on and correct any claim it contradicts. Walk every error code, flag, repeat and refusal of the page against the cases file. Compare with the approved sibling's page. Run `bin/check-flows`, `composer docs-build` and `composer docs-lint`.
-2. Run one independent read-only review (Sonnet, high effort) against these skills and the CLI standard. Fix every finding the rules and Recall decisions settle. Repeat until it has none.
+2. Run one independent read-only review (another model than yours, high effort) against these skills and the CLI standard. Fix every finding the rules and Recall decisions settle. Repeat until it has none.
 3. Ask Nick only about a choice that no rule or decision settles: one plain question, context first.
 4. Mark the chart `%% status: reviewed`. Open the command's PR as a draft. The first commit holds the spec only; the code and the runnable cases follow on the same branch ([developing-commands](../developing-commands/SKILL.md)). Open no second PR.
 
