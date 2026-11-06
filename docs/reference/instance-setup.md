@@ -111,7 +111,7 @@ The same phase writes the `.env` the Gateway rendered at admission from the Proj
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 
-The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route last, after the Processes, with the same child as `route:create`; the Route's key and CSR are made at the start, beside the checkout, its signature beside the setup steps, and both are handed to that child. It refuses `--database-server` before reservation. 
+The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route last, after the Processes, with the same child as `route:create`. The Route's key and CSR are made at the start, beside the checkout. Its signature follows beside the setup steps, and that child takes both. It refuses `--database-server` before reservation. 
 
 Setup steps receive two variables:
 
