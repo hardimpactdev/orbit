@@ -83,7 +83,7 @@ final readonly class TaskVmFleetBuildIntent
     /** The checkout of the workspace of the VM's group: the checkout the build reads on the VM, and the one its nested guests mount. */
     private function workspace(TaskVm $vm): string
     {
-        $path = Instance::query()->where('task_workspace_owner_id', $vm->group_id)->where('node_id', $vm->node_id)->value('checkout_path');
+        $path = $vm->group_id === null ? null : Instance::query()->where('task_workspace_owner_id', $vm->group_id)->where('node_id', $vm->node_id)->value('checkout_path');
         if (! is_string($path) || $path === '') {
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs the checkout of the workspace of the VM.', 409);
         }
@@ -108,7 +108,7 @@ final readonly class TaskVmFleetBuildIntent
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
             'operator_checkout' => $workspace,
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout()],
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
             'bootstrap' => ['fragment' => $this->fragment($workspace)],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
@@ -122,7 +122,7 @@ final readonly class TaskVmFleetBuildIntent
      *
      * @return array{server:string,path:string,state:string,units:list<array{guest:string,name:string,content:string}>,binds:array<string,list<string>>}
      */
-    private function checkout(): array
+    private function checkout(string $workspace): array
     {
         $server = explode('/', self::Bridge)[0];
         $units = [];
@@ -131,7 +131,7 @@ final readonly class TaskVmFleetBuildIntent
             $guest = TaskVmReadyCopiesIntent::Guests[$role];
             $units[] = ['guest' => $guest, 'name' => self::unitName(self::CheckoutPath), 'content' => implode("\n", [
                 '[Unit]', 'Description=Orbit checkout over NFS', 'After=network-online.target', 'Wants=network-online.target', '',
-                '[Mount]', "What={$server}:".self::CheckoutPath, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
+                '[Mount]', "What={$server}:".$workspace, 'Where='.self::CheckoutPath, 'Type=nfs', 'Options=vers=4.2,hard,_netdev', '',
                 '[Install]', 'WantedBy=multi-user.target', '',
             ])];
             $binds[$role] = [];
