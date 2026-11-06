@@ -698,7 +698,7 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
-Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) directly from the task VM. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
+Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) from Node 209, which receives the commit from the task VM as a bundle. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The publish step asks the Gateway for a repository installation token when it starts, and the Gateway writes it to the vault. The Gateway projects the result; it runs no push job or mirror import. The VM never receives the token.
 
 The native action uses an empty temporary bare Git repository with the workspace object store as an alternate. Credentials reach only Git in that trusted directory. The action ignores repository hooks and user/system Git configuration, permits HTTPS only and refuses redirects. It pushes the exact admitted commit without force and reads the remote tip before repeating a mutation. No repository command receives the credential. Native locking, cancellation and replay follow the [Tasks contract](/reference/tasks#publish-an-external-group).
 

@@ -15,6 +15,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCheckGitHubTokens;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepIntent;
@@ -220,7 +221,16 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.pr_comment', 'proof.command', 'task_vm.image_refresh']);
+
+it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
+    tokenWorld();
+    [$check] = pushOperation('tasks.check', ['phase' => 'handoff', 'check_name' => 'Required checks']);
+
+    expect(app(DirectOperation::class)->definition('tasks.check')['github_token_issuer'])->toBe(TaskCheckGitHubTokens::class)
+        ->and(fn () => app(TaskCheckGitHubTokens::class)->issue($check, SwampNodeFixture::Id, TOKEN_RUN, 'publish'))
+        ->toThrow(ResourceOperationException::class, 'does not permit repository credentials');
+});
 
 it('refuses a run that is not the Operation run, a caller that is not Swamp, an Operation that ended, and a missing or unknown purpose', function (): void {
     $socket = tokenWorld();

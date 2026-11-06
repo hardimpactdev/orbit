@@ -299,7 +299,9 @@ The group is an external `todo` group, made with `tasks:create`, of a Project th
 - the title and body of the draft pull request;
 - the repository, the base and the branch `task-{group}`.
 
-It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation. That mint is the one call a step of the run makes to the Gateway.
+It records the author thread on the subtask with a query update, so no model guard of the subtask runs. It mints no GitHub token. A prep run takes longer than the hour that an installation token lives, so admission only names the vault keys of the push token and its Git authorization header. The publish step asks the Gateway for the token with the run id of the prep run, right before the push. Admission adds no child Operation.
+
+Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
@@ -1056,7 +1058,7 @@ The agent driver reports input, output and cached token usage on each thread. Gr
 
 ## Ready and merge a task pull request
 
-**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and mints; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
+**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
 
 Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/tasks/pr-ready) and [`tasks/pr-merge`](/cli/tasks/pr-merge) show the steps.
 

@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - both triggers: the release projection admits the run of every Linux task VM host when the release that went live changed playbooks, pins or lock files (a digest over `swamp/ansible`, the recipe folder and the lock files of the release it replaced and of the new one), and a daily Gateway schedule admits every host; an operator runs `php artisan task-vms:refresh-image HOST` or `task-vms:refresh-images`
   %%> - a host with a refresh open returns it, so the two triggers and a retry never start a second run; a host that refuses (an image build runs, no capacity) is skipped until the next trigger
   %%> Built (task_vm.image_refresh, workflow `operation-task-vm-image-refresh`):
-  %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; no step calls the Gateway
+  %%> - the run of one host, admitted like `tasks:prep`: a group of its own in the proof Project, placed on that host only, with the whole intent captured in the admission of provision; only the clone step calls the Gateway, to mint its read credential
   %%> - a repeat admission for a host returns the open run
   %%> Hosts:
   %%> - Linux only: the task VM hosts beast and shark, with Incus

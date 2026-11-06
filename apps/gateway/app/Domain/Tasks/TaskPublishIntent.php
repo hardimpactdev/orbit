@@ -61,7 +61,7 @@ final readonly class TaskPublishIntent
             throw new ResourceOperationException('tasks.publish_failed', 'The Project requires a GitHub repository and valid default branch.', 422);
         }
 
-        // Only the vault key names are admitted. The publish step mints the token when it runs ({@see TaskPushGitHubTokens}).
+        // Only the vault key names are admitted. The publish step mints the token when it runs ({@see TaskGitHubTokens}).
         $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
         $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 

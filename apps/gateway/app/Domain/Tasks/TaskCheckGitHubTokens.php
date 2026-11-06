@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\NativeGitHubTokenIssuer;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
@@ -16,16 +17,16 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 
 /** Existing scoped mint primitive: refresh execution copies after local checks, never return values. */
-final readonly class TaskCheckGitHubTokens
+final readonly class TaskCheckGitHubTokens implements NativeGitHubTokenIssuer
 {
     public function __construct(private DirectOperation $direct, private RepositoryPullRequestAccess $access, private SwampCommandStep $step) {}
 
     /** @return array<string,array{vault:string,key:string}> */
-    public function issue(Operation $operation, int $callerNodeId, string $runId): array
+    public function issue(Operation $operation, int $callerNodeId, string $runId, ?string $purpose = null): array
     {
         $operation->refresh();
         $this->direct->assertRun($operation, $runId);
-        if ($operation->kind !== 'tasks.check' || $operation->target_type !== 'task_group'
+        if ($purpose !== null || $operation->kind !== 'tasks.check' || $operation->target_type !== 'task_group'
             || ! in_array($callerNodeId, [$operation->node_id, SwampNode::id()], true)
             || $operation->status->terminal() || $operation->cancel_requested_at !== null
             || ($operation->input['phase'] ?? null) !== 'handoff' || ! is_string($operation->input['check_name'] ?? null)
