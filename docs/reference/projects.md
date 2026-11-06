@@ -258,7 +258,7 @@ The Gateway keeps each Project's last inspection, so the next one reads again on
 
 Maintenance is opt-in per Project and off by default. [`project:maintenance:enable`](/cli/project/maintenance-enable) turns it on for a Project that reads through the GitHub App and has a default branch and a task check; [`project:maintenance:disable`](/cli/project/maintenance-disable) turns it off. Only the default branch is inspected. The Schedule skips a Project with maintenance off, and a direct request for it fails with `project.maintenance_disabled` (409). Project responses carry the setting as `maintenance`. Disabling also prevents an earlier observation from changing task groups.
 
-A Project with maintenance on also needs a policy module under `swamp/extensions/behaviors/projects/<slug>/mod.ts`: its Composer and JavaScript paths, release-age policy and exceptions. A run for a Project without one fails with `project.maintenance_not_configured`. Orbit's own policy covers `apps/gateway`.
+A Project with maintenance on also needs an entry in `swamp/extensions/behaviors/operations/project-maintenance/projects.json`: its Composer and JavaScript paths, release-age policy and exceptions. A run for a Project without one fails with `project.maintenance_not_configured`. Orbit's own policy covers `apps/gateway`.
 
 ### Inspection
 

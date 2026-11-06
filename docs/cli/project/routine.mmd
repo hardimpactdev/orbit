@@ -74,7 +74,7 @@ sequenceDiagram
   else selection fails
     SW--xGW: Run failed<br/>error_code, failed step
     %%> When:
-    %%> - Project 4 has no maintenance policy module, or its settings differ from the policy; an invalid input never starts the run, the input schema refuses it
+    %%> - Project 4 has no `projects.json` entry, or its settings differ from the policy; an invalid input never starts the run, the input schema refuses it
     Note over GW: Mark the task failed<br/>no group · rerun is safe
     %%> Result:
     %%> - task #5151 fails; no task group is created

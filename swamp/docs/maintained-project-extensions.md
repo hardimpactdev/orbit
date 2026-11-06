@@ -1,4 +1,4 @@
-# Maintained project extensions
+# Maintained project configuration
 
 These fixture entries record repository configuration and Orbit Project settings
 captured on 2026-10-27. The source commits and policy files are retained in
@@ -25,11 +25,11 @@ tests/fixtures/project-extensions/fleet.json. No project repository is changed.
 | hauzer               | 16       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 | mealou               | 19       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 
-Operator keeps only server/web in its private extension config. Hauzer and
+Operator keeps only server/web in its entry in `projects.json`. Hauzer and
 Mealou include mobile for Expo. Other manifests outside configured paths (such
 as Operator mac/iOS, Operator Website Slack, and Platform11 design templates) do
 not expand this rollout. Four projects have no explicit age rule; their
-extensions preserve that absence rather than adding policy.
+entries preserve that absence rather than adding policy.
 
 Execution follows the binding [Swamp shape guide](swamp-shape.md). This
 configuration snapshot does not make the older routines a conforming authoring
