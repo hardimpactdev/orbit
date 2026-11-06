@@ -172,3 +172,13 @@ Deno.test("a failed setup wins over the Route it skipped", () => {
         true,
     );
 });
+Deno.test("the Route is not finished until every certificate step succeeded", () => {
+    const routed = { ...intent, route: { route_id: 9 } };
+    for (const certificates of [["succeeded", "skipped"], ["failed"], []]) {
+        const result = JSON.parse(
+            createResult(routed, { ...phases, route: "succeeded", certificates })
+                .stdout,
+        );
+        assertEquals(result.ready, certificates.length === 0);
+    }
+});

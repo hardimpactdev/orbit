@@ -266,7 +266,7 @@ jobs:
             kind: route.create
             intent: '${{ inputs.intent.route }}'
             execution_secrets: '${{ inputs.intent.route_secrets }}'
-            signed: '${{ inputs.intent.route.leaf_indexes.map(i, steps["route-sign-" + string(i)].outputs.sign.stdout) }}'
+            signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-sign-" + string(i)) in steps && steps["route-sign-" + string(i)].status == "succeeded" ? steps["route-sign-" + string(i)].outputs.sign.stdout : "") }}'
       # Finish: map the first phase that did not finish to the public receipt. The cleanup of the run folder runs beside it.
       - name: finish
         labels: {role: swamp}
