@@ -12,8 +12,8 @@ use App\Domain\Operations\OperationBudgetTable;
  */
 final class SwampRoleUnits
 {
-    /** Dispatch slots per swamp worker, about twice the swamp Node's cores. */
-    public const int WorkerConcurrency = 8;
+    /** Dispatch slots per swamp worker: Swamp's `auto`, one per CPU core (Nick's decision, 2026-11-06). */
+    public const string WorkerConcurrency = 'auto';
 
     /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
     public const int ScheduledRuns = 4;
