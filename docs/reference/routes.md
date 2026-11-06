@@ -611,6 +611,8 @@ Private DNS answers carry a 30-second TTL. After a transition moves a name, it w
 
 The wait counts from the last DNS move of that Route, which the Route stores. When another change moves the same Route during the wait, that change waits its own full period.
 
+An Instance removal (`instance:destroy`) waits no grace: it removes the name for good, and a client that still holds a cached answer reaches the Node for up to 30 seconds after the site is gone, the same as after the wait. `route:destroy` keeps the wait until its own flow is measured.
+
 The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. Caddy finishes every request in progress on the old target and closes idle keep-alive connections, so the next request resolves the name again. A client with a longer DNS cache of its own, such as a browser or a Java runtime, can still reach the old target and get a TLS error until its cache expires. Retry the request or reload the page.
 
 ## Publish each service on its own hostname

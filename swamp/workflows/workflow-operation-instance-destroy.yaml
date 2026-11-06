@@ -119,7 +119,7 @@ jobs:
     - step: Remove the git credential
       condition:
         type: always
-    guard: ${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.members.all(m, m.route_id == null) && size(inputs.intent.additional_route_ids) == 0 && size(inputs.intent.additional_routes) == 0 && size(inputs.intent.route_mutations.restore.routes) == 0) }}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") || (inputs.intent.members.all(m, m.route_id == null) && size(inputs.intent.route_mutations.restore.routes) == 0) }}
     task:
       type: workflow
       workflowIdOrName: route-mutation-forward
