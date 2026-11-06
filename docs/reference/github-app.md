@@ -81,7 +81,7 @@ Fixed error codes are `dependency_token.forbidden` (403), `project.not_found` (4
 
 The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
-[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites and the pull request's own `pull_request` suites for the [merge gate](/reference/tasks#execution-ownership).
+[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites.
 
 The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) instead receives SHA-bound Git refs through the Gateway mirror. Its repository read uses `Contents: read`, not the Actions API. Only the successful main CI publisher needs `Contents: write`; the workspace receives cache objects without a GitHub token.
 
@@ -183,9 +183,9 @@ The publish token has `contents: write`, `pull_requests: write` and `workflows: 
 
 A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
 
-It reads the check runs and check suites of the handoff commit with the `checks: read` token. Suites use `GET /repos/{owner}/{repo}/commits/{sha}/check-suites`. After reading the check runs, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#execution-ownership) describes. The merge gate, the settling watch, and the handoff share these runs and suites for 60 seconds.
+It reads the check runs of the head commit with the `checks: read` token. After reading them, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#execution-ownership) describes. The settling watch shares these runs for 60 seconds.
 
-The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this snapshot and conclusion classification inside `tasks.check`; it adds no second GitHub reader. Its persisted evidence uses the existing `GitHubCheckRun::toArray()` and `GitHubCheckSuite::toArray()` records with bounded, redacted text, not raw logs. The operation pins the required check name and branch before push and reads only its recorded commit. Pending, missing or unreadable evidence keeps it waiting; infrastructure/configuration evidence does not silently become a failed-code charge. The orchestrator owns assistance, time budgets and cancellation. This prerequisite does not open external review-and-merge admission or change token permissions.
+The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this snapshot and conclusion classification inside `tasks.check`; it adds no second GitHub reader. Its persisted evidence uses the existing `GitHubCheckRun::toArray()` records with bounded, redacted text, not raw logs. The operation pins the required check name and branch before push and reads only its recorded commit. Pending, missing or unreadable evidence keeps it waiting; infrastructure/configuration evidence does not silently become a failed-code charge. The orchestrator owns assistance, time budgets and cancellation. This prerequisite does not open external review-and-merge admission or change token permissions.
 
 After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
@@ -219,21 +219,14 @@ The Gateway resolves the repository's installation id, caches it, and reuses tha
 
 ## How Orbit reviews and merges a pull request
 
-A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for these calls. Each call asks GitHub for its own token, as the table shows.
+Swamp reviews and merges: the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) use the write tokens described above. The Gateway reads the merge check with the two calls below, each with its own token.
 
 | Call | Endpoint | Token |
 | --- | --- | --- |
-| List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
-| Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
 | Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs`, every page | `checks: read` |
-| Identify superseded and pull request suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
-| Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
+| Identify superseded suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
 
-The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. The merge gate's read of the pull request's own workflow runs uses the App's existing `Actions: read`. So the flow needs no new App permission, no maintainer credential, and no webhook.
-
-A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
-
-GitHub forbids an account to review its own pull request, and that includes the App. So Orbit submits reviews only on pull requests that a person opened. It never reviews a pull request it opened. The merge needs no review: the `sha` parameter makes GitHub refuse the merge when the head moved.
+The read of the workflow runs uses the App's existing `Actions: read`. The flow needs no new App permission, no maintainer credential, and no webhook.
 
 An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 
@@ -252,7 +245,7 @@ A commit qualifies when all of these hold.
 - On main, the `Gateway release inputs` check runs for every commit, because a Gateway release also loads Swamp.
 - The commit has not failed a release.
 
-The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
+The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The release reader and `bin/pr-head-check` count every returned run of the required name.
 
 A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
 
