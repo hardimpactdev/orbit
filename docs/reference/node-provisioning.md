@@ -422,7 +422,7 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
-The role reads the package indexes of the Ubuntu snapshot with up to eight retries, 30 seconds apart. The snapshot service answers 503 now and then, for an index and for a package. A 503 on a package fails the phase, and a resumed run repeats it.
+The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
 
 The playbook reads the pins of `recipe.json` from the intent and names none. The `software` phase adds `python3-venv` from the same Ubuntu snapshot, which the shape gate linters need. The Pi server is an internal artifact: the run copies it from the Gateway host to Node 209 as `pi_path`, and the `software` phase installs it on the VM when the VM's digest differs from the pin. [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm) describes the phases.
 

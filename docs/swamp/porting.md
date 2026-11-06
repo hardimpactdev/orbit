@@ -194,7 +194,7 @@ Apply every boundary decision to admission, execution and projection. Atomic sta
 
 Use the native feature in the right column. Custom code is allowed only where the manual has a real gap; send that gap to the orchestrator with evidence before you build.
 
-For external state, use a bounded poll in the phase script, [as above](#set-the-time-budget). An Ansible readiness wait is a bounded `until` inside a phase with a literal `timeout`.
+For external state, use a bounded poll in the phase script, [as above](#set-the-time-budget). An Ansible readiness wait, or a retry of a task that fails on a transient external error, is a bounded `until` (or a module's own retry option) inside a phase with a literal `timeout`.
 
 | Pattern | Native replacement | Manual |
 | --- | --- | --- |
