@@ -61,7 +61,7 @@ final readonly class StartTaskVmImageOperationAction
             'candidate_alias' => ($build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id)).'-attempt-'.$build->attempt,
             'base_alias' => $host->imageAlias, 'previous_alias' => $host->imageAlias.'-previous',
             // The orbit account of the builder and of every clone accepts the key of the Swamp control Node.
-            'launch_config' => TaskVmLaunchConfig::for($identity['public_key']),
+            'launch_config' => TaskVmLaunchConfig::for($identity['public_key'], sshServer: true),
             // The host runs Incus; Node 209 reaches the builder through it. The builder's address and host key come from the host during the run.
             'jump' => $this->keys->forNode($node),
             'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],

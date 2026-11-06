@@ -87,6 +87,7 @@ it('carries the host, the builder names and the pins of the recipe, and no agent
     $launch = json_decode($input['launch_config'], true, flags: JSON_THROW_ON_ERROR);
     expect($launch['devices']['cloud-init'])->toBe(['type' => 'disk', 'source' => 'cloud-init:config']);
     expect($launch['config']['cloud-init.user-data'])->toStartWith("#cloud-config\n")->toContain('"name": "orbit"')->toContain('ssh-ed25519 ');
+    expect($launch['config']['cloud-init.user-data'])->toContain('"packages": [')->toContain('"openssh-server"');
     foreach (['agent_sha256', 'agent_url', 'certificate', 'prune', 'gateway_public_key', 'ssh_execution'] as $retired) {
         expect($input)->not->toHaveKey($retired);
     }
