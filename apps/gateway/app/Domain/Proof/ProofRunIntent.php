@@ -75,6 +75,7 @@ final readonly class ProofRunIntent
             // transaction, so a router teardown never sees a half-admitted proof.
             app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
                 // The watchdog may have ended this proof as lost while the request was slow. Then nothing is admitted, so no run is orphaned.
+                // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
                 if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
                     throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
                 }

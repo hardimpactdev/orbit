@@ -318,6 +318,30 @@ describe('proof:run admission', function (): void {
         Process::run(['rm', '-rf', $base]);
         expect($refusal->errorCode)->toBe('tasks.capacity_unavailable')->and($refusal->getMessage())->toContain('A report-only proof leaves 3 slots free');
     });
+
+    it('admits nothing when the watchdog ended the proof while the request was slow', function (): void {
+        config(['proof.execution' => true]);
+        app(TaskExtensionState::class)->enable();
+        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+        $source = proofSource();
+        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+        proofWorld($source);
+        // The proof is ended behind the request's back right after it starts running, as the watchdog does for a lost request.
+        $armed = true;
+        Operation::updated(static function (Operation $operation) use (&$armed): void {
+            if ($armed && $operation->kind === 'proof.run' && $operation->status === OperationStatus::Running) {
+                $armed = false;
+                Operation::query()->whereKey($operation->id)->update(['status' => OperationStatus::Failed->value]);
+            }
+        });
+
+        $refusal = proofRefused(fn () => app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null));
+
+        $armed = false;
+        expect($refusal->errorCode)->toBe('proof.admission_interrupted')->and(Task::query()->count())->toBe(0)
+            ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
+    });
 });
 
 describe('the intent of a run', function (): void {

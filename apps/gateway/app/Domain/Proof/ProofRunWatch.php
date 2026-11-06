@@ -11,6 +11,7 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofRunWatch
 {
-    /** Without a run: the request holds the admission lock for 60 s at most and admits in about a minute. Later, it is gone. */
+    /** Without a run: the request waits 60 s at most for the admission lock and then admits in about a minute. Later, it is gone. */
     public const int AdmissionSeconds = 150;
 
     /**
@@ -46,10 +47,31 @@ final readonly class ProofRunWatch
         $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
             ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
         foreach ($open as $id) {
-            $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+            // Reads first: a healthy proof takes the write lock for nothing on every pass.
+            if ($this->needsAction(ValidatedData::integer($id))) {
+                $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+            }
         }
 
         return $ended;
+    }
+
+    private function needsAction(int $id): bool
+    {
+        $children = ProofRunSettlement::children($id);
+
+        return $children->isEmpty() || $children->every(static fn (Operation $child): bool => $child->status->terminal())
+            || ($children->contains(static fn (Operation $child): bool => self::neverHandedOver($child)) && self::quiet($children));
+    }
+
+    /**
+     * Whether no run of the proof moved for the dispatch silence.
+     *
+     * @param  Collection<int, Operation>  $children
+     */
+    private static function quiet(Collection $children): bool
+    {
+        return $children->every(static fn (Operation $child): bool => $child->updated_at !== null && $child->updated_at->lt(now()->subSeconds(self::DispatchSilenceSeconds)));
     }
 
     private function watch(int $id): int
@@ -68,9 +90,8 @@ final readonly class ProofRunWatch
 
             return 1;
         }
-        $unstarted = $children->filter(static fn (Operation $child): bool => ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0);
-        $quiet = $children->every(static fn (Operation $child): bool => $child->updated_at !== null && $child->updated_at->lt(now()->subSeconds(self::DispatchSilenceSeconds)));
-        if ($unstarted->isNotEmpty() && $quiet) {
+        $unstarted = $children->filter(static fn (Operation $child): bool => self::neverHandedOver($child));
+        if ($unstarted->isNotEmpty() && self::quiet($children)) {
             // No request is left to hand these runs to Swamp. End them the way an expired run ends, so the group and its VM go too.
             foreach ($unstarted as $child) {
                 $this->store->change($child, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => ProofRunSettlement::AdmissionInterrupted,
@@ -82,6 +103,16 @@ final readonly class ProofRunWatch
         $this->settlement->settle($proof->id);
 
         return $proof->refresh()->status->terminal() ? 1 : 0;
+    }
+
+    /**
+     * Whether Swamp never got the run: it is open, bound to no Swamp run, and not in `swamp.start_uncertain`, where Swamp may have
+     * accepted the run and the reconcile pass finds it by its tag (`recoverUnbound`), which the 600 s budget covers.
+     */
+    private static function neverHandedOver(Operation $child): bool
+    {
+        return ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0
+            && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']);
     }
 
     /** Releases the admission lock only if this proof's request holds it; a lock another admission or a teardown holds stays. */

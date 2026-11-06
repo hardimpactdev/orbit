@@ -151,3 +151,14 @@ it('does not shorten the admission limit of a run: a slow hand-over to Swamp is 
 
     expect(OperationRunBudgets::seconds($unstarted))->toBe(600);
 });
+
+it('leaves a run alone that Swamp may have accepted: its start is uncertain, and the reconcile pass finds its run by tag', function (): void {
+    Queue::fake();
+    $proof = watchProof(watchNode(), 900);
+    $uncertain = watchRun($proof, 'firewall:allow', OperationStatus::Running, 'swamp.start_uncertain');
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(0);
+
+    Queue::assertNotPushed(CancelProofGroup::class);
+    expect($uncertain->refresh()->status)->toBe(OperationStatus::Running)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
+});
