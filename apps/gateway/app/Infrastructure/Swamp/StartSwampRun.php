@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
-use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationBroadcaster;
@@ -17,14 +16,11 @@ use App\Models\Operation;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Throwable;
 
 /** One native submission. A lost confirmation never proves that no run started. */
 final readonly class StartSwampRun
 {
-    private const int ConfirmationSeconds = 120;
-
     /** @var Closure(): float */
     private Closure $clock;
 
@@ -63,16 +59,102 @@ final readonly class StartSwampRun
                 app(OperationBroadcaster::class)->changed($operation, true);
             }
         } catch (Throwable $exception) {
-            $safe = $exception instanceof ResourceOperationException
-                ? $exception : ($accepted ? $this->uncertain()
-                    : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
-            $outcome = $safe->errorCode;
-            $this->fail($operation, $safe->errorCode);
-            throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
+            $failure = $this->failStart($operation, $exception, $accepted);
+            $outcome = $failure->errorCode;
+
+            throw $failure;
         } finally {
             Log::info('Swamp direct start', ['operation_id' => $operation->id,
                 'outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)]);
         }
+    }
+
+    /**
+     * Starts several admitted runs as one batch: every `workflow.run` request is sent first, and each reply binds its run as it arrives
+     * (docs/cli/proof/run.mmd). A run that fails or is uncertain ends only itself; the others go on. The first failure is thrown at the end,
+     * as `start()` throws its own. One run takes the path of `start()`.
+     *
+     * @param  list<Operation>  $operations
+     */
+    public function startMany(array $operations): void
+    {
+        if (count($operations) === 1) {
+            $this->start($operations[0]);
+
+            return;
+        }
+        $started = microtime(true);
+        $payloads = [];
+        $byId = [];
+        $failures = [];
+        foreach ($operations as $operation) {
+            try {
+                if (! $this->begin($operation)) {
+                    continue;
+                }
+                $declaration = app(DirectOperation::class)->definition($operation->kind);
+                if ($declaration === null) {
+                    throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
+                }
+                $payloads[$operation->id] = ['workflowIdOrName' => $declaration['workflow'],
+                    'inputs' => app(DirectOperation::class)->workflowInputs($operation),
+                    'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]];
+                $byId[$operation->id] = $operation;
+            } catch (Throwable $exception) {
+                $failures[] = $this->failStart($operation, $exception, false);
+            }
+        }
+        $results = [];
+        if ($payloads !== []) {
+            try {
+                $results = $this->requestMany($this->endpoint(), $payloads);
+            } catch (Throwable $exception) {
+                foreach ($byId as $operation) {
+                    $failures[] = $this->failStart($operation, $exception, false);
+                }
+            }
+        }
+        $outcomes = [];
+        foreach ($results as $id => $result) {
+            $operation = $byId[$id];
+            try {
+                if ($result instanceof ResourceOperationException) {
+                    throw $result;
+                }
+                $this->bind($operation, $result['run_id']);
+                if ($result['failed']) {
+                    throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
+                }
+                $outcomes[$id] = 'started';
+                if (app(DirectOperation::class)->usesNativeTerminal($operation)) {
+                    app(OperationBroadcaster::class)->changed($operation, true);
+                }
+            } catch (Throwable $exception) {
+                $failure = $this->failStart($operation, $exception, true);
+                $outcomes[$id] = $failure->errorCode;
+                $failures[] = $failure;
+            }
+        }
+        $milliseconds = (int) round((microtime(true) - $started) * 1000);
+        foreach ($outcomes as $id => $outcome) {
+            Log::info('Swamp direct start', ['operation_id' => $id, 'outcome' => $outcome, 'duration_ms' => $milliseconds]);
+        }
+        Log::info('Swamp direct start batch', ['count' => count($operations), 'sent' => count($payloads), 'started' => count(array_filter($outcomes, static fn (string $outcome): bool => $outcome === 'started')),
+            'duration_ms' => $milliseconds]);
+        if ($failures !== []) {
+            throw $failures[0];
+        }
+    }
+
+    /** Ends the run that failed to start and returns the error that `start()` throws for it. */
+    private function failStart(Operation $operation, Throwable $exception, bool $accepted): ResourceOperationException
+    {
+        $safe = $exception instanceof ResourceOperationException
+            ? $exception : ($accepted ? $this->uncertain()
+                : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
+        $this->fail($operation, $safe->errorCode);
+
+        return new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
     }
 
     /** The lifecycle transition also prevents a second caller from submitting this intent. */
@@ -162,76 +244,53 @@ final readonly class StartSwampRun
         $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
     }
 
-    /** @param array<string,mixed> $payload
+    /**
+     * @param  array<string,mixed>  $payload
      * @return array{run_id:string,failed:bool}
      */
     private function request(WebSocketEndpoint $endpoint, array $payload): array
     {
-        $id = bin2hex(random_bytes(16));
-        $stage = 'connect';
-        $started = ($this->clock)();
+        $result = $this->requestMany($endpoint, [0 => $payload])[0];
+        if ($result instanceof ResourceOperationException) {
+            throw $result;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int|string, array<string,mixed>>  $payloads
+     * @return array<int|string, array{run_id:string,failed:bool}|ResourceOperationException>
+     */
+    private function requestMany(WebSocketEndpoint $endpoint, array $payloads): array
+    {
         $dispatch = app(SwampDispatch::class);
         $shared = false;
         $socket = $this->socket;
         try {
             [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
-            $stage = 'send';
-            $socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
-            $stage = 'receive';
-            // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
-            $deadline = ($this->clock)() + self::ConfirmationSeconds;
-            while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
-                $confirmed = null;
-                foreach ($socket->receive(min(0.2, $remaining)) as $message) {
-                    if (($message['id'] ?? null) !== $id) {
-                        continue;
-                    }
-                    $event = $message['event'] ?? null;
-                    if (($message['type'] ?? null) === 'event' && is_array($event) && ! isset($event['parentRunId'])
-                        && ($event['workflowName'] ?? null) === $payload['workflowIdOrName']
-                        && is_string($event['runId'] ?? null) && Str::isUuid($event['runId'])
-                        && in_array($event['kind'] ?? null, ['started', 'failed', 'cancelled'], true)) {
-                        $confirmed ??= ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
-                    }
-                    if (($message['type'] ?? null) === 'error' && $confirmed === null) {
-                        $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
-                        $redact = static function (mixed $value, int $limit) use ($endpoint): string {
-                            if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
-                                return '[withheld]';
-                            }
+        } catch (Throwable $exception) {
+            Log::warning('Swamp direct start response unavailable', ['workflow' => reset($payloads)['workflowIdOrName'] ?? null, 'stage' => 'connect',
+                'confirmation_seconds' => SwampStartBatch::ConfirmationSeconds, 'exception_type' => $exception::class]);
+            $refusal = $exception instanceof ResourceOperationException
+                ? $exception : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503);
 
-                            $safe = app(LogRedactor::class)->redact($value, array_filter([$endpoint->bearerToken]));
-
-                            return Str::limit(preg_replace('/[\x00-\x1f\x7f]/u', ' ', $safe) ?? '[withheld]', $limit);
-                        };
-                        Log::warning('Swamp direct start refused', [
-                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => 'error',
-                            'remote_code' => $redact($error['code'] ?? null, 100),
-                            'remote_message' => $redact($error['message'] ?? null, 2000),
-                        ]);
-                        throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
-                    }
-                }
-                if ($confirmed !== null) {
-                    return $confirmed;
-                }
+            return array_map(static fn (): ResourceOperationException => $refusal, $payloads);
+        }
+        try {
+            $results = (new SwampStartBatch($this->clock))->run($socket, $endpoint, $payloads);
+            // A refused or unanswered request drops the shared connection; the next one opens a new one.
+            if ($shared && array_any($results, static fn (mixed $result): bool => $result instanceof ResourceOperationException)) {
+                $dispatch->release();
             }
-            throw $this->uncertain();
+
+            return $results;
         } catch (Throwable $exception) {
             if ($shared) {
                 $dispatch->release();
             }
-            $inputs = $payload['inputs'] ?? null;
-            Log::warning('Swamp direct start response unavailable', ['operation_id' => is_array($inputs) ? ($inputs['operation_id'] ?? null) : null,
-                'workflow' => $payload['workflowIdOrName'], 'request_id' => $id, 'stage' => $stage,
-                'elapsed_ms' => (int) round((($this->clock)() - $started) * 1000),
-                'confirmation_seconds' => self::ConfirmationSeconds, 'exception_type' => $exception::class]);
-            if ($exception instanceof ResourceOperationException) {
-                throw $exception;
-            }
-            throw $stage === 'connect'
-                ? new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503)
-                : $this->uncertain();
+
+            throw $exception;
         } finally {
             if (! $shared) {
                 $socket->close();
