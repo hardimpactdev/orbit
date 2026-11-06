@@ -124,7 +124,7 @@ A refusal leaves the group unchanged and records no VM, workspace or Operation. 
 
 The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp composes the canonical Task VM provision child for provider creation, bootstrap, WireGuard publication, model-key issue and Pi runtime preparation. Plain Task VMs have no Swamp worker. No PHP executor or waiting-read loop runs these effects.
 
-A task with a topology also carries a `converge` input, outside the intent. The step `Converge once` runs it on the outer VM before the nested fleet starts. The VM provider takes the intent whole in one argument, so the large converge intent stays out of it.
+A task with a topology also carries a `converge` input, outside the intent. The step `Converge once` runs it on the outer VM before the nested fleet starts. The VM provider takes the intent whole in one argument, so the large converge intent stays out of it. A task without a topology has no `converge` input. The two steps stay skipped, and their inputs take an empty object, because Swamp evaluates the inputs of a skipped step.
 
 The run's main steps are `Create and prepare the VM`, `Set up the workspace`, `Check the workspace` and `Accept the workspace`. The workspace step always ends with the receipt; any failure inside it lands there as `error_code` and `failed_step`. A failed step keeps no stdout, so the Gateway then reads the same receipt from the workspace step, and the failed Operation keeps the receipt's error code, such as `app-dev.php_version_unsupported`.
 
