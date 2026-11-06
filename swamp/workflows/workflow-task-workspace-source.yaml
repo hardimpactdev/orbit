@@ -373,7 +373,8 @@ jobs:
     allowFailure: true
   # The Route's Caddy access on the guest, one row at a time, after the fetch and before the setup steps write into the tree: what they
   # create inherits the default entries, as in instance:create's checkout phase. The Route then skips these rows for the guest.
-  # The rows run beside identity, inspect, composer, profile and the dependency writes, which read the tree only; the writes join them.
+  # The rows run beside identity, inspect, composer and profile, which only read the tree; the dependency writes wait for them, so the
+  # setup steps start after them.
   - name: access-${{ self._index }}
     labels: {role: swamp}
     task:
