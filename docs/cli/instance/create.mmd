@@ -4,6 +4,7 @@ sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work is two Ansible phases, `checkout` (clone, check out, write .env) and `setup`, behind one input step. Measured on Node 209: every placed Swamp step costs about 1.1 s of dispatch before it does any work, and the old flow ran 8 steps for the checkout and one per setup step.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the run-folder cleanup runs beside the result step, not before it (a Swamp job runs steps by dependency depth, so they were one after the other in a create without setup or Route).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route's key, CSR and signature run at the start, beside the checkout, because they touch only the certificate folder and the Route child ran them in series after the setup steps (about 7 s of a 46 s create).
+  %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route runs beside the setup steps, not after the Processes. The checkout phase grants Caddy its access to the checkout and writes APP_URL (what setup creates inherits the default entries, so nothing races the setup), and the signature is made in the same child as the key, beside the checkout. A Laravel create spent 19 s of 42 s on the Route after the setup. A failed setup leaves the published Route; `instance:destroy` withdraws it.
   %% status: draft
   %% command: instance:create
   %% kind: instance.create
@@ -51,9 +52,9 @@ sequenceDiagram
   %%> Why one input step:
   %%> - the intent is too large for an environment variable, and the same file serves both phases
   opt web-serving Project
-    SW->>N: Make, sign Route key<br/>children route-create-csr, -sign
+    SW->>N: Make, sign Route key<br/>child route-create-csr
     %%> When:
-    %%> - the key and CSR share the checkout's depth and the signature shares the depth of the setup steps; a Swamp job waits for the slowest step of each depth. They touch only the certificate folder, and the Gateway signs with the one certificate call
+    %%> - the key, the CSR and the signature share the checkout's depth, so a Swamp job does not wait for them; they touch only the certificate folder, and the Gateway signs with the one certificate call
     %%> Why here:
     %%> - the Route child below then takes the signed certificates, so its 5 s of key and signature steps are off the critical path
   end
@@ -67,6 +68,8 @@ sequenceDiagram
   %%> Why 0640 orbit-env:
   %%> - the Node agent can report the key names and never the values
   %%> - `.env.testing` is written the same way, only for an owned MySQL or PostgreSQL database
+  %%> With a Route:
+  %%> - the same phase denies Caddy the checkout, grants it the served roots and sets `APP_URL` in the `.env`; the Route's own phase skips both on this Node
   opt default Instance has a SQLite database
     SW->>N: Copy the default database<br/>child instance-clone-database
     %%> Why before setup:
@@ -77,6 +80,15 @@ sequenceDiagram
     %%> When:
     %%> - `--database-server` is given, or the default Instance's database is MySQL on a server; that dump is then copied in
   end
+  opt web-serving Project
+    SW->>N: Create the Route<br/>child operation-route-create
+    %%> What it adds:
+    %%> - the same steps as `route:create`, then a TLS probe of the site
+    %%> Why beside the setup steps:
+    %%> - the Route needs the signed certificate and the access the checkout phase gave, not the installed dependencies; the setup steps run at the same time
+    %%> Why it marks the Instance awake:
+    %%> - so the first request reaches the app, not the wake page
+  end
   SW->>N: Run Project setup steps<br/>Ansible · tags setup
   %%> As whom:
   %%> - the steps run as the Node's configured user, one after another; the first failure stops the run
@@ -85,13 +97,6 @@ sequenceDiagram
   SW->>N: Create, start Processes<br/>child operation-process-create
   %%> Why after setup:
   %%> - Processes need the installed dependencies
-  opt web-serving Project
-    SW->>N: Create the Route<br/>child operation-route-create
-    %%> What it adds:
-    %%> - the same steps as `route:create`, then a TLS probe of the site
-    %%> Why it marks the Instance awake:
-    %%> - so the first request reaches the app, not the wake page; only when this run starts every Process
-  end
   alt all steps pass in budget
     N-->>SW: Site answers<br/>Processes running
     SW-->>GW: Run succeeded<br/>terminal event

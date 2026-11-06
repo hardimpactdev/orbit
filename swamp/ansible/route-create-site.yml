@@ -30,6 +30,7 @@
     node_id: "{{ lookup('ansible.builtin.env', 'ORBIT_NODE_ID') | int }}"
     node_ids: "{{ [node_id | int, node_id | string] }}"
     node: "{{ intent.nodes[node_id | string] }}"
+    prepared: "{{ lookup('ansible.builtin.env', 'ORBIT_PREPARED') == (node_id | string) }}"
     signed: "{{ lookup('ansible.builtin.env', 'ORBIT_SIGNED').split('|||') }}"
     pem_begin: "-----BEGIN CERTIFICATE-----"
   tasks:
@@ -45,10 +46,12 @@
         account_gid: "{{ account.stdout.split(':')[3] }}"
         account_home: "{{ account.stdout.split(':')[5] }}"
     # Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one command for each kind of path).
+    # An Instance create has done this on its own Node in its checkout phase, before the setup commands write into the tree.
     - name: Grant Caddy access to the served roots
       ansible.builtin.command:
         argv: "{{ ['timeout', '120'] + item.argv }}"
       register: acl
+      when: not prepared
       loop: "{{ intent.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.argv | join(' ') | truncate(100) }}"
@@ -182,6 +185,7 @@
         regexp: "^APP_URL="
         line: "{{ item.line }}"
         create: false
+      when: not prepared
       loop: "{{ intent.url_lines | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.path }}"
@@ -212,3 +216,14 @@
         quiet: true
         fail_msg: instance.awake_marker_failed
       when: awake_markers.results is defined
+    # The last task: a success leaves no run folder, so the workflow cleans up only after a failure.
+    - name: Remove the run folder
+      ansible.builtin.file:
+        path: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"

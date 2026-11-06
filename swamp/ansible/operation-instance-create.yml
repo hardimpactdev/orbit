@@ -34,6 +34,7 @@
     branch: "{{ intent.resolve.branch }}"
     seed_commit: "{{ intent.resolve.seed_commit }}"
     credential_path: "{{ '/tmp/orbit-git-credential-' ~ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    node_ids: "{{ [lookup('ansible.builtin.env', 'ORBIT_NODE_ID') | int, lookup('ansible.builtin.env', 'ORBIT_NODE_ID')] }}"
   tasks:
     # An already created Instance runs no phase: the workflow skips this step.
     - name: List the worktrees of the seed
@@ -176,6 +177,31 @@
       become: true
       no_log: true
       when: intent.environment_testing
+    # The Route's access on this Node, before anything is published and before the setup commands write into the tree: Caddy is denied
+    # the checkout and granted the served roots (what setup creates inherits the default entries), and the .env names its URL. The Route
+    # then runs beside the setup; its own phase skips both for this Node.
+    - name: Grant Caddy access to the served roots
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '120'] + item.argv }}"
+      register: acl
+      become: true
+      loop: "{{ intent.route.acl | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
+      loop_control:
+        label: "{{ item.argv | join(' ') | truncate(100) }}"
+        break_when: acl is failed
+      changed_when: true
+      when: intent.route | default(none) is not none
+    - name: Set APP_URL
+      ansible.builtin.lineinfile:
+        path: "{{ item.path }}"
+        regexp: "^APP_URL="
+        line: "{{ item.line }}"
+        create: false
+      become: true
+      loop: "{{ intent.route.url_lines | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: intent.route | default(none) is not none
 
 - name: Run the Project setup steps
   hosts: create_node
