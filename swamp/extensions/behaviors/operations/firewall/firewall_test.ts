@@ -293,6 +293,25 @@ Deno.test("IPv4-embedded IPv6 is one IPv6 rule and matches UFW's equivalent spel
     });
 });
 
+Deno.test("an interface-scoped source is preserved and does not stand in for an unrestricted allow", () => {
+    const scoped = {
+        to: "443/tcp",
+        action: "allow",
+        source: "192.0.2.1 on eth0",
+        comment: "hand-owned",
+    };
+    const ufw = new UfwDouble([
+        scoped,
+        { to: "443/tcp", action: "deny", source: "Anywhere", comment: "" },
+    ]);
+    const applied = converge(ufw);
+    assertEquals(applied.commands.length, 1);
+    assertEquals(applied.commands[0].slice(3, 5), ["insert", "2"]);
+    assertEquals(ufw.rows[0], scoped);
+    assertEquals(ufw.rows.length, 3);
+    assertEquals(converge(ufw).commands, []);
+});
+
 Deno.test("a partial apply is not rolled back and a repeat repairs only the missing lines", () => {
     const ufw = new UfwDouble();
     const request = intent("present", { source: "any", protocol: "any" });
