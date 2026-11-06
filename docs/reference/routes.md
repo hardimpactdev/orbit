@@ -148,7 +148,7 @@ The workflow, `operation-route-create`, has the seven steps of the [route:create
 
 Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/ansible/route-create-site.yml`: the account, the Caddy access ACLs, PHP-FPM pools, certificate, trust store, Caddyfile, APP_URL lines and awake markers. A production `.env` is written by its own steps after it. The other Node changes are official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
 
-The phase updates the system trust store only when it wrote a new Orbit root, and it reads the account with one `getent` task.
+The phase updates the system trust store only when it wrote a new Orbit root.
 
 The Gateway builds the Caddy access ACLs as five commands for one site: two that deny the checkout, one that opens passage above the served roots, and two that grant read on the roots. Each command names every path it covers, because each command is one Ansible task on the Node.
 

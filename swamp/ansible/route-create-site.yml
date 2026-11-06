@@ -144,6 +144,9 @@
             group: root
             mode: "0644"
           notify: Update the trust store
+    # Run it now, not at the end of the play: a later failure would leave the root written and the store not updated, and a rerun sees no change.
+    - name: Update the trust store when the root changed
+      ansible.builtin.meta: flush_handlers
     # The Node's whole Caddyfile, as the Gateway rendered it with this Route; validated, then reloaded. Caddy is never restarted.
     - name: Publish the Caddy site
       when: intent.caddy | default([]) | selectattr('node_id', 'in', node_ids) | list | length > 0
