@@ -37,7 +37,7 @@ sequenceDiagram
     opt domain outside the TLD
       SW->>V: Publish private DNS<br/>records + catalog, then restart
       %%> When:
-      %%> - beside the site install, not after the probe: it needs only the signed certificate step. A failed install can leave a record that points at a Node without the site; a rerun or the Route removal replaces it
+      %%> - beside the site install, not after the probe: it needs nothing from the site and waits only for the earlier steps. A failed install can leave a record that points at a Node without the site, and a failed DNS publish now skips the probe and the Ingress edge; a rerun or the Route removal replaces the record
     end
     SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
     %%> Why:

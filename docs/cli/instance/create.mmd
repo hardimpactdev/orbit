@@ -53,7 +53,7 @@ sequenceDiagram
   opt web-serving Project
     SW->>N: Make, sign Route key<br/>children route-create-csr, -sign
     %%> When:
-    %%> - the key and CSR run beside the checkout and the signature beside the setup steps (a Swamp job waits for the slowest step of each depth, so each is placed with a step of its own length). They touch only the certificate folder, and the Gateway signs with the one certificate call
+    %%> - the key and CSR share the checkout's depth and the signature shares the depth of the setup steps; a Swamp job waits for the slowest step of each depth. They touch only the certificate folder, and the Gateway signs with the one certificate call
     %%> Why here:
     %%> - the Route child below then takes the signed certificates, so its 5 s of key and signature steps are off the critical path
   end
