@@ -36,13 +36,14 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-mount-the-state" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests[self.role] }}', '--', 'systemctl', 'start', 'home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'], timeoutSec: 130}}
     dependsOn: [{step: 'Make the mount point', condition: {type: succeeded}}]
+  # A failed task writes its message to stderr, which the run records with the failed step.
   # The Swamp tokens of the nested Gateway are renewed from the mounted checkout, so the tokens of the ready copies never decide how long a fleet lives (play `remint` of `gateway-bootstrap.yml`, with the control plan the build left on the machine). Only a fleet that starts from ready copies needs it: a restore of `base` brings back tokens that were renewed before it.
   - name: 'Re-mint the Swamp tokens'
     labels: {role: swamp}
     writes: true
     guard: '${{ !(has(inputs.remint) && inputs.remint) }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 910}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 910}}
     dependsOn: [{step: 'Mount the state', condition: {type: succeeded}}]
   # The ready copies hold an older database; the checked-out code owns the schema.
   - name: 'Migrate'
