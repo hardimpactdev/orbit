@@ -77,8 +77,8 @@ final readonly class GatewayRuntimeFiles
         $owned = $node instanceof Node
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
-        $longRunning = fn (string $name, string $description, string $command, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $this->service($description, 'simple', $command, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
+        $longRunning = fn (string $name, string $description, string $artisan, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
 
         return [
             ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
@@ -86,13 +86,13 @@ final readonly class GatewayRuntimeFiles
         ];
     }
 
-    private function service(string $description, string $type, string $command, string $extra = ''): string
+    private function service(string $description, string $type, string $artisan, string $extra = ''): string
     {
         $application = Config::string('orbit.gateway_checkout');
 
         return "[Unit]\nDescription={$description}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\n"
             ."WorkingDirectory={$this->directive($application)}\nEnvironment=ORBIT_HOME={$this->directive(Config::string('orbit.home'))}\n"
-            ."ExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$command}\"\n{$extra}";
+            ."ExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$artisan}\"\n{$extra}";
     }
 
     /** A systemd directive value, escaped as the agent wrote it: `%` doubles, and blanks, quotes, `$` and `\` become `\xNN`. */
