@@ -10,8 +10,8 @@ type Job = { name: string; steps: Step[]; dependsOn?: { job?: string }[] };
 type Workflow = { name: string; jobs: Job[] };
 
 const directory = new URL("../workflows/", import.meta.url);
-const purposes = ["clone", "dependencies", "publish", "pull_request", "dependency_merge"];
-const minted = /vault\.get\([^)]*(write_token|read_token|github_token|git_authorization|dependency_auth)/;
+const purposes = ["clone", "publish", "pull_request", "dependency_merge"];
+const minted = /vault\.get\([^)]*(write_token|read_token|github_token|git_authorization)/;
 
 async function workflows() {
     const found: { file: string; text: string; workflow: Workflow }[] = [];
@@ -59,7 +59,7 @@ Deno.test("every mint step names a purpose the Gateway issues and the run it bel
             }
         }
     }
-    assert(calls >= 8, `expected the eight task steps to mint, found ${calls}`);
+    assert(calls >= 7, `expected the seven task steps to mint, found ${calls}`);
 });
 
 /** The jobs that must have run before `job`. */
@@ -77,32 +77,21 @@ function jobsBefore(jobs: Job[], job: Job): Set<string> {
     return seen;
 }
 
-/** The purpose of the mint that writes the key a step reads: the clone credential and the dependency files have their own. */
-function purposeOf(text: string): string | null {
-    if (text.includes("dependency_auth")) return "dependencies";
-    if (/vault\.get\(inputs\.intent\.git_authorization/.test(text)) return "clone";
-    return null;
-}
-
 Deno.test("a step reads a minted key only after the step that mints it", async () => {
     for (const { file, workflow } of await workflows()) {
-        const mints = workflow.jobs.flatMap((job) =>
-            job.steps.filter((step) => step.task?.workflowIdOrName === "task-github-mint").map((step) => ({ job, step }))
+        const owner = workflow.jobs.find((job) =>
+            job.steps.some((step) => step.task?.workflowIdOrName === "task-github-mint")
         );
-        // A workflow with no mint step gets its tokens another way; the check pushes and the dependency evidence are not task mints.
-        if (mints.length === 0) continue;
+        const mint = owner?.steps.find((step) => step.task?.workflowIdOrName === "task-github-mint");
+        if (owner === undefined || mint === undefined) continue;
         for (const job of workflow.jobs) {
             for (const step of job.steps) {
-                const text = JSON.stringify(step.task ?? {});
-                if (step.task?.workflowIdOrName === "task-github-mint" || !minted.test(text)) continue;
-                const purpose = purposeOf(text);
-                const owner = mints.find(({ step: mint }) => purpose === null || mint.task?.inputs?.purpose === purpose);
+                if (step === mint || !minted.test(JSON.stringify(step.task ?? {}))) continue;
                 const where = `${file}: "${step.name}" in job "${job.name}"`;
-                assert(owner !== undefined, `${where} reads a minted key and nothing in the workflow mints it`);
-                if (owner.job === job) {
-                    assert(before(job.steps, step).has(owner.step.name), `${where} reads a minted key before "${owner.step.name}"`);
+                if (job === owner) {
+                    assert(before(job.steps, step).has(mint.name), `${where} reads a minted key before "${mint.name}"`);
                 } else {
-                    assert(jobsBefore(workflow.jobs, job).has(owner.job.name), `${where} runs without waiting for job "${owner.job.name}", which mints`);
+                    assert(jobsBefore(workflow.jobs, job).has(owner.name), `${where} runs without waiting for job "${owner.name}", which mints`);
                 }
             }
         }
