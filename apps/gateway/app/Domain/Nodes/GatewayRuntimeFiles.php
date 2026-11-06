@@ -35,14 +35,6 @@ final readonly class GatewayRuntimeFiles
         $home = Config::string('orbit.home');
         $file = static fn (string $path, string $content, string $ensure = 'present'): array => ['path' => $path, 'ensure' => $ensure,
             'content' => $content, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
-        $service = fn (string $description, string $type, string $command, string $extra = ''): string => "[Unit]\nDescription={$description}\n"
-            ."After=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\nWorkingDirectory={$this->directive($application)}\n"
-            ."Environment=ORBIT_HOME={$this->directive($home)}\nExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$command}\"\n{$extra}";
-        $owned = $node instanceof Node
-            ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
-            : [];
-        $longRunning = static fn (string $name, string $description, string $command, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $service($description, 'simple', $command, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
         $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $application.'/storage/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
@@ -51,7 +43,7 @@ final readonly class GatewayRuntimeFiles
             'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d')],
             'files' => [
                 $file(self::Pool, $this->pool($application, $home)),
-                $file('/etc/systemd/system/orbit-runtime-hibernator.service', $service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator')),
+                $file('/etc/systemd/system/orbit-runtime-hibernator.service', $this->service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator')),
                 $file('/etc/systemd/journald.conf.d/orbit-retention.conf', "# Managed by Orbit.\n[Journal]\nSystemMaxUse=".Config::integer('retention.journal_max_mb')
                     ."M\nSystemKeepFree=".Config::integer('retention.journal_keep_free_mb')."M\nRuntimeMaxUse=".Config::integer('retention.journal_runtime_max_mb')
                     ."M\nMaxRetentionSec=".Config::integer('retention.journal_days')."day\n"),
@@ -64,14 +56,43 @@ final readonly class GatewayRuntimeFiles
                 $file('/etc/orbit/php-fpm-start-hooks', '', 'absent'),
             ],
             'units' => [
-                ['name' => 'orbit-agent-view.service', 'unit' => $service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
+                ['name' => 'orbit-agent-view.service', 'unit' => $this->service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
                     "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n")],
-                ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
-                ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']))],
+                ...$this->recorder($node),
                 ['name' => 'orbit-runtime-hibernator.timer', 'unit' => "[Unit]\nDescription=Orbit runtime hibernator timer\n\n[Timer]\nOnBootSec=2min\n"
                     .'OnUnitActiveSec='.Config::integer('orbit.hibernation.sweep_seconds')."s\nPersistent=true\nUnit=orbit-runtime-hibernator.service\n\n[Install]\nWantedBy=timers.target\n"],
             ],
         ];
+    }
+
+    /**
+     * The scheduler and Horizon, which record finished runs, where no Process of the Node runs them. The bootstrap of a new
+     * Gateway starts the same units before its first run (docs/cli/tasks/vm-fleet-build.mmd), so that run is recorded before
+     * the role converges; the role then finds them unchanged.
+     *
+     * @return list<array{name: string, unit: string}>
+     */
+    public function recorder(?Node $node = null): array
+    {
+        $owned = $node instanceof Node
+            ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
+            : [];
+        $longRunning = fn (string $name, string $description, string $artisan, string $stop = ''): array => ['name' => "orbit-gateway-{$name}.service",
+            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n")];
+
+        return [
+            ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],
+            ...in_array('horizon', $owned, true) || ! GatewayQueueRedis::configured() ? [] : [$longRunning('horizon', 'Orbit Gateway queue', 'horizon', implode("\n", [...GatewayHorizon::stopDirectives(), '']))],
+        ];
+    }
+
+    private function service(string $description, string $type, string $artisan, string $extra = ''): string
+    {
+        $application = Config::string('orbit.gateway_checkout');
+
+        return "[Unit]\nDescription={$description}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType={$type}\nUser=orbit\n"
+            ."WorkingDirectory={$this->directive($application)}\nEnvironment=ORBIT_HOME={$this->directive(Config::string('orbit.home'))}\n"
+            ."ExecStart=\"/usr/bin/php8.5\" {$this->argument($application.'/artisan')} \"{$artisan}\"\n{$extra}";
     }
 
     /** A systemd directive value, escaped as the agent wrote it: `%` doubles, and blanks, quotes, `$` and `\` become `\xNN`. */

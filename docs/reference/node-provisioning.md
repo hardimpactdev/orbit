@@ -448,7 +448,9 @@ Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It reco
 
 ### The Swamp control plane
 
-The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout and the release grants. The phase writes them, mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
+
+The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
@@ -460,7 +462,7 @@ The same phase brings up the WireGuard hub of the Gateway's own network, because
 
 The `app` job also writes the agent delivery manifest from the `agent_delivery` run input: the public pins the admitting Gateway sends, because a new Gateway has no release to carry them.
 
-`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool, the Caddy site, and units for the scheduler and Horizon. It adds the `caddy` user to the group of the Gateway account, because Ubuntu keeps a home at 0750 and Caddy must read the checkout in it.
+`orbit:role-add NODE ROLE [--converge]` admits a role from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web site until its own `gateway` role is applied, so that role is admitted this way. The role brings the PHP-FPM pool and the Caddy site, and keeps the units of the scheduler and Horizon that the bootstrap started. It adds the `caddy` user to the group of the Gateway account, because Ubuntu keeps a home at 0750 and Caddy must read the checkout in it.
 
 The control plane phase also makes the Gateway's own agent key and records only its SHA-256 verifier, so the first `orbit:node-converge` of the Gateway Node has a verifier to render. It writes the dnsmasq backend file that private DNS needs and restarts dnsmasq on it, and it starts the Gateway with empty private DNS records and an empty catalog, so the first publication of a private name finds both. It puts the Orbit root certificate in the system trust of the machine.
 

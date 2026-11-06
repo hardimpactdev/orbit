@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayControlPlan;
+use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
@@ -36,6 +37,16 @@ it('renders the serve and worker units for the checkout of the machine, with the
         ->and($plan['hub']['peer_directory'])->toBe('/etc/wireguard/orbit-peers.d')
         ->and(array_keys($plan['grants']))->toBe(['grants/orbit-gateway.yaml', 'grants/orbit-serve.yaml'])
         ->and(json_encode($plan))->not->toMatch('/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/');
+});
+
+it('carries the scheduler and Horizon units the gateway role renders, so the bootstrap starts the same units', function (): void {
+    $node = SwampNodeFixture::ensure();
+    config(['orbit.gateway_queue.connection' => 'gateway-queue']);
+
+    $plan = app(GatewayControlPlan::class)->make(realpath(base_path('../../swamp')));
+
+    expect(array_column($plan['recorder'], 'name'))->toBe(['orbit-gateway-schedule.service', 'orbit-gateway-horizon.service'])
+        ->and(app(GatewayRuntimeFiles::class)->render($node)['units'])->toContain(...$plan['recorder']);
 });
 
 it('keeps the production checkout of the swamp Node when no repository is named', function (): void {

@@ -1,6 +1,6 @@
 ---
 # The Swamp control plane of a new Gateway, on its own machine (docs/cli/tasks/vm-fleet-build.mmd, "Converge itself").
-# `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout and the release grants.
+# `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout, the release grants, and the scheduler and Horizon units.
 # The tokens are minted here with the Swamp CLI and stay here: no run input or output holds one. Every file is written only when
 # it is missing, so a repeat changes nothing. The Swamp key (`api-key`) is already on the machine: the refresh VM pushes it.
 - name: Name the paths of the control plane
@@ -47,6 +47,17 @@
   loop:
     - { name: orbit-swamp-serve.service, content: "{{ control.units.serve }}" }
     - { name: "orbit-swamp-worker@.service", content: "{{ control.units.worker }}" }
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
+# The scheduler and Horizon record finished runs; the Gateway's first run, the converge of its own Node, comes before its role.
+- name: Write the recorder units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ control.recorder }}"
   loop_control: { label: "{{ item.name }}" }
   notify: Reload units
 - name: Make the grants folder
@@ -270,6 +281,10 @@
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
   loop: [a, b]
+- name: Start the recorder
+  ansible.builtin.systemd: { name: "{{ item.name }}", enabled: true, state: started }
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
 # The Gateway's own certificate, signed by the same CA, at the paths its rendered Caddyfile names. The first role run publishes that
 # Caddyfile and needs them, so they exist before it.
 - name: Issue the Gateway certificate
