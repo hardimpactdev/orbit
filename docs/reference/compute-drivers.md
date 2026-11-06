@@ -1583,7 +1583,7 @@ At admission the Gateway generates one ed25519 host key pair for the build serve
 
 | Step | What it does |
 | --- | --- |
-| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000. Over SSH it waits for cloud-init |
+| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000. Over SSH it waits for cloud-init and accepts a finish with recoverable errors (exit 2) |
 | Run the task image phases | The child `task-vm-upcloud-image-ansible` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
 | Prepare and clean | The same child with the `clean` phase: masks, ufw with only the public SSH rule `orbit:public-ssh-recovery`, identity files, `cloud-init clean` |
 | Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
