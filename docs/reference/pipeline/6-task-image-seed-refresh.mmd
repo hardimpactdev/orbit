@@ -84,6 +84,14 @@ sequenceDiagram
     %%> - stores the nested network with the copies: the subnet, and each Node's NIC MAC and address
     %%> - removes the refresh VM's WireGuard key from the operator Node record, so a new task VM joins with its own key (stage 2)
     %%> - publishes the outer VM as the new task image
+    SW->>H: Enroll, converge check VM<br/>on the boot-check VM
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - a release can trigger a refresh with nobody watching, and a refresh starts from the image the host serves, so one bad image would reach every later provision; the candidate is therefore enrolled and converged before it is promoted
+    %%> - on the throwaway VM of the boot check, after its check phase, the run enrolls the guest with the same bootstrap steps as an enrollment (account, key, sudoers file, observer install and verify), then converges it to the pins with the phases `software`, `tools` and `check`
+    %%> - the bootstrap steps are one child workflow, `task-vm-bootstrap`, which `task-vm-enrollment` calls too, so the check and a real enrollment cannot drift apart
+    %%> - the promotion waits for both steps; a candidate that cannot be enrolled or converged promotes nothing
+    %%> Not covered:
+    %%> - the WireGuard peer, the observer start and the nested fleet: they need a Gateway-admitted Node, so the next provision is their check
     SW->>H: Boot-check, promote<br/>under the host lock
     %%> Built: the smoke is the child `task-vm-image-smoke` and the alias move is the child `task-vm-image-promote`, the same children as the image build
     %%> Decided by the orchestrator, for Nick's review:
