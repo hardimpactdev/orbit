@@ -643,7 +643,7 @@ Fills do not evict artifacts, including packages no current Project uses. The ca
 
 ### Clone and set up every workspace
 
-Every new task workspace starts with an empty checkout on the VM's root disk at `<apps directory>/<project slug>/workspace`. The Gateway sends the selected branches and CI cache ref bound to the tested SHA from its [Git mirror](#git-on-a-task-vm). The workspace checks out its task branch, then the baseline check runs all [Project setup steps](/reference/instance-setup), every time. Each claim runs Project setup.
+Every new task workspace starts with an empty checkout on the VM's root disk at `<apps directory>/<project slug>/workspace`. A step on Node 209 clones the Project repository with full history and sends it to the VM as a Git bundle, so the agent reads code and history offline. The clone credential is minted for that step when it runs and never reaches the VM ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). The workspace checks out its task branch, then the baseline check runs all [Project setup steps](/reference/instance-setup), every time. Each claim runs Project setup.
 
 After source resolution has observed the default-branch lockfiles, the Gateway attaches the [read-only package cache](#shared-package-cache) and seeds private manager caches. The `@orbit/ci-caches` setup step imports the selected [CI cache ref](/reference/instance-setup#import-ci-main-caches). Missing packages download into private caches; a missing or invalid CI ref leaves checks cold. Neither miss queues a workspace image build. The fixed checkout path preserves cache paths across claims without sharing a writable checkout.
 
@@ -655,7 +655,7 @@ The check stops each setup step's process group when its shell exits, times out,
 
 Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
 
-If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source preparation still uses the Gateway mirror until the native provision adapter replaces it; task publication runs in Swamp.
+If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 

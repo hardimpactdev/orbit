@@ -539,7 +539,7 @@ jobs:
         run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
         env:
           ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
-          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + (has(inputs.run_id) ? inputs.run_id : run.id) + "\"}" }}'
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + (has(inputs.run_id) ? inputs.run_id : run.id) + "\",\"purpose\":\"publish\"}" }}'
     dependsOn:
     - step: Check imported commit
       condition:

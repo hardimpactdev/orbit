@@ -19,7 +19,7 @@ final class DirectGitHubTokenController extends Controller
     {
         $issuer = app(DirectOperation::class)->definition($operation->kind)['github_token_issuer'] ?? null;
         if ($issuer !== null) {
-            return response()->json(['data' => ['execution_secrets' => app($issuer)->issue($operation, $request->peerNodeId(), ValidatedData::string($request->validated('run_id')))], 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]])->header('Cache-Control', 'private, no-store');
+            return response()->json(['data' => ['execution_secrets' => app($issuer)->issue($operation, $request->peerNodeId(), ValidatedData::string($request->validated('run_id')), $request->validated('purpose'))], 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]])->header('Cache-Control', 'private, no-store');
         }
         if ($operation->kind === 'tasks.check') {
             $copies = app(TaskCheckGitHubTokens::class)->issue($operation, $request->peerNodeId(), ValidatedData::string($request->validated('run_id')));

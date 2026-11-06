@@ -83,6 +83,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: tasks.provision
+        run_id: ${{ run.id }}
         intent: ${{ inputs.intent.provision }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: Pin the VM

@@ -132,7 +132,11 @@ When the workspace has a Route or Process definitions, three steps run between s
 
 The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish`, `tasks.park` and `tasks.cancel`), each with its own receipt and time budget.
 
-Separate steps on Node 209 clone source and copy a Git bundle through official SSH. Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
+A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
+
+Separate steps then clone the source on Node 209, with full history, and copy a Git bundle through official SSH. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
+
+Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue, which its `gateway` role converges with the scheduler and Horizon units.
 

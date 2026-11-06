@@ -1,0 +1,201 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGitHubTokens;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrepIntent;
+use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\Tasks\TaskPublishIntent;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Task;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Mockery\MockInterface;
+use Tests\Support\SwampNodeFixture;
+
+uses(LazilyRefreshDatabase::class);
+
+const TOKEN_RUN = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
+
+/** A GitHub that serves one write token and one read token, and a Swamp socket that records every vault put. */
+function tokenWorld(bool $installed = true): object
+{
+    SwampNodeFixture::ensure();
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'push', 'push', 'hardimpactdev', 'organization', 'https://github.com/apps/push', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($installed): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn($installed ? 7 : null);
+        $github->shouldReceive('repositoryPullRequestToken')->andReturn('push-token-value');
+        $github->shouldReceive('repositoryReadToken')->andReturn('read-token-value');
+    }));
+    $socket = new class implements WebSocketClient
+    {
+        /** @var list<array<string,mixed>> */
+        public array $frames = [];
+
+        private bool $open = false;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+
+            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
+}
+
+/** The vault descriptors and values that the socket saw. */
+function tokenPuts(object $socket): array
+{
+    return array_map(fn (array $frame): array => [$frame['payload']['vaultName'], $frame['payload']['key'], $frame['payload']['value']], $socket->frames);
+}
+
+/** @return array{0:Operation,1:array<string,array{vault:string,key:string}>} */
+function pushOperation(string $kind, array $input = [], OperationStatus $status = OperationStatus::Running): array
+{
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Push', 'brief' => 'Push it', 'status' => TaskGroupStatus::Running]);
+    $names = ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()],
+        'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()]];
+    $input = $input + ($kind === 'tasks.prep'
+        ? ['publish' => ['repository' => 'hardimpactdev/orbit'], 'publish_secrets' => $names]
+        : ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $names]);
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => $status, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $input]);
+
+    return [$operation, $names];
+}
+
+/** @return array{0:Operation,1:array{vault:string,key:string}} a provision, or a prep run whose provision child holds the intent */
+function cloneOperation(string $kind, array $overrides = [], string $source = 'github_app'): array
+{
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $project->forceFill(['source_access' => $source])->save();
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Clone', 'brief' => 'Clone it', 'status' => TaskGroupStatus::Reserved]);
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.fake()->numberBetween(1, 900)];
+    $intent = [...['project_id' => $project->id, 'git_authorization' => $reference, 'workspace' => ['repository' => $project->repository_url]], ...$overrides];
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $kind === 'tasks.prep' ? ['provision' => $intent] : $intent]);
+
+    return [$operation, $reference];
+}
+
+it('mints the push token of a publish when its step asks, and writes it only under the admitted vault keys', function (string $kind): void {
+    $socket = tokenWorld();
+    [$operation, $names] = pushOperation($kind);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
+
+    expect($copies)->toBe($names)
+        ->and(tokenPuts($socket))
+        ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
+            ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
+        ->and(json_encode($copies))->not->toContain('push-token-value');
+})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep']]);
+
+it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
+    $socket = tokenWorld();
+    [$operation, $reference] = cloneOperation($kind);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone');
+
+    expect($copies)->toBe(['git_authorization' => $reference])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
+})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
+
+it('writes an empty clone credential for a repository the App does not cover, so the clone reads it anonymously', function (): void {
+    $socket = tokenWorld(installed: false);
+    [$operation, $reference] = cloneOperation('tasks.provision');
+
+    app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone');
+
+    expect(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], '']]);
+});
+
+it('lets a publish, a prep run and a provision ask for a token at the numeric Operation mint', function (string $kind): void {
+    expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.provision']);
+
+it('refuses a run that is not the Operation run, a caller that is not Swamp, an Operation that ended, and a missing or unknown purpose', function (): void {
+    $socket = tokenWorld();
+    [$operation] = pushOperation('tasks.publish');
+    $ended = pushOperation('tasks.publish', status: OperationStatus::Failed)[0];
+    $issue = fn (Operation $subject, int $caller, string $run, ?string $purpose = 'publish') => fn () => app(TaskGitHubTokens::class)->issue($subject, $caller, $run, $purpose);
+
+    expect($issue($operation, SwampNodeFixture::Id, 'ffffffff-4f06-4f2e-82d7-21b62c1f587a'))->toThrow(ResourceOperationException::class, 'another Swamp run')
+        ->and($issue($operation, 12, TOKEN_RUN))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($ended, SwampNodeFixture::Id, TOKEN_RUN))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($operation, SwampNodeFixture::Id, TOKEN_RUN, null))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'merge'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});
+
+it('refuses a purpose that the kind does not hold, and a repository that is not the Project repository', function (): void {
+    $socket = tokenWorld();
+    [$other] = pushOperation('tasks.publish', ['repository' => 'someone/else']);
+    [$publish] = pushOperation('tasks.publish');
+    [$check] = pushOperation('tasks.check');
+    [$provision] = cloneOperation('tasks.provision');
+    [$elsewhere] = cloneOperation('tasks.provision', ['workspace' => ['repository' => 'https://github.com/someone/else.git']]);
+    $issue = fn (Operation $subject, string $purpose) => fn () => app(TaskGitHubTokens::class)->issue($subject, SwampNodeFixture::Id, TOKEN_RUN, $purpose);
+
+    expect($issue($other, 'publish'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($publish, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($check, 'publish'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($provision, 'publish'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($elsewhere, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});
+
+it('fails with the publish code when the App is not installed on the repository', function (): void {
+    tokenWorld(installed: false);
+    [$operation] = pushOperation('tasks.publish');
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish'))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->getMessage())->toContain('cannot publish'));
+});
+
+// A prep run reaches its publish step 43 to 90 minutes after admission, a provision can wait for capacity before it clones, and an installation token lives one hour.
+arch('the admission of a publish, a prep run and a provision mints nothing and writes no vault value for a repository credential')
+    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskProvisionIntent::class])
+    ->not->toUse([RepositoryPullRequestAccess::class, RepositoryReadAccess::class, GitHubApi::class]);
+
+arch('the admission of a publish and of a prep run writes no vault value')
+    ->expect([TaskPublishIntent::class, TaskPrepIntent::class])
+    ->not->toUse([SwampCommandStep::class]);
