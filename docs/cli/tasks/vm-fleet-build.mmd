@@ -27,6 +27,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - a rebuild in the same VM removes the earlier fleet and forgets the earlier Gateway's host key in the operator's `known_hosts`: the new Gateway has the same address and a new key, and the bootstrap's `@swamp/cfgmgmt` steps trust `known_hosts` on first use (they take no pinned key), so the old entry refused them
   %%> - the refresh VM makes the SSH key of its `orbit` account when it has none (`ssh-keygen`, no passphrase): a fresh task VM has no key, and the key reaches the nested VMs; its private half stays on the refresh VM, which is never published, and the guests keep only its public half
+  %%> - the three VMs are created one at a time: three parallel `incus init` calls of the same remote image race on the client's image cache (`mkdir ~/.cache/incus/<fingerprint>: file exists`), which a live run on beast showed
   VM->>NG: Prepare the Gateway<br/>local Swamp · one run
   %%> What it does:
   %%> - the operator (here the refresh VM) runs the Gateway bootstrap workflow once with a local `swamp workflow run`; its steps request no worker, so the binary runs them itself
