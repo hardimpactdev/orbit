@@ -30,6 +30,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -61,7 +62,7 @@ final readonly class ProofRunIntent
             ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => []], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
         try {
-            AdmitProofRun::dispatch($proof->id)->afterCommit();
+            app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id));
         } catch (Throwable $exception) {
             // The queue refused the job: end the proof with a code instead of leaving it for the watchdog.
             report($exception);
@@ -92,7 +93,7 @@ final readonly class ProofRunIntent
                 return;
             }
             if ($selection->nothingToProve()) {
-                $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
+                $this->whileOpen($proof->id, fn (Operation $current) => ValidatedData::object($current->input)['runs'] !== [] ? null : $this->store->change($current, ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
                     'commit' => $commit, 'outcome' => 'nothing_to_prove', 'reason' => 'proof.nothing_to_prove', 'cases' => [],
                     'uncovered' => $selection->uncovered, 'receipt_url' => null,
                 ]]));
@@ -135,13 +136,14 @@ final readonly class ProofRunIntent
     }
 
     /**
-     * Ends a proof that was refused or failed at admission. The code and the message are on the Operation, as the request carried them before.
+     * Ends a proof that was refused or failed at admission. A proof that already names its runs is left to its runs and the watchdog:
+     * they closed the groups, and ending the proof here would leave them unsettled. The code and the message are on the Operation, as the request carried them before.
      *
      * @param  list<array{path:string,reason:string}>  $uncovered
      */
     private function fail(Operation $proof, string $code, string $message, array $uncovered): void
     {
-        $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code, 'current_step' => null,
+        $this->whileOpen($proof->id, fn (Operation $current) => ValidatedData::object($current->input)['runs'] !== [] ? null : $this->store->change($current, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code, 'current_step' => null,
             'state' => [...($current->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $message, 'stderr_recorded' => false]],
             'result' => ['commit' => ValidatedData::object($current->input)['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $uncovered, 'receipt_url' => null]]));
     }

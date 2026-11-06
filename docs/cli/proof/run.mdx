@@ -87,7 +87,7 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 
 ## Errors
 
-The request answers at once with the proof Operation. The checks of the commit, the selection of the cases and the admission run after that, in a queue job. A refusal of the admission is therefore on the proof Operation, with its code and message, and the command prints it when it follows the proof. Only `proof.commit_invalid` (before any request) and `proof.swamp_unavailable` refuse the request itself.
+The request answers at once with the proof Operation. The checks of the commit, the selection of the cases and the admission run after that, in a queue job. A refusal of the admission is therefore on the proof Operation, with its code and message, and the command prints it when it follows the proof. The request itself refuses only `proof.swamp_unavailable`, a start that the extension, the access check or the idempotency key refuses, and `proof.commit_invalid`, which the command checks before any request.
 
 | Code | Meaning |
 | --- | --- |
@@ -97,7 +97,8 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The message names the path. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
 | `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
-| `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs, or the queue refused it. No case ran, and each selected case is `unrun`. Run the command again. |
+| `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
+| `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
 | `tasks.capacity_unavailable` | No host with a usable nested fleet seed has room for a VM for each selected command. No run starts. With `--report-only` a host also keeps the slots of one large VM free (see the option). A host whose seed holds no ready copies of the current format is skipped, even with free slots. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |

@@ -81,6 +81,13 @@ class EvaluateTest(unittest.TestCase):
         self.assertIn('Error: tasks.capacity_unavailable Task VM: no host has 3 free slots for a large VM.', lines)
 
 
+    def test_a_failed_proof_without_a_result_still_says_why(self):
+        output = json.dumps({'status': 'failed', 'error': {'code': 'proof.queue_unavailable', 'detail': 'The Gateway could not queue the admission of the proof.'}})
+        passed, lines = proof.evaluate(1, output)
+        self.assertFalse(passed)
+        self.assertIn('Error: proof.queue_unavailable The Gateway could not queue the admission of the proof.', lines)
+
+
 class RunTest(unittest.TestCase):
     def run_script(self, orbit_body, env=None):
         with tempfile.TemporaryDirectory() as tmp:

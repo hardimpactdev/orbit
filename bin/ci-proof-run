@@ -47,17 +47,18 @@ def evaluate(code, output):
     except ValueError:
         document = None
     result = find_result(document)
+    error = find_error(document)
+    reason = f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip() if error and (error.get('code') or error.get('detail')) else None
     if result is None:
-        return False, [f'The proof printed no result (exit status {code}).']
+        return False, [f'The proof printed no result (exit status {code}).', *([reason] if reason else [])]
     cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
     lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')
-    error = find_error(document)
-    if error and (error.get('code') or error.get('detail')):
-        lines.append(f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip())
+    if reason:
+        lines.append(reason)
     for path in result.get('uncovered') or []:
         if isinstance(path, dict):
             lines.append(f"Uncovered: {path.get('path', '')} ({path.get('reason', '')})")
