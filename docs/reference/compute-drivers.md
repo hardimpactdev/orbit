@@ -1156,18 +1156,20 @@ Each Node action is one official `@swamp/ssh` step with pinned host keys and the
 
 The child reads the builder's bridge address and host key from the host before it runs Ansible. The playbook knows it builds an image through `intent.image`. It removes its downloads and the snapshot apt configuration at the end of the `tools` phase.
 
-The last five steps follow:
+The last six steps follow:
 
 5. **Clean and stop.** The child workflow `task-vm-image-clean` cleans the VM and stops it. The stage 6 refresh shares it. The builder has no nested fleet, so it passes an empty `nested` object.
 6. **Publish the candidate.** `incus publish --quiet` with the properties `orbit.recipe` and `orbit.profile`.
    The quiet flag leaves only the fingerprint line, and the Gateway reads it from the output.
 7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
-8. **Promote the image.** The child workflow `task-vm-image-promote` points the base alias at the candidate's fingerprint. It keeps the old image as `-previous`.
-9. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
+8. **Check the seed.** It lists the volumes of the host's pool and looks for `orbit-topology-seed-` and the first 12 hex characters of the candidate's fingerprint.
+9. **Promote the image.** The child workflow `task-vm-image-promote` points the base alias at the candidate's fingerprint. It keeps the old image as `-previous`.
+   This step runs only when the seed exists.
+10. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
 
 The parent passes the fingerprint to the promote child as a plain string, and `incus` refuses a wrong one. The builder has no nested fleet, so step 5 passes the child an empty `nested` object. A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.
 
-The base alias moves only after the candidate passed its smoke check. A failed build leaves the promoted image in service. The old image stays as the `-previous` rollback copy until the next promotion.
+The base alias moves only after the candidate passed its smoke check and the host has a seed for it. A failed build leaves the promoted image in service. The old image stays as the `-previous` rollback copy until the next promotion.
 
 Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
@@ -1191,7 +1193,8 @@ UpCloud Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pin
 
 In an UpCloud build, the guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Guest commands keep their typed command deadlines. Native workflow placement, cancellation and recovery use Swamp defaults; `queueTimeout` is 60 seconds. No Gateway observation loop, progress callback or keyed receipt controls image execution.
 
-The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
+The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record.
+A run whose seed check skipped the promote is a recorded build without a promotion: the candidate and its fingerprint stay, and claims keep the promoted image. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
 
 In an UpCloud build, image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
 
@@ -1209,7 +1212,8 @@ Images live in each host's configured Incus project. The base is a VM image. Its
 
 #### The topology seed
 
-The image build does not build the topology seed. A new image has no seed under its fingerprint until a [seed refresh](#refresh-the-topology-seed) makes one, and a claim of a medium or large task VM on that host waits for it. The first seed of a host, a nested fleet built from scratch without ready copies, is not designed yet (chart `docs/cli/tasks/vm-image-build.mmd`).
+The image build does not build the topology seed, and it never promotes an image without one. A new image has no seed under its fingerprint until a [seed refresh](#refresh-the-topology-seed) makes one.
+The build then keeps the candidate without a promotion, and the refresh promotes the image together with its seed. A task VM on that host keeps booting from the promoted image, which has its seed. The first seed of a host, a nested fleet built from scratch without ready copies, is not designed yet (chart `docs/cli/tasks/vm-image-build.mmd`).
 
 The build leaves the promoted image and, from the first promotion on, the `-previous` alias as the rollback copy. Published images remain subject to normal image pruning. A failed build needs a fresh stock attempt; native resume cannot continue after the builder has been removed.
 

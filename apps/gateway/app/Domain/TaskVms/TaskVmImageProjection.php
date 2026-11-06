@@ -67,17 +67,19 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             $native = ValidatedData::object($data['result'] ?? []);
             $fingerprint = self::fingerprint($native);
             $promoted = NativeRunResult::stepStatus($native, 'Promote the image') === 'succeeded';
+            // The seed check skips the promote of an image without a seed. The run succeeds and the candidate stays.
+            $kept = NativeRunResult::stepStatus($native, 'Promote the image') === 'skipped' && NativeRunResult::stepStatus($native, 'Check the seed') === 'succeeded';
             if (! $status->terminal()) {
                 throw new ResourceOperationException('operation.result_invalid', 'The image result needs a terminal native outcome.', 422);
             }
             $code = in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) ? $this->errorCode($data['failure'] ?? null) : null;
             $result = match (true) {
                 $code !== null => ['error_code' => $code],
-                $status === OperationStatus::Succeeded => ['ready' => true, 'fingerprint' => $fingerprint],
+                $status === OperationStatus::Succeeded => ['ready' => $promoted, 'promoted' => $promoted, 'fingerprint' => $fingerprint],
                 default => [],
             };
-            if ($status === OperationStatus::Succeeded && ($fingerprint === null || ! $promoted)) {
-                throw new ResourceOperationException('operation.result_invalid', 'A succeeded image run needs its published and promoted fingerprint.', 422);
+            if ($status === OperationStatus::Succeeded && ($fingerprint === null || ! ($promoted || $kept))) {
+                throw new ResourceOperationException('operation.result_invalid', 'A succeeded image run needs its published fingerprint and a promoted or kept candidate.', 422);
             }
             if (! $operation->status->terminal()) {
                 $this->record($build, $operation, $native, $fingerprint, $promoted);
@@ -163,8 +165,8 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
         if ($build === null) {
             return;
         }
-        if ($status === OperationStatus::Succeeded && (($operation->result['ready'] ?? null) !== true
-            || ($operation->result['fingerprint'] ?? null) !== $build->image_fingerprint || $build->promoted_at === null)) {
+        if ($status === OperationStatus::Succeeded && (($operation->result['fingerprint'] ?? null) !== $build->image_fingerprint
+            || (($operation->result['promoted'] ?? null) === true && $build->promoted_at === null))) {
             return;
         }
         $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('attempt', $input['attempt'])
