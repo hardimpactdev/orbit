@@ -150,12 +150,12 @@ sequenceDiagram
       N-->>SW: exit code, output
       %%> Returns:
       %%> - the exit code; the output stays in the Swamp step
-      SW-->>GW: Run started, finished<br/>commit feed
+      SW-->>GW: Run finished<br/>read each minute
       %%> How the Gateway learns it:
-      %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
+      %%> - a Gateway job lists the runs that finished, once a minute; Swamp never calls the Gateway
       Note over GW: Record the fire<br/>task #5141 · trigger: schedule
       %%> Result:
-      %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
+      %%> - each fire becomes a task, with trigger `schedule`, recorded when it ends
       %%> - when it ends, the task gets the nested result, such as `schedule.target_unavailable` or `schedule.run_failed`
       %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set when it ends
     end

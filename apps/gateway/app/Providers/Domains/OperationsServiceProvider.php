@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
-use App\Infrastructure\Swamp\SwampScheduledResults;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
 
@@ -23,7 +22,6 @@ final class OperationsServiceProvider extends ServiceProvider
         $this->app->singleton(SwampRunSubscriber::class, static fn ($app): SwampRunSubscriber => new SwampRunSubscriber(
             StreamWebSocketClient::forSwamp(),
             $app->make(LoggerInterface::class),
-            scheduled: new SwampScheduledResults(StreamWebSocketClient::forSwamp(), $app->make(LoggerInterface::class)),
         ));
     }
 }
