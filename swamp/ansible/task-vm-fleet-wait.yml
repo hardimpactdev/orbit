@@ -15,6 +15,7 @@
     ended: [succeeded, failed, cancelled, interrupted]
     running: "{{ nested_vms.stdout_lines | default([]) | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list }}"
     not_running: "{{ intent.fleet.guests.values() | list | difference(running) }}"
+    why: "{{ nested_why.stdout | default('') | trim }}"
   tasks:
     - name: Wait for the Operation of the nested Gateway to end
       when: wait_kind == 'operation'
@@ -79,7 +80,7 @@
           - sqlite3
           - /home/orbit/.orbit/gateway.sqlite
           - >-
-            select 'at ' || coalesce(failed_step, 'no step') || ', code ' || coalesce(error_code, 'none')
+            select coalesce('at ' || failed_step || ' ', '') || coalesce('code ' || error_code, '')
             from operations where id = {{ wait_operation | int }}
       register: nested_why
       changed_when: false
@@ -99,7 +100,7 @@
         that: nested_operation.stdout | trim == 'succeeded'
         fail_msg: >-
           The Operation {{ wait_operation }} of the nested Gateway ended
-          {{ nested_operation.stdout | trim | default('with no status', true) }} {{ nested_why.stdout | default('') | trim }}
+          {{ nested_operation.stdout | trim | default('with no status', true) }}{{ ' ' + why if why else '' }}
     - name: Check that Doctor is healthy
       when: wait_kind == 'doctor'
       ansible.builtin.assert:
