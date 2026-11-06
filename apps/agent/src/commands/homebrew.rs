@@ -1,7 +1,5 @@
 //! Homebrew observations use one verified scope and fixed executables on each platform.
 pub(super) mod cask;
-pub(super) mod formula;
-pub(super) mod scan;
 use super::{homebrew_scope, recipe, tool_output};
 use crate::command::{Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
@@ -38,40 +36,9 @@ impl From<homebrew_scope::Error> for Error {
         }
     }
 }
-#[derive(schemars::JsonSchema, Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum Block {
-    UnsupportedSource,
-    Protected,
-    Dependency,
-    VersionUnreadable,
-    UnsupportedArtifact,
-    BottleUnavailable,
-    AuthorizationRequired,
-}
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(schemars::JsonSchema, Clone, Copy, Deserialize)]
-pub enum Architecture {
-    #[serde(rename = "arm64")]
-    Arm64,
-    #[serde(rename = "x86_64")]
-    X86_64,
-}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BottleInput {
-    architecture: Option<Architecture>,
-}
-#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
-pub struct VersionOutput {
-    version: String,
-}
-#[derive(Debug, PartialEq, Serialize)]
-pub struct BottleOutput {
-    tag: String,
-}
 #[derive(schemars::JsonSchema, Debug, Default, PartialEq, Serialize)]
 pub struct Package {
     name: String,
@@ -122,88 +89,6 @@ fn execute(
         return Err(Error::Failed {});
     }
     Ok(output.stdout)
-}
-fn version(
-    host: &mut impl recipe::Host,
-    scope: &homebrew_scope::Output,
-    platform: Platform,
-) -> Result<VersionOutput> {
-    let output = execute(
-        host,
-        &brew_invocation(&scope.prefix, &scope.home, false, &["--version"])?,
-        131_072,
-    )?;
-    let version = tool_output::lines(&output).next().unwrap_or_default();
-    if !tool_output::safe_text(version) {
-        return Err(Error::Output {});
-    }
-    match platform {
-        Platform::Linux if version != homebrew_scope::VERSION => return Err(Error::Version {}),
-        Platform::Macos
-            if !regex::Regex::new(r"\AHomebrew [0-9]+\.[0-9]+\.[0-9]+\z")
-                .unwrap()
-                .is_match(version) =>
-        {
-            return Err(Error::Output {})
-        }
-        _ => {}
-    }
-    Ok(VersionOutput {
-        version: version.into(),
-    })
-}
-fn bottle_tag(
-    host: &mut impl recipe::Host,
-    platform: Platform,
-    architecture: Option<Architecture>,
-) -> Result<BottleOutput> {
-    if platform == Platform::Macos && architecture.is_none() {
-        return Err(Error::Invalid {});
-    }
-    let argv = match platform {
-        Platform::Linux => ["/usr/bin/uname", "-m"],
-        Platform::Macos => ["/usr/bin/sw_vers", "-productVersion"],
-    };
-    let output = execute(host, &recipe::Invocation::new(&argv), 131_072)?;
-    let value = tool_output::lines(&output).next().unwrap_or_default();
-    let tag = match platform {
-        Platform::Linux => match value {
-            "x86_64" => "x86_64_linux".into(),
-            _ => return Err(Error::Bottle {}),
-        },
-        Platform::Macos => {
-            if !tool_output::safe_text(value)
-                || !regex::Regex::new(r"\A[0-9]+(?:\.[0-9]+){0,2}\z")
-                    .unwrap()
-                    .is_match(value)
-            {
-                return Err(Error::Output {});
-            }
-            let symbol = match value
-                .split('.')
-                .next()
-                .and_then(|major| major.parse::<u32>().ok())
-            {
-                Some(27) => "golden_gate",
-                Some(26) => "tahoe",
-                Some(15) => "sequoia",
-                Some(14) => "sonoma",
-                Some(13) => "ventura",
-                Some(12) => "monterey",
-                Some(11) => "big_sur",
-                _ => return Err(Error::Bottle {}),
-            };
-            format!(
-                "{}{symbol}",
-                if matches!(architecture, Some(Architecture::Arm64)) {
-                    "arm64_"
-                } else {
-                    ""
-                }
-            )
-        }
-    };
-    Ok(BottleOutput { tag })
 }
 fn valid_package(name: &str) -> bool {
     name.len() <= 255
@@ -277,13 +162,6 @@ macro_rules! scope_read {
         }
     };
 }
-scope_read!(
-    Version,
-    "tool.homebrew-version",
-    "Read the verified Homebrew manager version.",
-    VersionOutput,
-    version
-);
 scope_read!(
     FormulaInventory,
     "tool.homebrew-formula-inventory",

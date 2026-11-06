@@ -197,7 +197,7 @@ mod tests {
     fn the_service_is_bounded_kills_its_whole_group_and_marks_the_supervised_half() {
         let arguments = arguments(
             Path::new("/usr/local/bin/orbit-agent"),
-            "instance.remove-source",
+            "instance.rebind-repository",
             Duration::from_secs(90),
             "orbit-command-x",
             None,
@@ -213,7 +213,7 @@ mod tests {
             [
                 "/usr/local/bin/orbit-agent",
                 "command",
-                "instance.remove-source"
+                "instance.rebind-repository"
             ]
         );
     }
@@ -222,7 +222,7 @@ mod tests {
     fn an_account_mutation_runs_its_service_as_that_account() {
         let arguments = arguments(
             Path::new("/usr/local/bin/orbit-agent"),
-            "instance.remove-source",
+            "instance.rebind-repository",
             Duration::from_secs(9),
             "u",
             Some("orbit"),

@@ -1,5 +1,5 @@
 //! APT Tool operations. The Gateway owns intent; fixed commands and package observations live here.
-use super::tool_output::{lines, safe_text as safe_version};
+use super::tool_output::safe_text as safe_version;
 use crate::command::{Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -14,19 +14,6 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    package: String,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct VersionOutput {
-    version: String,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct CandidateOutput {
-    version: Option<String>,
-}
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Package {
     name: String,
@@ -35,10 +22,6 @@ pub struct Package {
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct InventoryOutput {
     packages: Vec<Package>,
-}
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct PlanOutput {
-    packages: Vec<String>,
 }
 trait Host {
     fn run(&mut self, binary: &str, args: &[&str]) -> Result<String>;
@@ -68,43 +51,6 @@ fn valid_package(name: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"+.-".contains(&b))
         && name.bytes().any(|b| b.is_ascii_lowercase())
-}
-fn validate(name: &str) -> Result<()> {
-    if valid_package(name) {
-        Ok(())
-    } else {
-        Err(Error::Invalid {})
-    }
-}
-fn version(host: &mut impl Host) -> Result<VersionOutput> {
-    let text = host.run("/usr/bin/apt-get", &["--version"])?;
-    let version = lines(&text).next().unwrap_or_default();
-    if !safe_version(version) {
-        return Err(Error::Output {});
-    }
-    Ok(VersionOutput {
-        version: version.into(),
-    })
-}
-fn candidate(host: &mut impl Host, package: &str) -> Result<CandidateOutput> {
-    validate(package)?;
-    let text = host.run("/usr/bin/apt-cache", &["policy", "--", package])?;
-    let candidates: Vec<_> = lines(&text)
-        .filter_map(|line| line.trim_start().strip_prefix("Candidate:"))
-        .collect();
-    let [candidate] = candidates.as_slice() else {
-        return Err(Error::Output {});
-    };
-    if !candidate.starts_with(char::is_whitespace) {
-        return Err(Error::Output {});
-    }
-    let version = candidate.trim();
-    if !safe_version(version) || version.chars().any(char::is_whitespace) {
-        return Err(Error::Output {});
-    }
-    Ok(CandidateOutput {
-        version: (version != "(none)").then(|| version.to_owned()),
-    })
 }
 fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     let text = host.run(
@@ -140,36 +86,6 @@ fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
     }
     Ok(InventoryOutput { packages })
 }
-fn plan(host: &mut impl Host, package: &str) -> Result<PlanOutput> {
-    validate(package)?;
-    let text = host.run("/usr/bin/apt-get", &["--simulate", "remove", "--", package])?;
-    let mut packages = vec![];
-    let record =
-        regex::Regex::new(r"\ARemv\s+([a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?)(?:\s|$)")
-            .unwrap();
-    for line in lines(&text) {
-        let Some(rest) = line.trim_start().strip_prefix("Remv") else {
-            continue;
-        };
-        if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
-            continue;
-        }
-        let captures = record.captures(line).ok_or(Error::Output {})?;
-        let observed = &captures[1];
-        let name = if observed
-            .strip_prefix(package)
-            .is_some_and(|suffix| suffix.starts_with(':'))
-        {
-            package
-        } else {
-            observed
-        };
-        if !packages.iter().any(|p| p == name) {
-            packages.push(name.to_owned());
-        }
-    }
-    Ok(PlanOutput { packages })
-}
 macro_rules! read_command {
     ($name:ident,$wire:literal,$summary:literal,$input:ty,$output:ty,$run:expr) => {
         pub struct $name;
@@ -191,36 +107,12 @@ macro_rules! read_command {
     };
 }
 read_command!(
-    Version,
-    "tool.apt-version",
-    "Read the APT manager version.",
-    Empty,
-    VersionOutput,
-    |_: Empty, host: &mut Native<'_>| version(host)
-);
-read_command!(
-    Candidate,
-    "tool.apt-candidate",
-    "Read APT's normal candidate for one package.",
-    Input,
-    CandidateOutput,
-    |input: Input, host: &mut Native<'_>| candidate(host, &input.package)
-);
-read_command!(
     Inventory,
     "tool.apt-inventory",
     "Read installed APT package versions and unverifiable states.",
     Empty,
     InventoryOutput,
     |_: Empty, host: &mut Native<'_>| inventory(host)
-);
-read_command!(
-    Plan,
-    "tool.apt-removal-plan",
-    "Read every package APT would remove.",
-    Input,
-    PlanOutput,
-    |input: Input, host: &mut Native<'_>| plan(host, &input.package)
 );
 #[cfg(test)]
 mod tests;

@@ -1,4 +1,4 @@
-//! Shared archives are written only by the host; guests seed private manager state.
+//! Shared archives are written only by the host.
 use crate::{
     command::{Command, Context, Platform, Privilege},
     command_errors,
@@ -15,7 +15,6 @@ use std::{
     time::Duration,
 };
 pub(super) const HOST: &str = "/var/lib/orbit/package-cache";
-pub(super) const GUEST: &str = "/opt/orbit/package-cache";
 const MARKER: &str = "orbit-package-cache-v1\n";
 const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
 command_errors! {
@@ -469,7 +468,5 @@ impl Command for HostCache {
         }
     }
 }
-mod seed;
-pub use seed::SeedCache;
 #[cfg(test)]
 mod tests;
