@@ -1,6 +1,6 @@
-id: 502a67d6-4346-4af9-af8f-d076bc5afbb3
-name: task-vm-image-ansible
-description: Run phases of the task VM role playbook on one guest of an Incus host, reached from 209 through the host with the host keys recorded from the host.
+id: 3b8d0c5e-6a21-4f0b-9a57-2c7e41d9b6a3
+name: task-vm-role-run
+description: Run phases of the task VM role playbook on one guest from 209, for the converge and for the image builds. An Incus guest is found through its host with the guest name; an UpCloud server comes with its address and host key; a converge target needs neither, its address and host key are in the intent.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -8,59 +8,64 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.image_build]}
+    kind: {type: string, enum: [task_vm.converge, task_vm.image_build, task_vm.upcloud_image_build]}
     intent: {type: object}
-    guest: {type: string, minLength: 1}
+    guest: {type: string}
+    address: {type: string}
+    host_key: {type: string}
     tags: {type: string, minLength: 1}
     with_pi: {type: boolean}
-  required: [operation_id, node_id, kind, intent, guest, tags, with_pi]
+  required: [operation_id, node_id, kind, intent, guest, address, host_key, tags, with_pi]
   additionalProperties: false
 jobs:
 - name: read
   labels: {role: swamp}
   steps:
     # The guest's bridge address; Incus knows it, the Gateway cannot. A guest with Docker lists its docker0 address first, so the line of the NIC counts.
+    # The step is for an Incus guest only. Its inputs are read even when it is skipped, so each one has an answer when the intent has no jump host.
   - name: Read the guest address
     labels: {role: swamp}
+    guard: ${{ inputs.guest == "" }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-read-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: &host
-        name: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+        name: ${{ "task-vm-role-read-" + string(inputs.node_id) }}
         transport:
           kind: ssh
-          user: ${{ inputs.intent.jump.target.user }}
-          port: ${{ inputs.intent.jump.target.port }}
-          identityFile: ${{ inputs.intent.jump.identity_file }}
+          user: '${{ "jump" in inputs.intent ? inputs.intent.jump.target.user : "" }}'
+          port: '${{ "jump" in inputs.intent ? inputs.intent.jump.target.port : 22 }}'
+          identityFile: '${{ "jump" in inputs.intent ? inputs.intent.jump.identity_file : "" }}'
         hosts:
         - name: host
-          address: ${{ inputs.intent.jump.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.jump.target.host_keys }}'}
+          address: '${{ "jump" in inputs.intent ? inputs.intent.jump.target.host : "" }}'
+          transport: {hostKeys: '${{ "jump" in inputs.intent ? inputs.intent.jump.target.host_keys : [] }}'}
       inputs:
         hosts: name:host
         sudo: true
-        argv: [timeout, '30', incus, list, --project, '${{ inputs.intent.project }}', --format, csv, --columns, '4', '--', '${{ "^" + inputs.guest + "$" }}']
+        argv: [timeout, '30', incus, list, --project, '${{ "project" in inputs.intent ? inputs.intent.project : "" }}', --format, csv, --columns, '4', '--', '${{ "^" + inputs.guest + "$" }}']
     # The host key the guest made at its first boot, read from the host that runs the guest.
   - name: Read the guest host key
     labels: {role: swamp}
+    guard: ${{ inputs.guest == "" }}
     dependsOn:
-    - {step: Read the guest address, condition: {type: succeeded}}
+    - {step: Read the guest address, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-read-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *host
       inputs:
         hosts: name:host
         sudo: true
-        argv: [timeout, '30', incus, exec, --project, '${{ inputs.intent.project }}', '--', '${{ inputs.guest }}', cat, /etc/ssh/ssh_host_ed25519_key.pub]
+        argv: [timeout, '30', incus, exec, --project, '${{ "project" in inputs.intent ? inputs.intent.project : "" }}', '--', '${{ inputs.guest }}', cat, /etc/ssh/ssh_host_ed25519_key.pub]
 - name: input
   labels: {role: swamp}
   dependsOn:
-  - {job: read, condition: {type: succeeded}}
+  - {job: read, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
   steps:
   - name: Write the intent
     labels: {role: swamp}
@@ -81,10 +86,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-pi-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-pi-" + string(inputs.node_id) }}
       methodName: copy
       globalArgs:
-        name: ${{ "task-vm-image-pi-" + string(inputs.node_id) }}
+        name: ${{ "task-vm-role-pi-" + string(inputs.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.pi.source.ssh.target.user }}
@@ -109,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-pi-check-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-pi-check-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
         run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
@@ -125,7 +130,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-input-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-input-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
         run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
@@ -133,8 +138,9 @@ jobs:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
           ORBIT_KIND: ${{ inputs.kind }}
-          ORBIT_TARGET_HOST: ${{ steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}
-          ORBIT_TARGET_KEY: ${{ steps["Read the guest host key"].outputs.stdout }}
+          # An Incus guest: the address and the host key that the host read. An UpCloud server: the address of the run and the admitted host key. A converge target: neither, the intent names its address and host key.
+          ORBIT_TARGET_HOST: '${{ inputs.guest != "" ? steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() : inputs.address }}'
+          ORBIT_TARGET_KEY: '${{ inputs.guest != "" ? steps["Read the guest host key"].outputs.stdout : inputs.host_key }}'
 - name: run
   labels: {role: swamp}
   dependsOn:
@@ -146,7 +152,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-phases-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-phases-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
         run: timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-role.yml"
@@ -170,7 +176,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-cleanup-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-role-cleanup-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

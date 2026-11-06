@@ -154,6 +154,17 @@ class TaskVmRoleTest(unittest.TestCase):
         tmp = next(argv for argv in argvs if argv[:3] == ['find', '/tmp', '/var/tmp'])
         self.assertIn(['!', '-name', 'ansible_*'], [tmp[i:i + 3] for i in range(tmp.index('-exec'))], 'the clean phase must not delete the module that is running it')
 
+    def test_a_run_without_a_target_fails_at_once(self):
+        placeholder = intent()
+        placeholder['ssh']['target'] = {'host': '', 'user': 'orbit', 'port': 22, 'host_keys': []}
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'intent.json').write_text(json.dumps(placeholder))
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('ORBIT_TARGET_HOST', None)
+                with self.assertRaises(SystemExit):
+                    builder.build(folder, 'task_vm.upcloud_image_build')
+
     def test_a_template_builder_is_reached_directly_on_the_address_of_the_run(self):
         placeholder = intent()
         placeholder['ssh']['target'] = {'host': '', 'user': 'orbit', 'port': 22, 'host_keys': []}

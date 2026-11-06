@@ -34,6 +34,9 @@ def build_task_vm(folder, kind):
     # A guest of an Incus host has no address or host key when the Gateway admits the run; the run reads both from the host.
     if os.environ.get('ORBIT_TARGET_HOST'):
         target.update(host=os.environ['ORBIT_TARGET_HOST'].strip(), host_keys=[os.environ['ORBIT_TARGET_KEY'].strip()])
+    # A run that names no guest, no address and no recorded target would otherwise fail late, inside Ansible.
+    if not target['host'] or not target['host_keys']:
+        raise SystemExit('The run has no target address or host key.')
     known = set(known_host_lines(target))
     host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
             'ansible_ssh_private_key_file': ssh['identity_file']}

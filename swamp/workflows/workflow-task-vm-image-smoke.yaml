@@ -88,12 +88,14 @@ jobs:
     writes: true
     task:
       type: workflow
-      workflowIdOrName: task-vm-image-ansible
+      workflowIdOrName: task-vm-role-run
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         guest: ${{ inputs.intent.smoke }}
+        address: ''
+        host_key: ''
         tags: check
         with_pi: false

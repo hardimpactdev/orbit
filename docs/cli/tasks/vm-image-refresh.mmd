@@ -38,7 +38,7 @@ sequenceDiagram
   SW->>H: Build the image<br/>task-vm-image-builder
   %%> What it does:
   %%> - the child `task-vm-image-builder`: `incus init` of the builder from the image the refresh VM started from (its fingerprint), with the cloud-init key of Node 209; waits for the guest agent and cloud-init
-  %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-image-ansible`), cleans and stops it (the child `task-vm-image-clean`)
+  %%> - runs the phases `software`, `tools` and `check` (the child `task-vm-role-run`), cleans and stops it (the child `task-vm-image-clean`)
   %%> - publishes the stopped builder under a candidate alias and reads its fingerprint
   %%> - the builder is never enrolled and has no seed
   SW->>H: Boot-check the image<br/>throwaway VM
@@ -49,7 +49,7 @@ sequenceDiagram
   %%> - the child `task-vm-bootstrap` on the throwaway VM of the boot check: the account, the key, the sudoers file and the observer install with their checks, the same steps as an enrollment
   SW->>H: Converge the check VM<br/>software · tools · check
   %%> What it does:
-  %%> - the child `task-vm-image-ansible` with the phases of a provision converge on the same VM; the promotion waits for this step and the one before
+  %%> - the child `task-vm-role-run` with the phases of a provision converge on the same VM; the promotion waits for this step and the one before
   SW->>H: Copy the seed<br/>under the host lock
   %%> What it does:
   %%> - copies the seed disk of the refresh VM to the seed name of the new fingerprint, then `zfs promote` so refreshes form no clone chain
