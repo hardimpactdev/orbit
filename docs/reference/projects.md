@@ -248,7 +248,7 @@ The Gateway admits each maintenance step under its own key, such as `maintenance
 
 The Swamp workflows take the Swamp Node from the intent the Gateway sends (`control_node_id`), and their schemas accept any Node id, because the Gateway finds the Swamp Node by its `swamp` role and not by a fixed id.
 
-The hourly `maintenance-projects` Schedule selects which of them a Project needs. The Gateway captures the complete selection from its native producer in the shared terminal history read; no result-reporting step forwards it. A due weekly routine comes first, then an observation while a maintenance group waits. Otherwise the Schedule inspects the Project, so an opted-in Project is inspected every hour.
+The hourly `maintenance-projects` Schedule only ticks: its run lists the Projects that the Swamp source configures, with the request keys of that fire, and the Gateway captures it from the shared terminal history read. The Gateway then selects, from its own tables, which request each opted-in Project needs. A due weekly routine comes first, then an observation while a group that has not ended waits on a pull request or on capacity. Otherwise the Gateway inspects the Project, so an opted-in Project is inspected every hour. The schedule carries no Project or task group data.
 
 The CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance-routine`, start one directly.
 

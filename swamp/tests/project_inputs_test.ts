@@ -4,6 +4,9 @@ import {
     assertRejects,
 } from "jsr:@std/assert@1.0.19";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
+import projects from "../extensions/behaviors/operations/project-maintenance/projects.json" with {
+    type: "json",
+};
 import { fixture, original } from "./_support/project_scheduler.ts";
 
 const routineInput = {
@@ -125,109 +128,76 @@ Deno.test("native PR reads reject a different repository before exposing the vau
     }
 });
 
-Deno.test("native schedule takes the Project policy from the data file and reads no model data for it", async () => {
+Deno.test("native schedule tick takes the Project policy from the data file and reads no model data and makes no Gateway call", async () => {
     const f = fixture();
     try {
         const queries: string[] = [];
+        let result: Record<string, unknown> = {};
         const ctx = {
             ...f.ctx,
             queryData: (predicate: string) => {
                 queries.push(predicate);
                 return Promise.resolve([]);
             },
-            writeResource: () => Promise.resolve({ name: "output" }),
+            writeResource: (_s: string, _n: string, v: unknown) => {
+                result = v as Record<string, unknown>;
+                return Promise.resolve({ name: "output" });
+            },
         };
-        await metadata.methods.schedule.execute({
-            revision: 1,
-            snapshot_hash: "a".repeat(64),
-            projects: [{
-                id: 32,
-                repository: "https://github.com/nckrtl/launch.git",
-                default_branch: "main",
-                check: "composer check",
-            }],
-            groups: [],
-            operations: [],
-            admissions: {},
-        }, ctx);
-        assertEquals(queries.filter((q) => q.startsWith("modelType")), []);
+        await metadata.methods.schedule.execute({}, ctx);
+        const tick = JSON.parse(result.result_json as string);
+        assertEquals(queries, []);
+        assertEquals(
+            tick.projects.some((entry: { id: number }) =>
+                entry.id === original.projectId
+            ),
+            true,
+        );
+        // The three request keys of the fire are the ones the Gateway validates by shape.
+        const launch = tick.projects.find((entry: { id: number }) =>
+            entry.id === original.projectId
+        );
+        assertMatch(launch.keys.routine, /^\d+-routine-\d{4}-\d{2}-\d{2}$/);
+        assertMatch(
+            launch.keys.detect,
+            /^\d+-detect-\d{4}-\d{2}-\d{2}T\d{2}:00$/,
+        );
+        assertMatch(
+            launch.keys.observe,
+            /^\d+-observe-\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
+        );
+        // The Gateway compares these three with the Project it holds, so they are the ones of the source file.
+        const source = projects.find((entry) =>
+            entry.projectId === original.projectId
+        )!;
+        assertEquals(launch.default_branch, source.defaultBranch);
+        assertEquals(launch.check, source.check);
+        assertEquals(
+            launch.repository,
+            source.repository.replace(
+                /^(?:git@github\.com:|https:\/\/github\.com\/)/,
+                "github.com/",
+            )
+                .replace(/\.git$/, "").toLowerCase(),
+        );
     } finally {
         await f.close();
     }
 });
 
-Deno.test("native schedule selects from full public intent and skips the recorded slot without Gateway calls", async () => {
-    const f = fixture();
-    try {
-        let result: Record<string, unknown> = {};
-        const ctx = {
-            ...f.ctx,
-            queryData: () => Promise.resolve([]),
-            writeResource: async (_s: string, _n: string, v: unknown) => {
-                result = v as Record<string, unknown>;
-                return { name: "output" };
-            },
-        };
-        const args = {
-            revision: 1,
-            snapshot_hash: "a".repeat(64),
-            projects: [{
-                id: 32,
-                repository: "https://github.com/nckrtl/launch.git",
-                default_branch: "main",
-                check: "composer check",
-            }],
-            groups: [],
-            operations: [],
-            admissions: {},
-        };
-        await metadata.methods.schedule.execute(args, ctx);
-        const first = JSON.parse(result.result_json as string);
-        // A due routine comes first; the hourly inspection comes last, so it never starves the others.
-        assertEquals(first.requests.length, 1);
-        assertEquals(first.requests[0].mode, "routine");
-        await metadata.methods.schedule.execute({
-            ...args,
-            admissions: { "32:routine": { key: first.requests[0].key } },
-        }, ctx);
-        const next = JSON.parse(result.result_json as string);
-        assertEquals(next.requests.length, 1);
-        assertEquals(next.requests[0].mode, "detect");
-        assertMatch(
-            next.requests[0].key,
-            /^32-detect-\d{4}-\d{2}-\d{2}T\d{2}:00$/,
-        );
-        const pending = [{
-            id: 7,
-            project_id: 32,
-            status: "todo",
-            maintenance: { admission_pending: true },
-        }];
-        await metadata.methods.schedule.execute({
-            ...args,
-            groups: pending,
-            admissions: { "32:routine": { key: first.requests[0].key } },
-        }, ctx);
-        assertEquals(
-            JSON.parse(result.result_json as string).requests[0].mode,
-            "observe",
-        );
-        await metadata.methods.schedule.execute({
-            ...args,
-            admissions: {
-                "32:routine": { key: first.requests[0].key },
-                "32:detect": { key: next.requests[0].key },
-            },
-        }, ctx);
-        assertEquals(JSON.parse(result.result_json as string).requests, []);
-        await metadata.methods.schedule.execute({
-            ...args,
-            operations: [{ target_id: 32, status: "running" }],
-        }, ctx);
-        assertEquals(JSON.parse(result.result_json as string).requests, []);
-        assertEquals(f.posts(), 0);
-        assertEquals(f.starts(), 0);
-    } finally {
-        await f.close();
-    }
+Deno.test("the maintenance workflow keeps its id, which is the key of its pause on serve, and puts no pause or input in its file", async () => {
+    // Serve keeps a pause in a file named by the workflow id (.swamp/_control/schedule-pauses), apart from the trigger and its inputs.
+    const text = await Deno.readTextFile(
+        new URL(
+            "../workflows/workflow-maintenance-projects.yaml",
+            import.meta.url,
+        ),
+    );
+    assertEquals(
+        text.split("\n")[0],
+        "id: a37dfa1b-1633-475f-90c7-dfd9c83008ca",
+    );
+    assertMatch(text, /^name: maintenance-projects$/m);
+    assertMatch(text, /^trigger:\n {2}schedule: '40 17 \* \* \* \*'\n/m);
+    assertEquals(/paus|resum|disabled|inputs:\s*\n\s+type/i.test(text), false);
 });
