@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml,extensions/behaviors/operations/{task-vms/{agent_reply,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -1185,40 +1185,18 @@ The base alias moves only after the candidate passed its smoke check and the hos
 
 Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
-Incus effects run in the native parent, without child Operations. UpCloud retains its child path until its own cutover. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
+Both builds run as one native workflow. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
-In an UpCloud build, the agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
+The Incus build records the image identity as the properties `orbit.recipe` and `orbit.profile` of the published image. The UpCloud build records it as the label `orbit.recipe` of the template. The Gateway stores progress and safe error codes; it does not read guest logs or run recipe commands.
 
-In an UpCloud build, Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
-
-The Incus build records the image identity as the properties `orbit.recipe` and `orbit.profile` of the published image. The UpCloud build records it with `image.recipe-marker`. Guest services retain bounded local diagnostics. The Gateway stores phase progress and safe error codes; it does not read guest logs or run recipe commands.
-
-The UpCloud build uses one ordered list of recipe installer phases:
-
-In an UpCloud build, each installer phase runs in the guest's existing bounded systemd service. Its key includes recipe identity, profile, phase and build attempt.
-
-Swamp resumes failed native steps; completed steps remain checkpoints in the same root. The retained UpCloud path uses its existing child and service identities until its separate cutover.
+Swamp resumes failed native steps; completed steps remain checkpoints in the same root.
 
 An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the builder when the digest differs from the pin, and checks the digest again.
-
-UpCloud Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
-
-In an UpCloud build, the guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Guest commands keep their typed command deadlines. Native workflow placement, cancellation and recovery use Swamp defaults; `queueTimeout` is 60 seconds. No Gateway observation loop, progress callback or keyed receipt controls image execution.
 
 The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record.
 A run whose seed check skipped the promote is a recorded build without a promotion: the candidate and its fingerprint stay, and claims keep the promoted image. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
 
-In an UpCloud build, image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
-
-The native service writes bounded diagnostics to its private phase log. Observations return a redacted tail when a phase fails. Direct verification returns typed failure details.
-
-In an UpCloud build, every image package command, including assessment and the shared PHP installer, inherits the same snapshot configuration through `APT_CONFIG`. Verification checks the PHP build and loaded modules without installing or repairing it. Empty APT directory settings disable stock source parts and `/etc/apt/apt.conf.d` hooks. Stock template sources and stale live indexes cannot supply dependencies. Image origin checks use only the selected snapshot's retained indexes and never fetch indexes from another snapshot.
-
-In an UpCloud build, image installs keep APT strict pinning and refuse Ubuntu downgrades. Every Ubuntu pin equals the newest version in the named snapshot, so the base phase's `full-upgrade` and exact installs select the same versions on Incus and UpCloud. A snapshot bump updates these pins together through the authenticated indexes. `APT::Get::Always-Include-Phased-Updates "true"` makes non-pinned dependencies use the snapshot candidate on every builder, independent of machine-specific rollout percentages.
-
-In an UpCloud build, the configuration stays under `/var/tmp` and image cleanup removes it; authenticated snapshot indexes remain in `/var/lib/apt/lists` for smoke verification. Verification recreates the same configuration temporarily without refreshing indexes. Failure to prepare that temporary configuration reports the `verify` stage and stops before software checks. Git and Composer must report the same nonempty version output as root and as the guest account. This accepts a newer Ubuntu package that passed origin checks while refusing a broken guest executable.
-
-An Incus build installs the same recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and runs `apt-get` with `APT_CONFIG` pointing at it, with `--allow-downgrades` because the pins are exact. The `check` phase asserts every package at its pin.
+An image build, Incus or UpCloud, installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and runs `apt-get` with `APT_CONFIG` pointing at it, with `--allow-downgrades` because the pins are exact. The `check` phase asserts every package at its pin.
 
 Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
 
@@ -1587,18 +1565,17 @@ Task VM enrollment captures the guest Node and Pi Process intent without executi
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` records one image attempt and starts `operation-task-vm-upcloud-image-build`. It creates billed servers. Every step runs on a role `swamp` worker on 209: each UpCloud request is one inline `curl`, and each guest action is one pinned official `@swamp/ssh` call. No step calls the Gateway. The Gateway records the attempt from the run's terminal result.
+`php artisan task-vms:build-upcloud-image` records one image attempt and starts `operation-task-vm-upcloud-image-build`, in the steps of the chart `docs/cli/tasks/vm-upcloud-image-build.mmd`. It creates billed servers. Every step runs on a role `swamp` worker on 209. Each UpCloud request is one inline `curl`. The software is the [task VM role playbook](#converge-a-running-task-vm), run by Ansible straight to the server. Every other guest action is one pinned official `@swamp/ssh` call. No step calls the Gateway, and no Orbit agent runs on a build server or stays in the template. The Gateway records the attempt from the run's terminal result.
 
-At admission the Gateway generates one ed25519 host key pair for the build servers and keeps it encrypted on the attempt. At the run start it refuses an attempt whose recipe or agent pin changed with `task_vm.image_build_superseded`. It then copies the UpCloud token to the vault key `task-vm-upcloud-token` and the private host key to `task-vm-image-bootstrap-<attempt>`. The run gets the full public intent: the recipe, the stamp, the public host key and 209's SSH identity. The intent also holds every fixed agent request, the phase units and the templates that live VMs pin.
+At admission the Gateway generates one ed25519 host key pair for the build servers and keeps it encrypted on the attempt. At the run start it refuses an attempt whose recipe changed with `task_vm.image_build_superseded`. It then copies the UpCloud token to the vault key `task-vm-upcloud-token` and the private host key to `task-vm-image-bootstrap-<attempt>`. The run gets the full public intent: the recipe document, the stamp, the public host key and 209's SSH identity. The intent also holds the Pi pin and its source, the Vite+ lock and the templates that live VMs pin.
 
 | Step | What it does |
 | --- | --- |
-| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`. Over SSH it waits for cloud-init, installs 209's agent against the pin, and checks the `orbit` account and the boot id |
-| Stage the Pi build | Only when the recipe pins one: copies it from the Gateway Node to 209, checks its SHA-256, copies it to the builder and installs it as `/var/cache/orbit/pi/<sha256>.bin` |
-| Run the phases | Runs `apt-source`, `packages`, `javascript`, `rust`, `agent` and `pi` in order through the shared recipe installer; a failed phase stops the chain |
-| Prepare and clean | Writes the recipe marker, verifies the recipe software, masks the first-boot and apt timers, turns ufw on with only the public SSH rule `orbit:public-ssh-recovery`, then runs `image.clean` |
+| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`, with the `orbit` account at UID and GID 1000. Over SSH it waits for cloud-init |
+| Run the task image phases | The child `task-vm-upcloud-image-ansible` copies the pinned Pi build from the Gateway Node to 209 and checks its SHA-256. It then runs the `software`, `tools` and `check` phases against the public address of the builder |
+| Prepare and clean | The same child with the `clean` phase: masks, ufw with only the public SSH rule `orbit:public-ssh-recovery`, identity files, `cloud-init clean` |
 | Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
-| Smoke the template | Creates a server from the template with the same host key, boots it as above, and runs `image.verify` and `image.check` with the firewall check |
+| Smoke the template | The child `task-vm-upcloud-image-smoke` creates a server from the template with the same host key, boots it as above, and runs the `check` phase with the firewall check |
 | Promote the template | Records the `orbit.recipe` and `orbit-task-image` labels and renames the template to `orbit-task-base-<stamp>` |
 | List servers, templates, Plan the cleanup | After the build, whatever its outcome, lists the labelled servers and the templates once, and confirms the promotion |
 | Check the template | The end check: the promoted template is the one templatize made |
@@ -1606,7 +1583,7 @@ At admission the Gateway generates one ed25519 host key pair for the build serve
 
 The user data authorizes only the key of 209's worker. Every SSH connection pins the admitted host key, so no connection trusts a key on first use. The boot wait is OpenSSH's own `ConnectionAttempts` under one literal timeout. UpCloud refuses a templatize, a create from a template that is still being prepared, and a delete of a server that is still stopping, and changes nothing. curl's own retry, with a fixed 10-second delay under one literal `timeout`, waits for these states. No script polls.
 
-Each guest call is `orbit-agent command <name>`. The agent exits 0 also when it refuses, so a TypeScript step on 209 checks each reply. A refused reply fails the run with the agent's own error code. A failed UpCloud request in the template, promote or listing step fails with `task_vm.upcloud_failed`. Other failures fail with `task_vm.image_build_failed`.
+A failed UpCloud request in the template, promote or listing step fails with `task_vm.upcloud_failed`. Other failures fail with `task_vm.image_build_failed`; the output of the failed step names the Ansible task.
 
 Deletes are best effort: a failed delete does not change the run's outcome, and the [host sweep](#sweep-upcloud) removes what stays, also a server whose create answer was lost. A failed build keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
 
@@ -1622,7 +1599,7 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes; its run budget is 2,100 seconds. Swamp owns dispatch, cancellation and recovery. The token and the private host key reach curl only from its environment, through `--variable`; they are never in argv, inputs, outputs or history. Each recipe phase waits at most 1,500 seconds. A failed smoke check prevents promotion. An explicit retry records a new attempt.
+The build takes about 20 minutes; its run budget is 2,100 seconds. Swamp owns dispatch, cancellation and recovery. The token and the private host key reach curl only from its environment, through `--variable`; they are never in argv, inputs, outputs or history. Each Ansible run has one literal timeout of 3,300 seconds. A failed smoke check prevents promotion. An explicit retry records a new attempt.
 
 ### Sweep UpCloud
 

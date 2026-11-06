@@ -56,6 +56,7 @@ task_vm.hub_converge
 task_vm.image_build
 task_vm.resume
 task_vm.sweep_host
+task_vm.upcloud_image_build
 tasks.cancel
 tasks.check
 tasks.dependency_merge

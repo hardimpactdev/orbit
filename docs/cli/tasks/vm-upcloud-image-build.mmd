@@ -44,13 +44,9 @@ sequenceDiagram
   %%> - the phases of the task VM role, in order: software (apt sources and packages, JavaScript, Rust, Pi), tools (the shape-gate linters, the NFS server), check
   %%> - versions come from the recipe document in the intent; the same playbook builds the Incus image and converges a running task VM
   %%> - the check phase also asserts that `orbit` has UID and GID 1000
-  opt recipe pins a Pi build
-    SW->>G: Stage the Pi build<br/>copy · sha256
-    %%> What it does:
-    %%> - copies the pinned binary from the Gateway Node to 209 with `@swamp/ssh copy`, `sha256sum -c` against its pin, and the software phase copies it to the server
-    %%> Replaces:
-    %%> - the chunked `pi.receive-artifact` transfer and `pi.install-artifact` of the agent
-  end
+  %%> - the pinned Pi build comes first: `@swamp/ssh copy` takes it from the Gateway Node to 209, `sha256sum -c` checks its pin, and the software phase copies it to the server
+  %%> Replaces:
+  %%> - the chunked `pi.receive-artifact` and `pi.install-artifact` of the agent
   SW->>G: Prepare and clean<br/>Ansible · clean phase
   %%> What it does:
   %%> - the same child with the tag `clean`: mask `systemd-firstboot.service`, `apt-daily.timer`, `apt-daily-upgrade.timer`, `motd-news.timer` and `unattended-upgrades.service`
@@ -71,7 +67,7 @@ sequenceDiagram
   %%> - the template UUID, which the Gateway reads from this step's output (rule 4)
   SW->>UC: Smoke the template<br/>launch from template · check
   %%> How:
-  %%> - the same server child with the task VM user-data and the same host key; the create waits with curl's bounded retry while UpCloud still prepares the template
+  %%> - child `task-vm-upcloud-image-smoke`: the same server child with the task VM user-data and the same host key; the create waits with curl's bounded retry while UpCloud still prepares the template
   %%> - boots as in step 3, then the child `task-vm-upcloud-image-ansible` runs the `check` phase against it; the builder stays until the cleanup removes it
   %%> Result:
   %%> - a failed smoke check stops the build before promotion
