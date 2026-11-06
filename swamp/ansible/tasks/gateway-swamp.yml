@@ -49,6 +49,17 @@
     - { name: "orbit-swamp-worker@.service", content: "{{ control.units.worker }}" }
   loop_control: { label: "{{ item.name }}" }
   notify: Reload units
+# The scheduler and Horizon record finished runs; the Gateway's first run, the converge of its own Node, comes before its role.
+- name: Write the recorder units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units
 - name: Make the grants folder
   ansible.builtin.file: { path: "{{ swamp_repository }}/grants", state: directory, owner: "{{ swamp_user }}", group: "{{ swamp_user }}", mode: "0755" }
 - name: Write the grants
@@ -270,6 +281,10 @@
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
   loop: [a, b]
+- name: Start the recorder
+  ansible.builtin.systemd: { name: "{{ item.name }}", enabled: true, state: started }
+  loop: "{{ control.recorder }}"
+  loop_control: { label: "{{ item.name }}" }
 # The Gateway's own certificate, signed by the same CA, at the paths its rendered Caddyfile names. The first role run publishes that
 # Caddyfile and needs them, so they exist before it.
 - name: Issue the Gateway certificate
