@@ -72,7 +72,7 @@ final readonly class TaskVmHost
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
             'zfs_dataset' => ($entry['zfs_dataset'] ?? null) === null ? [] : ['required', 'string', 'regex:/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D'],
             'operator_owned' => ['list'],
-            'slots' => ['nullable', 'array:count,project_id,size'],
+            'slots' => ['nullable', 'array:count,project_id,size', 'required_array_keys:count,project_id,size'],
             'slots.count' => ['required_with:slots', 'integer:strict', 'between:1,16'],
             'slots.project_id' => ['required_with:slots', 'integer:strict', 'min:1'],
             'slots.size' => ['required_with:slots', 'string', 'in:'.implode(',', array_map(static fn (TaskVmSize $size): string => $size->value, TaskVmSize::cases()))],

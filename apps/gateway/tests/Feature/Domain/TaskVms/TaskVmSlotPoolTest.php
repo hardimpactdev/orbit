@@ -165,6 +165,7 @@ it('reads the slots setting of a host and rejects a bad one', function (): void 
     $slots = TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 5, 'project_id' => 46, 'size' => 'large']], 0, $vpn, [])->slots;
     expect($slots?->toArray())->toBe(['count' => 5, 'project_id' => 46, 'size' => 'large']);
 
+    expect(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => []], 0, $vpn, []))->toThrow(TaskVmException::class);
     expect(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 0, 'project_id' => 46, 'size' => 'large']], 0, $vpn, []))
         ->toThrow(TaskVmException::class)
         ->and(fn () => TaskVmHost::fromConfig([...$entry, 'slots' => ['count' => 5, 'project_id' => 46, 'size' => 'huge']], 0, $vpn, []))
