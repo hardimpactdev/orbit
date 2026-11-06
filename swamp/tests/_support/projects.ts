@@ -1,4 +1,6 @@
-import projects from "../../extensions/behaviors/operations/project-maintenance/projects.json" with { type: "json" };
+import projects from "../../extensions/behaviors/operations/project-maintenance/projects.json" with {
+    type: "json",
+};
 import {
     type DependencyProject,
     DependencyProjectSchema,

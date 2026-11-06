@@ -26,7 +26,7 @@ stale downgrades.
 `exceptions` is schema 1 project input. `detect` reports elapsed exceptions and
 never changes `vet.json` or the exception records.
 [Exception data](../../../docs/project-maintenance-exceptions.md) belongs to the
-private project extension.
+Project entry in `projects.json`.
 
 ## Distribution and checks
 

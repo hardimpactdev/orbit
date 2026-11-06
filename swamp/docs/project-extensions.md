@@ -38,7 +38,7 @@ removed. The `package_admit`, `project_work` and dependency scan dispatcher bran
 
 ## Gateway inputs and native project results
 
-Project maintenance admits the Project repository, default branch, check, current groups and public operation evidence as run inputs. Private project extensions keep the maintenance paths and release policy. A step never fetches Project or Task state from the Gateway. Git acquisition is one placed native Git command, followed by the dependency scan and canonical native result publication. Repository credentials use the admitted Operation and the existing scoped GitHub App authority; the scanner has no project-token callback.
+Project maintenance admits the Project repository, default branch, check, current groups and public operation evidence as run inputs. `projects.json` keeps the maintenance paths and release policy. A step never fetches Project or Task state from the Gateway. Git acquisition is one placed native Git command, followed by the dependency scan and canonical native result publication. Repository credentials use the admitted Operation and the existing scoped GitHub App authority; the scanner has no project-token callback.
 
 Routine and batch selection produce typed requests in the terminal result. The Gateway applies those requests through its normal group and Operation admissions. Swamp does not create groups, post task Operations or start nested CLI processes. Native failures keep their original status; they do not fabricate a successful downstream admission.
 

@@ -1,7 +1,10 @@
 import { projectById, projects } from "./_support/projects.ts";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.11";
-import { type DependencyProject } from "../extensions/behaviors/_lib/dependency_project_schema.ts";
+import {
+    type DependencyProject,
+    DependencyProjectsSchema,
+} from "../extensions/behaviors/_lib/dependency_project_schema.ts";
 
 interface Source {
     slug: string;
@@ -107,7 +110,10 @@ Deno.test("the fleet retains private project configuration in one data file with
     assert(!sources.some((s) => s.slug === "horizon-new-dawn"));
     const ids = projects.map((p) => p.projectId);
     assertEquals(new Set(ids).size, ids.length);
-    const gateway = await yaml("models/@nckrtl/orbit-gateway/orbit-gateway.yaml") as {
+    DependencyProjectsSchema.parse(projects);
+    const gateway = await yaml(
+        "models/@nckrtl/orbit-gateway/orbit-gateway.yaml",
+    ) as {
         globalArguments: Record<string, unknown>;
     };
     assertEquals(gateway.globalArguments.dependencyProjects, []);
