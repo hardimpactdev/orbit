@@ -1,7 +1,7 @@
 id: 36a4edad-7628-4889-9391-edfbf2d87b29
 name: task-nested-apply
 description: >-
-  Put the current checkout and state in the nested fleet of a task VM and make the long-running services run it (the apply step of stage 2 of the command development pipeline): the state of the Gateway and app-dev on their own disks over the NFS checkout, the migrations, a restart of the queue worker and the Swamp worker. Each step is one command over official SSH to the task VM.
+  Put the current checkout and state in the nested fleet of a task VM and make the long-running services run it (the apply step of stage 2 of the command development pipeline): the state of the Gateway and app-dev on their own disks over the NFS checkout, the migrations, a restart of the queue worker, the scheduler and the agent-view subscriber. Each step is one command over official SSH to the task VM.
 vaults: []
 queueTimeout: 60
 inputs:

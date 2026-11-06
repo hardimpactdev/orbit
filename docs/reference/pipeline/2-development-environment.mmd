@@ -67,7 +67,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the outer VM exports its checkout over NFS to the nested network only; the nested Gateway and app-dev mount it as their checkout
   %%> - `.env`, `storage` and `bootstrap/cache` stay on each VM's own disk, mounted over the shared checkout
-  %%> - then the re-mint below and the apply step: migrations and a restart of the long-running services (queue worker, Swamp worker), so they run the checked-out code
+  %%> - then the re-mint below and the apply step: migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
   %%> - stock NFS and systemd mount units, set up by the image and Node playbooks; no sync program
   %%> Why:
   %%> - an edit on the outer VM is in the nested VMs at once; nothing can run against old code
@@ -81,6 +81,7 @@ sequenceDiagram
   %%> What it does:
   %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the mounted checkout, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
   %%> - the Swamp CLI renews the tokens by the names and into the files the build used: `access token rotate` for the serve driver, the two workers and the Gateway's run and read tokens, a new enrollment token for each worker; each lasts 30 days
+  %%> - a worker gets a new enrollment token under a new name; the old one was used once and expires with the task VM, so nothing revokes it
   %%> - stops serve and both workers while the tokens change, then starts them; the apply step that follows restarts the Gateway's own services, which read the new tokens
   %%> Why:
   %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
