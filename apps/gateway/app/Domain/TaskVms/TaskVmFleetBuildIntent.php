@@ -36,9 +36,6 @@ final readonly class TaskVmFleetBuildIntent
     /** The bridge of the nested network: the first address of its subnet. */
     public const string Bridge = '10.232.2.1/24';
 
-    /** The proof-network allowance: every nested guest admits this subnet, and proof cases place their test rules above it. */
-    public const string ProofNetwork = '10.232.2.0/24';
-
     /** Where the guests mount the checkout of the outer VM, which exports the same path, and where their own state lives (stage 2). */
     public const string CheckoutPath = '/home/orbit/orbit';
 
@@ -124,7 +121,7 @@ final readonly class TaskVmFleetBuildIntent
             'task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $guest->id,
             'ssh_execution' => $this->ssh->forNode($guest),
             'operator_checkout' => $workspace,
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'proof_network' => self::ProofNetwork, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
+            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'bridge' => self::Bridge, 'proof_network' => TaskVmReadyCopiesIntent::Subnet, 'layout' => self::Layout, 'checkout' => $this->checkout($workspace)],
             'bootstrap' => ['fragment' => $this->fragment($workspace)],
             // The key the new Gateway's Swamp runs with; it reaches the guest through stdin and is in no copy.
             'execution_secrets' => ['proof_club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
