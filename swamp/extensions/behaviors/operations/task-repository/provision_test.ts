@@ -596,4 +596,8 @@ Deno.test("the guest step builds the setup argv with the connection, and the rec
         },
     });
     assertEquals(Object.keys(written[0]), ["workspace"]);
+    // The schema, which the run checks before `execute`, accepts the call without a root and refuses a relative one.
+    assertEquals(behavior.methods.guest.arguments.safeParse({ intent, vm }).success, true);
+    assertEquals(behavior.methods.guest.arguments.safeParse({ intent, vm, root: "/tmp/x" }).success, true);
+    assertEquals(behavior.methods.guest.arguments.safeParse({ intent, vm, root: "tmp/x" }).success, false);
 });

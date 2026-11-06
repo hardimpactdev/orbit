@@ -133,6 +133,8 @@ Deno.test("every workflow that asks the provision data behavior for a guest pass
         for (const step of flow.jobs.flatMap((job) => job.steps)) {
             if (step.task?.behaviorType !== "@nckrtl/task-provision-data" || step.task.methodName !== "guest") continue;
             callers += 1;
+            // Only the workspace source builds the setup argv, so only it passes a root.
+            assertEquals("root" in (step.task.inputs ?? {}), entry.name === "workflow-task-workspace-source.yaml", `${entry.name}/${step.name}: root`);
             for (const key of Object.keys(step.task.inputs ?? {})) assert(known.has(key), `${entry.name}/${step.name}: unknown argument ${key}`);
         }
     }
