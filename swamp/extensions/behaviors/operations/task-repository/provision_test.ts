@@ -56,6 +56,12 @@ const vm = {
         process: { process_id: 60, status: "active" },
     },
 };
+/** The facts file that the workspace playbook leaves on the Swamp Node for `profile`. */
+async function writeFacts(directory: string, identity: string, files: string): Promise<string> {
+    const path = `${directory}/facts-${crypto.randomUUID()}.json`;
+    await Deno.writeTextFile(path, JSON.stringify({ identity, files }));
+    return path;
+}
 Deno.test("provision source uses the trusted child pin with captured WG/account and original identities", () => {
     const workspace = connection(intent, vm);
     assertEquals(workspace.task_vm_id, 10);
@@ -73,6 +79,9 @@ Deno.test("provision source uses the trusted child pin with captured WG/account 
 Deno.test("a failed source step retains VM readiness but never supplies successful source evidence", () => {
     const receipt = result(intent, vm, {
         guest: { status: "succeeded" },
+        mint_clone: { status: "succeeded" },
+        clone: { status: "succeeded" },
+        input: { status: "succeeded" },
         prepare: { status: "failed" },
     });
     assertEquals(receipt.ready, true);
@@ -108,20 +117,11 @@ Deno.test("source result requires every ordered setup step before exposing the s
     };
     const steps = Object.fromEntries(
         [
-            "prepare",
-            "directory",
-            "control",
             "mint_clone",
             "clone",
-            "bundle",
-            "prepare_remote",
-            "copy_bundle",
-            "import",
-            "origin",
-            "branch",
-            "identity",
-            "inspect",
-            "composer",
+            "input",
+            "prepare",
+            "checkout",
             "profile",
             "deps_mint",
             "deps_clear",
@@ -134,22 +134,18 @@ Deno.test("source result requires every ordered setup step before exposing the s
         error_code: "tasks.provision_failed",
         failed_step: "setup-0",
     });
-    // A guard skips the composer copy without a regular composer.json; a failed copy fails.
-    steps.composer.status = "failed";
+    // The checkout phase carries the clone of the bundle, the facts, the composer.json and the Route's rows of Caddy access: one that fails fails the provision.
+    steps.checkout.status = "failed";
     assertEquals(sourceResult(input, steps), {
         error_code: "tasks.provision_failed",
-        failed_step: "composer",
+        failed_step: "checkout",
     });
+    steps.checkout.status = "succeeded";
     steps.profile.outputs = { source };
-    delete steps.composer;
     steps["setup-0"] = { status: "succeeded", outputs: {} };
     assertEquals(sourceResult(input, steps), {
         source,
     });
-    // The guest's rows of the Route access run before the setup steps; one that did not succeed fails the provision.
-    const routed = { ...input, workspace: { ...input.workspace, access: [["/usr/bin/setfacl", "-m", "u:caddy:--x", "--", "/home"]] } };
-    assertEquals(sourceResult(routed, steps), { error_code: "tasks.provision_failed", failed_step: "access-0" });
-    assertEquals(sourceResult(routed, { ...steps, "access-0": { status: "succeeded", outputs: {} } }), { source });
     // The private-dependency steps are part of the receipt: a failed mint, write or removal fails the provision.
     for (const name of ["deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"]) {
         const before = steps[name].status;
@@ -175,20 +171,11 @@ Deno.test("proof provision requires private delivery before group readiness but 
         guest: { status: "succeeded" },
         ...Object.fromEntries(
             [
-                "prepare",
-                "directory",
-                "control",
                 "mint_clone",
                 "clone",
-                "bundle",
-                "prepare_remote",
-                "copy_bundle",
-                "import",
-                "origin",
-                "branch",
-                "identity",
-                "inspect",
-                "composer",
+                "input",
+                "prepare",
+                "checkout",
                 "deps_mint",
                 "deps_clear",
                 "deps_write_composer",
@@ -224,24 +211,25 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
         extensionFile: () => "unused",
         writeResource: () => Promise.resolve({}),
     };
-    const read = (commit: string) => ({
-        identity: commit + "\ntask-30\n",
-        files: "",
+    const directory = await Deno.makeTempDir();
+    const read = async (commit: string) => ({
+        facts: await writeFacts(directory, commit + "\ntask-30\n", ""),
         composer: "/nonexistent/composer.json",
     });
     await behavior.methods.profile.execute({
         intent: admitted,
-        ...read("c".repeat(40)),
+        ...await read("c".repeat(40)),
     }, ctx);
     await assertRejects(
-        () =>
-            behavior.methods.profile.execute({
+        async () =>
+            await behavior.methods.profile.execute({
                 intent: admitted,
-                ...read("d".repeat(40)),
+                ...await read("d".repeat(40)),
             }, ctx),
         Error,
         "instance.source_identity_changed",
     );
+    await Deno.remove(directory, { recursive: true });
 });
 
 Deno.test("profile reads and deletes the downloaded composer.json and keeps only its facts", async () => {
@@ -266,8 +254,7 @@ Deno.test("profile reads and deletes the downloaded composer.json and keeps only
                 skip_profile: false,
             },
         }),
-        identity: "c".repeat(40) + "\ntask-30\n",
-        files: "composer.json|regular file|90\nartisan|regular file|20\n",
+        facts: await writeFacts(directory, "c".repeat(40) + "\ntask-30\n", "composer.json|regular file|90\nartisan|regular file|20\n"),
         composer: path,
     }, {
         extensionFile: () => "unused",
@@ -555,7 +542,7 @@ Deno.test("the receipt names what became of the setup token, and a missing repor
 
     const source = { branch: "task-30", commit: "a".repeat(40), php_version: null, laravel: false };
     const steps: Record<string, { status: string; outputs?: unknown }> = Object.fromEntries(
-        ["prepare", "directory", "control", "mint_clone", "clone", "bundle", "prepare_remote", "copy_bundle", "import", "origin", "branch", "identity", "inspect", "composer", "profile", "deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"]
+        ["mint_clone", "clone", "input", "prepare", "checkout", "profile", "deps_mint", "deps_clear", "deps_write_composer", "deps_write_npm", "deps_remove_files"]
             .map((name) => [name, { status: "succeeded", outputs: {} }]),
     );
     steps.guest = { status: "succeeded" };
@@ -568,4 +555,35 @@ Deno.test("the receipt names what became of the setup token, and a missing repor
         reason: "GitHub holds no valid setup token: none was minted, or it had expired or been revoked.",
     });
     assertEquals(receipt.source, source);
+});
+
+Deno.test("the facts file is read once and deleted, and a missing, oversized or foreign one fails the provision", async () => {
+    const { readFacts } = await import("./provision.ts");
+    const directory = await Deno.makeTempDir();
+    const path = await writeFacts(directory, "c".repeat(40) + "\ntask-30\n", "artisan|regular file|20\n");
+    assertEquals(await readFacts(path), { identity: "c".repeat(40) + "\ntask-30\n", files: "artisan|regular file|20\n" });
+    await assertRejects(() => Deno.stat(path), Deno.errors.NotFound);
+    await assertRejects(() => readFacts(path), Error, "tasks.provision_failed");
+    const big = directory + "/big.json";
+    await Deno.writeTextFile(big, JSON.stringify({ identity: "x".repeat(70000), files: "" }));
+    await assertRejects(() => readFacts(big), Error, "tasks.provision_failed");
+    const foreign = directory + "/foreign.json";
+    await Deno.writeTextFile(foreign, JSON.stringify({ identity: "", files: "", extra: true }));
+    await assertRejects(() => readFacts(foreign));
+    await Deno.remove(directory, { recursive: true });
+});
+
+Deno.test("the guest step builds the setup argv with the connection, and the receipt names the Ansible phases", async () => {
+    const { behavior } = await import("./provision.ts");
+    const written: Record<string, unknown>[] = [];
+    await behavior.methods.guest.execute({ intent, vm, root: "/tmp/orbit-task-provision-run" }, {
+        extensionFile: () => "unused",
+        writeResource: (_spec: string, _name: string, value: unknown) => {
+            written.push(value as Record<string, unknown>);
+            return Promise.resolve({});
+        },
+    });
+    assertEquals(Object.keys(written[0]).sort(), ["setup", "workspace"]);
+    assertEquals(written[0].setup, setupArgv(intent, "/tmp/orbit-task-provision-run"));
+    assertEquals("prepare" in behavior.methods, false);
 });

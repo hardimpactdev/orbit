@@ -39,10 +39,11 @@ function before(steps: Step[], step: Step): Set<string> {
     return seen;
 }
 
-Deno.test("only the mint workflow and the check push post to the Gateway mint", async () => {
+Deno.test("only the mint workflow, the check push and the workspace source post to the Gateway mint", async () => {
     const posting = (await workflows()).filter(({ text }) => text.includes("/github-token"))
         .map(({ file }) => file).sort();
-    assertEquals(posting, ["workflow-task-check-push.yaml", "workflow-task-github-mint.yaml"]);
+    // The workspace source mints the clone credential in one step of its own, so the clone starts one dispatch sooner.
+    assertEquals(posting, ["workflow-task-check-push.yaml", "workflow-task-github-mint.yaml", "workflow-task-workspace-source.yaml"]);
 });
 
 Deno.test("every mint step names a purpose the Gateway issues and the run it belongs to", async () => {
@@ -84,19 +85,26 @@ function purposeOf(text: string): string | null {
     return null;
 }
 
+/** The purpose of a step that posts to the Gateway mint itself (the clone credential of the workspace source), else null. */
+function inlineMintPurpose(step: Step): string | null {
+    const env = (step.task?.inputs?.env ?? {}) as Record<string, unknown>;
+    if (!String(env.ORBIT_MINT_URL ?? "").includes("/github-token")) return null;
+    return /purpose\\":\\"([a-z_]+)/.exec(String(env.ORBIT_MINT_REQUEST ?? ""))?.[1] ?? null;
+}
+
 Deno.test("a step reads a minted key only after the step that mints it", async () => {
     for (const { file, workflow } of await workflows()) {
         const mints = workflow.jobs.flatMap((job) =>
-            job.steps.filter((step) => step.task?.workflowIdOrName === "task-github-mint").map((step) => ({ job, step }))
+            job.steps.filter((step) => step.task?.workflowIdOrName === "task-github-mint" || inlineMintPurpose(step) !== null).map((step) => ({ job, step }))
         );
         // A workflow with no mint step gets its tokens another way; the check pushes and the dependency evidence are not task mints.
         if (mints.length === 0) continue;
         for (const job of workflow.jobs) {
             for (const step of job.steps) {
                 const text = JSON.stringify(step.task ?? {});
-                if (step.task?.workflowIdOrName === "task-github-mint" || !minted.test(text)) continue;
+                if (step.task?.workflowIdOrName === "task-github-mint" || inlineMintPurpose(step) !== null || !minted.test(text)) continue;
                 const purpose = purposeOf(text);
-                const owner = mints.find(({ step: mint }) => purpose === null || mint.task?.inputs?.purpose === purpose);
+                const owner = mints.find(({ step: mint }) => purpose === null || (mint.task?.inputs?.purpose ?? inlineMintPurpose(mint)) === purpose);
                 const where = `${file}: "${step.name}" in job "${job.name}"`;
                 assert(owner !== undefined, `${where} reads a minted key and nothing in the workflow mints it`);
                 if (owner.job === job) {

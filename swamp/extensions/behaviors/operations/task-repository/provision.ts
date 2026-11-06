@@ -159,6 +159,20 @@ const Source = z.object({
 });
 const Observation = z.object({ source: Source });
 const COMPOSER_BYTES = 1048576;
+const FACTS_BYTES = 65536;
+const Facts = z.object({ identity: z.string(), files: z.string() }).strict();
+
+/**
+ * The checkout facts that the workspace playbook wrote: `identity` is `git rev-parse HEAD --abbrev-ref HEAD`, `files` the
+ * `stat -c %n|%F|%s` lines. The file is deleted after it is read; a missing or oversized file fails the provision.
+ */
+export async function readFacts(path: string) {
+    const read = await readCapture(path, FACTS_BYTES);
+    if (read === null || read.size > FACTS_BYTES) {
+        throw new Error("tasks.provision_failed");
+    }
+    return Facts.parse(JSON.parse(new TextDecoder().decode(read.bytes)));
+}
 
 /**
  * The SSH exec argv of each admitted setup command, in order. Each writes its
@@ -328,27 +342,15 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
     if (typeof profile.error_code === "string") {
         return { error_code: profile.error_code, failed_step: "profile" };
     }
-    // A guard skips `composer` when inspect found no regular composer.json; a
-    // skipped step has no entry in `steps`.
-    // The dependency steps are skipped with the setup steps when the profile failed or the Project has none.
-    const optional = new Set(["composer", ...DEPENDENCY_STEPS]);
+    // A skipped step has no entry in `steps`: the dependency steps are skipped when the Project has no setup step.
+    const optional = new Set(DEPENDENCY_STEPS);
     for (
         const name of [
-            "prepare",
-            "directory",
-            "control",
             "mint_clone",
             "clone",
-            "bundle",
-            "prepare_remote",
-            "copy_bundle",
-            "import",
-            "origin",
-            "branch",
-            "identity",
-            ...intent.workspace.access.map((_, i) => `access-${i}`),
-            "inspect",
-            "composer",
+            "input",
+            "prepare",
+            "checkout",
             "profile",
             // The private-dependency configuration is written before the setup steps and removed after them.
             ...DEPENDENCY_STEPS,
@@ -409,7 +411,7 @@ export function result(
 }
 export const behavior = {
     type: "@nckrtl/task-provision-data",
-    version: "2026.11.06.1",
+    version: "2026.11.06.2",
     resources: {
         public: {
             schema: z.record(z.string(), z.unknown()),
@@ -418,15 +420,6 @@ export const behavior = {
         },
     },
     methods: {
-        prepare: {
-            description:
-                "Validate public workspace intent and build each setup command's SSH exec argv",
-            arguments: z.object({ intent: Intent, root: Path }),
-            execute: (
-                args: { intent: z.infer<typeof Intent>; root: string },
-                ctx: Context,
-            ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
-        },
         revoke: {
             description:
                 "Name what became of the setup token after the revoke step: revoked, none to revoke, or unrevoked with the reason",
@@ -449,12 +442,15 @@ export const behavior = {
         },
         guest: {
             description:
-                "Use the provision child's trusted observed pin for the admitted workspace",
-            arguments: z.object({ intent: Intent, vm: z.unknown() }),
+                "Use the provision child's trusted observed pin for the admitted workspace, and build each setup command's SSH exec argv",
+            arguments: z.object({ intent: Intent, vm: z.unknown(), root: Path }),
             execute: (
-                args: { intent: unknown; vm: unknown },
+                args: { intent: unknown; vm: unknown; root: string },
                 ctx: Context,
-            ) => data(ctx, { workspace: connection(args.intent, args.vm) }),
+            ) => data(ctx, {
+                workspace: connection(args.intent, args.vm),
+                setup: setupArgv(args.intent, args.root),
+            }),
         },
         pin: {
             description:
@@ -507,15 +503,13 @@ export const behavior = {
                 "Classify source with canonical Instance profile policy read and delete the downloaded composer.json, keeping only its facts",
             arguments: z.object({
                 intent: Intent,
-                identity: z.string(),
-                files: z.string(),
+                facts: Path,
                 composer: Path,
             }),
             execute: async (
                 args: {
                     intent: z.infer<typeof Intent>;
-                    identity: string;
-                    files: string;
+                    facts: string;
                     composer: string;
                 },
                 ctx: Context,
@@ -526,9 +520,10 @@ export const behavior = {
                     args.composer,
                     COMPOSER_BYTES,
                 );
+                const facts = await readFacts(args.facts);
                 const observation = observe(workspace, {
-                    identity: args.identity,
-                    files: args.files,
+                    identity: facts.identity,
+                    files: facts.files,
                     composer: composer?.bytes ?? null,
                 });
                 if (

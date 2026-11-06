@@ -33,7 +33,7 @@ inputs:
 jobs:
 - name: source
   steps:
-  # The workspace connection pins the host key the VM child observed at enrollment.
+  # The workspace connection pins the host key the VM child observed at enrollment; the same step builds the argv of each setup command.
   - name: guest
     labels: {role: swamp}
     task:
@@ -44,73 +44,27 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         vm: ${{ inputs.vm }}
+        root: ${{ "/tmp/orbit-task-provision-"+run.id }}
     # Every failure lands in the receipt; this workspace run itself always ends with it.
     allowFailure: true
-  - name: prepare
+  # The credential is minted here, at the start and beside the guest steps, because the VM step before this run can wait for capacity for longer than an
+  # installation token lives. It exists only in the vault and in the environment of the clone: the VM gets a bundle, never a credential.
+  # The call is the one of the task-github-mint child, made in one step so that the clone starts one dispatch sooner.
+  - name: mint_clone
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-prepare" }}'
-      methodName: prepare
-      inputs:
-        intent: ${{ inputs.intent }}
-        root: ${{ "/tmp/orbit-task-provision-"+run.id }}
-    dependsOn:
-    - step: guest
-      condition:
-        type: succeeded
-  - name: directory
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-workspace
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ steps.guest.outputs.workspace }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: control
-    labels: {role: swamp}
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-control" }}'
+      behaviorName: ${{ "task-github-mint-clone" }}
       methodName: execute
       inputs:
-        run: 'umask 077
-
-          mkdir -p -- "$ORBIT_ROOT"
-
-          '
+        run: "curl --fail --silent --show-error --proto =https --max-time 60 --max-filesize 65536 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_MINT_REQUEST\" \"$ORBIT_MINT_URL\"\n"
         env:
-          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
+          ORBIT_MINT_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/github-token" }}
+          ORBIT_MINT_REQUEST: '${{ "{\"run_id\":\"" + inputs.run_id + "\",\"purpose\":\"clone\"}" }}'
     allowFailure: true
-  # The credential is minted here, minutes before the clone, because the VM step before it can wait for capacity for longer than an installation token lives.
-  # It exists only in the vault and in the environment of the clone: the VM gets a bundle, never a credential.
-  - name: mint_clone
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-github-mint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        run_id: ${{ inputs.run_id }}
-        purpose: clone
-    dependsOn:
-    - step: control
-      condition:
-        type: succeeded
-    allowFailure: true
+  # The run folder on the Swamp Node, the clone with its full history, and the bundle that the VM gets: three commands in one step.
   - name: clone
     labels: {role: swamp}
     task:
@@ -119,14 +73,21 @@ jobs:
       behaviorName: '${{ "tp-clone" }}'
       methodName: execute
       inputs:
-        run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+        run: 'set -e
+
+          umask 077
+
+          mkdir -p -- "$ORBIT_ROOT"
+
+          git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_ROOT/source"
+
+          git -C "$ORBIT_ROOT/source" bundle create "$ORBIT_ROOT/source.bundle" --all
 
           '
         env:
+          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
           ORBIT_BRANCH: ${{ inputs.intent.workspace.default_branch }}
           ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
-            }}
           GIT_TERMINAL_PROMPT: '0'
           GIT_CONFIG_COUNT: '3'
           GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
@@ -141,345 +102,77 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
-  - name: bundle
+  # The guest steps are two Ansible phases (swamp/ansible/task-vm-workspace.yml): `prepare` beside the clone, `checkout` once the bundle exists.
+  # This step writes their intent; the first phase builds the inventory and the pinned known hosts from it.
+  - name: input
     labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: '${{ {"ssh_execution": steps.guest.outputs.workspace.ssh_execution, "workspace": {"checkout_path": inputs.intent.workspace.checkout_path, "repository": inputs.intent.workspace.repository, "branch": inputs.intent.workspace.branch, "start_commit": inputs.intent.workspace.start_commit, "entry_point": inputs.intent.workspace.entry_point, "skip_profile": inputs.intent.workspace.skip_profile, "access": has(inputs.intent.workspace.access) ? inputs.intent.workspace.access : []}} }}'
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+    allowFailure: true
+  # Phase one: the checkout folder and the output folder on the VM, and a check that the account can write the checkout folder. It builds the
+  # inventory and the known hosts, so it runs beside the clone and the bundle is not waited for.
+  - name: prepare
+    labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "tp-bundle" }}'
+      behaviorName: '${{ "tp-workspace-prepare" }}'
       methodName: execute
       inputs:
-        run: 'git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" --all
-
-          '
+        run: "timeout 30 python3 \"$ORBIT_ANSIBLE/build_vars.py\" \"$ORBIT_RUN\" task_vm.workspace && timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.yml\" -e \"@$ORBIT_RUN/vars.yml\" --tags prepare \"$ORBIT_ANSIBLE/task-vm-workspace.yml\"\n"
         env:
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
-            }}
-          ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
-            }}
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_REMOTE_ROOT: ${{ "/tmp/orbit-task-provision-" + run.id }}
+          ORBIT_LOCAL_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/" + run.id }}
     dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    allowFailure: true
+  # Phase two: the bundle to the VM and its clone, the origin and the task branch, the commit and metadata facts, the Route's rows of Caddy access
+  # (one at a time, before the setup steps write into the tree: what they create inherits the default entries) and the composer.json. The facts and the
+  # composer.json come back as files in the run folder on the Swamp Node, for `profile`.
+  - name: checkout
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "tp-workspace-checkout" }}'
+      methodName: execute
+      inputs:
+        run: "timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.yml\" -e \"@$ORBIT_RUN/vars.yml\" --tags checkout \"$ORBIT_ANSIBLE/task-vm-workspace.yml\"\n"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps.input.outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps.input.outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_REMOTE_ROOT: ${{ "/tmp/orbit-task-provision-" + run.id }}
+          ORBIT_LOCAL_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/" + run.id }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
     - step: clone
       condition:
         type: succeeded
-    allowFailure: true
-  - name: prepare_remote
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - -m
-        - '0700'
-        - --
-        - ${{ "/tmp/orbit-task-provision-"+run.id+"/output" }}
-    dependsOn:
-    - step: directory
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: copy_bundle
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        src: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
-          }}
-        dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
-        direction: to
-    dependsOn:
-    - step: bundle
-      condition:
-        type: succeeded
-    - step: prepare_remote
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: import
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - clone
-        - --
-        - ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
-        - ${{ inputs.intent.workspace.checkout_path }}
-    dependsOn:
-    - step: directory
-      condition:
-        type: succeeded
-    - step: copy_bundle
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: origin
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - remote
-        - set-url
-        - origin
-        - ${{ inputs.intent.workspace.repository }}
-    dependsOn:
-    - step: import
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: branch
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - switch
-        - -c
-        - ${{ inputs.intent.workspace.branch }}
-        - ${{ inputs.intent.workspace.start_commit }}
-    dependsOn:
-    - step: origin
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: identity
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        argv:
-        - /usr/bin/git
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - rev-parse
-        - HEAD
-        - --abbrev-ref
-        - HEAD
-    dependsOn:
-    - step: branch
-      condition:
-        type: succeeded
-    allowFailure: true
-  # The Route's Caddy access on the guest, one row at a time, after the fetch and before the setup steps write into the tree: what they
-  # create inherits the default entries, as in instance:create's checkout phase. The Route then skips these rows for the guest.
-  # The rows run beside identity, inspect, composer and profile, which only read the tree; the dependency writes wait for them, so the
-  # setup steps start after them.
-  - name: access-${{ self._index }}
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-access-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-access-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 130
-        argv: ${{ ["sudo", "-n", "timeout", "120"] + self.access }}
-    dependsOn:
-    - step: branch
-      condition:
-        type: succeeded
-    forEach:
-      item: access
-      in: '${{ has(inputs.intent.workspace.access) ? inputs.intent.workspace.access : [] }}'
-    concurrency: 1
-    guard: ${{ self._index > 0 && (!("access-"+string(self._index-1) in steps) || steps["access-"+string(self._index-1)].status != "succeeded") }}
-    allowFailure: true
-  - name: inspect
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        timeoutSec: 3900
-        okExitCodes: any
-        argv:
-        - /usr/bin/env
-        - -C
-        - ${{ inputs.intent.workspace.checkout_path }}
-        - stat
-        - -c
-        - '%n|%F|%s'
-        - --
-        - composer.json
-        - ${{ inputs.intent.workspace.entry_point }}
-    dependsOn:
-    - step: identity
-      condition:
-        type: succeeded
-    allowFailure: true
-  - name: composer
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs:
-        hosts:
-        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
-          name: target
-          transport:
-            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.node_id)).split(".").join("-") }}'
-        transport:
-          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
-          kind: ssh
-          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
-          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
-      inputs:
-        hosts: name:target
-        direction: from
-        src: ${{ inputs.intent.workspace.checkout_path + "/composer.json" }}
-        dst: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/composer.json" }}
-        timeoutSec: 60
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    - step: control
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.workspace.skip_profile || !steps.inspect.outputs.stdout.contains("composer.json|regular")
-      }}
     allowFailure: true
   - name: profile
     labels: {role: swamp}
@@ -490,22 +183,12 @@ jobs:
       methodName: profile
       inputs:
         intent: ${{ inputs.intent }}
-        identity: ${{ steps.identity.outputs.stdout }}
-        files: ${{ steps.inspect.outputs.stdout }}
+        facts: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/facts.json" }}
         composer: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/composer.json" }}
     dependsOn:
-    - step: identity
+    - step: checkout
       condition:
         type: succeeded
-    - step: inspect
-      condition:
-        type: succeeded
-    - step: composer
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
     allowFailure: true
   # Private dependencies (docs/cli/tasks/provision.mmd). The token is minted beside the clone credential, so its dispatch is off the critical path; the old
   # files are cleared early for the same reason (uutils `install` cannot overwrite from stdin). Right before the first setup step the two files are written
@@ -520,10 +203,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         run_id: ${{ inputs.run_id }}
         purpose: dependencies
-    dependsOn:
-    - step: control
-      condition:
-        type: succeeded
+    dependsOn: []
     guard: ${{ size(inputs.intent.workspace.setup) == 0 }}
     allowFailure: true
   - name: deps_clear
@@ -597,7 +277,7 @@ jobs:
         - ${{ "/home/" + inputs.intent.workspace.user + "/.config/composer/auth.json" }}
         stdin: ${{ vault.get(inputs.intent.dependency_auth.composer.vault, inputs.intent.dependency_auth.composer.key) }}
     dependsOn:
-    - step: profile
+    - step: checkout
       condition:
         type: succeeded
     - step: deps_mint
@@ -606,10 +286,7 @@ jobs:
     - step: deps_clear
       condition:
         type: succeeded
-    - step: access-${{ self._index }}
-      condition:
-        type: always
-    guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
+    guard: ${{ size(inputs.intent.workspace.setup) == 0 }}
     allowFailure: true
   - name: deps_write_npm
     labels: {role: swamp}
@@ -644,7 +321,7 @@ jobs:
         - ${{ "/home/" + inputs.intent.workspace.user + "/.npmrc" }}
         stdin: ${{ vault.get(inputs.intent.dependency_auth.npm.vault, inputs.intent.dependency_auth.npm.key) }}
     dependsOn:
-    - step: profile
+    - step: checkout
       condition:
         type: succeeded
     - step: deps_mint
@@ -653,10 +330,7 @@ jobs:
     - step: deps_clear
       condition:
         type: succeeded
-    - step: access-${{ self._index }}
-      condition:
-        type: always
-    guard: ${{ has(steps.profile.outputs.error_code) || size(inputs.intent.workspace.setup) == 0 }}
+    guard: ${{ size(inputs.intent.workspace.setup) == 0 }}
     allowFailure: true
   - name: setup-${{ self._index }}
     labels: {role: swamp}
@@ -679,7 +353,7 @@ jobs:
           user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
-        argv: ${{ steps.prepare.outputs.setup[self._index] }}
+        argv: ${{ steps.guest.outputs.setup[self._index] }}
         timeoutSec: ${{ self.setup.timeout_seconds }}
     dependsOn:
     - step: profile
@@ -695,9 +369,7 @@ jobs:
       item: setup
       in: ${{ inputs.intent.workspace.setup }}
     concurrency: 1
-    # The access rows stop at the first that fails, so the last one succeeded only when all did.
-    guard: ${{ has(steps.profile.outputs.error_code) || (has(inputs.intent.workspace.access) && size(inputs.intent.workspace.access) > 0
-      && (!("access-"+string(size(inputs.intent.workspace.access)-1) in steps) || steps["access-"+string(size(inputs.intent.workspace.access)-1)].status != "succeeded"))
+    guard: ${{ has(steps.profile.outputs.error_code)
       || (self._index > 0 && (!("setup-"+string(self._index-1) in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
   - name: deps_remove_files
@@ -810,10 +482,10 @@ jobs:
         dst: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/" }}
         timeoutSec: 60
     dependsOn:
-    - step: prepare_remote
+    - step: prepare
       condition:
         type: succeeded
-    - step: control
+    - step: clone
       condition:
         type: succeeded
     - step: setup-${{ self._index }}
@@ -979,19 +651,22 @@ jobs:
     - step: guest
       condition:
         type: always
-    - step: prepare
-      condition:
-        type: always
-    - step: directory
-      condition:
-        type: always
-    - step: control
-      condition:
-        type: always
     - step: mint_clone
       condition:
         type: always
     - step: clone
+      condition:
+        type: always
+    - step: input
+      condition:
+        type: always
+    - step: prepare
+      condition:
+        type: always
+    - step: checkout
+      condition:
+        type: always
+    - step: profile
       condition:
         type: always
     - step: deps_mint
@@ -1012,43 +687,7 @@ jobs:
     - step: deps_revoke
       condition:
         type: always
-    - step: bundle
-      condition:
-        type: always
-    - step: prepare_remote
-      condition:
-        type: always
-    - step: copy_bundle
-      condition:
-        type: always
-    - step: import
-      condition:
-        type: always
-    - step: origin
-      condition:
-        type: always
-    - step: branch
-      condition:
-        type: always
-    - step: identity
-      condition:
-        type: always
-    - step: access-${{ self._index }}
-      condition:
-        type: always
-    - step: inspect
-      condition:
-        type: always
-    - step: composer
-      condition:
-        type: always
-    - step: profile
-      condition:
-        type: always
     - step: setup-${{ self._index }}
-      condition:
-        type: always
-    - step: setup_output
       condition:
         type: always
     - step: proof_club_directory
@@ -1060,6 +699,7 @@ jobs:
     - step: proof_club
       condition:
         type: always
+  # Both cleanups wait for the last reader of the run folders: the output copy and the profile. The receipt does not wait for them.
   - name: cleanup
     labels: {role: swamp}
     task:
@@ -1068,13 +708,20 @@ jobs:
       behaviorName: '${{ "tp-cleanup" }}'
       methodName: execute
       inputs:
-        run: 'rm -rf -- "$ORBIT_ROOT"
+        run: 'rm -rf -- "$ORBIT_ROOT" "$ORBIT_RUN"
 
           '
         env:
           ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-"+run.id }}
     dependsOn:
-    - step: result
+    - step: setup_output
+      condition:
+        type: always
+    - step: checkout
+      condition:
+        type: always
+    - step: profile
       condition:
         type: always
     allowFailure: true
@@ -1106,7 +753,10 @@ jobs:
         - --
         - ${{ "/tmp/orbit-task-provision-"+run.id }}
     dependsOn:
-    - step: result
+    - step: setup_output
+      condition:
+        type: always
+    - step: checkout
       condition:
         type: always
     allowFailure: true

@@ -1,0 +1,96 @@
+---
+# The workspace of one task VM (docs/cli/tasks/provision.mmd, "Set up the workspace"): the folders, the checkout of the bundle, the identity and
+# file facts of the checkout, the guest's rows of the Route's Caddy access, and the composer.json of the Project.
+# One tagged part per Swamp step: `prepare` first (beside the clone on the Swamp Node), then `checkout` once the bundle exists.
+# The VM is reached with the pinned host key of its intent. Nothing here reads a credential: the bundle holds the history, and the clone
+# credential never leaves the Swamp Node. The results come back as files in `local_root` on the Swamp Node: facts.json and composer.json.
+- name: Task workspace
+  hosts: task_vm
+  gather_facts: false
+  vars:
+    workspace: "{{ intent.workspace }}"
+    # /tmp/orbit-task-provision-<run> on the VM; /home/orbit/.cache/orbit-task-provision/<run> on the Swamp Node.
+    remote_root: "{{ lookup('ansible.builtin.env', 'ORBIT_REMOTE_ROOT') }}"
+    local_root: "{{ lookup('ansible.builtin.env', 'ORBIT_LOCAL_ROOT') }}"
+    # `stat -c %n|%F|%s` of composer.json and the entry point, as the profile reads them; a file that is not there has no line.
+    inspected: "{{ ['composer.json', workspace.entry_point] }}"
+  tasks:
+    - name: Prepare
+      tags: [prepare]
+      block:
+        - name: Create the checkout folder and the output folder of the setup steps
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            mode: "{{ item.mode | default(omit) }}"
+          loop:
+            - { path: "{{ workspace.checkout_path }}" }
+            - { path: "{{ remote_root }}/output", mode: "0700" }
+        - name: Read the checkout folder
+          ansible.builtin.stat:
+            path: "{{ workspace.checkout_path }}"
+          register: checkout_folder
+        - name: Check that the checkout folder is a folder the account can write
+          ansible.builtin.assert:
+            that:
+              - checkout_folder.stat.isdir
+              - checkout_folder.stat.writeable
+            fail_msg: tasks.provision_failed
+
+    - name: Check out
+      tags: [checkout]
+      block:
+        - name: Copy the bundle to the VM
+          ansible.builtin.copy:
+            src: "{{ local_root }}/source.bundle"
+            dest: "{{ remote_root }}/source.bundle"
+            mode: "0600"
+        - name: Clone the bundle
+          ansible.builtin.command:
+            argv: [/usr/bin/git, clone, --, "{{ remote_root }}/source.bundle", "{{ workspace.checkout_path }}"]
+          changed_when: true
+        - name: Point origin at the repository
+          ansible.builtin.command:
+            argv: [/usr/bin/git, -C, "{{ workspace.checkout_path }}", remote, set-url, origin, "{{ workspace.repository }}"]
+          changed_when: true
+        - name: Switch to the task branch at the start commit
+          ansible.builtin.command:
+            argv: [/usr/bin/git, -C, "{{ workspace.checkout_path }}", switch, -c, "{{ workspace.branch }}", "{{ workspace.start_commit }}"]
+          changed_when: true
+        - name: Read the commit and the branch
+          ansible.builtin.command:
+            argv: [/usr/bin/git, -C, "{{ workspace.checkout_path }}", rev-parse, HEAD, --abbrev-ref, HEAD]
+          register: identity
+          changed_when: false
+        - name: Read the metadata files
+          ansible.builtin.command:
+            argv: ["/usr/bin/env", -C, "{{ workspace.checkout_path }}", stat, -c, "%n|%F|%s", --, "{{ inspected[0] }}", "{{ inspected[1] }}"]
+          register: files
+          # A file that is missing makes stat exit 1; its line is absent and the profile reads that as "not there".
+          failed_when: false
+          changed_when: false
+        # The Route's rows of Caddy access, one at a time, before the setup steps write into the tree: what they create inherits the
+        # default entries. The Route then skips these rows for the guest.
+        - name: Give the Route's Caddy access to the checkout
+          ansible.builtin.command:
+            argv: "{{ ['sudo', '-n', 'timeout', '120'] + item }}"
+          loop: "{{ workspace.access | default([]) }}"
+          loop_control:
+            label: "{{ item[0] }}"
+          changed_when: true
+        - name: Hand the facts to the Swamp Node
+          ansible.builtin.copy:
+            content: "{{ {'identity': identity.stdout, 'files': files.stdout} | to_json }}"
+            dest: "{{ local_root }}/facts.json"
+            mode: "0600"
+          delegate_to: localhost
+          connection: local
+          become: false
+        - name: Fetch composer.json when it is a regular file
+          ansible.builtin.fetch:
+            src: "{{ workspace.checkout_path }}/composer.json"
+            dest: "{{ local_root }}/composer.json"
+            flat: true
+          when:
+            - not workspace.skip_profile
+            - "'composer.json|regular' in files.stdout"
