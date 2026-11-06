@@ -102,12 +102,11 @@ sequenceDiagram
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
     %%> - the nested half is the child `task-nested-converge`: the candidate CLI on the outer VM runs `node:converge app-dev`, then `node:converge app-prod`, through the CLI profile `nested`; each command follows its own Operation and fails the step when the converge fails
     %%> - one Node after the other, because the nested Gateway locks the target and the hub for each converge
-    %%> - the nested Gateway is not converged: it is the release of the checkout and takes its code, state and services from the mount and the apply step
+    %%> - the nested Gateway is not converged (for Nick to rule on): its code, state and services come from the mount and the apply step, and its agent binary and role software stay at the pins of the seed until the next refresh
     %%> - it runs in the fleet child after the apply step and the CLI profile, and before the readiness check and `base`, so `base` keeps what it converged; the outer VM half runs earlier, in the provision, because it creates the NFS export that the fleet mounts
     %%> - it needs the nested Swamp, so it runs for a task with the proof Swamp Club key only
     %%> - the run always converges, as the outer half does: a Node at the pins reports no change, so the Gateway needs no check of what changed
     %%> Built: the child `task-nested-converge`, called by the step `Converge the nested Nodes` of `task-nested-fleet`
-    %%> Not built, owned by the proof-run lane: a later converge of a fleet that already has `base` (stage 3) calls the same child, then takes `base` again
   end
   VM->>NT: Check readiness<br/>agents · Swamp · Doctor
   %%> What it does:
