@@ -34,6 +34,12 @@ class TaskVmRuntimeTest(unittest.TestCase):
         self.assertIs(play['force_handlers'], True)
         self.assertEqual({handler['name'] for handler in play['handlers']}, {'Update the CA store', 'Restart the Pi server'})
 
+    def test_the_app_dev_runtime_footprint_comes_from_the_intent(self):
+        play = yaml.safe_load(PLAYBOOK.read_text())[0]
+        loops = {step['name']: step.get('loop') for step in steps(play)}
+        self.assertEqual(loops['Create the app-dev runtime folders'], '{{ intent.runtime.app_dev.directories | default([]) }}')
+        self.assertEqual(loops['Write the app-dev runtime files'], '{{ intent.runtime.app_dev.files | default([]) }}')
+
     def test_the_runtime_intent_is_reached_with_its_pinned_host_key(self):
         intent = {'ssh_execution': {'identity_file': '/role/identity', 'target': {
             'host': '10.252.7.9', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 vm']}}, 'certificate': '{{ not a template }}'}

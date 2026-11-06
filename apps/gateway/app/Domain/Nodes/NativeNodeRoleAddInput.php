@@ -15,7 +15,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
@@ -87,9 +86,8 @@ final readonly class NativeNodeRoleAddInput
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
                 NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
             $directories[] = ['path' => $storage->value, 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755'];
-            $directories[] = ['path' => '/dev/shm/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '0755'];
-            $directories[] = ['path' => '/data/caddy/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '2775'];
-            $files[] = ['path' => '/etc/tmpfiles.d/orbit.conf', 'content' => TmpfilesFootprintArtifact::Rule, 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+            array_push($directories, ...AppDevRuntimeFootprint::directories());
+            array_push($files, ...AppDevRuntimeFootprint::files());
         }
         foreach ($php as $configuration) {
             $services[] = 'php'.ValidatedData::string($configuration['version']).'-fpm.service';
