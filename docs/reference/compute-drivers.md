@@ -1216,7 +1216,7 @@ The seed that the image build leaves holds only the stopped `node-template`. A r
 
 Each task VM host refreshes its own image and seed. Nothing is copied between hosts, because hosts differ in CPU. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway. There is no CLI command of its own. The release projection and the daily schedule of the chart are not built yet.
 
-The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age.
+The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
 
 The Gateway captures the whole intent in the admission transaction of provision, so no step of the run calls the Gateway. A second admission for a host returns the open Operation. The Gateway refuses a host that is not an active, configured task VM host. It also refuses a host with an image build running or no promoted image, and a Gateway whose release has no commit.
 
