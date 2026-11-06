@@ -175,9 +175,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: task_vm.image_build
         intent: '${{ inputs.intent.refresh.candidate }}'
-
         fingerprint: '${{ steps["Read the fingerprint"].outputs.stdout.split("\n")[0] }}'
-
 - name: cleanup
   labels: {role: swamp}
   dependsOn: [{job: refresh, condition: {type: completed}}]
