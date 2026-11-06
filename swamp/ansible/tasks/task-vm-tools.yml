@@ -16,6 +16,7 @@
       environment: "{{ apt_environment }}"
       changed_when: true
 - { name: Serve the checkout, ansible.builtin.import_tasks: task-vm-nfs.yml }
+- { name: Initialise Incus, ansible.builtin.import_tasks: task-vm-incus.yml }
 - { name: Build the shape gate tools, ansible.builtin.import_tasks: task-vm-shape-gate.yml }
 - { name: Apply the exports before the check, ansible.builtin.meta: flush_handlers }
 - { name: Leave the downloads out of an image, ansible.builtin.import_tasks: task-vm-image-cache.yml }
