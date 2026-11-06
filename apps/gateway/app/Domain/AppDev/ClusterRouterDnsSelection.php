@@ -343,8 +343,8 @@ final readonly class ClusterRouterDnsSelection
             ->orderBy('id')
             ->get();
 
-        // A capture renders the fleet as it will be. A Route without a site in it has left, as its host record has, so its name leaves too.
-        $prospective = app(RoutePublicationSites::class)->current();
+        // A Route change captures the fleet as it will be. A Route without a site in it has left, as its host record has, so its name leaves too.
+        $prospective = app(RoutePublicationSites::class)->isCompleteFleet() ? app(RoutePublicationSites::class)->current() : null;
         if ($prospective !== null) {
             $served = $prospective->map(fn (DevelopmentSite $site): string => $this->normalizeName($site->domain))->all();
             $routes = $routes->filter(fn (Route $route): bool => in_array($this->normalizeName($route->domain), $served, true));

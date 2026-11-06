@@ -49,12 +49,21 @@ it('names every Route of the Cluster while the real fleet is rendered', function
     expect(routerNames())->toContain('kept.create-bench.test', 'gone.create-bench.test');
 });
 
-it('drops the name of a Route that a capture renders without a site, as it drops its host record', function (): void {
+it('drops the name of a Route that a Route change leaves without a site, as it drops its host record', function (): void {
+    [$router] = routerClusterWithRoutes();
+    $kept = new DevelopmentSite($router->id, '10.44.0.7', 'kept', '/apps/kept', '/apps/kept/public', null, 'kept.create-bench.test');
+
+    $names = app(RoutePublicationSites::class)->render(collect([$kept]), routerNames(...), complete: true);
+
+    expect($names)->toContain('test', 'kept.create-bench.test')
+        ->and($names)->not->toContain('gone.create-bench.test');
+});
+
+it('keeps naming Routes by status in a capture that is not a Route change', function (): void {
     [$router] = routerClusterWithRoutes();
     $kept = new DevelopmentSite($router->id, '10.44.0.7', 'kept', '/apps/kept', '/apps/kept/public', null, 'kept.create-bench.test');
 
     $names = app(RoutePublicationSites::class)->render(collect([$kept]), routerNames(...));
 
-    expect($names)->toContain('test', 'kept.create-bench.test')
-        ->and($names)->not->toContain('gone.create-bench.test');
+    expect($names)->toContain('kept.create-bench.test', 'gone.create-bench.test');
 });

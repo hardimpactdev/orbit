@@ -42,8 +42,6 @@ sequenceDiagram
   end
   opt domain outside the TLD
     SW->>V: Remove private DNS<br/>records + catalog, then reload
-    %%> What it does:
-    %%> - the catalog's Router answers (`overrides`, a list per requesting Node) name a Route only while the captured fleet has a site for it, as the host records do, so the name of the withdrawn Route leaves with its records in this same step and no stale answer stays
     SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
   end
   SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent
