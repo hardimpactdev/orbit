@@ -20,10 +20,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-the-prerequisites").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-prereq").split(".").join("-") }}'
       methodName: exec
       globalArgs: &machine
-        name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-the-prerequisites").split(".").join("-") }}'
+        name: '${{ ("gb-" + inputs.intent.ssh.host + "-prereq").split(".").join("-") }}'
         transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', port: '${{ inputs.intent.ssh.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}
         hosts: [{name: target, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       inputs:
@@ -40,9 +40,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-clone-the-release").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-clone").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-clone-the-release").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-clone").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         argv: [timeout, '600', git, clone, --no-checkout, '${{ inputs.intent.release.repository }}', '/home/${{ inputs.intent.ssh.user }}/orbit']
@@ -53,9 +53,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-check-out-the-release").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-checkout").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-check-out-the-release").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-checkout").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         argv: [timeout, '300', git, -C, '/home/${{ inputs.intent.ssh.user }}/orbit', checkout, --detach, '${{ inputs.intent.release.commit }}']
@@ -69,9 +69,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-create-the-ansible-venv").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-venv").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-create-the-ansible-venv").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-venv").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         sudo: true
@@ -83,9 +83,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-ansible").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-ansible").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         sudo: true
@@ -97,9 +97,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-the-ansible-collections").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-collections").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-install-the-ansible-collections").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-collections").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         sudo: true
@@ -114,9 +114,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-make-the-swamp-folder").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-folder").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-make-the-swamp-folder").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-folder").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         sudo: true
@@ -128,7 +128,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-swamp-binary").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-binary").split(".").join("-") }}'
       methodName: apply
       globalArgs:
         nodeHost: '${{ inputs.intent.ssh.host }}'
@@ -149,7 +149,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-swamp-link").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-link").split(".").join("-") }}'
       methodName: apply
       globalArgs:
         nodeHost: '${{ inputs.intent.ssh.host }}'
@@ -171,9 +171,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-swamp-version").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-swamp-v").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-swamp-version").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-swamp-v").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         argv: [/usr/local/bin/swamp, --version]
@@ -182,9 +182,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-ansible-version").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible-v").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-ansible-version").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-ansible-v").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         argv: [/opt/orbit/ansible/venv/bin/ansible-playbook, --version]
@@ -193,9 +193,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-release-commit").split(".").join("-") }}'
+      behaviorName: '${{ ("gb-" + inputs.intent.ssh.host + "-commit").split(".").join("-") }}'
       methodName: exec
-      globalArgs: {<<: *machine, name: '${{ ("gateway-bootstrap-" + inputs.intent.ssh.host + "-read-the-release-commit").split(".").join("-") }}'}
+      globalArgs: {<<: *machine, name: '${{ ("gb-" + inputs.intent.ssh.host + "-commit").split(".").join("-") }}'}
       inputs:
         hosts: name:target
         argv: [git, -C, '/home/${{ inputs.intent.ssh.user }}/orbit', rev-parse, HEAD]
