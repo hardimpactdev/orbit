@@ -11,13 +11,18 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\PendingSshHostKey;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -50,6 +55,7 @@ final readonly class TaskVmSlotPool
         private NodeSettingsNormalizer $nodeSettings,
         private PendingSshHostKey $pendingKeys,
         private StartTaskVmDestroyAction $destroy,
+        private RecipeImageBuilds $recipes,
     ) {}
 
     /** Runs the refill rule of the host; returns the Operation it started, or null when the pool needs nothing now. */
@@ -110,6 +116,60 @@ final readonly class TaskVmSlotPool
             ?? ($slots->count() > $count ? $slots->first() : null);
 
         return $stale instanceof TaskVm ? ['destroy', $stale] : null;
+    }
+
+    /**
+     * Takes the oldest ready slot that can serve the group: its Project and size are the group's, it is not stale, a
+     * group with `current_recipe` gets only a slot of the current recipe, and its host has capacity for it. The slot
+     * joins the group at once. Null when no slot fits: the caller clones, as without a pool. Call it in the admission
+     * transaction of the group.
+     */
+    public function claim(Task $group): ?TaskVm
+    {
+        if (! $this->settings->enabled || TaskVm::forGroup($group) instanceof TaskVm) {
+            return null;
+        }
+        $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds, $this->settings->largeProjectIds);
+        // Serialize with placement, the refill rule and image promotion.
+        DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
+        $recipe = $group->current_recipe === true ? $this->recipes->currentRecipe()->identity : null;
+        $candidates = TaskVm::query()->unclaimedSlots()->where('state', TaskVmState::Parked)->where('slot_project_id', $group->project_id)
+            ->where('size', $size)->where('provider', TaskVmProviderKind::Incus)->lockForUpdate()->orderBy('id')->get();
+        foreach ($candidates as $vm) {
+            $hostNodeId = (int) $vm->host_node_id;
+            $host = Node::query()->find($hostNodeId);
+            if (! $this->settings->hasHost($hostNodeId) || ! $host instanceof Node || $host->status !== LifecycleStatus::Active) {
+                continue;
+            }
+            $location = $this->settings->host($hostNodeId);
+            if ($this->stale($vm, $location->slots, $this->currentImage($host, $location)) || ($recipe !== null && $vm->recipe_identity !== $recipe)
+                || ($this->capacity->freeSlots([[$location, $host]])[$hostNodeId] ?? 0) < $size->slots()) {
+                continue;
+            }
+            $vm->update(['group_id' => $group->id, 'claimed_at' => now()]);
+            RefillTaskVmSlots::dispatchFor($hostNodeId);
+
+            return $vm;
+        }
+
+        return null;
+    }
+
+    /**
+     * The VM part of the provision intent of a claimed slot: the intent its enrol ran with, and the receipt of that enrol
+     * in place of the VM step's (`slot.receipt`). The run starts the slot and skips the VM step.
+     *
+     * @return array<string,mixed>
+     */
+    public function claimInput(TaskVm $vm): array
+    {
+        $enrol = Operation::query()->where('kind', self::EnrolKind)->where('target_type', 'task_vm')->where('target_id', $vm->id)
+            ->where('status', OperationStatus::Succeeded->value)->latest('id')->first()
+            ?? throw new ResourceOperationException('task_vm.provision_refused', 'A claimed slot needs the receipt of its enrol.', 409);
+        $receipt = Arr::except(ValidatedData::object($enrol->result ?? []), ['image']);
+        $input = Arr::except(ValidatedData::object($enrol->input), ['converge']);
+
+        return [...$input, 'slot' => ['receipt' => [...$receipt, 'result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]];
     }
 
     /**

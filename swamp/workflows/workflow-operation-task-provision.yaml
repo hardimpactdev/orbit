@@ -48,8 +48,10 @@ jobs:
 - name: provision
   labels: {role: swamp}
   steps:
+  # Stage 2 "Take a task VM": a claimed ready slot (docs/cli/tasks/vm-slots.mmd) is started; otherwise the VM is cloned and enrolled.
   - name: Create and prepare the VM
     labels: {role: swamp}
+    guard: '${{ has(inputs.intent.slot) }}'
     task:
       type: workflow
       workflowIdOrName: task-vm-provision
@@ -59,6 +61,61 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
+  # A slot is enrolled already: a VM that already runs makes `incus start` exit 1 and counts as started; the agent wait proves it.
+  - name: Start the slot
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.intent.slot) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        okExitCodes: [0, 1]
+        argv: [timeout, '60', incus, start, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --, '${{ inputs.intent.name }}']
+  - name: Wait for the slot agent
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.slot) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '130', incus, wait, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --timeout, '120', --interval, '1', --, '${{ inputs.intent.name }}', agent]
+    dependsOn:
+    - step: Start the slot
+      condition:
+        type: succeeded
   - name: Set up the workspace
     labels: {role: swamp}
     task:
@@ -70,11 +127,16 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
     dependsOn:
     - step: Create and prepare the VM
       condition:
-        type: succeeded
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    - step: Wait for the slot agent
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
   - name: Pin the converge
     labels: {role: swamp}
     # Stage 2, "Converge once": the task VM role phases on the outer VM (the NFS export of the checkout to the nested network, Incus with the seed pool); a VM at the pins reports no change.
@@ -85,7 +147,7 @@ jobs:
       behaviorName: tp-data-pin-converge
       methodName: pin
       inputs:
-        receipt: ${{ steps["Create and prepare the VM"].outputs.result }}
+        receipt: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
         intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
@@ -115,7 +177,7 @@ jobs:
   - name: Find the fleet guest
     labels: {role: swamp}
     guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
-    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ steps["Create and prepare the VM"].outputs.result }}'}}
+    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'}}
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -148,7 +210,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
     dependsOn:
     - step: Set up the workspace
       condition:
@@ -171,7 +233,7 @@ jobs:
       behaviorName: '${{ "tp-data-bind" }}'
       methodName: bind
       inputs:
-        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        vm: ${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}
         guest_node_id: ${{ inputs.intent.guest_node_id }}
         route: ${{ inputs.intent.route }}
         processes: ${{ inputs.intent.processes }}

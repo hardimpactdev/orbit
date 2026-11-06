@@ -116,6 +116,10 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             if (($result['ready'] ?? null) !== true) {
                 throw new ResourceOperationException('operation.invalid_result', 'Tasks provision requires confirmed VM readiness.', 422);
             }
+            if ($vm->state === TaskVmState::Parked) {
+                // A claimed slot (docs/cli/tasks/vm-slots.mmd) runs again; its enrolment was recorded at its enrol.
+                $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'stop_confirmed_at' => null, 'error_code' => null, 'error_message' => null]);
+            }
             $source = ValidatedData::object($result['source']);
             $instance->update(['branch' => $source['branch'], 'starting_commit' => $source['commit'],
                 'selected_php_version' => $source['php_version'], 'source_is_laravel' => $source['laravel'],
@@ -123,7 +127,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $group->update(['status' => TaskGroupStatus::Running, 'started_at' => $group->started_at ?? now(),
                 'reserved_at' => null, 'capacity_wait_reason' => null]);
         } elseif (in_array($data['status'], ['failed', 'interrupted'], true)) {
-            if ($vm->state === TaskVmState::Provisioning) {
+            if (in_array($vm->state, [TaskVmState::Provisioning, TaskVmState::Parked], true)) {
                 $vm->update(['state' => TaskVmState::Failed, 'error_code' => $data['error_code'], 'error_message' => 'Native task provisioning failed.']);
             }
             $instance->update(['failed_step' => $result['failed_step'] ?? 'provision', 'error_code' => $data['error_code']]);

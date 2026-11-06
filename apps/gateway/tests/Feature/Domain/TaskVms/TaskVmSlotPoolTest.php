@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -22,6 +23,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -235,4 +237,40 @@ it('reads the slots setting from a node update body', function (): void {
 
 it('registers the operator command that runs the refill rule', function (): void {
     expect(array_keys(Artisan::all()))->toContain('task-vms:fill-slots');
+});
+
+it('claims the oldest fitting ready slot for a group, and none of another Project, size, recipe or a stale one', function (): void {
+    [$host, $project, $build] = slotPoolHost(3);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, app(TaskVmSettings::class)->devClusterId, '10.44.0.128/25',
+        app(TaskVmSettings::class)->hosts, 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+    $other = Project::query()->create(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'root' => 'public']);
+    slotPoolSlot($host, $other, $build);
+    slotPoolSlot($host, $project, $build, ['ready_at' => now()->subHours(21)]);
+    $fit = slotPoolSlot($host, $project, $build);
+    slotPoolSlot($host, $project, $build);
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
+    Bus::fake();
+
+    $claimed = app(TaskVmSlotPool::class)->claim($group);
+
+    expect($claimed?->id)->toBe($fit->id)->and($claimed->group_id)->toBe($group->id)->and($claimed->claimed_at)->not->toBeNull()
+        ->and(app(TaskVmSlotPool::class)->claim($group))->toBeNull();
+    Bus::assertDispatched(RefillTaskVmSlots::class);
+
+    $current = Task::query()->create(['project_id' => $project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo, 'current_recipe' => true]);
+    expect(app(TaskVmSlotPool::class)->claim($current))->toBeNull();
+});
+
+it('gives a claimed slot the intent and the receipt of its enrol', function (): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $slot = slotPoolSlot($host, $project, $build);
+    $receipt = ['task_vm_id' => $slot->id, 'guest_node_id' => 77, 'ready' => true, 'provider' => ['running' => true], 'enrollment' => ['ready' => true]];
+    Operation::query()->forceCreate(['kind' => TaskVmSlotPool::EnrolKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['task_vm_id' => $slot->id, 'name' => $slot->name, 'converge' => ['x' => 1]],
+        'result' => [...$receipt, 'image' => ['fallback' => false]], 'finished_at' => now()]);
+
+    $input = app(TaskVmSlotPool::class)->claimInput($slot);
+
+    expect($input)->not->toHaveKey('converge')->and($input['name'])->toBe($slot->name)
+        ->and($input['slot']['receipt'])->toBe([...$receipt, 'result_json' => json_encode($receipt)]);
 });
