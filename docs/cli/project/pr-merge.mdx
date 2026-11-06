@@ -1,0 +1,48 @@
+---
+title: "project:pr-merge"
+sidebarTitle: "project:pr-merge"
+description: "Squash-merge a pull request that no task group watches, once its merge check is green on the exact head. API and MCP only."
+---
+
+Merge a pull request of a Project straight into its base branch with a squash merge, when no Task group watches it. The Gateway first reads the PR and its checks with read-only tokens. It then mints a fresh write token. Swamp merges with the expected head SHA, so a moved head refuses. This is the merge step of [stage 4 of the command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) for a PR outside a Task group; a task PR merges through [`tasks:pr-merge`](/cli/tasks/pr-merge). There is no merge queue and no GitHub auto-merge.
+
+There is no `orbit` command yet. Use the API or the MCP tool `project-pr-merge`.
+
+```bash
+curl -X POST "$GATEWAY/api/v1/projects/7/pr-merge" \
+  -H "Idempotency-Key: pr-merge-7-2981-9f3c" \
+  -d '{"pull_request": 2981, "head_sha": "9f3c0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b"}'
+```
+
+The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation; follow it with `operation:show` until it ends. A refusal at admission starts nothing, so a caller can call the command again every few seconds until the merge check is green. The Gateway has no webhooks.
+
+The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. The pull request must target the default branch of the Project and come from a branch of the repository itself: a fork can define its own workflow that reports a passing merge check, so a fork PR is refused. A Task group that has ended does not hold its PR.
+
+| Input | Meaning |
+| --- | --- |
+| `project` | The numeric ID of a Project with review and merge enabled. |
+| `pull_request` | The number of an open pull request that is out of draft and that no Task group watches. |
+| `head_sha` | The full SHA of the pull request head. A different head refuses the step. |
+
+A merge conflict with the base branch refuses the merge. The author rebases, which reruns CI and the proof, and the caller asks again.
+
+## How it works
+
+<div className="flow-at" data-chart="project/pr-merge"></div>
+
+## Errors
+
+| Code | Status | When |
+| --- | --- | --- |
+| `project.review_and_merge_disabled` | 409 | The Project does not take part in review and merge. |
+| `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `tasks:pr-merge`. |
+| `operation.target_busy` | 409 | Another merge of the Project is running. |
+| `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
+| `tasks_pr.draft` | 409 | The PR is still a draft. |
+| `tasks_pr.wrong_base` | 409 | The PR does not target the default branch of the Project. |
+| `tasks_pr.from_fork` | 409 | The PR comes from a fork. |
+| `tasks_pr.head_moved` | 409 | The PR head is not `head_sha` at admission. A head that moves after admission ends the run with `tasks_pr.merge_refused`. |
+| `tasks_pr.checks_not_passed` | 409 | The Project's merge check is not configured, or it did not pass on the head. |
+| `tasks_pr.github_unreadable` | 502 | The Gateway could not read the PR or its checks. |
+| `github.not_configured` | 409 | The GitHub App is not configured. |
+| `tasks_pr.merge_refused` | run | GitHub refused the merge, for example a conflict with the base branch. |

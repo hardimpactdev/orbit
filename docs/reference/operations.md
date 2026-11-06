@@ -261,6 +261,7 @@ Use the kind and target type to start or find the work of a command.
 | `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
+| `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
 | the gate check `tasks:pr-gate` (no route) | `tasks.pr_comment` | `task_group` | Gateway |
 | the gate check `tasks:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 

@@ -12,6 +12,7 @@ use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskReviewRound;
 
@@ -108,10 +109,41 @@ final readonly class TaskPullRequestEvidence
             || ! is_int($number) || $number < 1 || ! is_string($url) || $repository->pullRequestNumber($url) !== $number) {
             throw new ResourceOperationException('tasks_pr.no_pull_request', 'The group needs a published pull request.', 409);
         }
+
+        return $this->read($project, $repository, $number, $head, $checks);
+    }
+
+    /**
+     * A pull request that no Task group watches: open, out of draft, into the default branch, from a branch of the repository itself, on the exact head,
+     * with the merge check passed on it. The call to merge it is the approval,
+     * so no review is read.
+     */
+    public function outside(Project $project, int $number, string $head): TaskPullRequestTarget
+    {
+        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        if (! $repository instanceof GitHubRepository) {
+            throw new ResourceOperationException('tasks_pr.no_pull_request', 'The Project needs a GitHub repository.', 409);
+        }
+        $target = $this->read($project, $repository, $number, $head, checks: true);
+        if ($target->pull->draft) {
+            throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft.', 409);
+        }
+        if ($target->pull->baseRef !== $project->default_branch) {
+            throw new ResourceOperationException('tasks_pr.wrong_base', 'The pull request does not target the default branch of the Project.', 409);
+        }
+        if ($target->pull->fromFork) {
+            throw new ResourceOperationException('tasks_pr.from_fork', 'A pull request from a fork is not merged here: its own workflow can report the merge check.', 409);
+        }
+
+        return $target;
+    }
+
+    private function read(Project $project, GitHubRepository $repository, int $number, string $head, bool $checks): TaskPullRequestTarget
+    {
         try {
             $pull = $this->github->pullRequest($this->access->reviewsToken($repository), $repository, $number);
             if ($pull->state !== GitHubPullRequestState::Open) {
-                throw new ResourceOperationException('tasks_pr.no_pull_request', 'The pull request of the group is not open.', 409);
+                throw new ResourceOperationException('tasks_pr.no_pull_request', 'The pull request is not open.', 409);
             }
             if ($pull->headSha !== $head) {
                 throw new ResourceOperationException('tasks_pr.head_moved', 'The pull request head is not the admitted head.', 409);

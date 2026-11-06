@@ -451,3 +451,34 @@ arch('the admission of a publish, of a prep run and of its corrections does not 
 arch('the admission of a pull request step, a dependency merge and a cancel mints no token')
     ->expect([StartTaskPullRequestStepAction::class, StartDependencyBatchMergeAction::class, TaskCancelIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, GitHubApi::class, GitHubAppStore::class]);
+
+it('mints the write token of the merge of a pull request outside every task group, for the Project the operation targets', function (): void {
+    $grants = [];
+    $socket = tokenWorld(scoped: $grants);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $reference = ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.fake()->uuid()];
+    $operation = Operation::query()->create(['kind' => 'project.pr_merge', 'target_type' => 'project', 'target_id' => $project->id, 'node_id' => SwampNodeFixture::Id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => ['write_token' => $reference]]]);
+
+    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'pull_request');
+
+    expect($copies)->toBe(['write_token' => $reference])
+        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'step-token-value']])
+        ->and($grants[0]->permissions)->toBe(['contents' => 'write', 'pull_requests' => 'write']);
+});
+
+it('refuses the token of a project merge for another repository, another purpose, a finished operation or another caller', function (): void {
+    $socket = tokenWorld();
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
+    $make = fn (string $repository, OperationStatus $status = OperationStatus::Running): Operation => Operation::query()->create(['kind' => 'project.pr_merge', 'target_type' => 'project',
+        'target_id' => $project->id, 'node_id' => SwampNodeFixture::Id, 'status' => $status, 'state' => ['swamp_run_id' => TOKEN_RUN],
+        'input' => ['repository' => $repository, 'execution_secrets' => ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.fake()->uuid()]]]]);
+    $issue = fn (Operation $subject, string $purpose = 'pull_request', int $caller = SwampNodeFixture::Id) => fn () => app(TaskGitHubTokens::class)->issue($subject, $caller, TOKEN_RUN, $purpose);
+
+    expect($issue($make('someone/else')))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit'), 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit', OperationStatus::Succeeded)))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($issue($make('hardimpactdev/orbit'), 'pull_request', SwampNodeFixture::Id + 1))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
+});
