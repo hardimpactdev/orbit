@@ -41,12 +41,10 @@ Every command accepts `--json`.
 | `input.confirmation_required` | `ai-router:teardown` ran without `--yes` where it cannot ask. |
 | `input.cancelled` | The operator declined the `ai-router:teardown` question. |
 | `extension.required` | `ai-router:teardown` ran while the `tasks` extension is enabled. |
-| `ai_router.keys_outstanding` | `ai-router:teardown` ran while a task VM holds a model key. |
-| `ai_router.keys_busy` | `ai-router:teardown` waited 60 seconds for a running model key operation. Run it again. |
 | `ai_router.key_required` | `ai-router:setup` has no `--cliproxy-management-key-file`. |
 | `ai_router.key_invalid` | The key file is unreadable or empty. |
 | `ai_router.url_invalid` | `--cliproxy-url` is not a URL. |
-| `validation.failed` | The Gateway refuses setup input, including a `cliproxy_url` that differs from the configured task VM model proxy origin while task VMs are enabled. |
+| `validation.failed` | The Gateway refuses the setup input. |
 | `ai_router.disabled` | The collector is not set up. |
 
 [ai-router errors](/reference/ai-router#errors) lists the Gateway errors of setup and toggles.

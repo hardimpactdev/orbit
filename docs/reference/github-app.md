@@ -278,7 +278,7 @@ Git commands that you run by hand in a development checkout use your own credent
 
 A task agent runs on its own [task VM](/reference/compute-drivers#task-vms), which holds no GitHub token. The agent never fetches or pushes. The Gateway fetches and pushes in its own mirror of the Project, moves Git objects to and from the VM over SSH, and refuses to send a token there. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
-The agent shares the Pi server's user, so it can read that server's token and the group's model key. [Limits](/reference/pi-server#limits) records that bound. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
+The agent shares the Pi server's user, so it can read that server's token and the fixed model key. [Limits](/reference/pi-server#limits) records that bound. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 
 `git checkout` and the approval commit do not carry the token. On a development checkout, the managed user runs Orbit's own checkouts, at create, on a branch switch, and when a development default deploys. In a task workspace, the VM's user `orbit` runs them, and the VM holds no token.
 

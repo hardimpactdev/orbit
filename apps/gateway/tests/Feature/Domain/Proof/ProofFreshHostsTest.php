@@ -45,7 +45,7 @@ function freshSettings(Node ...$hosts): void
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
         array_map(static fn (Node $host): TaskVmHost => new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB'), $hosts),
-        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+        '/pi', str_repeat('a', 64), ['gpt-6']));
 }
 
 /**

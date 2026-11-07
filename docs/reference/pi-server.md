@@ -32,7 +32,7 @@ The server reads command-line flags first, then the environment. Orbit's systemd
 
 The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` on the task VM, with the VM's own token. `ORBIT_PI_PORT` defaults to `3774`.
 
-By default the server accepts only subscription sign-ins. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it. A task VM names its one provider with `--allow-provider`. The binary also has `pi-server login <provider>` for a subscription sign-in. Task VMs do not use it, because CLIProxyAPI is their only model route. `pi-server login anthropic` is refused.
+By default the server accepts only subscription sign-ins. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it. A task VM names its one provider with `--allow-provider`. The binary also has `pi-server login <provider>` for a subscription sign-in. Task VMs do not use it, because the model router guard is their only model route. `pi-server login anthropic` is refused.
 
 The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. See [Claude is unavailable for task agents](#claude-is-unavailable-for-task-agents).
 
@@ -40,22 +40,24 @@ The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. 
 
 On a [task VM](/reference/compute-drivers#task-vms), the native Swamp parent installs and starts Pi through the shared Process steps. The Gateway records intent and projects the result. Pi runs as the VM's managed user `orbit`, which has passwordless sudo. Admission creates the fresh VM's Pi token; the native workflow performs the setup below.
 
-The ai-router CLIProxyAPI URL must be `task_vms.model_proxy_origin`. Otherwise the job fails with `task_vm.invalid_config` before it creates a key.
+The ai-router must be set up. Otherwise the job fails with `ai_router.disabled` before it writes anything.
 
-1. The Gateway creates a CLIProxyAPI key for the group. It stores the key and the origin on the task VM row first. Then it registers the key with the management key of the [ai-router extension](/reference/ai-router).
+1. The Gateway reads the guard origin and the one fixed model key from the [ai-router extension](/reference/ai-router#task-vm-guard). It creates no key and calls no model router.
 2. It checks whether `~orbit/.local/bin/pi-server` already has the SHA-256 digest `task_vms.pi.artifact_sha256`. A VM copied from a [base snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot) refreshed with the same pin has it, so the Gateway skips the next step.
 3. Otherwise it sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input. The VM checks the digest and installs the executable as `~orbit/.local/bin/pi-server`.
-4. It writes `~orbit/.pi/agent/models.json` with the origin in `task_vms.model_proxy_origin`, the models in `task_vms.pi.models`, and the group's key.
+4. It writes `~orbit/.pi/agent/models.json` with the guard origin, the models in `task_vms.pi.models`, and the fixed model key.
 5. It writes the task VM's own Pi token to `~orbit/.pi/agent/orbit-token`. Both files have mode `0600`.
 6. It creates the normal `pi-server` Process: a systemd service as `orbit` on the VM's WireGuard address and `ORBIT_PI_PORT`, with `--allow-provider=orbit-task-vm`, restart policy `always`, and keep-alive.
 
-Each step is idempotent, so a retried job repeats it and keeps the key. `models.json` has one provider, `orbit-task-vm`, with the API `openai-responses` and the base URL `<origin>/v1`. Each model has `reasoning: true`. Pi's defaults apply to the rest, such as a context window of 128,000 tokens. The `pi` driver sends every model to `orbit-task-vm`.
+Each step is idempotent, so a retried job repeats it. `models.json` has one provider, `orbit-task-vm`, with the API `openai-responses` and the base URL `<origin>/v1`. Each model has `reasoning: true`. Pi's defaults apply to the rest, such as a context window of 128,000 tokens. The `pi` driver sends every model to `orbit-task-vm`.
 
-The Gateway connects to this server with the task VM's token and removes the group's model key from transcripts as it does the token. CLIProxyAPI is the only model route, and no subscription sign-in enters the VM. Destroying the VM revokes the group's key at the origin stored on the row.
+The Gateway connects to this server with the task VM's token and removes the fixed model key from transcripts as it does the token. The model router guard is the only model route, and no subscription sign-in enters the VM. Destroying the VM revokes nothing: the key belongs to no VM.
 
 ## Limits
 
-An agent is a process of the Pi server and shares its user, `orbit`. It can read the VM's Pi token in `~orbit/.pi/agent/orbit-token` and the group's model key in `models.json`. Both are scoped to this VM and this group, and destroying the VM revokes the key. The agent has passwordless sudo inside the VM. The VM edge is the boundary; [One user for every task agent](#one-user-for-every-task-agent) explains why. The VM holds no GitHub token: the Gateway fetches and pushes for it, see [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
+An agent is a process of the Pi server and shares its user, `orbit`. It can read the VM's Pi token in `~orbit/.pi/agent/orbit-token` and the fixed model key in `models.json`. The token is scoped to this VM and this group. The model key is a placeholder that only the guard accepts, and only from the task VM network.
+
+The agent has passwordless sudo inside the VM. The VM edge is the boundary; [One user for every task agent](#one-user-for-every-task-agent) explains why. The VM holds no GitHub token: the Gateway fetches and pushes for it, see [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 ## Agent tools
 

@@ -15,7 +15,6 @@ const intent = () => ({
     guest_node_id: 210,
     gateway_node_id: 14,
     issuer_node_id: 209,
-    model_router_node_id: 6,
     provider: "incus",
     name: "tvm-12",
     image_fingerprint: "a".repeat(64),
@@ -75,7 +74,6 @@ const terminal = () => ({
         ssh_host_fingerprint: "SHA256:public",
         wireguard_public_key: "p".repeat(43) + "=",
     },
-    model: { task_vm_id: 12, issued: true },
     process: { status: "active" },
     network_ready: true,
     runtime_ready: true,
@@ -89,13 +87,7 @@ Deno.test("terminal output retains provider identity and guest public keys witho
     assertEquals(result.provider.image_fingerprint, "a".repeat(64));
 });
 
-Deno.test("terminal fold refuses foreign model or image proof and incomplete readiness", () => {
-    assertThrows(() =>
-        provisionTerminalResult({
-            ...terminal(),
-            model: { task_vm_id: 13, issued: true },
-        })
-    );
+Deno.test("terminal fold refuses a foreign image proof and incomplete readiness", () => {
     assertThrows(() =>
         provisionTerminalResult({
             ...terminal(),

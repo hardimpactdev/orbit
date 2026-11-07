@@ -20,17 +20,18 @@ sequenceDiagram
   %%> Result:
   %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
-  %%> - the claim's Pi token and model key in the vault
+  %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
   GW->>SW: Start run, full intent<br/>operation-tasks-provision
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - one host phase: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim's keys, pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+  %%> - one host phase: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+  %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
   %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 6 s after the start
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
   SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
-  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the claim's model key goes to the model router beside it, and only Check ready waits for it
+  %%> - the VM's public key and address on the WireGuard hub, while the VM boots
   SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
   %%> - the same Ansible converge as the release refresh, over WireGuard with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host

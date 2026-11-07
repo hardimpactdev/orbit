@@ -51,13 +51,11 @@ use Throwable;
  * @property string|null $address
  * @property string $wireguard_ip
  * @property string|null $pi_token
- * @property string|null $model_key
  * @property int|null $slot_number the slot the task VM takes on its host, `<host>-tvm-<number>`
  * @property string|null $wireguard_private_key the WireGuard key a task start minted (docs/cli/tasks/provision.mmd)
  * @property string|null $ssh_host_private_key the SSH host key a task start minted, an OpenSSH Ed25519 file
  * @property string|null $agent_secret the agent secret a task start minted
  * @property bool $worker_stop_required
- * @property string|null $ai_router_origin
  * @property Carbon|null $claimed_at
  * @property Carbon|null $warmed_at
  * @property string|null $image_fingerprint
@@ -88,13 +86,13 @@ final class TaskVm extends Model
     protected $fillable = [
         'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
+        'pi_token', 'worker_stop_required', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $hidden = ['pi_token', 'model_key', 'provider_bootstrap', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret'];
+    protected $hidden = ['pi_token', 'provider_bootstrap', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret'];
 
     /** @var array<string, mixed> */
     #[\Override]
@@ -115,7 +113,6 @@ final class TaskVm extends Model
             'publish_queued_at' => 'datetime',
             'publish_started_at' => 'datetime',
             'pi_token' => 'encrypted',
-            'model_key' => 'encrypted',
             'wireguard_private_key' => 'encrypted',
             'ssh_host_private_key' => 'encrypted',
             'agent_secret' => 'encrypted',

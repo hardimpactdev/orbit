@@ -47,12 +47,12 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             if ($build !== null) {
                 $result = $build;
             }
-            // The identity that proved the candidate is free once the proof's release passed. Otherwise it is failed with its model key, and the
-            // slot rule releases it again before anything else takes it.
+            // The identity that proved the candidate is free once the proof's release passed. Otherwise it is failed, and the slot rule
+            // releases it again before anything else takes it.
             $slot = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($operation->input)['task_vm_id']));
             if ($slot instanceof TaskVm) {
                 $released = NativeRunResult::stepStatus($native, 'Prove the candidate') === 'succeeded';
-                app(TaskVmSlotReleaseProjection::class)->record($slot, $released, $released ? null : 'task_vm.image_refresh_failed', $released);
+                app(TaskVmSlotReleaseProjection::class)->record($slot, $released, $released ? null : 'task_vm.image_refresh_failed');
             }
             $data['result'] = $result;
             $data['error_code'] = $code;

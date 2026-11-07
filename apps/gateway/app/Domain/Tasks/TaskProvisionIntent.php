@@ -9,7 +9,6 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Models\Instance;
@@ -28,7 +27,7 @@ use Illuminate\Support\Str;
 final readonly class TaskProvisionIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency,
-        private TaskVmEnrollmentIntent $enrollment, private TaskStartCommit $startCommit, private TaskVmSlotPool $slots,
+        private TaskStartCommit $startCommit, private TaskVmSlotPool $slots,
         private TaskVmSlotRuns $runs) {}
 
     /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
@@ -55,7 +54,7 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $keepFree): Operation {
+        return DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $keepFree): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
@@ -81,7 +80,7 @@ final readonly class TaskProvisionIntent
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
             return $this->start->execute($kind, 'task_group', $group->id, (int) $slot->host_node_id, $extend($input, $group, $instance, $slot), $caller, $request);
-        }));
+        });
     }
 
     /** The workspace Instance of the new slot's Node, at the warm checkout the base carries. The release deletes it with the Node. */

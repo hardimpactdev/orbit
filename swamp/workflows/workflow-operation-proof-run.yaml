@@ -33,8 +33,8 @@ inputs:
       additionalProperties: false
     execution_secrets:
       type: object
-      # The slot's identity, which the start writes onto the new VM; the claim's model key, registered while the
-      # VM starts; and the claim's Pi token and model file.
+      # The slot's identity, which the start writes onto the new VM; and the claim: the Pi token and the models file with the
+      # fixed model key.
       properties:
         wireguard: &secret
           type: object
@@ -45,27 +45,6 @@ inputs:
           additionalProperties: false
         ssh_host: *secret
         agent_secret: *secret
-        model_key:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_management:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_anchor:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
         claim:
           type: object
           properties:
@@ -73,7 +52,7 @@ inputs:
             key: {type: string, pattern: '^task-vm-pi-claim-[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
-      required: [wireguard, ssh_host, agent_secret, model_key, model_router_management, model_router_anchor, claim]
+      required: [wireguard, ssh_host, agent_secret, claim]
       additionalProperties: false
     # `proof:run --keep-failed`: a run that did not succeed in every part, a failed setup included, keeps its VM (the Gateway destroys it 60 minutes later).
     keep_failed: {type: boolean}
@@ -164,7 +143,7 @@ jobs:
         kind: proof.verify
         intent: '${{ inputs.intent.verify }}'
         execution_secrets: {}
-  # Always, also after a failure: the VM is deleted and the claim's model key revoked. The Gateway captured this input with the claim.
+  # Always, also after a failure: the VM is deleted. The Gateway captured this input with the claim.
   # A guard that is true SKIPS the step (Swamp: "a truthy result skips the step"). With `keep_failed`, a run that did not succeed in every part (claim, cases,
   # every verdict) skips it; the Gateway keeps the group and cancels it after 60 minutes.
   - name: Release the slot

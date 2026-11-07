@@ -18,7 +18,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
   %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
-  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `ai_router.keys_busy`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
+  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
   %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
   GW-->>CLI: 202 Accepted<br/>task ID
   %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.

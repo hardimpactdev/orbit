@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -20,33 +18,32 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * The intents of a task start (docs/cli/tasks/provision.mmd) and a release (docs/cli/tasks/cancel.mmd) in one slot. A task start copies the
- * host's base VM snapshot, writes the identity the admission minted, a new Pi token and model key, and adds the hub peer beside the boot;
- * then it runs the converge and starts the task branch. A release deletes the VM, removes the hub peer and revokes the model key; the
- * Gateway then deletes the Node.
+ * host's base VM snapshot, writes the identity the admission minted, a new Pi token and the Pi models file with the fixed model key, and
+ * adds the hub peer beside the boot; then it runs the converge and starts the task branch. A release deletes the VM and removes the hub
+ * peer; the Gateway then deletes the Node. Neither calls the model router.
  */
 final readonly class TaskVmSlotRuns
 {
-    public function __construct(private TaskVmSettings $settings, private ModelKeyIssuer $models, private TaskVmModelKeyInputs $modelInputs,
+    public function __construct(private TaskVmSettings $settings, private TaskVmModelRoute $route,
         private SwampCommandStep $shared, private SwampSshExecutionInput $ssh, private TaskVmSlotWorkspace $workspace,
         private SystemdProcessRenderer $systemd, private StartOperationAction $start, private TaskVmIdentity $identity,
         private TaskVmConvergeInput $converge, private TaskVmPromotedImage $images) {}
 
     /**
-     * Mints the claim's Pi token and model key and renders the intent of a task start from `$snapshot` (the host's recorded base snapshot,
+     * Mints the claim's Pi token and renders the intent of a task start from `$snapshot` (the host's recorded base snapshot,
      * or the new one a refresh proves) at `$commit`, with the task branch `$branch`. Call it in the admission transaction.
      *
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
     public function claim(TaskVm $slot, ?string $branch, string $commit, ?string $snapshot = null): array
     {
-        $this->models->assertReady();
-        $origin = $this->models->origin();
-        $slot->update(['pi_token' => bin2hex(random_bytes(32)), 'model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $origin]);
-        $model = $this->modelInputs->capture($slot, $this->gateway()->id, $this->shared->executionCopy(...));
+        $this->route->assertReady();
+        $slot->update(['pi_token' => bin2hex(random_bytes(32))]);
         $token = ValidatedData::string($slot->pi_token);
-        // Every turn of the group reads the token by this key; the start writes it with the model file in one exec.
+        // Every turn of the group reads the token by this key; the start writes it with the model file in one exec. The model key is the one
+        // fixed placeholder key of the guard, the same for every VM.
         $this->shared->executionCopy('orbit-control-inputs', self::piTokenKey($slot), $token);
-        $secrets = $token."\n".self::piModelsFile($origin, $this->settings->piModels, ValidatedData::string($slot->model_key));
+        $secrets = $token."\n".self::piModelsFile($this->route->origin(), $this->settings->piModels, $this->route->key());
         $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
         $location = $this->settings->host($host->id);
         // A refresh proves its new snapshot before the Gateway records it; any other start copies the recorded one.
@@ -61,7 +58,6 @@ final readonly class TaskVmSlotRuns
                 'host' => $target['host'],
                 'slot' => [...$target['slot'], 'base' => ['vm' => $current['vm'], 'seed' => $current['seed'], 'snapshot' => $current['snapshot']], 'cpus' => $resources->cpus, 'memory' => $resources->memory,
                     'pi_home' => '/home/orbit', 'identity' => $this->identity->identity($slot)],
-                'model' => $model['intent'],
                 // The VM's peer on the WireGuard hub, added while the VM boots.
                 'hub_peer' => $this->identity->hubPeer($slot),
                 // How every later step reaches the VM: ssh from a Swamp worker over WireGuard, with its pinned host key. Readiness proves it.
@@ -70,8 +66,8 @@ final readonly class TaskVmSlotRuns
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
                 'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],
             ],
-            // One flat map of vault references, as every Operation's secrets are; the release passes the model's three the same way.
-            'execution_secrets' => [...$this->identity->secrets($slot), ...$model['execution_secrets'],
+            // One flat map of vault references, as every Operation's secrets are.
+            'execution_secrets' => [...$this->identity->secrets($slot),
                 'claim' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-claim-'.$slot->id, $secrets)],
         ];
     }
@@ -87,19 +83,14 @@ final readonly class TaskVmSlotRuns
     }
 
     /**
-     * The release intent: the VM and its seed clone to delete, its hub peer to remove and the claim's model key to revoke. The delete takes no
-     * secret. The Gateway deletes the Node record when the run passed.
+     * The release intent: the VM and its seed clone to delete and its hub peer to remove. The delete takes no secret. The Gateway deletes the
+     * Node record when the run passed.
      *
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
     public function release(TaskVm $slot): array
     {
-        $model = is_string($slot->model_key) && $slot->ai_router_origin !== null ? $this->modelInputs->capture($slot, $this->gateway()->id, $this->shared->executionCopy(...)) : null;
-
-        return [
-            'intent' => [...$this->target($slot), 'hub_peer' => $this->identity->hubPeer($slot), ...$model === null ? [] : ['model' => $model['intent']]],
-            'execution_secrets' => $model['execution_secrets'] ?? [],
-        ];
+        return ['intent' => [...$this->target($slot), 'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
     }
 
     /** The vault key of the claim's Pi token, which each turn of the group reads. */
@@ -109,7 +100,7 @@ final readonly class TaskVmSlotRuns
     }
 
     /**
-     * The Pi model file of a claim: the model router's provider with the claim's model key.
+     * The Pi model file of a claim: the model router guard's provider with the fixed model key.
      *
      * @param  list<string>  $models
      */
@@ -134,11 +125,5 @@ final readonly class TaskVmSlotRuns
             'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
                 'pi_unit' => $this->systemd->unitName($pi)],
         ];
-    }
-
-    private function gateway(): Node
-    {
-        return Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q
-            ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Orbit\Extensions\AiRouter\Data\AiRouterStatusData;
 use Orbit\Extensions\AiRouter\Data\EnableAiRouterData;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCollectorEnvironment;
@@ -41,14 +40,6 @@ final readonly class EnableAiRouterAction
     private function setup(#[SensitiveParameter] EnableAiRouterData $data): AiRouterStatusData
     {
         $this->cutover->assertComplete();
-        if (config('task_vms.enabled') === true) {
-            $origin = config('task_vms.model_proxy_origin');
-            if (! is_string($origin) || rtrim($data->routerUrl, '/') !== rtrim($origin, '/')) {
-                throw ValidationException::withMessages([
-                    'cliproxy_url' => ['The cliproxy_url must equal task_vms.model_proxy_origin while task VMs are enabled.'],
-                ]);
-            }
-        }
 
         $node = $this->placement->node($data->nodeId);
         $connection = $this->placement->connection($data->cacheConnection);

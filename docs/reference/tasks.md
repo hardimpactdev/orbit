@@ -26,7 +26,7 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
-A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction and model-key revocation finish before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
+A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction finishes before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
 
 ## Extension switch and status
@@ -121,7 +121,7 @@ A Project without a `merge_check` has no gate, so admission pins the branch head
 
 A refusal leaves the group unchanged and records no VM, workspace or Operation. The intent carries the commit as `workspace.start_commit`.
 
-The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp composes the canonical Task VM provision child for provider creation, bootstrap, WireGuard publication, model-key issue and Pi runtime preparation. Plain Task VMs have no Swamp worker. No PHP executor or waiting-read loop runs these effects.
+The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata. It starts no child VM operation. Swamp composes the canonical Task VM provision child for provider creation, bootstrap, WireGuard publication and Pi runtime preparation. Plain Task VMs have no Swamp worker. No PHP executor or waiting-read loop runs these effects.
 
 A task with a topology also carries a `converge` input, outside the intent. The step `Converge once` runs it on the outer VM before the nested fleet starts. The VM provider takes the intent whole in one argument, so the large converge intent stays out of it. A task without a topology has no `converge` input. The two steps stay skipped, and their inputs take an empty object (written `{} }`, with a space, because `}}` ends the expression), because Swamp evaluates the inputs of a skipped step.
 
@@ -831,7 +831,7 @@ So the real key never leaves its Node and the Gateway, and a leaked placeholder 
 
 The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
 
-The first use is the model router guard on `services`, at `10.44.0.3:8318`. All task VMs share one placeholder model key, which changes only on an incident. The guard passes only a `POST` to the inference routes Pi uses, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it.
+The first use is the model router guard on `services`, at `10.44.0.3:8318`. All task VMs share one placeholder model key. The Gateway keeps it as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes it, with the guard origin, into the VM's Pi models file inside the claim; no start and no release calls the model router. The guard passes only a `POST` to the inference routes Pi uses, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it.
 
 ## Task workspace
 
@@ -1314,8 +1314,7 @@ Incus create, start, stop and delete also declare the direct Swamp workflow
 admission captures the agent digest and the fixed VM command. The exact Node
 worker runs the pinned agent with the Node user's passwordless sudo. The
 Gateway records its bounded result; it adds no execution queue, retry or wait.
-Deletion still requires the owning destruction intent and model-key revocation
-before admission. A worker for another Node cannot execute the action.
+Deletion still requires the owning destruction intent before admission. A worker for another Node cannot execute the action.
 
 ## Configuration
 

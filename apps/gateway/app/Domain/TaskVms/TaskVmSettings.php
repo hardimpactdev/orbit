@@ -21,11 +21,11 @@ use InvalidArgumentException;
  *
  * Every value is validated whenever it is set, also while task VMs are off, so an operator can
  * prepare hosts and the hub before enabling claims. An unset value stays absent: no hosts, a null
- * Cluster, a null origin. `enabled` gates behaviour only, and requires the Cluster, the origin and
- * at least one host.
+ * Cluster. `enabled` gates behaviour only, and requires the Cluster and at least one host. The model
+ * route is not a setting: the ai-router guard supplies it ({@see TaskVmModelRoute}).
  *
  * The reserved WireGuard range is always a private network. As soon as task VMs are enabled or the
- * Cluster, the origin, the Swamp hostname or a host is set, it must also lie inside the Gateway's VPN subnet.
+ * Cluster, the Swamp hostname or a host is set, it must also lie inside the Gateway's VPN subnet.
  * No bridge may overlap that subnet. With nothing set, the Gateway reads no VPN setting, so a fleet on
  * another subnet keeps working: a range outside the subnet reserves no fleet address.
  */
@@ -43,7 +43,6 @@ final readonly class TaskVmSettings
         public ?int $devClusterId,
         public string $wireguardRange,
         public array $hosts,
-        public ?string $modelProxyOrigin,
         public ?string $piArtifactPath,
         public ?string $piArtifactSha256,
         public array $piModels,
@@ -63,23 +62,11 @@ final readonly class TaskVmSettings
         $swampHost = self::caddySwampHost();
         $range = TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null);
         $clusterId = self::devClusterId();
-        $origin = TaskVmConfig::filled($config['model_proxy_origin'] ?? null);
-        TaskVmConfig::validate(['model_proxy_origin' => $origin], [
-            'model_proxy_origin' => $origin === null ? [] : ['required', 'string', static function (string $attribute, mixed $value, Closure $fail): void {
-                if (self::origin($value) === null) {
-                    $fail('model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.');
-                }
-            }],
-        ], [
-            'model_proxy_origin' => 'model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.',
-        ]);
-
         $hosts = self::configured($config) ? self::hosts($config['incus'] ?? [], self::vpnSubnet($range)) : [];
 
         if ($enabled) {
             match (true) {
                 $clusterId === null => throw TaskVmConfig::invalid('dev_cluster_id is required while task VMs are enabled.'),
-                $origin === null => throw TaskVmConfig::invalid('model_proxy_origin is required while task VMs are enabled.'),
                 $hosts === [] => throw TaskVmConfig::invalid('incus.hosts needs at least one host while task VMs are enabled.'),
                 default => null,
             };
@@ -126,7 +113,6 @@ final readonly class TaskVmSettings
             devClusterId: $clusterId,
             wireguardRange: $range->value(),
             hosts: $hosts,
-            modelProxyOrigin: self::origin($origin),
             piArtifactPath: is_string($artifactPath) ? $artifactPath : null,
             piArtifactSha256: is_string($artifactSha256) ? $artifactSha256 : null,
             piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
@@ -245,7 +231,7 @@ final readonly class TaskVmSettings
     }
 
     /**
-     * Task VMs are enabled, or the Cluster, the origin, the Swamp hostname, or an active Node's host intent is set.
+     * Task VMs are enabled, or the Cluster, the Swamp hostname, or an active Node's host intent is set.
      *
      * @param  array<string, mixed>  $config
      */
@@ -253,7 +239,6 @@ final readonly class TaskVmSettings
     {
         return ($config['enabled'] ?? null) === true
             || TaskVmConfig::filled($config['dev_cluster_id'] ?? null) !== null
-            || TaskVmConfig::filled($config['model_proxy_origin'] ?? null) !== null
             || TaskVmConfig::filled($config['swamp_host'] ?? null) !== null
             || (is_array($config['incus'] ?? null) ? $config['incus']['hosts'] ?? null : null) !== [];
     }
@@ -314,19 +299,6 @@ final readonly class TaskVmSettings
         }
 
         return array_values($hosts);
-    }
-
-    /** The origin without a trailing slash, or null when the value is not an http(s) origin. */
-    private static function origin(mixed $value): ?string
-    {
-        $parts = is_string($value) ? parse_url($value) : false;
-        if (! is_array($parts) || ! in_array($parts['scheme'] ?? null, ['http', 'https'], true) || ! isset($parts['host'])
-            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
-            || ! in_array($parts['path'] ?? '', ['', '/'], true)) {
-            return null;
-        }
-
-        return $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
     }
 
     /**

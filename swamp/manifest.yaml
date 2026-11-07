@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.07.9
+version: 2026.11.07.10
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
@@ -46,11 +46,8 @@ additionalFiles:
   - ansible/tasks/task-vm-fleet-operator.yml
   - ansible/tasks/task-vm-fleet-tokens.yml
   - ansible/tasks/task-vm-stamp.yml
-  - ansible/task-vm-model-key.yml
   - ansible/task-vm-runtime.yml
   - ansible/task-vm-fleet-wait.yml
-  - ansible/tasks/model-key-list.yml
-  - ansible/tasks/model-key-access.yml
   - ansible/shape-gate-requirements.txt
   - ansible/tasks/task-vm-ready.yml
   - ansible/tasks/task-vm-recipe.yml
