@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run `orbit proof:run` for a pull request head in CI and fail unless every case passed.
+"""Run `orbit proof:run` for a pull request head and report assertions separately from capacity refusals.
 
 With PROOF_REPORT_ONLY=1 (the report-only job of ci.yml) it passes `--report-only`, and its VMs yield capacity to task and proof work.
 
@@ -8,6 +8,7 @@ fetches the commit and chooses the cases itself. The runner acts as an enrolled 
 """
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import signal
@@ -70,6 +71,40 @@ def evaluate(code, output):
     return bool(passed), lines
 
 
+COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
+
+
+def report(code, output, sha, key, report_only):
+    """Classify explicit admission capacity refusals without converting them into passing proofs."""
+    try:
+        document = json.loads(output)
+    except ValueError:
+        document = None
+    result = find_result(document) or {}
+    error = find_error(document) or {}
+    commands = result.get('selected_commands')
+    selection_known = (isinstance(commands, list) and bool(commands)
+                       and all(isinstance(command, str) and COMMAND.fullmatch(command) for command in commands))
+    capacity = (report_only and code != 0 and error.get('code') == 'tasks.capacity_unavailable'
+                and result.get('commit') == sha and result.get('outcome') == 'failed'
+                and result.get('cases') == [] and selection_known)
+    passed, lines = evaluate(code, output)
+    outcome = 'not_run_capacity' if capacity else ('passed' if passed else 'failed')
+    if capacity:
+        lines = ['Not run: capacity unavailable. No case ran; this is not a passing proof.',
+                 'Error: tasks.capacity_unavailable', 'Selected commands: ' + ', '.join(commands)]
+    operation_id = None
+    if isinstance(document, dict):
+        for holder in (document, document.get('data'), document.get('operation')):
+            if isinstance(holder, dict) and type(holder.get('id')) is int:
+                operation_id = holder['id']
+                break
+    receipt = {'commit': sha, 'idempotency_key': key, 'operation_id': operation_id,
+               'outcome': outcome, 'selected_commands': commands if selection_known else None,
+               'error_code': error.get('code') if isinstance(error.get('code'), str) else None}
+    return outcome, lines, receipt
+
+
 def run(sha, key, orbit):
     flags = ['--report-only'] if os.environ.get('PROOF_REPORT_ONLY') == '1' else []
     child = subprocess.Popen([orbit, 'proof:run', sha, *flags, '--json', '--idempotency-key', key],
@@ -95,13 +130,19 @@ def main():
         sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
     key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
     code, output = run(sha, key, orbit)
-    passed, lines = evaluate(code, output)
-    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {'passed' if passed else 'failed'}", '', *lines, ''])
+    outcome, lines, receipt = report(code, output, sha, key, os.environ.get('PROOF_REPORT_ONLY') == '1')
+    label = 'not run: capacity unavailable' if outcome == 'not_run_capacity' else outcome
+    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {label}", '', *lines, ''])
     print(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
             summary.write(text)
-    sys.exit(0 if passed else code or 1)
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as outputs:
+            outputs.write(f'outcome={outcome}\n')
+    if os.environ.get('PROOF_RECEIPT'):
+        Path(os.environ['PROOF_RECEIPT']).write_text(json.dumps(receipt, indent=2) + '\n')
+    sys.exit(0 if outcome in ('passed', 'not_run_capacity') else code or 1)
 
 
 if __name__ == '__main__':

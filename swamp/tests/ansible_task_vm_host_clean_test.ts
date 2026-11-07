@@ -88,6 +88,7 @@ function run(tags: string, host: Record<string, unknown>, failing = "") {
     `${folder}/bin/incus`,
     `#!/bin/sh
 echo "$*" >> "${folder}/log"
+case " $* " in *" init "*) cat > "${folder}/launch-config" ;; esac
 [ -n "$FAILING" ] && [ "$*" = "$FAILING" ] && exit 1
 file="${folder}/$(printf '%s' "$*" | jq -sRr @uri)"
 if [ -f "$file" ]; then cat "$file"; exit 0; fi
@@ -130,9 +131,16 @@ exit 0
       return [];
     }
   })();
+  let initStdin: string | null = null;
+  try {
+    initStdin = Deno.readTextFileSync(`${folder}/launch-config`);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
   Deno.removeSync(folder, { recursive: true });
   return {
     log,
+    initStdin,
     passed: done.success,
     output: new TextDecoder().decode(done.stdout),
   };
@@ -240,18 +248,21 @@ Deno.test({
         cpus: 4,
         memory: "8GiB",
         disk: "40GiB",
-        launch_config: "config: {}",
+        // Larger than a pipe buffer: the fake must read all input, like real incus init.
+        launch_config: "config: {}\n#" + "x".repeat(128 * 1024),
         club_key: "/home/orbit/.swamp-club-key",
       },
     };
     const rebuild = run("base-start", { ...base, rebuild: true });
     assert(rebuild.passed, rebuild.output);
+    assertEquals(rebuild.initStdin, base.base.launch_config + "\n");
     assertEquals(rebuild.log.slice(0, 2), [
       "--project orbit-tasks delete --force beast-base",
       "--project orbit-tasks storage volume delete orbit-tasks beast-base-seed",
     ]);
     const refresh = run("base-start", { ...base, rebuild: false });
     assert(refresh.passed, refresh.output);
+    assertEquals(refresh.initStdin, base.base.launch_config + "\n");
     assertEquals(
       refresh.log.filter((call) => call.includes(" delete --force beast-base")),
       [],

@@ -94,7 +94,7 @@ final readonly class ProofRunIntent
             $this->trust->assert($commit);
             $selection = $this->select($commit, ($input['all'] ?? false) === true);
             $uncovered = $selection->uncovered;
-            $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'uncovered' => $selection->uncovered];
+            $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'selected_commands' => array_values(array_unique(array_column($selection->cases, 'command'))), 'uncovered' => $selection->uncovered];
             // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
             if (! $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['input' => $intent]))) {
                 return;
@@ -197,7 +197,9 @@ final readonly class ProofRunIntent
     {
         $this->whileOpen($proof->id, fn (Operation $current) => ValidatedData::object($current->input)['runs'] !== [] ? null : $this->store->change($current, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => $code, 'current_step' => null,
             'state' => [...($current->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $message, 'stderr_recorded' => false]],
-            'result' => ['commit' => ValidatedData::object($current->input)['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $uncovered, 'receipt_url' => null]]));
+            'result' => ['commit' => ValidatedData::object($current->input)['commit'] ?? null, 'outcome' => 'failed', 'cases' => [],
+                'selected_commands' => ValidatedData::stringList(ValidatedData::object($current->input)['selected_commands'] ?? []),
+                'uncovered' => $uncovered, 'receipt_url' => null]]));
     }
 
     /**

@@ -451,7 +451,9 @@ describe('proof:run admission', function (): void {
 
         $proof = proofAdmitted(reportOnly: true);
 
-        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->input['report_only'])->toBeTrue()->and(Task::query()->count())->toBe(0);
+        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->input['report_only'])->toBeTrue()
+            ->and($proof->result['selected_commands'])->toBe(['firewall:allow'])
+            ->and($proof->result['cases'])->toBe([])->and(Task::query()->count())->toBe(0);
     });
 
     it('passes the reserve of a report-only run down to the claim of its slot', function (): void {

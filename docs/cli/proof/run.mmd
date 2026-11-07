@@ -130,4 +130,5 @@ sequenceDiagram
     CLI->>GW: operation:show TASK
     GW-->>CLI: status + verdicts
   end
-  %%> The CI job passes or fails on the verdict; the merge requires it, and the proof does not run again after the merge.
+  %%> Admission refusals retain the selected command names in `selected_commands`, without execution input.
+  %%> Report-only CI records `tasks.capacity_unavailable` with no case rows as not run, writes a receipt and skips its assertion check. Other errors and assertion failures stay red. Required checks does not require proof; Nick decides its graduation. Proof does not run again after the merge.
