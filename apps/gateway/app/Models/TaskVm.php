@@ -135,7 +135,8 @@ final class TaskVm extends Model
 
     /**
      * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only where
-     * {@see TaskVmProviderKind::countsFailedVms()}.
+     * {@see TaskVmProviderKind::countsFailedVms()} or when a failed proof run kept it (`proof:run --keep-failed`): a kept VM holds the CPU and
+     * memory of its host whatever its state says, until its group is cancelled and it is destroyed.
      *
      * @param  Builder<self>  $query
      */
@@ -143,7 +144,8 @@ final class TaskVm extends Model
     protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
-            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed))
+            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where(static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed)
+                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id'))))
             // A stopped slot that no group holds keeps disk, not memory.
             ->whereNot(static fn (Builder $query) => $query->whereNotNull('slot_project_id')->whereNull('group_id')->where('state', TaskVmState::Parked));
     }
