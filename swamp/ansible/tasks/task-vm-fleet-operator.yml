@@ -64,8 +64,7 @@
       AllowedIPs = {{ intent.fleet.operator.network }}
       PersistentKeepalive = 25
   vars:
-    fleet_ready_gateway_ipv4: "{{ (fleet_now.stdout | from_json | selectattr('name', 'eq',
-        fleet_guests.gateway) | first).expanded_devices.eth0['ipv4.address'] }}"
+    fleet_ready_gateway_ipv4: "{{ (fleet_now | selectattr('name', 'eq', fleet_guests.gateway) | first).expanded_devices.eth0['ipv4.address'] }}"
 - name: Bring up the operator tunnel
   ansible.builtin.systemd: { name: wg-quick@wg-nested.service, enabled: true, state: restarted }
 - name: Check the operator tunnel

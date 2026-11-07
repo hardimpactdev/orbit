@@ -18,10 +18,11 @@
       ansible.builtin.command: { argv: [timeout, "600", git, clone, --no-checkout, "{{ intent.checkout.repository }}", "{{ intent.checkout.path }}"] }
       changed_when: true
 - name: Read the checked out commit
-  ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", rev-parse, --verify, --quiet, "HEAD^{commit}"] }
+  become: true
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", rev-parse, --verify, "HEAD^{commit}"] }
   register: checkout_head
   changed_when: false
-  failed_when: false
 - name: Move the checkout to the commit
   when: checkout_head.stdout | trim != intent.checkout.commit
   block:
@@ -41,6 +42,8 @@
 # The Git object IDs of the code, of the migrations and of each lock file at the commit, in one read. The installs below and the
 # fleet compare them with the ones they converged to (task-vm-recipe.yml).
 - name: Read the digests of the commit
+  become: true
+  become_user: "{{ orbit_user }}"
   ansible.builtin.command: { argv: "{{ ['git', '-C', intent.checkout.path, 'rev-parse'] + checkout_projects | map(attribute='object') | list }}" }
   register: checkout_read
   changed_when: false

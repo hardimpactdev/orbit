@@ -86,14 +86,14 @@
       changed_when: true
 - name: Join the outer VM as operator
   ansible.builtin.import_tasks: task-vm-fleet-operator.yml
-  when: converge_due.operator
+  when: converge_due.operator or fleet_new | length > 0
 - name: Renew the nested Swamp tokens
   ansible.builtin.import_tasks: task-vm-fleet-tokens.yml
-  when: converge_due.tokens
+  when: converge_due.tokens or fleet_new | length > 0
 
 # The code of the commit: the agent delivery manifest of the checkout and a restart of the long-running services, when the code changed.
 - name: Take the new code
-  when: "'code' not in checkout_current"
+  when: "'code' not in checkout_current or fleet_new | length > 0"
   block:
     - name: Place the agent delivery
       ansible.builtin.command:
@@ -102,7 +102,7 @@
                /home/orbit/orbit/apps/agent/delivery/manifest.json]
       changed_when: true
     - name: Migrate the nested Gateway
-      when: "'migrations' not in checkout_current"
+      when: "'migrations' not in checkout_current or fleet_new | length > 0"
       ansible.builtin.command:
         argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --,
                php, artisan, migrate, --force]

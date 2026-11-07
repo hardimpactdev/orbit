@@ -39,6 +39,6 @@
 - name: Record the renewal
   ansible.builtin.command:
     argv: [install, -D, -m, "0644", /dev/stdin, "{{ converge_stamps_dir }}/tokens"]
-    stdin: "{{ now(utc=true).strftime('%s') }}"
+    stdin: "{{ now(utc=true).timestamp() | int }}"
     stdin_add_newline: false
   changed_when: true

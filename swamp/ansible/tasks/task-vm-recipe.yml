@@ -54,9 +54,10 @@
   failed_when: converge_read.rc not in [0, 2]
 - name: Work out what changed
   vars:
-    code: >-
-      {{ query('ansible.builtin.file', *([playbook_dir ~ '/task-vm-role.yml'] + query('ansible.builtin.fileglob', playbook_dir ~ '/tasks/task-vm-*.yml')))
-      | join | hash('sha256') }}
+    # Every file the role reads: its tasks, the shared task files they include and the pins of the shape gate, in a fixed order.
+    files: "{{ ['task-vm-role.yml', 'requirements.txt', 'requirements.yml', 'shape-gate-requirements.txt']
+      | map('regex_replace', '^', playbook_dir ~ '/') | list }}"
+    code: "{{ query('ansible.builtin.file', *(files + (query('ansible.builtin.fileglob', playbook_dir ~ '/tasks/*.yml') | sort))) | join | hash('sha256') }}"
     tools_input: "{{ code ~ (recipe | to_json) ~ profile ~ (intent.fleet.network | default('')) }}"
   ansible.builtin.set_fact:
     converge_stamps: "{{ dict(converge_read.stdout_lines | map('regex_replace', '^.*/([^/:]+):.*$', '\\1')
@@ -75,5 +76,5 @@
       {%- for name, digest in converge_digests.items() -%}
       {%- set _ = out.update({name: converge_stamps[name] | default('') != digest}) -%}
       {%- endfor -%}
-      {%- set _ = out.update({'tokens': (now(utc=true).strftime('%s') | int) - (converge_stamps.tokens | default(0) | int) > 7 * 86400}) -%}
+      {%- set _ = out.update({'tokens': (now(utc=true).timestamp() | int) - (converge_stamps.tokens | default(0) | int) > 7 * 86400}) -%}
       {{ out }}
