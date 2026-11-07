@@ -1,0 +1,149 @@
+---
+# The pinned Tool Manager on a Node, one phase. Swamp decides whether it runs (the manager is missing, or the caller converges) and
+# plans the resources (extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts); this playbook only applies that plan.
+# `intent`: ssh, version (the argv that prints the manager version), packages (the prerequisite packages) and plan.
+- name: Tool Manager setup
+  hosts: manager_node
+  tags: [manager]
+  become: true
+  vars:
+    plan: "{{ intent.plan }}"
+    manager: "{{ intent.plan.setup.manager }}"
+    account: "{{ intent.plan.setup.input.user }}"
+    pinned_apt: "{{ intent.plan.setup.apt }}"
+    pinned_packages: "{{ pinned_apt.packages if pinned_apt is not none else [] }}"
+  tasks:
+    - name: Install prerequisites
+      when: intent.packages | length > 0
+      ansible.builtin.apt: { name: "{{ intent.packages }}", state: present, lock_timeout: 300 }
+      environment: { NEEDRESTART_MODE: l }
+    - name: Start the pinned package list
+      ansible.builtin.set_fact: { tool_pending: [] }
+    - { name: Read installed packages, when: pinned_apt is not none, ansible.builtin.package_facts: { manager: auto } }
+    - name: Find the pinned packages that are not at their pin
+      ansible.builtin.set_fact:
+        tool_pending: >-
+          {{ tool_pending + ([index] if item.version not in ansible_facts.packages[item.name] | default([]) | map(attribute='version') | list
+          else []) }}
+      loop: "{{ pinned_packages }}"
+      loop_control: { index_var: index, label: "{{ item.name }}" }
+    - name: Create the manager folders
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ omit if item.keep | default(false) else item.owner }}"
+        mode: "{{ omit if item.keep | default(false) else item.mode }}"
+      loop: "{{ plan.directories }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Write the manager files
+      ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: "{{ item.owner }}", mode: "{{ item.mode }}" }
+      loop: "{{ plan.files }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Download the artifacts that have a SHA-256 pin
+      when: item.package_index is none or item.package_index in tool_pending
+      ansible.builtin.include_tasks: tasks/artifact-fetch.yml
+      vars:
+        artifact: { urls: "{{ item.urls }}", path: "{{ item.path }}", sha256: "{{ item.checksum | regex_replace('^sha256:', '') }}" }
+      loop: "{{ plan.sha256_fetches }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Download the artifacts that have a SHA-512 pin
+      when: item.package_index is none or item.package_index in tool_pending
+      ansible.builtin.get_url:
+        url: "{{ item.urls[0] }}"
+        dest: "{{ item.path }}"
+        checksum: "sha512:{{ (plan.sha512 | selectattr('path', 'equalto', item.path) | first).digest }}"
+        owner: root
+        mode: "0644"
+      loop: "{{ plan.sha512_fetches }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Read the identities of the downloaded packages
+      ansible.builtin.command: { argv: [dpkg-deb, --field, "{{ item.path }}", Package, Version] }
+      register: tool_debs
+      changed_when: false
+      loop: "{{ plan.apt_artifacts | selectattr('package_index', 'in', tool_pending) | list }}"
+      loop_control: { label: "{{ item.name }}" }
+    - name: Require the pinned packages
+      ansible.builtin.assert:
+        that: "item.stdout_lines == ['Package: ' ~ item.item.name, 'Version: ' ~ item.item.version]"
+        quiet: true
+      loop: "{{ tool_debs.results }}"
+      loop_control: { label: "{{ item.item.name }}" }
+    - name: Refresh the pinned APT indexes
+      when: pinned_apt is not none and tool_pending | length > 0
+      ansible.builtin.command: { argv: "{{ plan.apt_update }}" }
+      changed_when: true
+    - name: Install the pinned APT set
+      when: pinned_apt is not none and tool_pending | length > 0
+      ansible.builtin.command:
+        argv: "{{ plan.apt_install_prefix + (plan.apt_arguments | selectattr('index', 'in', tool_pending) | map(attribute='argv') | list) }}"
+      changed_when: true
+    - name: Extract the pinned archives
+      ansible.builtin.unarchive: { src: "{{ item.source }}", dest: "{{ item.dest }}", remote_src: true, creates: "{{ item.creates }}" }
+      loop: "{{ plan.archives }}"
+      loop_control: { label: "{{ item.dest }}" }
+    - name: Clone the pinned Homebrew
+      when: manager == 'homebrew'
+      become: true
+      become_user: "{{ account }}"
+      ansible.builtin.git:
+        repo: https://github.com/Homebrew/brew
+        dest: /home/linuxbrew/.linuxbrew/Homebrew
+        version: "{{ intent.plan.setup.input.revision }}"
+    - name: Create the Composer manifest
+      when: manager == 'composer'
+      ansible.builtin.copy: { dest: /opt/orbit/composer/composer.json, content: "{\"require\":{}}\n", owner: "{{ account }}", mode: "0644", force: false }
+    - name: Publish the pinned trees and binaries
+      ansible.builtin.command: { argv: "{{ item.argv }}", creates: "{{ item.creates }}" }
+      loop: "{{ plan.copies }}"
+      loop_control: { label: "{{ item.creates }}" }
+    - name: Mark the copied trees complete
+      ansible.builtin.copy: { dest: "{{ item.creates }}", content: "", force: false, mode: "0644" }
+      loop: "{{ plan.copies | selectattr('complete', 'defined') | list }}"
+      loop_control: { label: "{{ item.creates }}" }
+    - name: Find copied files that the account does not own
+      ansible.builtin.command: { argv: [find, "{{ item }}", -not, -user, "{{ account }}", -print, -quit] }
+      register: tool_foreign
+      changed_when: false
+      loop: "{{ plan.owned }}"
+    - name: Hand the copied trees to the account
+      when: item.stdout | length > 0
+      ansible.builtin.file: { path: "{{ item.item }}", owner: "{{ account }}", recurse: true, follow: false }
+      loop: "{{ tool_foreign.results }}"
+      loop_control: { label: "{{ item.item }}" }
+    - name: Link the manager executables
+      ansible.builtin.file: { src: "{{ item.target }}", dest: "{{ item.path }}", state: link, force: true, owner: "{{ item.owner }}" }
+      loop: "{{ plan.links }}"
+      loop_control: { label: "{{ item.path }}" }
+    - name: Install the locked JavaScript packages
+      ansible.builtin.command: { argv: "{{ item.argv }}", creates: "{{ item.creates }}" }
+      loop: "{{ plan.commands | selectattr('creates', 'defined') | list }}"
+      loop_control: { label: "{{ item.creates }}" }
+    - name: Read the default Node version
+      ansible.builtin.command: { argv: "{{ item.unless }}" }
+      register: tool_default
+      changed_when: false
+      failed_when: false
+      loop: "{{ plan.commands | selectattr('unless', 'defined') | list }}"
+      loop_control: { label: "{{ item.unless[-1] }}" }
+    - name: Set the default Node version
+      when: item.rc != 0
+      ansible.builtin.command: { argv: "{{ item.item.argv }}" }
+      changed_when: true
+      loop: "{{ tool_default.results }}"
+      loop_control: { label: "{{ item.item.unless[-1] }}" }
+    - name: Publish the manager launchers
+      ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: "{{ item.owner }}", mode: "{{ item.mode }}" }
+      loop: "{{ plan.launchers }}"
+      loop_control: { label: "{{ item.path }}" }
+    - { name: Read installed packages again, when: pinned_apt is not none, ansible.builtin.package_facts: { manager: auto } }
+    - name: Require the pinned packages to be installed
+      when: pinned_apt is not none
+      ansible.builtin.assert:
+        that: item.version in ansible_facts.packages[item.name] | default([]) | map(attribute='version') | list
+        quiet: true
+      loop: "{{ pinned_packages }}"
+      loop_control: { label: "{{ item.name }}" }
+    - name: Check the manager
+      become: false
+      ansible.builtin.command: { argv: "{{ ['timeout', '60'] + intent.version }}" }
+      changed_when: false

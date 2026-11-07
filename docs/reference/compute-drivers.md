@@ -254,7 +254,9 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 `bin/php-build mirror` downloads every external Debian artifact of every architecture and checks its recipe digest. The workflow lists published assets before downloading, skips those files, and uploads each missing file to the `php-build-mirror` release, named `<package>_<digest>.deb`. It retains the existing release URL. That release is a prerelease and never the latest release.
 
-Gateway intents capture the ordered `ArtifactPin::candidateUrls` list. Tool Manager setup (including Git), role PHP packages and native Caddy try the mirror before upstream. The shared `node-artifact-fetch` workflow downloads through official SSH and classifies curl's structured exit code. Only transport failures permit the second candidate. Local I/O and size-limit failures stop. Native SHA-256 verification must succeed before the staged file is published. The retained agent Caddy installer still uses its frozen upstream-only contract. The corrupt-mirror proof requires a failed run, no upstream attempt, no published file and no staged file after cleanup.
+Gateway intents capture the ordered `ArtifactPin::candidateUrls` list. Tool Manager setup (including Git), role PHP packages and native Caddy try the mirror before upstream. Native Caddy downloads through the shared `node-artifact-fetch` workflow; the Tool Manager setup and the role prerequisites download with the Ansible artifact module, which classifies curl's structured exit code. Only transport failures permit the second candidate. Local I/O and size-limit failures stop. 
+
+Native SHA-256 verification must succeed before the staged file is published. The retained agent Caddy installer still uses its frozen upstream-only contract. The corrupt-mirror proof requires a failed run, no upstream attempt, no published file and no staged file after cleanup.
 
 New pins work through upstream before the mirror workflow publishes their assets after merge. Other artifact formats, including the agent and CLI release binaries, retain their existing URLs.
 

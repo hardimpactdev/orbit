@@ -48,6 +48,10 @@ sequenceDiagram
   %%> - a Node of a task VM's nested fleet reads its apt packages through the VM's package cache (`apt_proxy` in the intent, else the archive)
   opt role needs Tool Managers
     SW->>N: Set up Tool Managers<br/>native child workflow
+    %%> What it does:
+    %%> - the same child run for each manager as the role add, side by side; a converge always applies the pinned resources, even when the manager is ready
+    %%> Decided by the orchestrator, for Nick's review:
+    %%> - see the role add: one Ansible phase for each manager instead of 20 one-step jobs
   end
   SW->>N: Apply the role<br/>Ansible phase: node
   %%> What it does:

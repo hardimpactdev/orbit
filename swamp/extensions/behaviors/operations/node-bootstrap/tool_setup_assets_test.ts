@@ -28,8 +28,8 @@ Deno.test("Composer setup preserves its scope and installs exact snapshot packag
         plan.files.some((f) => f.path === "/opt/orbit/composer/composer.json"),
         false,
     );
-    assertEquals(plan.apt_install.includes("--no-remove"), true);
-    assertEquals(plan.apt_install.at(-1), "composer=2.9.5-1");
+    assertEquals(plan.apt_install_prefix.includes("--no-remove"), true);
+    assertEquals(plan.apt_arguments.at(-1)?.argv, "composer=2.9.5-1");
     assertEquals(
         plan.apt_update.includes("APT::Get::List-Cleanup=false"),
         true,
@@ -146,7 +146,7 @@ Deno.test("Homebrew setup describes one pinned repository and retains other pack
         true,
     );
     assertEquals(plan.sha256_fetches, []);
-    assertEquals(plan.apt_install, []);
+    assertEquals(plan.apt_install_prefix, []);
 });
 Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 checks separate from extraction", async () => {
     const lock = JSON.stringify({
@@ -181,9 +181,12 @@ Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 che
     const plan = await toolSetupPlan(setup, "/home/orbit");
     assertEquals(plan.sha512.length, 1);
     assertEquals(
-        plan.sha512[0].stdin,
-        "b".repeat(128) +
-            "  /var/cache/orbit/tool-setup/javascript/pnpm.tar.gz\n",
+        plan.sha512[0],
+        {
+            path: "/var/cache/orbit/tool-setup/javascript/pnpm.tar.gz",
+            package_index: null,
+            digest: "b".repeat(128),
+        },
     );
     assertEquals(
         plan.archives.find((a) => String(a.source).includes("node.tar.xz"))
@@ -193,6 +196,18 @@ Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 che
     assertEquals(
         plan.commands.some((c) =>
             (c.argv as string[]).includes("--ignore-scripts")
+        ),
+        true,
+    );
+    // A rerun repeats nothing: every copy and command names the proof that it ran.
+    assertEquals(plan.copies.every((c) => typeof c.creates === "string"), true);
+    assertEquals(plan.copies.length, 4);
+    assertEquals(plan.owned.length, 2);
+    // A copied tree is complete only when its marker exists.
+    assertEquals(plan.copies.filter((c) => c.complete === true).length, 2);
+    assertEquals(
+        plan.commands.every((c) =>
+            typeof c.creates === "string" || Array.isArray(c.unless)
         ),
         true,
     );

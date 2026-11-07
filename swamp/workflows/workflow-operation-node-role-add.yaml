@@ -319,7 +319,6 @@ jobs:
     labels: {role: swamp}
     writes: true
     forEach: {item: manager, in: '${{ inputs.intent.managers }}'}
-    concurrency: 1
     task:
       type: workflow
       workflowIdOrName: operation-tool-manager-setup

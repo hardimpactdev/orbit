@@ -66,9 +66,9 @@ Removal runs these steps in order. It stops at the first step that fails, except
 
 When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
 
-There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. Native role add uses that child for Composer and Vite+, with convergence enabled so an existing manager receives the recipe's pinned resources. Ordinary first use still skips a ready manager.
+There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. Native role add uses that child for Composer and Vite+, side by side, with convergence enabled so an existing manager receives the recipe's pinned resources. Ordinary first use still skips a ready manager.
 
-During convergence, official APT checks compare every package with its pin before artifact downloads. Matching packages need no download or installation. Missing pins form one APT transaction; Composer's managed directories and configuration still converge when all packages already match. Folder and file resources within one manager run sequentially to bound cfgmgmt dispatch memory. Separate Node work can still run in parallel.
+The child reads the manager version and the account home, plans the pinned resources, and applies them in one Ansible phase, `manager` (`swamp/ansible/operation-tool-manager-setup.yml`). During convergence the phase compares every pinned package with its pin before the artifact downloads. Matching packages need no download or installation. Missing pins form one APT transaction; Composer's managed directories and configuration still converge when all packages already match. Every step of the phase is an end state, so a rerun changes nothing. Each manager keeps its package indexes in its own folder, so two managers never write the same index, and the dpkg lock serializes their installs.
 
 `node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as ready. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
@@ -110,7 +110,7 @@ Native Composer package operations use fixed shared-scope arguments through offi
 
 Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
-The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It fetches each pinned artifact, checks its digest, extracts it and writes the managed launchers with official resources. It runs no downloaded installer. A failed step has no rollback; run the install again after you fix the cause. A development deploy runs the same shared setup for the Instance's account.
+The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It fetches each pinned artifact, checks its digest, extracts it and writes the managed launchers, all in one Ansible phase. It runs no downloaded installer. A failed step has no rollback; run the install again after you fix the cause. A development deploy runs the same shared setup for the Instance's account.
 
 Managed-account recipe commands run from that account's home directory, including JavaScript installation, inventory, launcher checks, and image verification. They change directory after switching accounts and set `VP_HOME` to the resolved store. A caller's working directory cannot select workspace configuration or prevent the account from running a tool.
 
