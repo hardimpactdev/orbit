@@ -41,7 +41,22 @@ export function parts(step: Step): { args: string[]; scripts: string[] } {
     return { args, scripts: [...run, ...args.filter((arg) => /\s/.test(arg))] };
 }
 
-const WRITING = "POST|DELETE|PUT|PATCH";
+/** HTTP methods whose second request does not leave the system as the first did. DELETE and PUT repeat harmlessly. */
+const NOT_REPEATABLE = "POST|PATCH";
+const INCUS_LIFECYCLE = ["launch", "init", "delete", "copy", "move", "rename", "restore", "publish", "snapshot"];
+const INCUS_VALUE_FLAGS = ["--project", "-p", "--user", "--group", "--env", "--cwd", "--mode", "--target", "--timeout"];
+const GIT_WRITING = "commit|push|tag|am|merge|rebase|cherry-pick";
+
+/** The sub-command of `incus`: the first argument after it that is neither a flag nor the value of one. */
+function incusVerb(args: string[]): string | undefined {
+    const at = args.findIndex((arg) => arg.split("/").pop() === "incus");
+    if (at < 0) return undefined;
+    for (let i = at + 1; i < args.length; i++) {
+        if (INCUS_VALUE_FLAGS.includes(args[i])) { i += 1; continue; }
+        if (!args[i].startsWith("-")) return args[i];
+    }
+    return undefined;
+}
 
 /** Why a command cannot run twice, or null. A pattern list, not a parser: it names the verbs that fail or double on a second run. */
 export function unsafeVerb(step: Step): string | null {
@@ -53,21 +68,28 @@ export function unsafeVerb(step: Step): string | null {
         if (has("clone")) return "git clone";
         if (has("switch") && has("-c", "--create")) return "git switch -c";
         if (has("checkout") && has("-b")) return "git checkout -b";
-        if (has("commit", "push", "tag", "am", "merge", "rebase", "cherry-pick")) return "git history write";
+        if (has("commit", "push", "tag", "am", "merge", "rebase", "cherry-pick") && !has("-l", "--list", "--dry-run")) return "git history write";
+        if (has("worktree") && has("add", "remove", "move", "prune")) return "git worktree change";
+        if (has("remote") && has("add")) return "git remote add";
     }
-    if (/\bgit\s+(?:-\S+\s+(?:\S+\s+)?)*clone\b/.test(text)) return "git clone";
-    if (/\bgit\s+(?:-\S+\s+(?:\S+\s+)?)*(commit|push|tag|am|merge|rebase|cherry-pick)\b/.test(text)) return "git history write";
+    if (/\bgit\s+(?:-\S+\s+(?:\S+\s+)?)*clone(?![\w-])/.test(text)) return "git clone";
+    if (new RegExp(`\\bgit\\s+(?:-\\S+\\s+(?:\\S+\\s+)?)*(${GIT_WRITING})(?![\\w-])(?![^\\n]*(--dry-run|\\s-l\\b))`).test(text)) return "git history write";
     if (/\bgit\b[^\n]*\b(switch\s+(-c|--create)|checkout\s+-b)\b/.test(text)) return "git branch create";
-    const method = args[args.indexOf("--method") + 1] ?? args[args.indexOf("-X") + 1];
-    if ((args.includes("--method") || args.includes("-X")) && new RegExp(`^(${WRITING})$`).test(method)) return `API ${method}`;
-    const shellMethod = text.match(new RegExp(`(?:--method|-X)\\s*(${WRITING})\\b`))?.[1];
-    if (shellMethod) return `API ${shellMethod}`;
-    if (base.includes("curl") && has("--data", "--data-binary", "-d")) return "curl with a body";
-    if (/\bcurl\b[^\n]*(--data\b|--data-binary\b|\s-d\s)/.test(text)) return "curl with a body";
+    // An API call that repeats badly: the method is a flag value (`--method POST`, `-X POST`, `--request POST`, `--method=POST`, `-XPOST`).
+    const flag = args.findIndex((arg) => ["--method", "-X", "--request"].includes(arg));
+    const inline = args.map((arg) => arg.match(/^(?:--method=|--request=|-X)(POST|PATCH)$/i)?.[1]).find(Boolean);
+    const method = flag >= 0 ? args[flag + 1] : inline;
+    if (method !== undefined && new RegExp(`^(${NOT_REPEATABLE})$`, "i").test(method)) return `API ${method.toUpperCase()}`;
+    const shellMethod = text.match(new RegExp(`(?:--method|--request|-X)[=\\s]*(${NOT_REPEATABLE})\\b`, "i"))?.[1];
+    if (shellMethod) return `API ${shellMethod.toUpperCase()}`;
+    if (base.includes("gh") && has("api") && has("-f", "-F", "--field", "--raw-field", "--input") && !args.some((arg, i) => arg === "--method" && args[i + 1] === "GET")) return "gh api with fields (POST)";
+    if (base.includes("curl") && has("--data", "--data-binary", "--data-raw", "--json", "-d", "-F", "--form")) return "curl with a body";
+    if (/\bcurl\b[^\n]*(--data(-binary|-raw)?\b|--json\b|\s-d\s)/.test(text)) return "curl with a body";
     if (base.some((arg) => ["useradd", "usermod", "adduser", "userdel"].includes(arg)) || /\b(useradd|usermod|adduser|userdel)\b/.test(text)) return "account change";
-    if (base.includes("incus") && has("launch", "init", "delete", "copy", "move", "rename", "restore", "publish", "snapshot")) return "incus lifecycle";
-    if (/\bincus\s+(?:-\S+\s+\S+\s+)*(launch|init|delete|copy|move|rename|restore|publish|snapshot)\b/.test(text)) return "incus lifecycle";
-    if (base.includes("mv") || /(^|[;&|\s])mv\s/.test(text)) return "mv";
+    const verb = incusVerb(args);
+    if (verb !== undefined && INCUS_LIFECYCLE.includes(verb)) return "incus lifecycle";
+    if (new RegExp(`\\bincus\\s+(?:-\\S+\\s+\\S+\\s+)*(${INCUS_LIFECYCLE.join("|")})\\b`).test(text)) return "incus lifecycle";
+    if (base.includes("mv") || /(?:^|[;&|]\s*|\n\s*)mv\s/.test(text)) return "mv";
     return null;
 }
 
@@ -128,14 +150,25 @@ Deno.test("the pattern finds the commands that cannot run twice", () => {
     const step = (argv: string[]): Step => ({ name: "x", task: { type: "behavior", behaviorType: "@swamp/ssh", methodName: "exec", inputs: { argv } } });
     assertEquals(unsafeVerb(step(["/usr/bin/git", "clone", "--", "a.bundle", "dir"])), "git clone");
     assertEquals(unsafeVerb(step(["git", "-C", "dir", "switch", "-c", "task-1"])), "git switch -c");
-    assertEquals(unsafeVerb(step(["gh", "api", "--method", "DELETE", "installation/token"])), "API DELETE");
+    assertEquals(unsafeVerb(step(["curl", "-X", "POST", "https://x"])), "API POST");
+    assertEquals(unsafeVerb(step(["curl", "--request", "PATCH", "https://x"])), "API PATCH");
+    assertEquals(unsafeVerb(step(["gh", "api", "--method=POST", "repos/x/y/issues"])), "API POST");
+    assertEquals(unsafeVerb(step(["gh", "api", "repos/x/y/issues", "-f", "title=a"])), "gh api with fields (POST)");
     assertEquals(unsafeVerb(step(["/usr/sbin/useradd", "--create-home", "orbit"])), "account change");
     assertEquals(unsafeVerb(step(["incus", "--project", "p", "delete", "--force", "vm"])), "incus lifecycle");
     const shell = (run: string): Step => ({ name: "x", task: { type: "behavior", behaviorType: "command/shell", methodName: "execute", inputs: { run } } });
-    assertEquals(unsafeVerb(shell("gh api --method DELETE installation/token")), "API DELETE");
+    assertEquals(unsafeVerb(shell("gh api --method POST repos/x/y/issues")), "API POST");
     assertEquals(unsafeVerb(shell("git clone --branch main -- \"$URL\" \"$DIR\"")), "git clone");
     assertEquals(unsafeVerb(shell("curl --fail --data \"$BODY\" \"$URL\"")), "curl with a body");
-    // Commands that read, or that a second run leaves as they were.
+    // Commands that read, or that a second run leaves as they were. DELETE and PUT repeat harmlessly (a second token revoke answers 401).
+    assertEquals(unsafeVerb(step(["gh", "api", "--method", "DELETE", "installation/token"])), null);
+    assertEquals(unsafeVerb(shell("timeout 30 gh api --method DELETE installation/token")), null);
+    assertEquals(unsafeVerb(step(["incus", "exec", "vm", "--", "git", "init"])), null);
+    assertEquals(unsafeVerb(step(["incus", "--project", "p", "exec", "vm", "--", "cloud-init", "status"])), null);
+    assertEquals(unsafeVerb(shell("git -C \"$D\" commit-tree HEAD^{tree} -m x")), null);
+    assertEquals(unsafeVerb(shell("git -C \"$D\" merge-base HEAD origin/main")), null);
+    assertEquals(unsafeVerb(shell("echo \"waiting for mv to finish\"")), null);
+    assertEquals(unsafeVerb(step(["incus", "--project=p", "delete", "vm"])), "incus lifecycle");
     assertEquals(unsafeVerb(step(["git", "-C", "dir", "rev-parse", "refs/heads/candidate^{commit}"])), null);
     assertEquals(unsafeVerb(shell("git -C \"$DIR\" rev-parse HEAD")), null);
     assertEquals(unsafeVerb(step(["git", "-C", "dir", "rev-parse", "HEAD"])), null);

@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 300,
+ "maxUnreviewed": 303,
  "steps": {
   "cluster-router-prepare": {
    "account_command": "read-only",
@@ -75,7 +75,6 @@
    "source-origin-read": "unreviewed",
    "source-profile-read": "unreviewed",
    "source-refs": "unreviewed",
-   "source-worktree": "unreviewed",
    "source-worktrees": "unreviewed"
   },
   "instance-route-workload": {
@@ -89,7 +88,7 @@
    "validate": "unreviewed"
   },
   "metrics-containers": {
-   "grafana_login": "read-only",
+   "grafana_login": "unreviewed",
    "prometheus_ready": "read-only"
   },
   "metrics-prometheus-publish": {
@@ -129,6 +128,9 @@
    "Query the listener": "unreviewed",
    "Test dnsmasq": "unreviewed",
    "Test the release": "unreviewed"
+  },
+  "node-role-certificate-publish": {
+   "Sign the CSR": "idempotent"
   },
   "node-role-remove": {
    "Read CI guests": "read-only"
@@ -251,7 +253,7 @@
   },
   "operation-metrics-credentials-reset": {
    "Check the pending one": "read-only",
-   "Confirm the new login": "read-only"
+   "Confirm the new login": "unreviewed"
   },
   "operation-metrics-disable": {
    "Check it is gone": "read-only"
@@ -282,7 +284,7 @@
    "Resolve WireGuard endpoint": "read-only"
   },
   "operation-node-remove": {
-   "Log in to departing Node": "read-only"
+   "Log in to departing Node": "unreviewed"
   },
   "operation-node-role-add": {
    "Check the role": "read-only",
@@ -293,7 +295,7 @@
    "Check Reverb": "read-only"
   },
   "operation-node-ssh-access-converge": {
-   "Log in with Swamp identity": "read-only"
+   "Log in with Swamp identity": "unreviewed"
   },
   "operation-node-update": {
    "Check owner and mode": "read-only"
@@ -553,13 +555,20 @@
    "restored": "read-only"
   },
   "route-certificate-publish": {
-   "Read the account": "read-only"
+   "Read the account": "read-only",
+   "Sign the CSR": "idempotent"
   },
   "route-certificate-remove": {
    "Read the account": "read-only"
   },
+  "route-create-csr": {
+   "sign": "idempotent"
+  },
   "route-create-ingress": {
    "caddy-validate": "unreviewed"
+  },
+  "route-create-sign": {
+   "sign": "idempotent"
   },
   "route-dns-grace": {
    "wait-private-dns-ttl": "read-only"
@@ -592,12 +601,14 @@
   "task-approved-push": {
    "Copy the bundle": "idempotent",
    "Remove the guest bundle": "unreviewed",
-   "Remove the local copy": "unreviewed"
+   "Remove the local copy": "unreviewed",
+   "Revoke the token": "idempotent"
   },
   "task-check-ci": {
    "cleanup_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
    "prepare_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
    "read-${{ self.check.attributes.inputs.operation_id }}": "read-only",
+   "revoke_read-${{ self.check.attributes.inputs.operation_id }}": "idempotent",
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-add": "unreviewed",
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-head": "unreviewed",
    "snapshot-${{ self.check.attributes.inputs.operation_id }}-index": "unreviewed",
@@ -621,7 +632,9 @@
    "cleanup_remote": "unreviewed",
    "copy_bundle": "idempotent",
    "import": "unreviewed",
-   "prepare_local": "unreviewed"
+   "prepare_local": "unreviewed",
+   "revoke_unused_read": "idempotent",
+   "revoke_write": "idempotent"
   },
   "task-check-snapshot-after": {
    "changed": "unreviewed",

@@ -236,7 +236,6 @@ jobs:
         type: succeeded
   - name: revoke_read-${{ self.check.attributes.inputs.operation_id }}
     labels: {role: swamp}
-    writes: true
     forEach: *id001
     task:
       type: behavior
