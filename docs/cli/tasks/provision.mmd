@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - one `ansible-playbook` run with two parts, and no second start: the host part runs on the task VM host over ssh, then the converge runs on the VM over WireGuard
   %%> - host part: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
   %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
-  %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 6 s after the start
+  %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 12 s after the start (measured 2026-11-07)
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
   %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
   %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
@@ -47,7 +47,10 @@ sequenceDiagram
   %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
   alt the run passes
     SW-->>GW: Run succeeded<br/>ready
-    Note over GW: Record the VM ready<br/>target 10-15 s
+    Note over GW: Record the VM ready<br/>about 32 s
+    %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready:
+    %%> - Ansible start and input 2 s; host part 8 s; the wait for sshd 12 s; the converge 6 s (all parts skipped, task branch made); readiness 2 s
+    %%> - a start whose commit is a few commits past the base adds the nested Gateway's migrate and restart, about 8 s when `apps/gateway` changed
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
