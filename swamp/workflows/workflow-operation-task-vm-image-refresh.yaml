@@ -4,7 +4,8 @@ description: >-
   Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: set up the egress log of the host bridge,
   make the host's base VM when it has none, start it,
   converge it as a task start would, stop it and snapshot it and its seed, prove the snapshot with one task start, and keep the newest two
-  snapshots. The Gateway records the new snapshot. No step calls the Gateway.
+  snapshots, then remove the host's leftovers. With `rebuild`, the run first deletes the base VM and its seed and builds the base from stock.
+  The Gateway records the new snapshot. No step calls the Gateway.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -109,6 +110,21 @@ jobs:
       workflowIdOrName: task-vm-host-phase
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
         execution_secrets: '${{ inputs.execution_secrets }}', tags: base-prune}
+# After a refresh that passed, what no current path makes goes from the host (TaskVmHostLeftovers). Its failure fails no refresh and rolls
+# nothing back: the next refresh removes what is left.
+- name: clean
+  labels: {role: swamp}
+  dependsOn: [{job: refresh, condition: {type: succeeded}}]
+  steps:
+  - name: Remove host leftovers
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: host-clean}
 # A failed refresh leaves the host as it was: the base VM is stopped and rolled back to the recorded snapshot, and the run's snapshot goes.
 - name: discard
   labels: {role: swamp}

@@ -1141,6 +1141,15 @@ Two triggers admit every Linux host: every release, from its step "Admit VM refr
 
 A host with a refresh open keeps it and queues the newest commit behind it: the run that ends admits that commit. A host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records and UpCloud attempts.
 
+`task-vms:refresh-image <host> --from-stock` rebuilds the base. At admission it withdraws the recorded base, so a task start on that host is refused until the run promotes the new one. The run deletes the base VM and its seed, with their snapshots, then builds the base from the stock image as on a new host. After a failure, the next refresh builds it as on a new host too. After every refresh that passed, a `host-clean` phase removes what no current path makes:
+
+- in the task VM project, every image except the stock one;
+- in the same project, the volumes and instances named `orbit-topology-seed-*` or `orbit-baseline-*`;
+- the projects of past experiments that `TaskVmHostLeftovers::RetiredProjects` names (`orbit-baselines`, `orbit-measure-nr`), with what they hold;
+- the images of `orbit-proto`.
+
+A failure there fails no refresh.
+
 The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
 
 - the SSH target of the host with its recorded host keys, the project and the pool;
