@@ -686,7 +686,7 @@ Swamp runs task VM effects through recorded Operations. Each effect fixes its ho
 
 `IncusTaskVmProvider` exposes observations only: the power of a VM. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`; no provider class creates, starts or deletes a VM.
 
-A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Every task VM's config on stdin sets `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait on every boot. A medium or large VM's key also turns on free page reporting for the balloon device `qemu_balloon`. Incus applies the key only when the VM starts, so the launch sets it.
+A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Before each base VM start, the refresh converges `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait. The snapshot and every task copy inherit that config. This applies to existing bases too; setting the key only at creation leaves an existing base with the wait. GRUB already has a zero timeout in the stock image.
 
 A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#the-base-vm-and-its-snapshot) of its `image_fingerprint`:
 

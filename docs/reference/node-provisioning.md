@@ -428,6 +428,8 @@ The wait for a nested fleet is not a phase of the role: it is the task file `swa
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
+Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#size-of-a-task-vm). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
+
 On a base snapshot refresh or a template build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
 The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.

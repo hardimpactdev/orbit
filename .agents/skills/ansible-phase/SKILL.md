@@ -102,3 +102,5 @@ Report the time on fresh Nodes, the time with nothing to change, and the phase t
 ## Improve this skill
 
 When a phase teaches a new rule or pitfall, add it here in the same PR. Replace superseded text.
+
+Incus boot configuration must converge on an existing base before it starts, not only at `incus init`. Snapshot copies inherit that configuration. Test a stale existing base and an already-current base as well as a new base.
