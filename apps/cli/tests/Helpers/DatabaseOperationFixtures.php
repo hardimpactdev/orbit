@@ -5,8 +5,8 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
-use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -19,7 +19,7 @@ function run_database_operation_contract(string $fixture, string $command, array
         'database:create' => CreateDatabaseConnectionRequest::class,
         'database:user:create' => CreateDatabaseUserRequest::class,
         'database:server:create' => CreateDatabaseServerRequest::class,
-        'database:server:close' => CloseDatabaseServerRequest::class,
+        'database:server:update' => UpdateDatabaseServerRequest::class,
     };
     MockClient::destroyGlobal();
     MockClient::global([
