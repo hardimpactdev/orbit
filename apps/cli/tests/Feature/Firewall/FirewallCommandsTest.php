@@ -490,6 +490,41 @@ it('reports a repeat of an applied rule as skipped, not as an error', function (
     expect(Artisan::output())->toContain('Skipped — already applied (firewall.rule_exists)')->not->toContain('Firewall rule succeeded.');
 });
 
+it('preserves the typed skipped code when a repeated applied allow is reported as JSON', function (): void {
+    $applied = ['data' => [...firewall_cli_operation(), 'result' => ['backend' => 'active', 'skipped' => 'firewall.rule_exists']], 'meta' => ['request_id' => firewall_cli_request_id()]];
+    $mock = MockClient::global([
+        AllowFirewallRuleRequest::class => MockResponse::make($applied, 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make($applied),
+    ]);
+
+    expect(Artisan::call('firewall:allow', ['port' => '443', '--node' => '7', '--json' => true]))->toBe(0);
+    $result = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+    expect($result['status'])->toBe('succeeded')->and($result['result'])->toBe([
+        'backend' => 'active', 'skipped' => 'firewall.rule_exists',
+    ]);
+    $mock->assertSent(AllowFirewallRuleRequest::class);
+    $mock->assertSent(ShowOperationRequest::class);
+});
+
+it('exits one with the native error when a queued allow fails after a partial change', function (): void {
+    $failed = [...firewall_cli_operation(), 'status' => 'failed', 'result' => [], 'error_code' => 'operation.native_failed'];
+    $mock = MockClient::global([
+        AllowFirewallRuleRequest::class => MockResponse::make([
+            'data' => [...firewall_cli_operation(), 'status' => 'queued', 'result' => null],
+            'meta' => ['request_id' => firewall_cli_request_id()],
+        ], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $failed, 'meta' => ['request_id' => firewall_cli_request_id()]]),
+    ]);
+
+    expect(Artisan::call('firewall:allow', ['port' => '443', '--node' => '7', '--json' => true]))->toBe(1);
+    $result = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+    expect($result['status'])->toBe('failed')->and($result['error_code'])->toBe('operation.native_failed');
+    $mock->assertSent(AllowFirewallRuleRequest::class);
+    $mock->assertSent(ShowOperationRequest::class);
+});
+
 it('refuses a missing Node or port without a request when it cannot prompt', function (array $arguments, string $code): void {
     $mock = firewall_cli_mock([AllowFirewallRuleRequest::class => firewall_cli_response('allow', 'active', 202)]);
 

@@ -110,7 +110,7 @@ sequenceDiagram
     %%> - which step failed and its error code
     Note over GW: Mark the rule failed
     %%> Result:
-    %%> - the rule is marked failed, so you can see it
+    %%> - the rule is marked failed with the Operation's `error_code` and `failed_step`, so `firewall:list` shows the failure
     %%> - the task fails
     %%> On the Node:
     %%> - lines added before the failure stay; there is no rollback
