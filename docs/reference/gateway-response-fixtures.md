@@ -11,6 +11,8 @@ covers:
 
 # Gateway response fixtures
 
+The `database-server-update` fixtures replay [`database:server:update --require-password`](/cli/database/server-update). The request uses PATCH and an explicit true field; its Operation fixture retains `database_server.close`, the persisted execution kind.
+
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
 The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists.
@@ -145,3 +147,5 @@ Node 4 is the macOS read: registered packages with a newer observed version, the
 The directories under `packages/php-sdk/fixtures` list the families that have recorded fixtures and contract tests. Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. Extension responses are replayed by the `extension:list`, `extension:enable`, and `extension:disable` command contracts, and the `extension:list` fixture names every extension the Gateway registers, from `tasks` to `conn`; do not leave a changed extension fixture without a CLI test that names it. `bin/cli-contract --coverage` shows the commands that still have no expected output.
 
 Node update fixtures under `nodes/node-update` record an unmanaged peer set to `ipados` and the `node.platform_managed` refusal. The SDK and `node:update` CLI tests replay both responses.
+
+Automatic Gateway release fixtures use the `gateway-auto-release-*` directories under `gateway-releases`, matching the public commands.

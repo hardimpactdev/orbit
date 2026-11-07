@@ -31,8 +31,8 @@ Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         Route::post('releases/{release}/rollback', [GatewayReleasesController::class, 'rollback'])
             ->where('release', '[0-9a-f]{12}')
             ->name('gateway:release:rollback');
-        Route::get('release-automation', [GatewayReleaseAutomationController::class, 'show'])->name('gateway:release:auto:status');
-        Route::post('release-automation/enable', [GatewayReleaseAutomationController::class, 'enable'])->name('gateway:release:auto:enable');
-        Route::post('release-automation/disable', [GatewayReleaseAutomationController::class, 'disable'])->name('gateway:release:auto:disable');
-        Route::post('release-automation/resume', [GatewayReleaseAutomationController::class, 'resume'])->name('gateway:release:auto:resume');
+        Route::get('release-automation', [GatewayReleaseAutomationController::class, 'show'])->name('gateway:auto-release:status');
+        Route::post('release-automation/enable', [GatewayReleaseAutomationController::class, 'enable'])->name('gateway:auto-release:enable');
+        Route::post('release-automation/disable', [GatewayReleaseAutomationController::class, 'disable'])->name('gateway:auto-release:disable');
+        Route::post('release-automation/resume', [GatewayReleaseAutomationController::class, 'resume'])->name('gateway:auto-release:resume');
     });

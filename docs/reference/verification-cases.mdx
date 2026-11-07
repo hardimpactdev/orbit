@@ -89,7 +89,7 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 | --- | --- | --- |
 | `use` | any | Insert a [fixture](#fixtures), with parameters. |
 | `listener` | setup | Start TCP or UDP listeners on a Node, on free ports, and bind each port to a name. `block` starts a run of consecutive ports. |
-| `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. The row's comment is `proof:<as>`, or the text of `comment`. |
+| `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. A bound anchor selects that case's rule for the same protocol by its tuple and comment; an unbound anchor names a comment. The row's comment is `proof:<as>`, or the text of `comment`. |
 | `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. The runner also removes it when the case ends. |
 | `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. The runner releases it when the case ends. |
 | `agent_report` | setup | Wait until the agent of each listed Node has reported again, so the Gateway holds the state the case built. |
