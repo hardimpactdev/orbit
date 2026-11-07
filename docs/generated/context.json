@@ -1,0 +1,6335 @@
+{
+    "schema_version": 1,
+    "documents": [
+        {
+            "path": "docs/README.md",
+            "title": "Orbit documentation",
+            "kind": "product",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/api/overview.mdx",
+            "title": "Using the API",
+            "kind": "product",
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/api/php-sdk.mdx",
+            "title": "PHP SDK",
+            "kind": "product",
+            "components": [
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/architecture.md",
+            "title": "Architecture",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/README.md",
+            "title": "CLI pages and flow charts",
+            "kind": "product",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/activity/index.mdx",
+            "title": "activity",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task check",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/activity/list.mdx",
+            "title": "orbit activity:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/activity/show.mdx",
+            "title": "orbit activity:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/account-disable.mdx",
+            "title": "orbit ai-router:account:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/account-enable.mdx",
+            "title": "orbit ai-router:account:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/index.mdx",
+            "title": "ai-router",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Placement",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/model-list.mdx",
+            "title": "orbit ai-router:model:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/provider-list.mdx",
+            "title": "orbit ai-router:provider:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/provider-show.mdx",
+            "title": "orbit ai-router:provider:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/setup.mdx",
+            "title": "orbit ai-router:setup",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/status.mdx",
+            "title": "orbit ai-router:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/ai-router/teardown.mdx",
+            "title": "orbit ai-router:teardown",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/analytics/credentials.mdx",
+            "title": "orbit analytics:credentials",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/analytics/index.mdx",
+            "title": "analytics",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/analytics/update.mdx",
+            "title": "orbit analytics:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/activate.mdx",
+            "title": "orbit cluster:activate",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/create.mdx",
+            "title": "orbit cluster:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/deactivate.mdx",
+            "title": "orbit cluster:deactivate",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/destroy.mdx",
+            "title": "orbit cluster:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/index.mdx",
+            "title": "cluster",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/list.mdx",
+            "title": "orbit cluster:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/node-add.mdx",
+            "title": "orbit cluster:node:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/node-remove.mdx",
+            "title": "orbit cluster:node:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/router-set.mdx",
+            "title": "orbit cluster:router:set",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Doctor",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/router-unset.mdx",
+            "title": "orbit cluster:router:unset",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/show.mdx",
+            "title": "orbit cluster:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster/update.mdx",
+            "title": "orbit cluster:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/create.mdx",
+            "title": "orbit database:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/describe.mdx",
+            "title": "orbit database:describe",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/destroy.mdx",
+            "title": "orbit database:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/index.mdx",
+            "title": "database",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/list.mdx",
+            "title": "orbit database:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/query.mdx",
+            "title": "orbit database:query",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/schema.mdx",
+            "title": "orbit database:schema",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/server-close.mdx",
+            "title": "orbit database:server:close",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/server-create.mdx",
+            "title": "orbit database:server:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/server-destroy.mdx",
+            "title": "orbit database:server:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/server-list.mdx",
+            "title": "orbit database:server:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/server-show.mdx",
+            "title": "orbit database:server:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/show.mdx",
+            "title": "orbit database:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/tables.mdx",
+            "title": "orbit database:tables",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/update.mdx",
+            "title": "orbit database:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/user-create.mdx",
+            "title": "orbit database:user:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database/user-list.mdx",
+            "title": "orbit database:user:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/dns/index.mdx",
+            "title": "dns",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/dns/resolve.mdx",
+            "title": "orbit dns:resolve",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/doctor/doctor.mdx",
+            "title": "orbit doctor",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/doctor/index.mdx",
+            "title": "doctor",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/env/import.mdx",
+            "title": "orbit env:import",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/env/index.mdx",
+            "title": "env",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/env/sync.mdx",
+            "title": "orbit env:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/env/update.mdx",
+            "title": "orbit env:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/extension/disable.mdx",
+            "title": "orbit extension:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/extension/enable.mdx",
+            "title": "orbit extension:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/extension/index.mdx",
+            "title": "extension",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/extension/list.mdx",
+            "title": "orbit extension:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/firewall/allow.mdx",
+            "title": "orbit firewall:allow",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/firewall/deny.mdx",
+            "title": "orbit firewall:deny",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/firewall/index.mdx",
+            "title": "firewall",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0219",
+                "0245"
+            ]
+        },
+        {
+            "path": "docs/cli/firewall/list.mdx",
+            "title": "orbit firewall:list",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/firewall/remove.mdx",
+            "title": "orbit firewall:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/fleet/index.mdx",
+            "title": "fleet",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/add.mdx",
+            "title": "orbit gateway:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/index.mdx",
+            "title": "gateway",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-auto-disable.mdx",
+            "title": "orbit gateway:release:auto:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-auto-enable.mdx",
+            "title": "orbit gateway:release:auto:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-auto-resume.mdx",
+            "title": "orbit gateway:release:auto:resume",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-auto-status.mdx",
+            "title": "orbit gateway:release:auto:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-deploy.mdx",
+            "title": "orbit gateway:release:deploy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-list.mdx",
+            "title": "orbit gateway:release:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-rollback.mdx",
+            "title": "orbit gateway:release:rollback",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/release-show.mdx",
+            "title": "orbit gateway:release:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/remove.mdx",
+            "title": "orbit gateway:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/status.mdx",
+            "title": "orbit gateway:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/trust.mdx",
+            "title": "orbit gateway:trust",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway/use.mdx",
+            "title": "orbit gateway:use",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/github/app-destroy.mdx",
+            "title": "orbit github:app:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/github/app-install.mdx",
+            "title": "orbit github:app:install",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/github/app-show.mdx",
+            "title": "orbit github:app:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/github/app-sync.mdx",
+            "title": "orbit github:app:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/github/index.mdx",
+            "title": "github",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/analytics-disable.mdx",
+            "title": "orbit instance:analytics:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/analytics-enable.mdx",
+            "title": "orbit instance:analytics:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/analytics-show.mdx",
+            "title": "orbit instance:analytics:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/auto-deploy-disable.mdx",
+            "title": "orbit instance:auto-deploy:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/auto-deploy-enable.mdx",
+            "title": "orbit instance:auto-deploy:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/clone.mdx",
+            "title": "orbit instance:clone",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/create.mdx",
+            "title": "orbit instance:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/database-add.mdx",
+            "title": "orbit instance:database:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Instance",
+                "Node",
+                "Placement",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/database-remove.mdx",
+            "title": "orbit instance:database:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Instance",
+                "Node",
+                "Placement",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy-automatic-resolve.mdx",
+            "title": "orbit instance:deploy:automatic:resolve",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy-step-create.mdx",
+            "title": "orbit instance:deploy-step:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy-step-destroy.mdx",
+            "title": "orbit instance:deploy-step:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy-step-list.mdx",
+            "title": "orbit instance:deploy-step:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy-step-update.mdx",
+            "title": "orbit instance:deploy-step:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deploy.mdx",
+            "title": "orbit instance:deploy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deployment-list.mdx",
+            "title": "orbit instance:deployment:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/deployment-show.mdx",
+            "title": "orbit instance:deployment:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/destroy.mdx",
+            "title": "orbit instance:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/index.mdx",
+            "title": "instance",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/list.mdx",
+            "title": "orbit instance:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/logs.mdx",
+            "title": "orbit instance:logs",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/register.mdx",
+            "title": "orbit instance:register",
+            "kind": "product",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/release-list.mdx",
+            "title": "orbit instance:release:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/rename.mdx",
+            "title": "orbit instance:rename",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/rollback.mdx",
+            "title": "orbit instance:rollback",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/setup-step-create.mdx",
+            "title": "orbit instance:setup-step:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/setup-step-destroy.mdx",
+            "title": "orbit instance:setup-step:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/setup-step-list.mdx",
+            "title": "orbit instance:setup-step:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/setup-step-update.mdx",
+            "title": "orbit instance:setup-step:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/setup.mdx",
+            "title": "orbit instance:setup",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/show.mdx",
+            "title": "orbit instance:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/teardown-step-create.mdx",
+            "title": "orbit instance:teardown-step:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/teardown-step-destroy.mdx",
+            "title": "orbit instance:teardown-step:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/teardown-step-list.mdx",
+            "title": "orbit instance:teardown-step:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/teardown-step-update.mdx",
+            "title": "orbit instance:teardown-step:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/transfer.mdx",
+            "title": "orbit instance:transfer",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/update.mdx",
+            "title": "orbit instance:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/websocket-add.mdx",
+            "title": "orbit instance:websocket:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance/websocket-remove.mdx",
+            "title": "orbit instance:websocket:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/credentials.mdx",
+            "title": "orbit metrics:credentials",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/disable.mdx",
+            "title": "orbit metrics:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/enable.mdx",
+            "title": "orbit metrics:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/exporter-disable.mdx",
+            "title": "orbit metrics:exporter:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/exporter-enable.mdx",
+            "title": "orbit metrics:exporter:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/index.mdx",
+            "title": "metrics",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics/status.mdx",
+            "title": "orbit metrics:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/access-add.mdx",
+            "title": "orbit node:access:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/access-remove.mdx",
+            "title": "orbit node:access:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/add.mdx",
+            "title": "orbit node:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/converge.mdx",
+            "title": "orbit node:converge",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/index.mdx",
+            "title": "node",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/list.mdx",
+            "title": "orbit node:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/metrics.mdx",
+            "title": "orbit node:metrics",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/remove.mdx",
+            "title": "orbit node:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Role",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/role-add.mdx",
+            "title": "orbit node:role:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/role-list.mdx",
+            "title": "orbit node:role:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/role-relocate.mdx",
+            "title": "orbit node:role:relocate",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/role-remove.mdx",
+            "title": "orbit node:role:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Node",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/show.mdx",
+            "title": "orbit node:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/update.mdx",
+            "title": "orbit node:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node/wireguard-key.mdx",
+            "title": "orbit node:wireguard-key",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/operation/cancel.mdx",
+            "title": "orbit operation:cancel",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/operation/index.mdx",
+            "title": "operation",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/operation/list.mdx",
+            "title": "orbit operation:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/operation/show.mdx",
+            "title": "orbit operation:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/overview.mdx",
+            "title": "Using the CLI",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/create.mdx",
+            "title": "orbit process:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/destroy.mdx",
+            "title": "orbit process:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/index.mdx",
+            "title": "process",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/list.mdx",
+            "title": "orbit process:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Node",
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/logs.mdx",
+            "title": "orbit process:logs",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/restart.mdx",
+            "title": "orbit process:restart",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/show.mdx",
+            "title": "orbit process:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/start.mdx",
+            "title": "orbit process:start",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/stop.mdx",
+            "title": "orbit process:stop",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process/update.mdx",
+            "title": "orbit process:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/profile/index.mdx",
+            "title": "profile",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/profile/profile.mdx",
+            "title": "orbit profile",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/create.mdx",
+            "title": "orbit project:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/destroy.mdx",
+            "title": "orbit project:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/dev-deploy-step-create.mdx",
+            "title": "orbit project:dev-deploy-step:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Deployment",
+                "Placement",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/dev-deploy-step-destroy.mdx",
+            "title": "orbit project:dev-deploy-step:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/dev-deploy-step-list.mdx",
+            "title": "orbit project:dev-deploy-step:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/dev-deploy-step-update.mdx",
+            "title": "orbit project:dev-deploy-step:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-archive.mdx",
+            "title": "orbit project:document:archive",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-create.mdx",
+            "title": "orbit project:document:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-download.mdx",
+            "title": "orbit project:document:download",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-list.mdx",
+            "title": "orbit project:document:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Project Documents"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-read.mdx",
+            "title": "orbit project:document:read",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-remove.mdx",
+            "title": "orbit project:document:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-restore-version.mdx",
+            "title": "orbit project:document:restore-version",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-restore.mdx",
+            "title": "orbit project:document:restore",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-search.mdx",
+            "title": "orbit project:document:search",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-show.mdx",
+            "title": "orbit project:document:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-storage-show.mdx",
+            "title": "orbit project:document-storage:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-storage-update.mdx",
+            "title": "orbit project:document-storage:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-update.mdx",
+            "title": "orbit project:document:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-upload.mdx",
+            "title": "orbit project:document:upload",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-versions.mdx",
+            "title": "orbit project:document:versions",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/document-write.mdx",
+            "title": "orbit project:document:write",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/index.mdx",
+            "title": "project",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/list.mdx",
+            "title": "orbit project:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/maintenance-disable.mdx",
+            "title": "orbit project:maintenance:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/maintenance-enable.mdx",
+            "title": "orbit project:maintenance:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/maintenance-inspect.mdx",
+            "title": "orbit project:maintenance:inspect",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/pr-merge.mdx",
+            "title": "project:pr-merge",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/review-and-merge-disable.mdx",
+            "title": "orbit project:review-and-merge:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/review-and-merge-enable.mdx",
+            "title": "orbit project:review-and-merge:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/show.mdx",
+            "title": "orbit project:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Node",
+                "Project",
+                "Task",
+                "Task check",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/project/update.mdx",
+            "title": "orbit project:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Project",
+                "Route",
+                "Task",
+                "Task check",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/proof/index.mdx",
+            "title": "proof",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/proof/proof.mdx",
+            "title": "orbit proof",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/proof/run.mdx",
+            "title": "orbit proof:run",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/realtime/index.mdx",
+            "title": "realtime",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/realtime/show.mdx",
+            "title": "orbit realtime:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/realtime/tail.mdx",
+            "title": "orbit realtime:tail",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/create.mdx",
+            "title": "orbit route:create",
+            "kind": "product",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/destroy.mdx",
+            "title": "orbit route:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/index.mdx",
+            "title": "route",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/list.mdx",
+            "title": "orbit route:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/show.mdx",
+            "title": "orbit route:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/target-set.mdx",
+            "title": "orbit route:target:set",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/target-unset.mdx",
+            "title": "orbit route:target:unset",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Instance",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route/update.mdx",
+            "title": "orbit route:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/create.mdx",
+            "title": "orbit schedule:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Node",
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/destroy.mdx",
+            "title": "orbit schedule:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Instance",
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/disable.mdx",
+            "title": "orbit schedule:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/enable.mdx",
+            "title": "orbit schedule:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/index.mdx",
+            "title": "schedule",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/list.mdx",
+            "title": "orbit schedule:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/logs.mdx",
+            "title": "orbit schedule:logs",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/run.mdx",
+            "title": "orbit schedule:run",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/show.mdx",
+            "title": "orbit schedule:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule/update.mdx",
+            "title": "orbit schedule:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/self-update/index.mdx",
+            "title": "self-update",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/self-update/self-update.mdx",
+            "title": "orbit self-update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/agent-show.mdx",
+            "title": "orbit tasks:agent:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Pi server",
+                "Role",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/agents.mdx",
+            "title": "orbit tasks:agents",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Role",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/cancel.mdx",
+            "title": "orbit tasks:cancel",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/check.mdx",
+            "title": "orbit tasks:check",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Subtask"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/comment-create.mdx",
+            "title": "orbit tasks:comment:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/comment-list.mdx",
+            "title": "orbit tasks:comment:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/complete.mdx",
+            "title": "orbit tasks:complete",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/create.mdx",
+            "title": "orbit tasks:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/group-comment-create.mdx",
+            "title": "orbit tasks:group:comment:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/group-comment-list.mdx",
+            "title": "orbit tasks:group:comment:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/index.mdx",
+            "title": "tasks",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deliverable",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/list.mdx",
+            "title": "orbit tasks:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/park.mdx",
+            "title": "orbit tasks:park",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/pr-merge.mdx",
+            "title": "tasks:pr-merge",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/pr-ready.mdx",
+            "title": "tasks:pr-ready",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/prep-fix.mdx",
+            "title": "tasks:prep-fix",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/prep.mdx",
+            "title": "tasks:prep",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Deliverable",
+                "Gateway",
+                "Node",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/provision.mdx",
+            "title": "orbit tasks:provision",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/publish.mdx",
+            "title": "orbit tasks:publish",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/question-close.mdx",
+            "title": "orbit tasks:question:close",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Subtask"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/question-list.mdx",
+            "title": "orbit tasks:question:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Project",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/show.mdx",
+            "title": "orbit tasks:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Deliverable",
+                "Instance",
+                "Project",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/status.mdx",
+            "title": "orbit tasks:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/subtask-cancel.mdx",
+            "title": "orbit tasks:subtask:cancel",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/subtask-create.mdx",
+            "title": "orbit tasks:subtask:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Deliverable",
+                "Gateway",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/subtask-destroy.mdx",
+            "title": "orbit tasks:subtask:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/subtask-update.mdx",
+            "title": "orbit tasks:subtask:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/sync.mdx",
+            "title": "tasks:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/turn.mdx",
+            "title": "orbit tasks:turn",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Role",
+                "Subtask"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks/update.mdx",
+            "title": "orbit tasks:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/adopt.mdx",
+            "title": "orbit tool:adopt",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/index.mdx",
+            "title": "tool",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/install.mdx",
+            "title": "orbit tool:install",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/list.mdx",
+            "title": "orbit tool:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/manager-list.mdx",
+            "title": "orbit tool:manager:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/remove.mdx",
+            "title": "orbit tool:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Role",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/scan.mdx",
+            "title": "orbit tool:scan",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Node agent",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/show.mdx",
+            "title": "orbit tool:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool/update.mdx",
+            "title": "orbit tool:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/vault/index.mdx",
+            "title": "vault",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/vault/setup.mdx",
+            "title": "orbit vault:setup",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/vault/status.mdx",
+            "title": "orbit vault:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/vault/sync.mdx",
+            "title": "orbit vault:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/vault/teardown.mdx",
+            "title": "orbit vault:teardown",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/app-create.mdx",
+            "title": "orbit websocket:app:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/app-destroy.mdx",
+            "title": "orbit websocket:app:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/app-list.mdx",
+            "title": "orbit websocket:app:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/app-rotate.mdx",
+            "title": "orbit websocket:app:rotate",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/app-show.mdx",
+            "title": "orbit websocket:app:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/index.mdx",
+            "title": "websocket",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/operation-show.mdx",
+            "title": "orbit websocket:operation:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/websocket/sync.mdx",
+            "title": "orbit websocket:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/concepts.md",
+            "title": "Concepts",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Database server",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Roleless Node",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/contributor-guide.md",
+            "title": "Contributing to Orbit",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password.md",
+            "title": "ADR 0190: Run MySQL servers with a Gateway-held admin password",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0190"
+            ]
+        },
+        {
+            "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
+            "title": "Derive the application directory from the web root",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0196"
+            ]
+        },
+        {
+            "path": "docs/decisions/0206-build-task-vm-images-as-chains-of-small-jobs.md",
+            "title": "ADR 0206: Build task VM images as chains of small jobs",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0206",
+                "0247"
+            ]
+        },
+        {
+            "path": "docs/decisions/0210-give-each-extension-its-own-code-boundary.md",
+            "title": "ADR 0210: Give each extension its own code boundary",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
+            "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
+            "title": "ADR 0212: Turn ProxyCli into the AI router extension",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0212",
+                "0214",
+                "0218"
+            ]
+        },
+        {
+            "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
+            "title": "ADR 0213: Run CI runners through a ci-runner role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Project",
+                "Role"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0223"
+            ]
+        },
+        {
+            "path": "docs/decisions/0214-pin-the-ai-router-version-and-flag-upgrades.md",
+            "title": "ADR 0214: Pin the AI router version and flag upgrades",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0212",
+                "0214"
+            ]
+        },
+        {
+            "path": "docs/decisions/0215-start-development-processes-from-project-definitions.md",
+            "title": "ADR 0215: Start development Processes from Project definitions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0213",
+                "0215"
+            ]
+        },
+        {
+            "path": "docs/decisions/0218-take-long-commands-off-the-request-path.md",
+            "title": "ADR 0218: Take long commands off the request path",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0212",
+                "0218",
+                "0229"
+            ]
+        },
+        {
+            "path": "docs/decisions/0219-answer-cluster-names-from-a-dns-on-the-router.md",
+            "title": "ADR 0219: Answer Cluster names from a DNS server on the Router",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0212",
+                "0219",
+                "0226"
+            ]
+        },
+        {
+            "path": "docs/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users.md",
+            "title": "ADR 0221: Run Valkey Database servers with Orbit-owned ACL users",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0190",
+                "0212",
+                "0221"
+            ]
+        },
+        {
+            "path": "docs/decisions/0223-run-one-gate-from-handoff-to-merge.md",
+            "title": "ADR 0223: Run one gate from handoff to merge",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Deliverable",
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Role",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0223"
+            ]
+        },
+        {
+            "path": "docs/decisions/0226-split-private-dns-on-managed-peers.md",
+            "title": "ADR 0226: Split private DNS on managed peers",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0219",
+                "0226"
+            ]
+        },
+        {
+            "path": "docs/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations.md",
+            "title": "ADR 0229: Let an orchestrator drive task work through Gateway operations",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Pi server",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0218",
+                "0229"
+            ]
+        },
+        {
+            "path": "docs/decisions/0240-bound-environment-import-private-output.md",
+            "title": "ADR 0240: Bound environment import private output",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement"
+            ],
+            "governing_adrs": [
+                "0240"
+            ]
+        },
+        {
+            "path": "docs/decisions/0242-signed-apt-tool-repositories.md",
+            "title": "ADR 0242: Signed apt repositories for Tools",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0242"
+            ]
+        },
+        {
+            "path": "docs/decisions/0243-serve-swamp-through-a-swamp-role.md",
+            "title": "ADR 0243: Serve Swamp through a swamp role",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0243"
+            ]
+        },
+        {
+            "path": "docs/decisions/0244-track-every-action-as-one-task.md",
+            "title": "ADR 0244: Track every action as one task",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Schedule",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0218",
+                "0229",
+                "0244"
+            ]
+        },
+        {
+            "path": "docs/decisions/0245-identify-firewall-rules-by-port-protocol-and-source.md",
+            "title": "ADR 0245: Identify firewall rules by port, protocol and source",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": [
+                "0245"
+            ]
+        },
+        {
+            "path": "docs/decisions/0246-show-task-progress-through-one-resumable-read.md",
+            "title": "ADR 0246: Show task progress through one resumable read",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0244",
+                "0246"
+            ]
+        },
+        {
+            "path": "docs/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes.md",
+            "title": "ADR 0247: Keep fleet software current through tested recipe changes",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Role",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0247"
+            ]
+        },
+        {
+            "path": "docs/decisions/README.md",
+            "title": "Architecture decisions",
+            "kind": "decision",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "Pi server",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0001"
+            ]
+        },
+        {
+            "path": "docs/decisions/overview.mdx",
+            "title": "Architecture decisions",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0190",
+                "0196",
+                "0206",
+                "0210",
+                "0212",
+                "0213",
+                "0214",
+                "0215",
+                "0218",
+                "0219",
+                "0221",
+                "0223",
+                "0226",
+                "0229",
+                "0240",
+                "0242",
+                "0243",
+                "0244",
+                "0245",
+                "0246",
+                "0247"
+            ]
+        },
+        {
+            "path": "docs/domains/README.md",
+            "title": "Product areas",
+            "kind": "domain",
+            "components": [],
+            "concepts": [
+                "Instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/domains/applications.md",
+            "title": "Applications",
+            "kind": "domain",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/first-contribution.md",
+            "title": "Your first contribution",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/index.mdx",
+            "title": "Orbit documentation",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/mission.md",
+            "title": "Mission",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Extension",
+                "Project",
+                "Project Documents",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/quickstart.mdx",
+            "title": "Quickstart",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/ai-router.md",
+            "title": "AI router",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/alpha.md",
+            "title": "Source alpha",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/analytics.md",
+            "title": "Analytics role",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
+            "path": "docs/reference/api-reference.md",
+            "title": "API reference generation",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Deliverable",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/app-dev-runtime-hibernation.md",
+            "title": "App-dev runtime hibernation",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/assigned-ssr-ports.md",
+            "title": "Assigned SSR ports",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/assigned-vite-ports.md",
+            "title": "Assigned Vite ports",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/browser-access.md",
+            "title": "Browser access to the Gateway",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Access grant",
+                "Gateway",
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/bun-and-rust-projects.md",
+            "title": "Bun and Rust projects",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/caddy-configuration.md",
+            "title": "Caddy configuration",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/cli-binaries.md",
+            "title": "CLI binaries",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Node",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/cli-command-vocabulary.md",
+            "title": "CLI command vocabulary",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/cli-ux.md",
+            "title": "CLI design standard",
+            "kind": "reference",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/command-development-pipeline.mdx",
+            "title": "Command development pipeline",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/compute-drivers.md",
+            "title": "Compute drivers",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "2026"
+            ]
+        },
+        {
+            "path": "docs/reference/conn.md",
+            "title": "Conn layer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/database-connections.md",
+            "title": "Database connections",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/database-role.md",
+            "title": "Database role",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Role",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/database-servers.md",
+            "title": "Database servers",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database server",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/deployments.md",
+            "title": "Instance releases",
+            "kind": "reference",
+            "components": [
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/desktop-app.md",
+            "title": "Desktop app",
+            "kind": "reference",
+            "components": [
+                "apps/web"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/environment-variables.md",
+            "title": "Instance environment variables",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/events.mdx",
+            "title": "Realtime events",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Turn receipt"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/extensions.md",
+            "title": "Extensions",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
+            "path": "docs/reference/feature-flow.md",
+            "title": "Feature flow",
+            "kind": "reference",
+            "components": [
+                "apps/web"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-environment.md",
+            "title": "Gateway environment",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-queue.md",
+            "title": "Gateway queue",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-recovery.md",
+            "title": "Update and recover a Gateway",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-response-fixtures.md",
+            "title": "Gateway response fixtures",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-trust.md",
+            "title": "Gateway trust",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/github-app.md",
+            "title": "GitHub App",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/implementation-loop.md",
+            "title": "Feature delivery",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/incus-topologies.md",
+            "title": "Incus topologies",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Roleless Node",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-analytics-stats.md",
+            "title": "Instance analytics stats",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-cloning.md",
+            "title": "Instance cloning",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-dependencies.md",
+            "title": "Instance dependencies",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Project",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-dependency-contracts.md",
+            "title": "Dependency contracts",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-logs.md",
+            "title": "Instance logs",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-queue.md",
+            "title": "Instance queue",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-removal.md",
+            "title": "Instance removal",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-setup.md",
+            "title": "Instance setup and teardown",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-transfer.md",
+            "title": "Instance transfer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/live-logs.md",
+            "title": "Live logs",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/mcp.mdx",
+            "title": "MCP server",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Deliverable",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/metrics.md",
+            "title": "Metrics role",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/native-cluster-router.md",
+            "title": "Native Cluster Router transitions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/native-route-targets.md",
+            "title": "Native Route targets",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/node-agent.md",
+            "title": "Node agent",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0219"
+            ]
+        },
+        {
+            "path": "docs/reference/node-bootstrap-native.md",
+            "title": "Native Node bootstrap",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/node-provisioning.md",
+            "title": "Node provisioning",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Roleless Node",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0243"
+            ]
+        },
+        {
+            "path": "docs/reference/node-role-certificates.md",
+            "title": "Native Node role certificates",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Role"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/node-settings.md",
+            "title": "Node settings",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/old-paths.md",
+            "title": "Old paths",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Role",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/operations.md",
+            "title": "Operations",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0243"
+            ]
+        },
+        {
+            "path": "docs/reference/php-runtime.md",
+            "title": "PHP runtimes",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/pi-server.md",
+            "title": "Pi server",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Node",
+                "Pi server",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/private-dns.md",
+            "title": "Private DNS",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0219"
+            ]
+        },
+        {
+            "path": "docs/reference/processes-and-schedules.md",
+            "title": "Processes and schedules",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/project-documents.md",
+            "title": "Project Documents",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/projects.md",
+            "title": "Projects",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/remote-programs.md",
+            "title": "Remote programs",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/route-lan-command.md",
+            "title": "Route LAN firewall",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Placement",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/routes.md",
+            "title": "Routes",
+            "kind": "reference",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/schedules.md",
+            "title": "Schedules",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/self-update.md",
+            "title": "Orbit self-update",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Roleless Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/service-metrics.md",
+            "title": "Service metrics",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/swamp-command-steps.md",
+            "title": "Swamp command steps",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/task-vm-native-provision.md",
+            "title": "Native Task VM provision",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/tasks.md",
+            "title": "Tasks",
+            "kind": "reference",
+            "components": [
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Cluster",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0215"
+            ]
+        },
+        {
+            "path": "docs/reference/tools.md",
+            "title": "Tools",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0246"
+            ]
+        },
+        {
+            "path": "docs/reference/vaultwarden.md",
+            "title": "Vaultwarden",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Role",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/verification-cases.mdx",
+            "title": "Verification cases",
+            "kind": "reference",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/web-app.md",
+            "title": "Web app",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Database server",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Placement",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Role",
+                "Roleless Node",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/web-verification.md",
+            "title": "Web verification",
+            "kind": "reference",
+            "components": [
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/websocket-apps.md",
+            "title": "Reverb apps",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/wireguard-endpoints.md",
+            "title": "WireGuard endpoints",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/README.md",
+            "title": "Solutions",
+            "kind": "solution",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/doctor-incus-proof.md",
+            "title": "Prove the verify-only Doctor on an Incus topology",
+            "kind": "solution",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/incus-zfs-efficiency.md",
+            "title": "Reduce Incus VM costs on ZFS",
+            "kind": "solution",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Node",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
+            "title": "Migrate an unmanaged Executor hostname",
+            "kind": "solution",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/realtime-reverb.mdx",
+            "title": "Realtime events with Reverb",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/relocate-gateway-role.mdx",
+            "title": "Relocate the gateway role",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",
+            "title": "Remote file writes on uutils coreutils",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/sqlite-wal-default.md",
+            "title": "SQLite WAL default",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/swamp/porting.md",
+            "title": "Build a Swamp flow",
+            "kind": "product",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/tech-stack.md",
+            "title": "Tech stack",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Pi server",
+                "Project",
+                "Role"
+            ],
+            "governing_adrs": []
+        }
+    ]
+}

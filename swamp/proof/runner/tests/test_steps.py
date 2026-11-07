@@ -206,6 +206,77 @@ class StepTest(unittest.TestCase):
         with self.assertRaises(steps.Infra):
             steps.cli(self.run, {**args, 'forms': ['human']})
 
+    def try_13_steps(self):
+        """The exact Operation step names/statuses supplied from proof 12699, allow child 12700."""
+        return [
+            {'name': 'Read the rules', 'status': 'succeeded'},
+            {'name': 'Plan the changes', 'status': 'succeeded'},
+            {'name': 'Change the rules-0-0', 'status': 'succeeded'},
+            {'name': 'Change the rules-1-1', 'status': 'skipped'},
+            {'name': 'Change the rules-2-2', 'status': 'skipped'},
+            {'name': 'Change the rules-3-3', 'status': 'skipped'},
+            {'name': 'Change the rules-4-4', 'status': 'skipped'},
+            {'name': 'Change the rules-5-5', 'status': 'skipped'},
+            {'name': 'Change the rules-6-6', 'status': 'skipped'},
+            {'name': 'Change the rules-7-7', 'status': 'skipped'},
+            {'name': 'Read the result', 'status': 'succeeded'},
+            {'name': 'Check the rules', 'status': 'succeeded'},
+            {'name': 'accepted', 'status': 'succeeded'},
+        ]
+
+    def test_cli_counts_one_executed_indexed_step_in_the_try_13_operation(self):
+        self.fleet.operation_steps = self.try_13_steps()
+        args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
+                'expect': {'exit': 0, 'status': 'succeeded', 'steps': {'name': 'Change the rules', 'count': 1}}}
+        self.assertEqual(steps.cli(self.run, args), [])
+        self.assertEqual(self.fleet.cli_calls[-1], ['operation:show', '1'])
+        self.assertIn('Change the rules-0-0', (Path(self.directory.name) / 'cli-2.json').read_text())
+        self.fleet.operation_steps[2]['status'] = 'skipped'
+        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 0 steps named Change the rules, expected 1'])
+
+    def test_cli_counts_two_executed_indexed_steps_in_the_try_13_operation(self):
+        self.fleet.operation_steps = self.try_13_steps()
+        self.fleet.operation_steps[3]['status'] = 'succeeded'
+        args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
+                'expect': {'exit': 0, 'status': 'succeeded', 'steps': {'name': 'Change the rules', 'count': 2}}}
+        self.assertEqual(steps.cli(self.run, args), [])
+        args['expect']['steps']['count'] = 1
+        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 2 steps named Change the rules, expected 1'])
+
+    def test_cli_step_name_is_exact_or_has_only_a_repeated_numeric_index(self):
+        args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
+                'expect': {'steps': {'name': 'Change the rules', 'count': 1}}}
+        self.fleet.operation_steps = [{'name': 'Change the rules', 'status': 'failed'}]
+        self.assertEqual(steps.cli(self.run, args), [])
+        args['expect']['steps']['count'] = 0
+        for name in ('Change the rules-x', 'Change the rules-0', 'Change the rules-0-1',
+                     'Change the rules elsewhere-0-0', 'Change the rules-0-0-extra', 'Change the rules-١-١'):
+            with self.subTest(name=name):
+                self.fleet.operation_steps = [{'name': name, 'status': 'succeeded'}]
+                self.assertEqual(steps.cli(self.run, args), [])
+
+    def test_cli_step_count_fails_without_an_operation_or_step_data(self):
+        expect = {'steps': {'name': 'Change the rules', 'count': 1}}
+        result = {'rc': 0, 'json': {}}
+        self.assertEqual(steps.check_result(self.run, 'cli test', 'json', ['json'], result, expect),
+                         ['cli test: no Operation ID for steps'])
+        for document in ({}, {'steps': None}, {'steps': [{'name': 'Change the rules-0'}]}):
+            with self.subTest(document=document), patch.object(self.run, 'cli', return_value={'rc': 0, 'json': document}):
+                self.assertEqual(steps.check_result(self.run, 'cli test', 'json', ['json'], {'json': {'id': 12}}, expect),
+                                 ['cli test: Operation step data is missing or invalid'])
+        with patch.object(self.run, 'cli', return_value={'rc': 1, 'json': {'steps': []}}):
+            self.assertEqual(steps.check_result(self.run, 'cli test', 'json', ['json'], {'json': {'id': 12}}, expect),
+                             ['cli test: could not read Operation steps'])
+
+    def test_cli_step_count_requires_json_and_a_name_and_nonnegative_integer_count(self):
+        base = {'run': ['node:list'], 'expect': {'steps': {'name': 'Change the rules', 'count': 1}}}
+        with self.assertRaises(steps.Infra):
+            steps.cli(self.run, {**base, 'forms': ['human']})
+        for wanted in (None, {}, {'name': 'x'}, {'name': '', 'count': 1}, {'name': 'x', 'count': -1},
+                       {'name': 'x', 'count': True}, {'name': 'x', 'count': '1'}, {'name': 'x', 'count': 1, 'min': 0}):
+            with self.subTest(wanted=wanted), self.assertRaises(steps.Infra):
+                steps.cli(self.run, {**base, 'expect': {'steps': wanted}})
+
     def test_cli_tty_passes_the_script_and_checks_the_text(self):
         script = [{'see': 'port', 'send': '80'}]
         self.fleet.prompts = 'Which port?\n'
@@ -332,6 +403,29 @@ class StepTest(unittest.TestCase):
         self.assertIn('appears 0 times', steps.ufw(self.run, {'on': 'app-dev', 'rows': [{**allow, 'from': '1.1.1.1'}]})[0])
         self.fleet.ufw['app-dev'].append(self.fleet.ufw['app-dev'][1])
         self.assertIn('appears 2 times', steps.ufw(self.run, {'on': 'app-dev', 'rows': [allow]})[0])
+
+    def test_partial_application_requires_each_allow_above_deny_without_ordering_the_allows(self):
+        port = self.blocked_port()
+        steps.ufw_rule(self.run, {'as': 'existing', 'on': 'app-dev', 'action': 'allow', 'proto': 'tcp',
+                                  'port': port, 'from': BRIDGE['gateway'], 'above': 'deny'})
+        case = spec.load(Path(__file__).resolve().parents[2] / 'firewall/allow.cases.yaml',
+                         Path(__file__).resolve().parents[2] / 'batches.yaml').case('partial-application')
+        self.assertEqual(case.stages[0].act[0].args['expect']['steps'], {'name': 'Change the rules', 'count': 1})
+        checks = [self.run.resolve(step.args) for step in case.stages[0].expect if step.name == 'ufw']
+        self.assertEqual(len(checks), 2)
+        tcp = (f'{port}/tcp', 'ALLOW', BRIDGE['gateway'], 'proof:existing')
+        udp = (f'{port}/udp', 'ALLOW', BRIDGE['gateway'], 'orbit')
+        before, deny, after = self.fleet.ufw['app-dev'][0], self.fleet.ufw['app-dev'][2], self.fleet.ufw['app-dev'][3]
+        for allows in ([tcp, udp], [udp, tcp]):
+            self.fleet.ufw['app-dev'] = [before, *allows, deny, after]
+            self.assertEqual([steps.ufw(self.run, check) for check in checks], [[], []])
+        for misplaced, kept, check in ((tcp, udp, checks[0]), (udp, tcp, checks[1])):
+            self.fleet.ufw['app-dev'] = [before, kept, deny, misplaced, after]
+            self.assertIn('out of order', steps.ufw(self.run, check)[0])
+        self.fleet.ufw['app-dev'] = [before, udp, (*tcp[:3], 'orbit'), deny, after]
+        self.assertIn('appears 0 times', steps.ufw(self.run, checks[0])[0])
+        self.fleet.ufw['app-dev'] = [before, tcp, deny, after]
+        self.assertIn('appears 0 times', steps.ufw(self.run, checks[1])[0])
 
     def test_ufw_ref_in_family_6_means_the_v6_line_of_the_rule(self):
         port = self.blocked_port()
