@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -405,4 +408,32 @@ it('reads the history again a second later while the run is not terminal there, 
     projectOne($operation, attempt: (new ProjectSwampOperation($operation->id))->tries);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('does not project, or read the history of, an Operation that does not use the native terminal', function (): void {
+    $operation = runningScript(minutes: 3);
+    $projection = app(DirectOperation::class)->definition('tasks.script')['projection'];
+    app()->instance($projection, new class implements DirectOperationProjection, NativeOperationProjection
+    {
+        public function native(Operation $operation): bool
+        {
+            return false;
+        }
+
+        public function input(Operation $operation): array
+        {
+            return [];
+        }
+
+        public function apply(Operation $operation, array $data): Operation
+        {
+            throw new LogicException('Projected.');
+        }
+    });
+    $socket = reconcileSocket($operation, 'failed');
+
+    projectOne($operation);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($socket->frames)->toBe([]);
 });
