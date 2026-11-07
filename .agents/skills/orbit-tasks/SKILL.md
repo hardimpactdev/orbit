@@ -73,7 +73,7 @@ Create the group in Backlog with `tasks-create` for the Orbit Project, and its s
 - Build test fixtures from real output.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
-Task detail reads aggregate recorded thread usage. Keep live session reads in the explicit agent viewer; historical sessions can be unavailable long after their turn completed.
+Every task read uses recorded Gateway state, including the agent viewer and stream. Never contact Pi or a Node during a read. Swamp records turn evidence; agent observations record workspace line counts.
 
 ## Review a subtask
 

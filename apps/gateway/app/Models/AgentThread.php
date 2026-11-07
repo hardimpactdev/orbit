@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -69,6 +70,16 @@ final class AgentThread extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'cost_usd', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
+
+    /** An admitted unfinished turn is active even while its last observation says done. */
+    public function activityState(): ?AgentThreadState
+    {
+        $active = Operation::query()->where('kind', 'tasks.turn')->where('target_type', 'task_group')
+            ->where('target_id', $this->task_group_id)->where('input->thread_id', $this->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists();
+
+        return $active ? AgentThreadState::Working : $this->state;
+    }
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo

@@ -104,7 +104,7 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
      * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
-     * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the release of the slot
+     * earlier removal attempt ran it. The turn results already hold the transcripts. The release of the slot
      * (`task_vm.slot_release`) deletes the VM, its seed clone and its hub peer. The release projection deletes the
      * workspace Instance and the Node and unbinds the group, so this call only admits the release and then waits for it.
      * A row without a slot number is not a task start's VM, and no release deletes it.
@@ -118,9 +118,6 @@ final readonly class RemoveTaskWorkspaceAction
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
             app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
-        }
-        if ($vm->state === TaskVmState::Ready && $vm->group_id !== null && $vm->node_id !== null) {
-            app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
         if ($vm->state !== TaskVmState::Releasing) {
             app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');

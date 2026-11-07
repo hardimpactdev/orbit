@@ -24,18 +24,20 @@ export const Input = z.object({
 });
 export type TurnInput = z.infer<typeof Input>;
 const Usage = z.object({
-    input: z.number().nonnegative().default(0),
-    output: z.number().nonnegative().default(0),
-    cacheRead: z.number().nonnegative().default(0),
-    cacheWrite: z.number().nonnegative().default(0),
-    total: z.number().nonnegative().default(0),
-    calls: z.number().nonnegative().default(0),
-    peakContext: z.number().nonnegative().default(0),
+    input: z.number().nonnegative().optional(),
+    output: z.number().nonnegative().optional(),
+    cacheRead: z.number().nonnegative().optional(),
+    cacheWrite: z.number().nonnegative().optional(),
+    total: z.number().nonnegative().optional(),
+    calls: z.number().nonnegative().optional(),
+    peakContext: z.number().nonnegative().optional(),
+    cost: z.number().nonnegative().nullable().optional(),
 });
 const State = z.object({
     state: z.enum(["idle", "working", "done", "failed"]),
     turnId: z.string().nullable(),
-    usage: Usage,
+    usage: Usage.optional(),
+    transcript: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 /** The outcomes each role may end its turn with. */
 const OUTCOMES = {
@@ -197,11 +199,13 @@ export function finish(raw: unknown) {
         ? { receipt: null, error: null }
         : checkReceipt(file.receipt, args.input);
     const failed = args.failure || terminal?.state !== "done";
-    const usage = terminal?.usage ?? Usage.parse({});
+    const usage = terminal?.usage;
     const result = {
         receipt: failed ? null : checked.receipt,
         receipt_error: checked.error,
         thread: args.input.thread_id,
+        subtask: args.input.subtask,
+        ...(terminal?.transcript ? { transcript: terminal.transcript } : {}),
         state: failed ? "failed" : "done",
         error: failed ? "Pi did not complete the task turn." : null,
         ...(failed
@@ -211,26 +215,34 @@ export function finish(raw: unknown) {
         after: Snapshot.nullable().parse(read(args.after)),
         after_reset: Snapshot.nullable().parse(read(args.restored)),
         difference: read(args.difference),
-        metrics: {
-            tokens: usage.total,
-            input_tokens: usage.input + usage.cacheWrite,
-            cached_input_tokens: usage.cacheRead,
-            output_tokens: usage.output,
-            model_calls: usage.calls,
-            peak_context_tokens: usage.peakContext,
-        },
+        ...(usage
+            ? {
+                metrics: {
+                    ...(usage.total !== undefined
+                        ? { tokens: usage.total, cost_usd: usage.cost ?? null }
+                        : {}),
+                    ...(usage.input !== undefined &&
+                            usage.cacheWrite !== undefined
+                        ? { input_tokens: usage.input + usage.cacheWrite }
+                        : {}),
+                    ...(usage.cacheRead !== undefined
+                        ? { cached_input_tokens: usage.cacheRead }
+                        : {}),
+                    ...(usage.output !== undefined
+                        ? { output_tokens: usage.output }
+                        : {}),
+                    ...(usage.calls !== undefined
+                        ? { model_calls: usage.calls }
+                        : {}),
+                    ...(usage.peakContext !== undefined
+                        ? { peak_context_tokens: usage.peakContext }
+                        : {}),
+                },
+            }
+            : {}),
     };
     return { result_json: JSON.stringify(result), successful: !failed };
 }
-const USAGE_KEYS = [
-    "input",
-    "output",
-    "cacheRead",
-    "cacheWrite",
-    "total",
-    "calls",
-    "peakContext",
-] as const;
 
 /** The repository redaction rule, plus the task VM's 32-byte hex Pi and router credentials. */
 export function redactTurnText(raw: string): string {
@@ -273,28 +285,71 @@ function parsePrivate(raw: string, code: string): unknown {
 
 /** The matching terminal Pi event: its state and seven finite nonnegative usage counts. */
 export async function terminal(args: { path: string; turn: string }) {
-    const event = parsePrivate(
-        await readPrivate(args.path, "tasks.pi_completion_unconfirmed"),
-        "tasks.pi_event_invalid",
-    ) as Record<string, unknown> | null;
+    const events =
+        (await readPrivate(args.path, "tasks.pi_completion_unconfirmed"))
+            .trim().split("\n").map((line) =>
+                parsePrivate(line, "tasks.pi_event_invalid") as Record<
+                    string,
+                    unknown
+                >
+            );
+    const event = events.at(-1);
     if (
-        event === null || typeof event !== "object" ||
-        event.turnId !== args.turn ||
+        !event || event.turnId !== args.turn ||
         (event.state !== "done" && event.state !== "failed")
-    ) throw new Error("tasks.pi_completion_unconfirmed");
-    const raw = event.usage ?? {};
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-        throw new Error("tasks.pi_usage_invalid");
+    ) {
+        throw new Error("tasks.pi_completion_unconfirmed");
     }
-    const usage: Record<string, number> = {};
-    for (const key of USAGE_KEYS) {
-        const value = (raw as Record<string, unknown>)[key] ?? 0;
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-            throw new Error("tasks.pi_usage_invalid");
+    const parsed = Usage.optional().safeParse(event.usage);
+    if (!parsed.success) throw new Error("tasks.pi_usage_invalid");
+    const entries = new Map<string, Record<string, unknown>>();
+    for (const item of events) {
+        const values = item.kind === "snapshot" && Array.isArray(item.entries)
+            ? item.entries
+            : item.kind === "entry"
+            ? [item.entry]
+            : [];
+        for (const value of values) {
+            if (
+                value && typeof value === "object" &&
+                typeof value.id === "string"
+            ) {
+                entries.set(
+                    value.id,
+                    publicValue(value) as Record<string, unknown>,
+                );
+            }
         }
-        usage[key] = value;
     }
-    return JSON.stringify({ state: event.state, turnId: args.turn, usage });
+    // Keep the newest complete entries within the public result budget.
+    const transcript: Record<string, unknown>[] = [];
+    let size = 0;
+    let truncated = events.some((item) => item.kind === "truncated");
+    for (const entry of [...entries.values()].reverse()) {
+        size += new TextEncoder().encode(JSON.stringify(entry)).length;
+        if (size > 262144) {
+            truncated = true;
+            break;
+        }
+        transcript.unshift(entry);
+    }
+    if (truncated) {
+        transcript.unshift({
+            id: "orbit-truncated",
+            timestamp: "",
+            message: {
+                role: "system",
+                content:
+                    "[Transcript truncated: older entries omitted from the recorded turn.]",
+            },
+        });
+    }
+    return JSON.stringify({
+        state: event.state,
+        turnId: args.turn,
+        ...(parsed.data ? { usage: parsed.data } : {}),
+        transcript,
+    });
 }
 
 /**

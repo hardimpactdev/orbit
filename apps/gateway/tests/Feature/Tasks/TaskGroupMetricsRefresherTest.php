@@ -19,7 +19,7 @@ it('shows recorded usage without contacting historical agent sessions', function
     $subtask = $group->tasks()->create(['title' => 'Implement', 'brief' => 'B']);
     $author = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'driver' => 'pi', 'runtime_key' => 'node:1', 'external_id' => 'unavailable-author', 'role' => 'implementer', 'tokens' => 100, 'lines_added' => 7, 'lines_deleted' => 2]);
     $reviewer = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'driver' => 'pi', 'runtime_key' => 'node:1', 'external_id' => 'unavailable-reviewer', 'role' => 'reviewer', 'tokens' => 20]);
-    $subtask->update(['implementer_agent_thread_id' => $author->id]);
+    $subtask->update(['implementer_agent_thread_id' => $author->id, 'tokens' => 100, 'lines_added' => 7, 'lines_deleted' => 2, 'line_diff' => 9]);
 
     $shown = app(TaskGroupMetricsRefresher::class)->refresh($group);
 

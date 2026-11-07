@@ -110,9 +110,7 @@ final class TaskGroupData extends Data
             lineDiff: $group->line_diff,
             linesAdded: $group->lines_added,
             linesDeleted: $group->lines_deleted,
-            durationMs: $status->isActive() && $group->started_at !== null
-                ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
-                : $group->duration_ms,
+            durationMs: $group->duration_ms,
             questions: (int) ($group->questions ?? 0),
             escalations: (int) ($group->escalations ?? 0),
             tasks: array_values($group->tasks

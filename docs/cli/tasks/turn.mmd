@@ -72,10 +72,10 @@ sequenceDiagram
   %%> - Send the admitted prompt once; native resume reuses an accepted send.
   SW->>N: observe
   %%> What it does:
-  %%> - Read the matching Pi turn stream into a private worker file.
+  %%> - Keep bounded transcript evidence and the matching terminal event in a private worker file.
   Note over SW: terminal
   %%> What it does:
-  %%> - Read and redact the matching terminal Pi event from that private file.
+  %%> - Read and redact transcript entries, nullable cost and available usage from the private file.
   SW->>N: snapshot_after_index
   %%> What it does:
   %%> - Read HEAD into a separate index after the Pi turn.
@@ -149,7 +149,7 @@ sequenceDiagram
     SW-->>GW: Native terminal result<br/>capture shape_result
     %%> Result:
     %%> - the Gateway captures the complete public producer output in one history read
-    Note over GW: Record thread evidence<br/>state · metrics · receipt
+    Note over GW: Record thread evidence<br/>state · usage · transcript
     %%> Result:
     %%> - record the thread observation without advancing the external group lifecycle
   else turn or cleanup failed

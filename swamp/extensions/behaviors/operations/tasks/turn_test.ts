@@ -125,6 +125,7 @@ Deno.test("turn result retains the existing board token metrics", () => {
     assertEquals(value.receipt.outcome, "ready_for_review");
     assertEquals(value.metrics, {
         tokens: 25,
+        cost_usd: null,
         input_tokens: 12,
         cached_input_tokens: 8,
         output_tokens: 5,
@@ -376,15 +377,8 @@ Deno.test("private worker readers return fixed codes and never quote their input
     assertEquals(JSON.parse(await terminal({ path, turn })), {
         state: "failed",
         turnId: turn,
-        usage: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            total: 4,
-            calls: 0,
-            peakContext: 0,
-        },
+        usage: { total: 4 },
+        transcript: [],
     });
     assertEquals(JSON.parse(await receipt({ path: dir + "/missing.json" })), {
         receipt: null,
@@ -744,4 +738,81 @@ Deno.test("a review round whose reviewer turn left no result has no verdict", ()
         failed.body,
         "**Review round 1** of `aaaaaaa`: **no verdict**",
     );
+});
+
+Deno.test("an absent terminal report omits metrics instead of erasing earlier usage", () => {
+    const value = JSON.parse(
+        finish({ ...result(), terminal: "", failure: true }).result_json,
+    );
+    assertEquals(value.state, "failed");
+    assertEquals(Object.hasOwn(value, "metrics"), false);
+});
+
+Deno.test("terminal shaping preserves nullable cost and omits unavailable token counters", () => {
+    for (const cost of [0.75, null]) {
+        const value = JSON.parse(
+            finish({
+                ...result(),
+                terminal: JSON.stringify({
+                    state: "done",
+                    turnId: "operation-15",
+                    usage: { total: 140, cost },
+                }),
+            }).result_json,
+        );
+        assertEquals(value.metrics, { tokens: 140, cost_usd: cost });
+    }
+});
+
+Deno.test("the recorded stream produces redacted bounded transcript evidence and priced usage", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/terminal.json";
+        const turn = "operation-15";
+        const entry = (id: string, text: string) => ({
+            id,
+            timestamp: "",
+            message: { role: "assistant", content: [{ type: "text", text }] },
+        });
+        await Deno.writeTextFile(
+            path,
+            [
+                {
+                    kind: "snapshot",
+                    entries: [entry("old", "x".repeat(270000))],
+                },
+                {
+                    kind: "entry",
+                    entry: entry(
+                        "new",
+                        "Authorization: Bearer private-test-token",
+                    ),
+                },
+                {
+                    kind: "state",
+                    turnId: turn,
+                    state: "done",
+                    usage: { total: 140, cost: 0.75 },
+                },
+            ].map((event) => JSON.stringify(event)).join("\n"),
+        );
+        const recorded = JSON.parse(await terminal({ path, turn }));
+        assertEquals(recorded.usage, { total: 140, cost: 0.75 });
+        assertEquals(
+            recorded.transcript.map((entry: { id: string }) => entry.id),
+            ["orbit-truncated", "new"],
+        );
+        assertEquals(
+            JSON.stringify(recorded).includes("private-test-token"),
+            false,
+        );
+        const value = JSON.parse(
+            finish({ ...result(), terminal: JSON.stringify(recorded) })
+                .result_json,
+        );
+        assertEquals(value.transcript, recorded.transcript);
+        assertEquals(value.subtask, 11);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
 });

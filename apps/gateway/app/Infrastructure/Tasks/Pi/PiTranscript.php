@@ -53,20 +53,6 @@ final class PiTranscript
     }
 
     /**
-     * Learns the tool calls of an entry the viewer already has, so later results can name them.
-     *
-     * @param  array<mixed>  $entry
-     */
-    public function remember(array $entry): void
-    {
-        $message = is_array($entry['message'] ?? null) ? $entry['message'] : [];
-        $id = $this->string($entry['id'] ?? null);
-        if ($id !== '' && ($message['role'] ?? null) === 'assistant') {
-            $this->calls($id, $message);
-        }
-    }
-
-    /**
      * Ends the running calls once the turn has settled. A call without a result, such as one cut
      * off by a server restart, stops showing as running.
      *

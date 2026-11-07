@@ -12,10 +12,10 @@ orbit tasks:agent:show [group] [session] [--after-sequence=CURSOR] [--json]
 | --- | --- | --- |
 | `group` | a list of tasks | The numeric task ID. |
 | `session` | the task's agent threads | The numeric agent thread ID, as `tasks:agents` shows it. |
-| `--after-sequence=CURSOR` | the `cursor` of a previous read | Return only the entries after that cursor, when the thread's Pi server can resume from it. |
+| `--after-sequence=CURSOR` | the `cursor` of a previous read | Accepted; recorded reads return a snapshot with a null cursor. |
 
 In a terminal the command prompts for each omitted input. The thread list shows the ID, role, subtask ID, driver, and state. It leaves out stored `t3` threads, which have no transcript. A noninteractive call fails before the request with `tasks.group_required` or `tasks.agent_thread_required`, and an invalid ID fails with `tasks.group_invalid` or `tasks.agent_thread_invalid`. The command needs Gateway access.
 
-Human output shows the state, the kind, the source, the cursor, the token metrics, the line diff, the number of input requests, and the errors. The kind is `snapshot` for the whole transcript, or `delta` for only the entries after `--after-sequence`. The source is `live` for a read from the thread's Node, or `saved transcript` when Orbit read its saved copy. Each transcript entry follows, oldest first, under a heading with its time, kind, and label. Entry times are the driver's UTC times, to the minute. JSON output returns the read with `request_id`. [Read a thread](/reference/tasks#read-a-thread) defines the fields and the cursor. To see newer entries, run the command again with the last `cursor` as `--after-sequence`.
+Human output shows the recorded state, token metrics and transcript entries. The kind is always `snapshot` and the cursor is null. JSON output includes `request_id`. The source is `saved transcript` when recorded entries exist. Before the first transcript arrives, the response has no entries. A running turn keeps its last transcript until the result arrives. Reads never contact the task VM.
 
-A thread that has not started yet shows no entries. A `t3` thread fails with `tasks.agent_transcript_unavailable`. A thread whose Node is gone fails with `tasks.agent_unavailable` when Orbit saved no transcript. A thread whose Pi server cannot serve the read fails with `tasks.agent_read_failed` when Orbit saved no transcript. An invalid `--after-sequence` fails with `validation.failed`.
+A `t3` thread fails with `tasks.agent_transcript_unavailable`. An invalid `--after-sequence` fails with `validation.failed`. See [Read a thread](/reference/tasks#read-a-thread).
