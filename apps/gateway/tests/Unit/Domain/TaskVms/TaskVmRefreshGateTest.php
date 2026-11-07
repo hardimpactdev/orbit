@@ -50,7 +50,7 @@ it('places the agent delivery of the checkout on the nested Gateway before its S
 });
 
 it('carries the error of a failed Ansible run to the Operation: the run keeps its output and an assert fails with its stderr', function (string $workflow, string $run, string $check): void {
-    $steps = collect(refreshJob($workflow, $workflow === 'workflow-task-vm-image-ansible' ? 'run' : 'phase')['steps'])->keyBy('name');
+    $steps = collect(refreshJob($workflow, $workflow === 'workflow-task-vm-image-ansible' ? 'converge' : 'phase')['steps'])->keyBy('name');
 
     expect($steps[$run]['task']['inputs']['ignoreExitCode'])->toBeTrue()
         ->and($steps[$run]['task']['inputs']['env'])->toMatchArray(['ANSIBLE_DISPLAY_FAILED_STDERR' => 'true', 'ANSIBLE_STDOUT_CALLBACK' => 'community.general.timestamp'])

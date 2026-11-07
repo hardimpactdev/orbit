@@ -122,6 +122,7 @@ jobs:
     dependsOn:
     - {step: Write the intent, condition: {type: succeeded}}
     - {step: Check the Pi server, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Read the guest address, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Read the guest host key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
