@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofKeptVms;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -308,5 +311,40 @@ describe('the keep of a failed run', function (): void {
             'state' => TaskVmState::Ready, 'size' => TaskVmSize::Normal]);
 
         expect(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->count())->toBe(1);
+    });
+
+    it('counts a kept VM that failed to provision, which holds the CPU and the memory of its host, and a failed VM that nothing kept does not count', function (): void {
+        $node = watchNode();
+        $proof = watchProof($node, 900);
+        [, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        $kept = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
+            'state' => TaskVmState::Failed, 'size' => TaskVmSize::Normal]);
+        $other = Task::query()->create(['title' => 'Another group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Failed]);
+        TaskVm::query()->create(['group_id' => $other->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-854', 'wireguard_ip' => '10.44.0.152',
+            'state' => TaskVmState::Failed, 'size' => TaskVmSize::Normal]);
+        $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB');
+        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]])[$node->id];
+
+        expect(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->pluck('name')->all())->toBe(['tvm-853'])->and($free())->toBe(5);
+    });
+
+    it('frees the slot of a kept VM when the release of kept VMs cancels its group and the VM is destroyed', function (): void {
+        Queue::fake();
+        $node = watchNode();
+        $proof = watchProof($node, 900);
+        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
+            'state' => TaskVmState::Failed, 'size' => TaskVmSize::Normal]);
+        $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB');
+        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]])[$node->id];
+        expect($free())->toBe(5);
+
+        // The release that a waiting proof asks for, and the end of the cancel it queues.
+        expect(app(ProofKeptVms::class)->releaseAll())->toBe(1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
+        $group->update(['status' => TaskGroupStatus::Cancelled]);
+        $vm->update(['state' => TaskVmState::Destroyed]);
+
+        expect($free())->toBe(6)->and(app(ProofKeptVms::class)->releaseAll())->toBe(0);
     });
 });
