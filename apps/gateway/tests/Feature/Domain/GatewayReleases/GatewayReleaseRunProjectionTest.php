@@ -55,6 +55,18 @@ it('pauses a hand-over whose switch-back failed, and fails a build without chang
     'build' => ['Build the release', '', 'failed'],
 ]);
 
+it('pauses a failed migration and records the end of its output, which the failed exec would not keep', function (): void {
+    $output = "  INFO  Running migrations.\n\n  2027_01_25_000000_drop_task_vm_slots_setting .... FAIL\n\n   Illuminate\\Database\\QueryException\n\n  no such index: task_vms_name_unique (Connection: mysql://orbit:hunter2@db/orbit)\nmigrate-exit=1\n";
+    $record = endReleaseRun('failed', ['snapshot' => "/home/orbit/.orbit/backups/pre.sqlite\n", 'migrate' => $output], 'Check the migration', 'The migration failed; the release record shows its output.');
+
+    expect($record->outcome)->toBe('paused')
+        ->and($record->error_code)->toBe('gateway.release_migrate_failed')
+        ->and($record->migrations_ran)->toBeTrue()
+        ->and($record->message)->toContain('at Check the migration.')->toContain('no such index: task_vms_name_unique')->toEndWith('migrate-exit=1')
+        // The message reaches the release alert, so a credential in the output is redacted.
+        ->not->toContain('hunter2');
+});
+
 it('queues the fleet rollout admission after a verified release only', function (): void {
     Queue::fake();
     endReleaseRun('failed', [], 'Migrate');

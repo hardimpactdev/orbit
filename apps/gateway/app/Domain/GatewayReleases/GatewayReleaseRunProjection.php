@@ -7,6 +7,7 @@ namespace App\Domain\GatewayReleases;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
@@ -25,6 +26,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -40,6 +42,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
         'Migrate' => ['migrate', 'gateway.release_migrate_failed', true],
+        'Check the migration' => ['migrate', 'gateway.release_migrate_failed', true],
         'Load Swamp on Node 209' => ['swamp', 'gateway.release_swamp_load_failed', true],
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
     ];
@@ -134,7 +137,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),
             phases: $phases,
             errorCode: $code,
-            message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}."),
+            message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::migrateOutput($data, $phase),
         ), $record);
         if ($code === null) {
             // Stage 6: a release that went live refreshes the task images when it changed playbooks, pins or lock files.
@@ -159,5 +162,23 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
             $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);
         }
+    }
+
+    /**
+     * The end of the migration's own output for a failed migration: an exec that fails keeps none, so Migrate prints it with its exit code.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    private static function migrateOutput(array $data, string $phase): string
+    {
+        $output = ValidatedData::object($data['result'] ?? [])['migrate'] ?? null;
+        if ($phase !== 'migrate' || ! is_string($output) || trim($output) === '') {
+            return '';
+        }
+        // The output can carry SQL with its values, and the message reaches the release alert: it is redacted like any native failure.
+        $text = preg_replace('/\e\[[0-9;]*m|[\x00-\x08\x0b-\x1f\x7f]/u', '', mb_scrub(trim($output), 'UTF-8')) ?? '';
+        $text = app(LogRedactor::class)->redact(Str::substr($text, -1500), []);
+
+        return trim($text) === '' ? '' : "\n".trim($text);
     }
 }

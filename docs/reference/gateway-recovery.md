@@ -127,7 +127,8 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Build the release | Refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
-| Migrate | Runs `artisan migrate --force --isolated` from the new release. |
+| Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
+| Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
 

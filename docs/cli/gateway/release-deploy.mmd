@@ -42,8 +42,12 @@ sequenceDiagram
   SW->>GN: Install the web build<br/>artifact · digest · rename
   SW->>GN: Snapshot the database<br/>VACUUM INTO
   SW->>GN: Migrate<br/>artisan migrate --isolated
+  %%> What it does:
+  %%> - prints the end of the migration's output and its exit code; a failed exec would keep no output
+  Note over SW: Check the migration<br/>assert the exit code
   %%> On failure:
   %%> - from here until the switch, the release pauses with the old release live
+  %%> - the record's message ends with the migration's output
   Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
   %%> What it does:
   %%> - the load child: checkout, grants the new release rendered, serve reload

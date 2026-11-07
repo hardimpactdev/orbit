@@ -184,11 +184,16 @@ jobs:
       inputs:
         hosts: name:target
         timeoutSec: 960
-        argv: [/usr/bin/timeout, '900', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && exec php8.5 artisan migrate --force --isolated --no-interaction', sh, '${{ inputs.intent.id }}']
+        # The output and the exit code are the step's stdout: a failed exec keeps no output, so the check below decides and the record shows why.
+        argv: [/usr/bin/timeout, '900', /bin/sh, -c, 'out=$(cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan migrate --force --isolated --no-interaction 2>&1); code=$?; printf "%s\n" "$out" | tail -c 1500; echo "migrate-exit=$code"', sh, '${{ inputs.intent.id }}']
+  - name: Check the migration
+    labels: {role: swamp}
+    dependsOn: [{step: Migrate, condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Migrate"].outputs.stdout.trim().endsWith("migrate-exit=0")', severity: high, message: The migration failed; the release record shows its output.}
   - name: Load Swamp on Node 209
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Migrate, condition: {type: succeeded}}]
+    dependsOn: [{step: Check the migration, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-gateway-swamp-load
