@@ -1,6 +1,6 @@
 Database server running...
 
-┌  Close Database server [beast-valkey]
+┌  Update Database server [beast-valkey]
 │
 ├  ● Database server complete
 │

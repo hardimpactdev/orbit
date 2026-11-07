@@ -27,10 +27,10 @@ Every command that manages remote resources sends its request to the active Gate
 | [`gateway:release:show`](/cli/gateway/release-show) | Show one release record. |
 | [`gateway:release:deploy`](/cli/gateway/release-deploy) | Release one commit to the Gateway as one Swamp run and follow it. |
 | [`gateway:release:rollback`](/cli/gateway/release-rollback) | Switch the Gateway back to a retained release and follow it. |
-| [`gateway:release:auto:status`](/cli/gateway/release-auto-status) | Show the automatic release state. |
-| [`gateway:release:auto:enable`](/cli/gateway/release-auto-enable) | Turn automatic releases on. |
-| [`gateway:release:auto:disable`](/cli/gateway/release-auto-disable) | Turn automatic releases off. |
-| [`gateway:release:auto:resume`](/cli/gateway/release-auto-resume) | Clear a pause of automatic releases. |
+| [`gateway:auto-release:status`](/cli/gateway/auto-release-status) | Show the automatic release state. |
+| [`gateway:auto-release:enable`](/cli/gateway/auto-release-enable) | Turn automatic releases on. |
+| [`gateway:auto-release:disable`](/cli/gateway/auto-release-disable) | Turn automatic releases off. |
+| [`gateway:auto-release:resume`](/cli/gateway/auto-release-resume) | Clear a pause of automatic releases. |
 
 Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally. The other commands contact the Gateway. `gateway:add` and `gateway:trust` can change the operating-system trust store, which can ask for local administrator privileges.
 

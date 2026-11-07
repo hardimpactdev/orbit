@@ -177,7 +177,7 @@ final readonly class ProofRunIntent
                 return false;
             }
             $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::WaitStep]));
-            app(Dispatcher::class)->dispatch((new AdmitProofRun($proof->id))->delay(self::RetrySeconds));
+            app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id)->delay(self::RetrySeconds));
         } catch (Throwable $exception) {
             report($exception);
 

@@ -28,12 +28,7 @@ final readonly class TaskVmImageInputs
                 return true;
             }
         }
-        foreach (self::Locks as $pattern) {
-            if (fnmatch($pattern, $path, FNM_PATHNAME)) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any(self::Locks, fn ($pattern) => fnmatch($pattern, $path, FNM_PATHNAME));
     }
 }

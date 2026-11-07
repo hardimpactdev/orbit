@@ -7,9 +7,9 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -115,16 +115,16 @@ it('refuses an invalid server driver before sending', function (array $options):
     [['--driver' => 'sqlite']],
 ]);
 
-it('sends the close request and preserves the Gateway refusal', function (): void {
+it('sends the password requirement and preserves the Gateway refusal', function (): void {
     $mockClient = MockClient::global([
-        CloseDatabaseServerRequest::class => MockResponse::make([
+        UpdateDatabaseServerRequest::class => MockResponse::make([
             'error' => ['code' => 'database.server_in_use', 'message' => 'Clients still use default.', 'request_id' => '11111111-1111-4111-8111-111111111111'],
         ], 409),
     ]);
-    $tester = new CommandTester(app(Kernel::class)->all()['database:server:close']);
-    expect($tester->execute(['slug' => 'cache', '--json' => true], ['interactive' => false]))->toBe(1)
+    $tester = new CommandTester(app(Kernel::class)->all()['database:server:update']);
+    expect($tester->execute(['slug' => 'cache', '--require-password' => true, '--json' => true], ['interactive' => false]))->toBe(1)
         ->and($tester->getDisplay(true))->toContain('database.server_in_use')
-        ->and($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close');
+        ->and($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/database-servers/cache');
 });
 
 it('sends PostgreSQL and an explicit port through the SDK', function (): void {
@@ -132,4 +132,13 @@ it('sends PostgreSQL and an explicit port through the SDK', function (): void {
     $tester = new CommandTester(app(Kernel::class)->all()['database:server:create']);
     expect($tester->execute(['slug' => 'services-postgres', '--node' => '17', '--driver' => 'pgsql', '--port' => '5434', '--json' => true]))->toBe(0);
     $mock->assertSent(fn ($request): bool => $request instanceof CreateDatabaseServerRequest && $request->body()->all() === ['slug' => 'services-postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql']);
+});
+
+it('requires the explicit password flag before contacting the Gateway and retires close', function (): void {
+    $mock = MockClient::global([]);
+    $tester = new CommandTester(app(Kernel::class)->all()['database:server:update']);
+    expect($tester->execute(['slug' => 'cache', '--json' => true], ['interactive' => false]))->toBe(1)
+        ->and($tester->getDisplay())->toContain('database.require_password_required')
+        ->and($mock->getLastPendingRequest())->toBeNull()
+        ->and(app(Kernel::class)->all())->not->toHaveKey('database:server:close');
 });
