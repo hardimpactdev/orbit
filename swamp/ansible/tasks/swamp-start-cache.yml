@@ -1,0 +1,23 @@
+---
+# The compiled Swamp binary keeps a V8 code cache at `<temp dir>/deno-compile-swamp.cache` (Deno: `cli/rt/binary.rs`, `std::env::temp_dir()`).
+# It writes a new one beside the old and renames it, and `/tmp` is sticky: the swamp account can not replace a file another owner left.
+# A file it can not read costs every dispatch about 0.35 s. This repairs a file that exists and checks it; it never creates one.
+- name: Read the Swamp start cache
+  ansible.builtin.stat: { path: "{{ swamp_start_cache }}" }
+  register: swamp_start_cache_file
+- name: Give the Swamp start cache to the swamp account
+  when: not swamp_cache_check_only and swamp_start_cache_file.stat.exists
+  ansible.builtin.file:
+    path: "{{ swamp_start_cache }}"
+    state: file
+    owner: "{{ rt.swamp.user }}"
+    group: "{{ rt.swamp.user }}"
+    mode: "0644"
+- name: Check the Swamp start cache
+  when: swamp_cache_check_only and swamp_start_cache_file.stat.exists
+  ansible.builtin.assert:
+    that:
+      - swamp_start_cache_file.stat.pw_name == rt.swamp.user
+      - swamp_start_cache_file.stat.rusr
+    fail_msg: "{{ swamp_start_cache }} is not owned and readable by {{ rt.swamp.user }}: every dispatch starts slower. Converge the swamp role to repair it."
+    quiet: true

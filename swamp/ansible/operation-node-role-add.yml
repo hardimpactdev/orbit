@@ -92,6 +92,10 @@
       loop_control: { label: "{{ item.path }}" }
       register: private_files
       no_log: true
+    - name: Repair the Swamp start cache
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: tasks/swamp-start-cache.yml
+      vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: false }
     - name: Write runtime units
       ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", mode: "0644" }
       loop: "{{ rt.units }}"
@@ -340,6 +344,10 @@
       ansible.builtin.import_tasks: tasks/metrics.yml
       vars: { metrics_check_only: true, metrics_config_changed: false }
     - { name: Check runtime identities and units, ansible.builtin.import_tasks: tasks/check-runtime.yml }
+    - name: Check the Swamp start cache
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: tasks/swamp-start-cache.yml
+      vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: true }
     - name: Check CI state
       when: rt.ci_host
       ansible.builtin.import_tasks: tasks/ci.yml
