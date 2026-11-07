@@ -27,6 +27,14 @@
         return_content: true
       register: ops_pre
 
+    - name: "{{ c.id }}: firewall records of app-dev before"
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: rec_pre
+
     - name: "{{ c.id }}: run the command"
       ansible.builtin.command:
         argv: "{{ orbit + c.argv + ['--json'] }}"
@@ -77,6 +85,14 @@
       register: ufw_post
       changed_when: false
 
+    - name: "{{ c.id }}: firewall records of app-dev after"
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: rec_post
+
     - name: "{{ c.id }}: Operations after"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/operations?kind=firewall.allow"
@@ -97,4 +113,6 @@
         ufw_after: "{{ ufw_after | default({}) | combine({c.id: ufw_post.stdout | default('')}) }}"
         ops_before: "{{ ops_before | default({}) | combine({c.id: ((ops_pre.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
         ops_after: "{{ ops_after | default({}) | combine({c.id: ((ops_post.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
+        records_before: "{{ records_before | default({}) | combine({c.id: (rec_pre.json | default({})).data | default([])}) }}"
+        records_after: "{{ records_after | default({}) | combine({c.id: (rec_post.json | default({})).data | default([])}) }}"
         cacheable: true
