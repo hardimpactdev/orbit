@@ -46,31 +46,32 @@
   tasks:
     - { name: Wait for a new server, ansible.builtin.import_tasks: tasks/task-vm-ready.yml, tags: [always] }
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }
-    # A phase runs only when its digest changed; it records the new one when it ends.
+    # A phase runs only when its digest changed; it records the new one when it ends. A phase is a dynamic include, so one that is not due is one
+    # skipped task: a static import would evaluate the condition on each of its ~140 tasks, which costs about 3 s of every start.
     - name: Software
-      ansible.builtin.import_tasks: tasks/task-vm-software.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-software.yml, apply: { tags: [software] } }
       tags: [software]
       when: converge_due.software
     - name: Record the software
-      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-stamp.yml, apply: { tags: [software] } }
       vars: { stamp: software }
       tags: [software]
       when: converge_due.software
     - name: Tools
-      ansible.builtin.import_tasks: tasks/task-vm-tools.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-tools.yml, apply: { tags: [tools] } }
       tags: [tools]
       when: converge_due.tools
     - name: Record the tools
-      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-stamp.yml, apply: { tags: [tools] } }
       vars: { stamp: tools }
       tags: [tools]
       when: converge_due.tools
     - name: Boot
-      ansible.builtin.import_tasks: tasks/task-vm-boot.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-boot.yml, apply: { tags: [boot] } }
       tags: [boot]
       when: converge_due.boot
     - name: Record the boot
-      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-stamp.yml, apply: { tags: [boot] } }
       vars: { stamp: boot }
       tags: [boot]
       when: converge_due.boot
@@ -78,11 +79,11 @@
     - { name: Branch, ansible.builtin.import_tasks: tasks/task-vm-branch.yml, tags: [branch] }
     - { name: Fleet, ansible.builtin.import_tasks: tasks/task-vm-fleet.yml, tags: [fleet] }
     - name: Check
-      ansible.builtin.import_tasks: tasks/task-vm-check.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-check.yml, apply: { tags: [check] } }
       tags: [check]
       when: converge_due.check
     - name: Record the check
-      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      ansible.builtin.include_tasks: { file: tasks/task-vm-stamp.yml, apply: { tags: [check] } }
       vars: { stamp: check }
       tags: [check]
       when: converge_due.check

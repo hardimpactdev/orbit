@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
   %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
   %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
-  %%> - with no delta every part is skipped, and it catches up a small delta when main moved since the last release
+  %%> - with no delta every part is skipped, each phase as one skipped task (a dynamic include), and it catches up a small delta when main moved since the last release
   %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
   %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
   %%> - then the new task branch on the checkout; it waits for no nested service
