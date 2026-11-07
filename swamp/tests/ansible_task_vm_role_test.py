@@ -75,6 +75,18 @@ class TaskVmRoleTest(unittest.TestCase):
         self.assertIn('ansible.builtin.lineinfile', pin)
         self.assertEqual(pin['loop'], '{{ host.ssh.target.host_keys }}')
 
+    def test_a_phase_that_is_not_due_is_one_skipped_task(self):
+        play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
+        phases = {task['name']: task for task in play['tasks'] if task['name'] in
+                  ['Software', 'Record the software', 'Tools', 'Record the tools', 'Boot', 'Record the boot', 'Check', 'Record the check']}
+        self.assertEqual(len(phases), 8)
+        for name, task in phases.items():
+            # A static import evaluates the condition on each of the phase's ~140 tasks (about 3 s of a converge that changes nothing).
+            self.assertNotIn('ansible.builtin.import_tasks', task, name)
+            include = task['ansible.builtin.include_tasks']
+            self.assertEqual(include['apply'], {'tags': task['tags']}, name)
+            self.assertEqual(task['when'], 'converge_due.' + task['tags'][0], name)
+
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
             text = path.read_text()
