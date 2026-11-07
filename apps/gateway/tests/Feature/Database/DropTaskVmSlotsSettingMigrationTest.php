@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -44,4 +49,28 @@ it('hands the ready slots of the old pool to the destroy, and leaves group VMs a
     expect(DB::table('task_vms')->where('id', $ready)->value('state'))->toBe('destroying')
         ->and(DB::table('task_vms')->where('id', $slot)->value('state'))->toBe('provisioning')
         ->and(DB::table('task_vms')->where('id', $grouped)->value('state'))->toBe('parked');
+});
+
+it('unbinds groups whose workspace Instance a release deleted, and keeps every other binding', function (): void {
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark-tvm-1', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.131', 'wireguard_ip' => '10.44.0.131', 'user' => 'orbit']));
+    $workspace = static function (string $name) use ($project, $node): array {
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Failed]);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/home/orbit/apps/orbit/'.$name,
+            'task_workspace_owner_id' => $group->id]);
+        $group->taskable()->associate($instance)->save();
+
+        return [$group->id, $instance->id];
+    };
+    [$bound, $kept] = $workspace('task-1');
+    [$dangling, $deleted] = $workspace('task-2');
+    // The release deleted the Instance before it unbound groups.
+    DB::table('instances')->where('id', $deleted)->delete();
+
+    (require database_path('migrations/2027_01_27_000000_unbind_groups_from_deleted_workspaces.php'))->up();
+
+    expect(DB::table('tasks')->where('id', $bound)->value('taskable_id'))->toBe($kept)
+        ->and(DB::table('tasks')->where('id', $dangling)->value('taskable_id'))->toBeNull()
+        ->and(DB::table('tasks')->where('id', $dangling)->value('taskable_type'))->toBeNull();
 });

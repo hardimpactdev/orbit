@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -57,6 +58,14 @@ final readonly class TaskCancelIntent
             if (Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
+            }
+            // A release of the group's slot that is still running, such as after a failed start, ends with the workspace; the cancel follows it.
+            $slot = TaskVm::forGroup($group);
+            $release = $slot === null ? null : Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')
+                ->where('target_id', $slot->id)->whereNotIn('status', OperationStatus::terminalValues())->value('id');
+            if ($release !== null) {
+                throw new ResourceOperationException('operation.target_busy', 'The release of the group\'s task VM is still running; cancel again when it ends.', 409,
+                    details: ['operation_id' => $release]);
             }
             if ($kind === 'tasks.cancel') {
                 $this->operations->cancelOpen($group);

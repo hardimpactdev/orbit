@@ -12,6 +12,7 @@ use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -71,7 +72,11 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
         // The VM and its hub peer are gone: its workspace Instance, its Node and the identity go with them, and the slot is free.
         $node = $slot->node;
         if ($node instanceof Node) {
-            Instance::query()->where('node_id', $node->id)->get()->each(static fn (Instance $instance): bool => $instance->delete() ?? false);
+            // A group whose workspace goes no longer points at it, so its cancel finds nothing to own and only closes it.
+            Instance::query()->where('node_id', $node->id)->get()->each(static function (Instance $instance): void {
+                Task::topLevel()->whereMorphedTo('taskable', $instance)->update(['taskable_type' => null, 'taskable_id' => null]);
+                $instance->delete();
+            });
             app(NodeRemovalRecords::class)->remove(['node_id' => $node->id, 'name' => $node->name, 'task_vm_id' => $slot->id, 'route_ids' => []], []);
         }
         $slot->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'group_id' => null, 'node_id' => null, 'pi_token' => null, 'model_key' => null,
