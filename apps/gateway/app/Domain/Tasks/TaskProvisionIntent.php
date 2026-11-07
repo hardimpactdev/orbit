@@ -22,9 +22,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * One Tasks admission claims a slot identity (docs/cli/tasks/provision.mmd) and records the intent of its task start: a new VM from the
- * host's image with the identity, the converge and the task branch. The admission mints only the claim's Pi token and model key. No child
- * Operations.
+ * One Tasks admission takes a slot and mints its identity (docs/cli/tasks/provision.mmd), then records the intent of its task start: a copy
+ * of the host's base VM snapshot with that identity, the hub peer, the converge and the task branch. No child Operations.
  */
 final readonly class TaskProvisionIntent
 {
@@ -64,7 +63,7 @@ final readonly class TaskProvisionIntent
             $this->assertProvisionable($group);
             $project = $group->project;
             try {
-                $slot = $this->slots->claim($group, keepFree: $keepFree);
+                $slot = $this->slots->take($group, keepFree: $keepFree);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);

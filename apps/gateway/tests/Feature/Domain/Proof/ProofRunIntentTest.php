@@ -34,11 +34,6 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVmImageBuild;
-use App\Models\TaskVm;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmSlotSetting;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Process;
@@ -232,15 +227,8 @@ function proofFailureDetail(Operation $proof): ?string
     return $proof->state['native_failure']['detail'] ?? null;
 }
 
-/** Slot `$number` of the host, free at the host's image. */
-function proofFreeSlot(Node $host, Project $project, TaskVmImageBuild $build, int $number): TaskVm
-{
-    return TaskVm::query()->create(['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'slot_number' => $number, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(200 + $number), 'image_build_id' => $build->id]);
-}
-
 /**
- * One host with a free slot and an image that a refresh built from the release `$copiesCommit`, and a commit under proof that
+ * One host with room for one large task VM and a base snapshot that a refresh built from the release `$copiesCommit`, and a commit under proof that
  * changes a firewall workflow. Returns the temporary release layout, which the test removes.
  */
 function proofHostWithCopies(object $source, ?string $copiesCommit): string
@@ -259,14 +247,12 @@ function proofHostWithCopies(object $source, ?string $copiesCommit): string
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
-        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
+        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']]]);
     Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
         'input' => $copiesCommit === null ? [] : ['commit' => $copiesCommit],
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB',
-        slots: new TaskVmSlotSetting(1, $project->id, TaskVmSize::Large))], 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
-    proofFreeSlot($host, $project, $build, 1);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 3, 4, '8GiB', '20GiB')], 'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
     $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
     proofWorld($source);
 
@@ -449,7 +435,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(proofFailureDetail($proof))->toBe('Task VM: no slot of this Project is free.')
+            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM.')
             ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
@@ -473,7 +459,7 @@ describe('proof:run admission', function (): void {
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
         $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
 
-        // One free slot: a report-only run leaves it to task and proof work.
+        // Room for one task VM: a report-only run leaves it to task and proof work.
         $proof = proofAdmitted(reportOnly: true);
 
         Process::run(['rm', '-rf', $base]);

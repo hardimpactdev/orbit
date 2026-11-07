@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
@@ -20,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Admits the refresh of one task VM host's base (docs/cli/tasks/vm-image-refresh.mmd) as one run on the host: the host's base VM starts,
- * converges as a task start would, stops and is snapshotted; the snapshot is proven with one task start from a free slot identity, and the
+ * converges as a task start would, stops and is snapshotted; the snapshot is proven with one task start in a free slot, and the
  * projection promotes it. The intent holds everything the run needs; no step calls the Gateway.
  */
 final readonly class TaskVmImageRefreshIntent
@@ -31,7 +32,7 @@ final readonly class TaskVmImageRefreshIntent
     public const string ClubKey = '/etc/orbit/swamp-club-api-key';
 
     public function __construct(private StartOperationAction $operations, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
-        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs) {}
+        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -94,10 +95,12 @@ final readonly class TaskVmImageRefreshIntent
         $jump = $this->ssh->forNode($host);
         $identity = $this->ssh->identity();
         $large = TaskVmSize::Large->resources();
-        // A free slot identity proves the candidate with one task start, as a group gets it; the refresh frees it when it ends.
-        $slot = TaskVmSlotPool::slots($host->id)->whereNull('group_id')->where('state', TaskVmState::Parked)->orderBy('slot_number')->lockForUpdate()->first()
-            ?? throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'A refresh proves its candidate with a free slot identity; none is free.', 409);
-        $slot->update(['state' => TaskVmState::Provisioning]);
+        // One task start with a slot and a fresh identity proves the candidate, as a group gets it; the refresh releases it when it ends.
+        try {
+            $slot = $this->slots->take(null, $host->id);
+        } catch (TaskCapacityException $full) {
+            throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'A refresh proves its candidate with one task start; '.$full->getMessage(), 409);
+        }
         // The run's snapshot, named at admission: the run takes it, and a discard after a failure removes it.
         $snapshot = 'r'.now()->utc()->format('YmdHis');
         $start = $this->runs->claim($slot, null, $commit, $snapshot);

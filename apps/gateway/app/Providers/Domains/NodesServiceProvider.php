@@ -36,6 +36,7 @@ use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
+use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Models\Node;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
@@ -59,12 +60,12 @@ final class NodesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Node::created(static function (Node $node): void {
-            if ($node->wireguard_ip && $node->ssh_host_key_type && $node->ssh_host_key) {
+            if ($node->wireguard_ip && $node->ssh_host_key_type && $node->ssh_host_key && SwampWorkerKnownHostsInput::covers($node)) {
                 app(WorkerKnownHostsPublisher::class)->publish();
             }
         });
         Node::updated(static function (Node $node): void {
-            if ($node->wasChanged(['wireguard_ip', 'ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint'])) {
+            if ($node->wasChanged(['wireguard_ip', 'ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']) && SwampWorkerKnownHostsInput::covers($node)) {
                 app(WorkerKnownHostsPublisher::class)->publish();
             }
         });

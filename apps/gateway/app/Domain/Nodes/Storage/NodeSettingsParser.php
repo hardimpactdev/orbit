@@ -71,10 +71,6 @@ final readonly class NodeSettingsParser
         if (array_key_exists('node_id', $object)) {
             $this->reject('task_vms must not contain node_id.');
         }
-        // The ready slot setting is the one nested object of a host (docs/cli/tasks/vm-slots.mmd).
-        if (($object['slots'] ?? null) instanceof stdClass) {
-            $object['slots'] = get_object_vars($object['slots']);
-        }
         try {
             return NodeTaskVmsData::validated($object, Ipv4Subnet::from(resolve(VpnSettings::class)->subnet()));
         } catch (TaskVmException $exception) {

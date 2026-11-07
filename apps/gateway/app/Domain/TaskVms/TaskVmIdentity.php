@@ -18,32 +18,13 @@ use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /**
- * A slot is only a fixed identity that the Gateway keeps (docs/cli/tasks/vm-slot-enrol.mmd): its Node, WireGuard key and hub peer, SSH
- * host key and agent secret. Its enrol makes them once and puts the peer on the hub; each task start writes them onto a new VM.
+ * The identity of one task VM (docs/cli/tasks/provision.mmd), minted at its task start and removed at its release: its Node, WireGuard
+ * key and hub peer, SSH host key and agent secret. A task start writes it onto the VM it makes and adds the hub peer beside the boot.
  */
-final readonly class TaskVmSlotEnrolIntent
+final readonly class TaskVmIdentity
 {
-    public function __construct(private TaskVmEnrollmentIntent $enrollment, private TaskVmSlotIdentity $keys, private SwampSshExecutionInput $ssh,
+    public function __construct(private TaskVmEnrollmentIntent $enrollment, private SwampSshExecutionInput $ssh,
         private SwampCommandStep $shared, private PiConnection $pi) {}
-
-    /**
-     * The enrol: the identity's Node and keys, made once, and its peer on the hub.
-     *
-     * @return array{intent:array<string,mixed>}
-     */
-    public function input(TaskVm $vm): array
-    {
-        $vm = $this->keys->ensure($vm);
-        $guest = $this->enrollment->slotNode($vm);
-        $hub = $this->hub($guest);
-
-        return ['intent' => [
-            'hub' => NodeWireGuardHubInput::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
-            'hub_ssh_execution' => $this->ssh->forNode($hub),
-            'public_key' => TaskVmSlotIdentity::wireguardPublicKey(ValidatedData::string($vm->wireguard_private_key)),
-            'guest_node_id' => $guest->id,
-        ]];
-    }
 
     /**
      * The public files of the identity that a task start writes onto its new VM; the private keys go as vault copies ({@see self::secrets()}).
@@ -84,11 +65,24 @@ final readonly class TaskVmSlotEnrolIntent
         ];
     }
 
-    /** The WireGuard hub of the identity's network. */
-    private function hub(Node $guest): Node
+    /**
+     * The identity's peer on the WireGuard hub: the task start adds it, the release removes it.
+     *
+     * @return array{hub:array<string,mixed>,hub_ssh_execution:array<string,mixed>,public_key:string,guest_node_id:int}
+     */
+    public function hubPeer(TaskVm $vm): array
     {
-        $network = app(NodeNetworkInput::class)->capture($guest);
+        $guest = $vm->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its Node.', 409);
+        $hub = $this->hub();
 
-        return Node::query()->findOrFail(ValidatedData::integer($network['hub_id']));
+        return ['hub' => NodeWireGuardHubInput::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
+            'hub_ssh_execution' => $this->ssh->forNode($hub),
+            'public_key' => TaskVmSlotIdentity::wireguardPublicKey(ValidatedData::string($vm->wireguard_private_key)), 'guest_node_id' => $guest->id];
+    }
+
+    /** The WireGuard hub: the Node with the `vpn` role. */
+    private function hub(): Node
+    {
+        return Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
     }
 }

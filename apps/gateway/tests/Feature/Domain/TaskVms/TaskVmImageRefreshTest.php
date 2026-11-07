@@ -106,7 +106,7 @@ it('returns the open refresh of a host for a second admission, and none once it 
     expect(TaskVmImageRefreshIntent::open($host))->toBeNull();
 });
 
-it('promotes the proven snapshot of the base VM as the host\'s latest build and frees the identity that proved it; nothing for a failed run', function (): void {
+it('promotes the proven snapshot of the base VM as the host\'s latest build and releases the slot that proved it; nothing for a failed run', function (): void {
     $host = imageRefreshHost();
     $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
         'name' => 'beast-tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.201', 'model_key' => str_repeat('c', 64)]);
@@ -121,7 +121,7 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     $failed->save();
     $projection->apply($failed, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
     expect(fn () => app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id)))->toThrow(ResourceOperationException::class);
-    // A refresh that failed before its proof released leaves the identity failed with its key, for the slot rule to release.
+    // A refresh that failed before its proof released leaves the slot failed with its key, for the sweep to release.
     expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->model_key)->toBe(str_repeat('c', 64));
     $slot->update(['state' => TaskVmState::Provisioning]);
 
@@ -129,7 +129,7 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id)))
         ->toBe(['vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107131500', 'recipe_identity' => 'recipe-9'])
         ->and($operation->refresh()->result)->toMatchArray(['refreshed' => true, 'snapshot' => 'r20261107131500', 'previous_snapshot' => null]);
-    expect($slot->refresh()->state)->toBe(TaskVmState::Parked)->and($slot->model_key)->toBeNull();
+    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed)->and($slot->model_key)->toBeNull();
 });
 
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {

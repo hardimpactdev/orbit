@@ -10,7 +10,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -115,8 +114,6 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null,
                 'model_key' => null, 'provider_bootstrap' => null, 'worker_stop_required' => false,
                 'error_code' => null, 'error_message' => null, ...$vm::ForgetTopology]);
-            // A released VM may leave its host's ready slots below their count (docs/cli/tasks/vm-slots.mmd).
-            RefillTaskVmSlots::dispatchFor($vm->host_node_id);
         });
     }
 }

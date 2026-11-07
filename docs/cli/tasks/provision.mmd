@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick step by step, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fixed slot identity. A slot is only an identity (shark-tvm-3: Node, WireGuard key and hub peer, host key, agent secret), kept by the Gateway; no slot VM waits ready.
+  %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed slot identities: a slot is only a place under the host's capacity (`max_vms`), and the VM is named `<host>-tvm-<n>` by its slot number.
   %% status: draft
   %% command: tasks:provision
   %% kind: tasks.provision
@@ -7,28 +7,33 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
   %% lane VM icon=server pill=task VM tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
+  participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>shark-tvm-3
-  Note over GW: Claim a slot identity<br/>mint the claim's keys
+  Note over GW: Take a slot<br/>mint an identity · database only
   %%> Started by:
   %%> - `tasks:provision` for a todo group, from proof CI or feature work
   %%> Result:
-  %%> - the group holds the free identity `shark-tvm-3`; its Node, WireGuard peer, host key and agent secret already exist
-  %%> - the Gateway mints the claim's Pi token and model key into the vault; about 1 s
+  %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
+  %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
+  %%> - the claim's Pi token and model key in the vault
   GW->>SW: Start run, full intent<br/>operation-tasks-provision
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - one host exec: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones), `incus start`, then the slot identity and the claim's keys from the vault on stdin and the services that use them
+  %%> - one host exec: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones), the identity and the claim's keys written from the vault on stdin, then `incus start` and the services that use them
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
-  %%> - beside it, the claim's model key is registered with the model router
+  SW->>HUB: Add the hub peer<br/>wg set
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the claim's model key goes to the model router beside it
   SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
   %%> - the same Ansible converge as the release refresh; with no delta every part is skipped, and it catches up a small delta when main moved since the last release
-  %%> - then the new task branch on the checkout
-  %%> - it waits for no nested service
+  %%> - then the new task branch on the checkout; it waits for no nested service
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
@@ -38,5 +43,5 @@ sequenceDiagram
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the VM and its seed clone are deleted, the claim's keys revoked, the identity freed
+    %%> - the release runs: the VM, its seed clone, the hub peer, the keys and the Node record go, and the slot is free
   end

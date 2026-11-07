@@ -7,7 +7,6 @@ namespace App\Domain\TaskVms;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Infrastructure\Swamp\NativeRunResult;
-use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -55,8 +54,6 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
                 $released = NativeRunResult::stepStatus($native, 'Prove the candidate') === 'succeeded';
                 app(TaskVmSlotReleaseProjection::class)->record($slot, $released, $released ? null : 'task_vm.image_refresh_failed', $released);
             }
-            $host = ValidatedData::integer(ValidatedData::object(ValidatedData::object(ValidatedData::object($operation->input)['intent'])['host'])['node_id']);
-            DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor($host));
             $data['result'] = $result;
             $data['error_code'] = $code;
 

@@ -11,8 +11,8 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
- * Releases a slot whose claim did not pass (docs/cli/tasks/vm-slot-release.mmd): its VM is deleted and it loses the claim's model
- * key, so it is free again. A slot that another group holds by then, or that is already free, is left alone.
+ * Releases a slot whose task start did not pass (docs/cli/tasks/vm-release.mmd): its VM, hub peer, model key and Node go, so the slot
+ * is free again. A slot that another group holds by then, or that is already released, is left alone.
  */
 final class ReleaseTaskVmSlot implements ShouldBeUnique, ShouldQueue
 {

@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
@@ -11,13 +13,12 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
-use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\RefillTaskVmSlots;
+use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -27,35 +28,27 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
-/** A task VM host with a promoted image and, unless `$count` is null, a pool of `$count` large slots of the returned Project. */
-function slotPoolHost(?int $count = 2, int $maxVms = 6): array
+/** A task VM host of `$maxVms` slots, with a base snapshot unless `$snapshot` is false. */
+function slotPoolHost(int $maxVms = 6, bool $snapshot = true): array
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit',
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    $slots = $count === null ? null : new TaskVmSlotSetting($count, $project->id, TaskVmSize::Large);
+    config(['proof.project' => $project->id]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB', slots: $slots)],
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB')],
         'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+    $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
+        : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
-        'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']]]);
+        'promoted_at' => now(), 'images' => ['base' => $base]]);
 
     return [$host, $project, $build];
-}
-
-/** Slot `$number` of the host: by default free at the current image. */
-function slotPoolSlot(Node $host, Project $project, TaskVmImageBuild $build, int $number, array $overrides = []): TaskVm
-{
-    return TaskVm::query()->create([...['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'slot_number' => $number, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(200 + $number),
-        'image_build_id' => $build->id, 'image_fingerprint' => str_repeat('b', 64), 'recipe_identity' => 'recipe-1', 'ready_at' => now()], ...$overrides]);
 }
 
 /** A todo task group of the Project. */
@@ -64,155 +57,125 @@ function slotPoolGroup(Project $project): Task
     return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
 }
 
-it('keeps no slots on a host without the slots setting', function (): void {
-    [$host] = slotPoolHost(null);
-
-    expect(app(TaskVmSlotPool::class)->next($host->id))->toBeNull();
-});
-
-it('records each missing slot by its fixed name and number, one enrol at a time', function (): void {
-    [$host, $project] = slotPoolHost(2);
+it('takes the lowest free slot number and mints a fresh identity, its Node active with the public keys pinned', function (): void {
+    [$host, $project] = slotPoolHost();
     $pool = app(TaskVmSlotPool::class);
 
-    $first = $pool->next($host->id);
-    expect($first['slot']->name)->toBe('beast-tvm-1')->and($first['slot']->slot_number)->toBe(1)
-        ->and($first['slot']->state)->toBe(TaskVmState::Provisioning)->and($first['slot']->slot_project_id)->toBe($project->id);
-    // The first enrols: the rule waits for it while its Operation is open.
-    Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $first['slot']->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
-    expect($pool->next($host->id))->toBeNull();
+    $first = $pool->take(slotPoolGroup($project));
+    $second = $pool->take(slotPoolGroup($project));
 
-    $first['slot']->update(['state' => TaskVmState::Parked]);
-    $second = $pool->next($host->id);
-    expect($second['slot']->name)->toBe('beast-tvm-2')->and($second['slot']->wireguard_ip)->not->toBe($first['slot']->wireguard_ip);
+    expect($first->name)->toBe('beast-tvm-1')->and($first->slot_number)->toBe(1)->and($first->state)->toBe(TaskVmState::Provisioning)
+        ->and($second->name)->toBe('beast-tvm-2')->and($second->wireguard_ip)->not->toBe($first->wireguard_ip);
+    $node = $first->node;
+    expect($node)->toBeInstanceOf(Node::class)->and($node->status)->toBe(LifecycleStatus::Active)
+        ->and($node->agent_secret_hash)->toBe(hash('sha256', (string) $first->agent_secret))
+        ->and($node->wireguard_public_key)->toBe(TaskVmSlotIdentity::wireguardPublicKey((string) $first->wireguard_private_key))
+        ->and($node->ssh_host_fingerprint)->toBe(TaskVmSlotIdentity::sshFingerprint((string) $first->ssh_host_private_key))
+        ->and($node->roles()->where('role', RoleName::AppDev)->sole()->status)->toBe(LifecycleStatus::Active)
+        // The run of a task VM carries its pin; the pin admits no publication of the workers' known hosts.
+        ->and(Operation::query()->where('kind', 'node.worker_known_hosts')->exists())->toBeFalse();
+
+    // A released slot's number is free again; the new identity shares nothing with the old one.
+    $old = [$first->wireguard_private_key, $first->agent_secret];
+    app(TaskVmSlotReleaseProjection::class)->record($first, true, null, true);
+    $third = $pool->take(slotPoolGroup($project));
+    expect($third->slot_number)->toBe(1)->and($third->id)->not->toBe($first->id)
+        ->and([$third->wireguard_private_key, $third->agent_secret])->not->toBe($old);
 });
 
-it('enrols a failed identity again and never touches a claimed one; an identity of an older image needs nothing', function (): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    $one = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Failed]);
-    $two = slotPoolSlot($host, $project, $build, 2, ['image_build_id' => null]);
+it('refuses when no host has room, and leaves the asked number of slots free, as a report-only proof asks', function (): void {
+    [, $project] = slotPoolHost(maxVms: 6);
     $pool = app(TaskVmSlotPool::class);
 
-    expect($pool->next($host->id)['slot']->id)->toBe($one->id);
-    $one->update(['state' => TaskVmState::Parked]);
-    expect($pool->next($host->id))->toBeNull();
-
-    $two->update(['group_id' => slotPoolGroup($project)->id, 'state' => TaskVmState::Failed]);
-    expect($pool->next($host->id))->toBeNull();
+    expect(fn () => $pool->take(slotPoolGroup($project), keepFree: 1))->not->toThrow(TaskCapacityException::class)
+        ->and(fn () => $pool->take(slotPoolGroup($project), keepFree: 1))->toThrow(TaskCapacityException::class);
+    $pool->take(slotPoolGroup($project));
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
 });
 
-it('claims a free identity of the group\'s Project on a host with a promoted image, and refuses when none is free', function (): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Failed]);
-    $current = slotPoolSlot($host, $project, $build, 2);
+it('starts a group only from a base snapshot, while a refresh takes a slot on its own host before the host has one', function (): void {
+    [$host, $project] = slotPoolHost(snapshot: false);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class)
+        ->and($pool->take(null, $host->id)->group_id)->toBeNull();
+});
+
+it('deletes the Node, its workspace Instance and the keys of a released slot', function (): void {
+    [, $project] = slotPoolHost();
     $group = slotPoolGroup($project);
-
-    $claimed = app(TaskVmSlotPool::class)->claim($group);
-    expect($claimed->id)->toBe($current->id)->and($claimed->group_id)->toBe($group->id)->and($claimed->state)->toBe(TaskVmState::Provisioning);
-
-    expect(fn () => app(TaskVmSlotPool::class)->claim(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-});
-
-it('leaves the asked number of slots free, as a report-only proof asks', function (): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    slotPoolSlot($host, $project, $build, 1);
-
-    expect(fn () => app(TaskVmSlotPool::class)->claim(slotPoolGroup($project), keepFree: 1))->toThrow(TaskCapacityException::class);
-    slotPoolSlot($host, $project, $build, 2);
-    expect(app(TaskVmSlotPool::class)->claim(slotPoolGroup($project), keepFree: 1)->slot_number)->toBe(1);
-});
-
-it('frees a released slot with its identity, unbinds its workspace and forgets the claim\'s model key', function (): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    $group = slotPoolGroup($project);
-    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast-tvm-1', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '10.44.0.201', 'wireguard_ip' => '10.44.0.201', 'user' => 'orbit']));
-    $slot = slotPoolSlot($host, $project, $build, 1, ['group_id' => $group->id, 'state' => TaskVmState::Ready, 'node_id' => $guest->id,
-        'model_key' => str_repeat('c', 64), 'wireguard_private_key' => base64_encode(str_repeat("\1", 32))]);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $node = $slot->node;
+    $slot->update(['state' => TaskVmState::Ready, 'model_key' => str_repeat('c', 64)]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
         'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
 
     app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
 
-    expect($slot->refresh()->state)->toBe(TaskVmState::Parked)->and($slot->group_id)->toBeNull()->and($slot->model_key)->toBeNull()
-        ->and($slot->wireguard_private_key)->toBe(base64_encode(str_repeat("\1", 32)))
-        ->and($instance->refresh()->exists)->toBeTrue()->and($instance->task_workspace_owner_id)->toBeNull();
+    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed)->and($slot->group_id)->toBeNull()->and($slot->node_id)->toBeNull()
+        ->and($slot->model_key)->toBeNull()->and($slot->wireguard_private_key)->toBeNull()->and($slot->agent_secret)->toBeNull()
+        ->and(Node::query()->whereKey($node->id)->exists())->toBeFalse()->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
 });
 
-it('makes a slot\'s identity once and keeps it, with the public keys the real tools derive', function (): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    $slot = app(TaskVmSlotIdentity::class)->ensure(slotPoolSlot($host, $project, $build, 1));
-    $keys = [$slot->wireguard_private_key, $slot->ssh_host_private_key, $slot->agent_secret];
+it('mints keys whose public halves match what the real tools derive', function (): void {
+    [$host, $project] = slotPoolHost();
+    $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_project_id' => $project->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Large, 'name' => 'beast-tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.201']);
+    $keys = app(TaskVmSlotIdentity::class)->ensure($slot);
 
-    $again = app(TaskVmSlotIdentity::class)->ensure($slot->refresh());
-    expect([$again->wireguard_private_key, $again->ssh_host_private_key, $again->agent_secret])->toBe($keys)
-        ->and(TaskVmSlotIdentity::sshPublicKey($keys[1]))->toStartWith('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5')
-        ->and(TaskVmSlotIdentity::sshFingerprint($keys[1]))->toStartWith('SHA256:')
-        ->and(strlen(base64_decode(TaskVmSlotIdentity::wireguardPublicKey($keys[0]))))->toBe(32);
+    expect(TaskVmSlotIdentity::sshPublicKey((string) $keys->ssh_host_private_key))->toStartWith('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5')
+        ->and(TaskVmSlotIdentity::sshFingerprint((string) $keys->ssh_host_private_key))->toStartWith('SHA256:')
+        ->and(strlen((string) base64_decode(TaskVmSlotIdentity::wireguardPublicKey((string) $keys->wireguard_private_key))))->toBe(32);
 });
 
-it('submits an enrol and a release without secrets with an empty secret map, which the workflow takes as an object', function (string $kind, array $input): void {
-    [$host, $project, $build] = slotPoolHost(2);
-    $slot = slotPoolSlot($host, $project, $build, 1);
-    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Queued, 'input' => $input, 'triggered_by' => 'test']);
+it('submits a release without secrets with an empty secret map, which the workflow takes as an object', function (): void {
+    [$host, $project] = slotPoolHost();
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $operation = Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Queued, 'input' => ['intent' => ['host' => [], 'slot' => []], 'execution_secrets' => []], 'triggered_by' => 'test']);
 
     expect(json_encode(app(DirectOperation::class)->workflowInputs($operation)['execution_secrets']))->toBe('{}');
-})->with([
-    'enrol' => ['task_vm.slot_enrol', ['intent' => ['public_key' => str_repeat('a', 43).'=']]],
-    'release' => ['task_vm.slot_release', ['intent' => ['host' => [], 'slot' => []], 'execution_secrets' => []]],
-]);
-
-it('takes an identity whose enrol ended without a projection as failed, and waits while its enrol is open', function (): void {
-    [$host, $project, $build] = slotPoolHost(1);
-    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning]);
-    $enrol = Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
-    $pool = app(TaskVmSlotPool::class);
-
-    expect($pool->next($host->id))->toBeNull();
-    // A start the Gateway refused fails the Operation before any run; the identity stays as the enrol left it.
-    $enrol->update(['status' => OperationStatus::Failed]);
-    expect($pool->next($host->id)['slot']->id)->toBe($slot->id);
 });
 
-it('releases a stale identity that holds a model key before it enrols it again, and holds while a refresh proves with it', function (): void {
-    [$host, $project, $build] = slotPoolHost(1);
-    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning, 'model_key' => str_repeat('c', 64)]);
-    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
-    $pool = app(TaskVmSlotPool::class);
+it('fails a slot whose release start was refused, keeping the model key to revoke', function (): void {
+    [$host, $project] = slotPoolHost();
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $slot->update(['state' => TaskVmState::Releasing, 'group_id' => null, 'model_key' => str_repeat('c', 64)]);
+    $operation = Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused', 'input' => [], 'triggered_by' => 'test']);
 
-    expect($pool->next($host->id))->toBeNull();
-    // The refresh ended without its projection: its identity still holds the claim's model key, so a release comes first.
-    $refresh->update(['status' => OperationStatus::Failed]);
-    expect($pool->next($host->id)['slot']->id)->toBe($slot->id)
-        ->and(TaskVmSlotPool::repair($slot->refresh()))->toBe(TaskVmSlotPool::ReleaseKind);
-    $slot->update(['model_key' => null]);
-    expect(TaskVmSlotPool::repair($slot->refresh()))->toBe(TaskVmSlotPool::EnrolKind);
+    app(TaskVmSlotReleaseProjection::class)->refused($operation);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('swamp.start_refused')
+        ->and($slot->model_key)->toBe(str_repeat('c', 64))->and($slot->node)->toBeInstanceOf(Node::class);
 });
 
-it('fails an identity whose enrol or release start was refused; a refused release keeps the model key to revoke', function (string $kind, string $state, ?string $key): void {
-    [$host, $project, $build] = slotPoolHost(1);
-    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => $state, 'model_key' => $key]);
-    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid', 'input' => [], 'triggered_by' => 'test']);
+it('has the sweep release each slot that no group holds and no Operation works on, and leaves the others', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 12);
+    $pool = app(TaskVmSlotPool::class);
+    $stale = $pool->take(slotPoolGroup($project));
+    $held = $pool->take(slotPoolGroup($project));
+    $busy = $pool->take(slotPoolGroup($project));
+    $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
+    $busy->update(['group_id' => null, 'state' => TaskVmState::Failed]);
+    Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $busy->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:gateway', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-public-key', 'wireguard_public_key' => str_repeat('g', 43).'=']));
+    foreach ([RoleName::Gateway, RoleName::Swamp, RoleName::Vpn] as $role) {
+        $gateway->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+    app()->instance(SwampDispatch::class, new class
+    {
+        public function start(Operation $operation): void {}
+    });
 
-    app($kind === 'task_vm.slot_enrol' ? TaskVmSlotEnrolProjection::class : TaskVmSlotReleaseProjection::class)->refused($operation);
+    app()->call([new SweepTaskVmHosts, 'handle']);
 
-    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('operation.execution_secrets_invalid')
-        ->and($slot->model_key)->toBe($key);
-})->with([
-    'enrol' => ['task_vm.slot_enrol', 'provisioning', null],
-    'release' => ['task_vm.slot_release', 'releasing', str_repeat('c', 64)],
-]);
-
-it('starts the rule at once after a passed release, and leaves a failed one to the sweep so that it does not loop', function (bool $passed): void {
-    [$host, $project, $build] = slotPoolHost(1);
-    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Releasing, 'model_key' => str_repeat('c', 64)]);
-    Queue::fake();
-
-    DB::transaction(fn () => app(TaskVmSlotReleaseProjection::class)->record($slot, $passed, $passed ? null : 'task_vm.slot_release_failed', false));
-
-    $passed ? Queue::assertPushed(RefillTaskVmSlots::class) : Queue::assertNotPushed(RefillTaskVmSlots::class);
-})->with(['passed' => [true], 'failed' => [false]]);
+    $releases = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('triggered_by', 'task-vm-sweep')->get();
+    expect($releases->pluck('target_id')->all())->toBe([$stale->id])
+        ->and($releases->sole()->input['intent']['hub_peer']['public_key'])->toBe(TaskVmSlotIdentity::wireguardPublicKey((string) $stale->wireguard_private_key))
+        ->and($stale->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and($held->refresh()->state)->toBe(TaskVmState::Provisioning)->and($busy->refresh()->state)->toBe(TaskVmState::Failed);
+});

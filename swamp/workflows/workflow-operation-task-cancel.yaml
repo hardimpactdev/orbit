@@ -1,6 +1,6 @@
 id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
 name: operation-task-cancel
-description: End one task group on 209 (docs/cli/tasks/cancel.mmd); push approved work, then release its task VM, whose VM and seed clone are deleted while the slot identity stays.
+description: End one task group on 209 (docs/cli/tasks/cancel.mmd); push approved work, then release its task VM, which deletes the VM, its seed clone, its hub peer and its Node.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -43,7 +43,7 @@ jobs:
         run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
         intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
         execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
-  # The VM and its seed clone are deleted, and the claim's model key is revoked. The slot identity keeps its Node and hub peer.
+  # The VM and its seed clone are deleted, its hub peer is removed and its model key revoked; the Gateway then deletes its Node.
   # A push that failed keeps the work on the slot: the release waits for a push that passed or did not run.
   - name: Release the slot
     labels: {role: swamp}

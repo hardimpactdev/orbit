@@ -12,7 +12,6 @@ use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
-use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
@@ -59,11 +58,7 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads the run's step statuses and builds the cleanup receipt from the captured intent.
     'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
-], 'task_vm.provision' => $provision, 'task_vm.slot_enrol' => [
-    'workflow' => 'operation-task-vm-slot-enrol', 'projection' => TaskVmSlotEnrolProjection::class, 'workflow_inputs' => true,
-    // No result step: the projector reads the hub peer step.
-    'terminal_result' => ['job' => 'enrol', 'step' => TaskVmSlotEnrolProjection::EndCheck, 'native' => true],
-], 'task_vm.slot_release' => [
+], 'task_vm.provision' => $provision, 'task_vm.slot_release' => [
     'workflow' => 'operation-task-vm-slot-release', 'projection' => TaskVmSlotReleaseProjection::class, 'workflow_inputs' => true,
     'terminal_result' => ['job' => 'release', 'step' => 'Delete the VM', 'native' => true],
     // The claim's model key, to revoke; the delete takes no secret.

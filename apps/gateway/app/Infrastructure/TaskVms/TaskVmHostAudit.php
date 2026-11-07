@@ -92,7 +92,7 @@ final readonly class TaskVmHostAudit
     }
 
     /**
-     * The host's `ready` or `parked` rows with no group, other than ready slots, or with an ended group, unchanged for
+     * The host's `ready` or `parked` rows with no group, or with an ended group, unchanged for
      * {@see self::RecordMinutes}, counted from the later change of the row and its group.
      *
      * @return list<TaskVm>
@@ -104,8 +104,6 @@ final readonly class TaskVmHostAudit
         return array_values(TaskVm::query()->where('host_node_id', $node->id)
             ->whereIn('state', [TaskVmState::Ready, TaskVmState::Parked])
             ->where('updated_at', '<=', $cutoff)
-            // A ready slot has no group by design; the slot pool owns it.
-            ->where(static fn ($query) => $query->whereNull('slot_project_id')->orWhereNotNull('group_id'))
             ->with('group')->orderBy('id')->get()
             ->filter(static fn (TaskVm $vm): bool => $vm->group === null
                 || (in_array($vm->group->groupStatus(), TaskGroupStatus::endedStatuses(), true)

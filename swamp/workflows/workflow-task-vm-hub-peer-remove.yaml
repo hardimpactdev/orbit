@@ -1,0 +1,60 @@
+id: 2f8c5d1a-9e47-4b3c-8a61-7d0e4b2c9f53
+name: task-vm-hub-peer-remove
+description: Remove one task VM's peer from the WireGuard hub at its release (docs/cli/tasks/cancel.mmd). A rerun finds the peer gone.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    hub: {type: object}
+    hub_ssh_execution: {type: object}
+    public_key: {type: string, minLength: 44, maxLength: 44}
+    guest_node_id: {type: integer, minimum: 1}
+  required: [hub, hub_ssh_execution, public_key, guest_node_id]
+  additionalProperties: false
+jobs:
+- name: peer
+  labels: {role: swamp}
+  steps:
+  - name: Unload the peer
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.hub_ssh_execution.target.user }}
+          port: ${{ inputs.hub_ssh_execution.target.port }}
+          identityFile: ${{ inputs.hub_ssh_execution.identity_file }}
+        hosts:
+        - name: hub
+          address: ${{ inputs.hub_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.hub_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:hub
+        sudo: true
+        argv: ${{ ["wg", "set", "orbit", "peer", inputs.public_key, "remove"] }}
+  - name: Remove the peer file
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Unload the peer, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("wireguard-hub-peer-" + string(inputs.hub.hub_id) + "-" + string(inputs.guest_node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.hub_ssh_execution.target.host }}
+        nodeUser: ${{ inputs.hub_ssh_execution.target.user }}
+        nodePort: ${{ inputs.hub_ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.hub_ssh_execution.identity_file }}
+        become: true
+        path: ${{ inputs.hub.file }}
+        ensure: absent
+      inputs: {}

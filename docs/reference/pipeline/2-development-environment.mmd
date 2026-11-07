@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fixed slot identity `<node>-tvm-<n>`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/tasks/provision.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its slot under the host's `max_vms`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/tasks/provision.mmd.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -14,23 +14,27 @@ sequenceDiagram
   participant H as Task VM host<br/>Incus over ssh
   participant VM as Task VM<br/>outer · operator
   participant NT as Nested fleet<br/>3 containers
-  Note over GW: Claim a slot identity<br/>mint the claim's keys
+  Note over GW: Take a slot<br/>mint its identity
   %%> Requirements:
-  %%> - an external task group in `todo`, a free slot identity and a promoted base snapshot on its host
+  %%> - an external task group in `todo`, a free slot under a host's `max_vms` and a promoted base snapshot on that host
   %%> Result:
-  %%> - the group holds the identity; its Node, WireGuard peer, host key and agent secret already exist; the claim's Pi token and model key are new
+  %%> - the group holds the slot; its Node, WireGuard key, host key, agent secret, Pi token and model key are new, and the public keys are pinned on the Node
   %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission answers `tasks.capacity_unavailable` and names the release the host's image comes from
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), `incus start`, then the identity and the claim's keys are written; the containers start with the VM
+  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), the identity and keys written in the same exec, `incus start`; the containers start with the VM
+  SW->>H: Add the hub peer<br/>one wg set on the VPN hub
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - adds the new WireGuard key as a peer of the hub while the VM boots
   SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
   %%> - the converge of the release refresh: a no-op on a current image; it catches up a small delta when main moved since the last release
   %%> - then the new task branch on the warm checkout, at the group's start commit
-  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only and is baked with the fleet, so it is no part of the slot identity
+  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only and is baked with the fleet, so it is no part of the VM's identity
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides

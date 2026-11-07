@@ -7,14 +7,13 @@ namespace App\Domain\TaskVms;
 use App\Models\TaskVm;
 
 /**
- * The fixed network identity of a task VM slot (docs/cli/tasks/vm-slot-enrol.mmd): its WireGuard key, its SSH host key and its agent
- * secret. The Gateway makes them once, at the slot's first enrol, and keeps them encrypted on the slot's row; every enrol writes the same
- * ones onto the slot's root disk, so a rebuild from a new image keeps the identity. The Pi token and the model key are no part of it:
- * a claim mints them fresh (docs/cli/tasks/provision.mmd).
+ * The network identity a task start mints for its VM (docs/cli/tasks/provision.mmd): its WireGuard key, its SSH host key and its agent
+ * secret. The Gateway keeps them encrypted on the row and pins their public halves on the Node; the task start writes them onto the copy
+ * of the base VM. A release deletes the Node and revokes them (docs/cli/tasks/cancel.mmd).
  */
 final readonly class TaskVmSlotIdentity
 {
-    /** Makes the slot's identity once; an identity that exists stays as it is. */
+    /** Mints the identity of a row that has none; an identity that exists stays as it is. */
     public function ensure(TaskVm $vm): TaskVm
     {
         $fill = [];

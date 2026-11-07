@@ -78,6 +78,15 @@ jobs:
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
         execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
           "agent_secret": inputs.execution_secrets.agent_secret, "claim": inputs.execution_secrets.claim} }}'}
+  # The VM's peer on the WireGuard hub, while the VM boots.
+  - name: Add the hub peer
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-hub-peer
+      inputs: {hub: '${{ inputs.intent.hub_peer.hub }}', hub_ssh_execution: '${{ inputs.intent.hub_peer.hub_ssh_execution }}',
+        public_key: '${{ inputs.intent.hub_peer.public_key }}', guest_node_id: '${{ inputs.intent.hub_peer.guest_node_id }}'}
   # The claim's model key goes to the model router while the VM starts; Pi reads it from the claim's model file.
   - name: Issue the model key
     labels: {role: swamp}
@@ -90,7 +99,7 @@ jobs:
   - name: Converge and branch
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
+    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-image-ansible

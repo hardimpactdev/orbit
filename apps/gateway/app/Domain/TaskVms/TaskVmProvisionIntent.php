@@ -78,7 +78,7 @@ final readonly class TaskVmProvisionIntent
         $vm = TaskVm::query()->when($lock, static fn ($query) => $query->lockForUpdate())->findOrFail($taskRoot ? ValidatedData::integer($operation->input['task_vm_id']) : $operation->target_id);
         $input = $operation->input;
         $guest = $vm->node;
-        if ((! $taskRoot && (! in_array($operation->kind, ['task_vm.provision', TaskVmSlotPool::EnrolKind], true) || $operation->target_type !== 'task_vm'))
+        if ((! $taskRoot && (! in_array($operation->kind, ['task_vm.provision'], true) || $operation->target_type !== 'task_vm'))
             || ($taskRoot && $vm->group_id !== $operation->target_id)
             || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['node_id'] ?? null) !== $operation->node_id
             || ($input['host_node_id'] ?? null) !== $vm->host_node_id || ($input['name'] ?? null) !== $vm->name

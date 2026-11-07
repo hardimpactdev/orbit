@@ -19,15 +19,16 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The intents of a task start (docs/cli/tasks/provision.mmd) and a release (docs/cli/tasks/cancel.mmd) on one slot identity. A task start
- * makes a new VM from the host's image, writes the slot's fixed identity and the two secrets a task could misuse, a new Pi token and model
- * key, then runs the converge and starts the task branch. A release deletes the VM and revokes the model key; the Pi token goes with the VM.
+ * The intents of a task start (docs/cli/tasks/provision.mmd) and a release (docs/cli/tasks/cancel.mmd) in one slot. A task start copies the
+ * host's base VM snapshot, writes the identity the admission minted, a new Pi token and model key, and adds the hub peer beside the boot;
+ * then it runs the converge and starts the task branch. A release deletes the VM, removes the hub peer and revokes the model key; the
+ * Gateway then deletes the Node.
  */
 final readonly class TaskVmSlotRuns
 {
     public function __construct(private TaskVmSettings $settings, private ModelKeyIssuer $models, private TaskVmModelKeyInputs $modelInputs,
         private SwampCommandStep $shared, private SwampSshExecutionInput $ssh, private TaskVmSlotWorkspace $workspace,
-        private SystemdProcessRenderer $systemd, private StartOperationAction $start, private TaskVmSlotEnrolIntent $identity,
+        private SystemdProcessRenderer $systemd, private StartOperationAction $start, private TaskVmIdentity $identity,
         private TaskVmConvergeInput $converge, private TaskVmPromotedImage $images) {}
 
     /**
@@ -61,6 +62,8 @@ final readonly class TaskVmSlotRuns
                 'slot' => [...$target['slot'], 'base' => ['vm' => $current['vm'], 'seed' => $current['seed'], 'snapshot' => $current['snapshot']], 'cpus' => $resources->cpus, 'memory' => $resources->memory,
                     'pi_home' => '/home/orbit', 'identity' => $this->identity->identity($slot)],
                 'model' => $model['intent'],
+                // The VM's peer on the WireGuard hub, added while the VM boots.
+                'hub_peer' => $this->identity->hubPeer($slot),
                 'converge' => $converge['converge'],
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
                 'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],
@@ -81,7 +84,8 @@ final readonly class TaskVmSlotRuns
     }
 
     /**
-     * The release intent: the VM and its seed clone to delete, and the claim's model key to revoke. The delete takes no secret.
+     * The release intent: the VM and its seed clone to delete, its hub peer to remove and the claim's model key to revoke. The delete takes no
+     * secret. The Gateway deletes the Node record when the run passed.
      *
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
@@ -90,7 +94,7 @@ final readonly class TaskVmSlotRuns
         $model = is_string($slot->model_key) && $slot->ai_router_origin !== null ? $this->modelInputs->capture($slot, $this->gateway()->id, $this->shared->executionCopy(...)) : null;
 
         return [
-            'intent' => [...$this->target($slot), ...$model === null ? [] : ['model' => $model['intent']]],
+            'intent' => [...$this->target($slot), 'hub_peer' => $this->identity->hubPeer($slot), ...$model === null ? [] : ['model' => $model['intent']]],
             'execution_secrets' => $model['execution_secrets'] ?? [],
         ];
     }
