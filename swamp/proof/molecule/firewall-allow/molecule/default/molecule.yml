@@ -35,12 +35,30 @@ provisioner:
           gateway_ca: /home/orbit/.orbit/nested-ca.pem
           # One port pair per case: a case uses its own resources, as in the runner. A rerun on a fleet that was not restored sets another
           # PROOF_PORT_BASE, so the leftovers of the first run touch nothing.
+          # The CLI under test, as the outer VM runs it: the checkout of the VM, the nested profile in ORBIT_HOME.
+          checkout: "{{ lookup('ansible.builtin.env', 'ORBIT_CHECKOUT') | default('/home/orbit/apps/orbit/workspace', true) }}"
+          orbit: [php, "{{ checkout }}/apps/cli/orbit"]
+          cli_env: {PATH: /usr/local/bin:/usr/bin:/bin, HOME: /home/orbit, ORBIT_HOME: /home/orbit/.orbit}
           port_base: "{{ lookup('ansible.builtin.env', 'PROOF_PORT_BASE') | default(47100, true) | int }}"
           cases:
             new_restricted_allow: {port: "{{ port_base | int + 1 }}", control: "{{ port_base | int + 11 }}"}
             already_applied:      {port: "{{ port_base | int + 2 }}", control: "{{ port_base | int + 12 }}"}
             partial_application:  {port: "{{ port_base | int + 3 }}", control: "{{ port_base | int + 13 }}"}
             conflict:             {port: "{{ port_base | int + 4 }}", control: "{{ port_base | int + 14 }}"}
+            protocols_tcp:        {port: "{{ port_base | int + 5 }}", control: "{{ port_base | int + 15 }}"}
+            # A range of five ports, one port outside it, and one control port for the traffic probes.
+            port_range:           {lo: "{{ port_base | int + 20 }}", mid: "{{ port_base | int + 22 }}", hi: "{{ port_base | int + 24 }}", spec: "{{ port_base | int + 20 }}:{{ port_base | int + 24 }}", outside: "{{ port_base | int + 30 }}"}
+          # Every port that gets a listener on app-dev, and every test deny (TCP unless `udp`), placed above the proof-network allowance.
+          listen_ports: "{{ [cases.new_restricted_allow.port, cases.new_restricted_allow.control, cases.already_applied.port, cases.already_applied.control, cases.partial_application.port, cases.partial_application.control, cases.conflict.port, cases.conflict.control, cases.protocols_tcp.port, cases.protocols_tcp.control] + range(cases.port_range.lo | int, (cases.port_range.hi | int) + 1) | list + [cases.port_range.outside] }}"
+          denies:
+            - {name: new_restricted_allow, port: "{{ cases.new_restricted_allow.port }}"}
+            - {name: already_applied, port: "{{ cases.already_applied.port }}"}
+            - {name: partial_application, port: "{{ cases.partial_application.port }}"}
+            - {name: partial_application_udp, port: "{{ cases.partial_application.port }}", proto: udp}
+            - {name: conflict, port: "{{ cases.conflict.port }}"}
+            - {name: protocols_tcp, port: "{{ cases.protocols_tcp.port }}"}
+            - {name: port_range, port: "{{ cases.port_range.spec }}"}
+            - {name: port_range_outside, port: "{{ cases.port_range.outside }}"}
         children:
           control:
             hosts:

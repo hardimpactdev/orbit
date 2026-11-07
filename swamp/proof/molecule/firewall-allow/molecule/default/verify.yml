@@ -1,5 +1,5 @@
 ---
-# The state asserts of five firewall:allow cases. converge.yml has run the CLI and checked the answers and receipts; this play only reads:
+# The state asserts of eight firewall:allow cases. converge.yml has run the CLI and checked the answers and receipts; this play only reads:
 # the facts converge cached, traffic from the Nodes (wait_for), the UFW table of app-dev (command) and the nested Gateway's records (uri).
 # Each block names its case; the chart paths they cover are in swamp/proof/firewall/allow.cases.yaml.
 - ansible.builtin.import_playbook: facts.yml
@@ -11,7 +11,7 @@
     app_dev_ip: "{{ hostvars['nested-app-dev'].app_dev_ip }}"
     src: "{{ hostvars['nested-gateway'].gateway_src }}"
     app_dev_id: "{{ hostvars['localhost'].node_ids['app-dev'] }}"
-    case_names: [new_restricted_allow, already_applied, partial_application, conflict, failure_code]
+    case_names: [new_restricted_allow, already_applied, partial_application, conflict, failure_code, protocols_tcp, port_range, protected_port]
     row_pattern: '^\[ *([0-9]+)\].*$'
   tasks:
     # ---- shared reads, once ----
@@ -62,6 +62,22 @@
               - deny_row | length > 0
               - allow_row | first < deny_row | first
             quiet: true
+        - name: Doctor on app-dev, firewall family (a silent agent shows as unverifiable, not as drift; the agent reports at its next tick, so poll)
+          ansible.builtin.command:
+            argv: "{{ orbit + ['doctor', '--node=' ~ app_dev_id, '--family=firewall', '--json'] }}"
+            chdir: /
+          environment: "{{ cli_env }}"
+          register: doctor
+          failed_when: false
+          changed_when: false
+          until: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
+          retries: 14
+          delay: 5
+        - name: Doctor reports no drift
+          ansible.builtin.assert:
+            that: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
+            fail_msg: "doctor: exit {{ doctor.rc }}, {{ doctor.stdout | default('') | truncate(200) }}"
+            quiet: true
         - name: Nothing else changed in UFW (rows without the port, numbers removed)
           ansible.builtin.assert:
             that: >-
@@ -92,6 +108,7 @@
               - deny_row | length > 0
               - allow_row | first < deny_row | first
               - ufw_before.already_applied == ufw_after.already_applied
+              - records_before.already_applied == records_after.already_applied
             quiet: true
       rescue:
         - name: Record the failed check of already-applied
@@ -137,6 +154,7 @@
             that:
               - ops_before.conflict == ops_after.conflict
               - ufw_before.conflict == ufw_after.conflict
+              - records_before.conflict == records_after.conflict
             quiet: true
         - name: The Gateway is still blocked on the port
           ansible.builtin.include_tasks: probe.yml
@@ -157,16 +175,93 @@
             that:
               - ops_before.failure_code == ops_after.failure_code
               - ufw_before.failure_code == ufw_after.failure_code
+              - records_before.failure_code == records_after.failure_code
             quiet: true
       rescue:
         - name: Record the failed check of failure-code
           ansible.builtin.set_fact:
             failures: "{{ failures | default({}) | combine({'failure_code': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
 
+    # ---- case: protocols[tcp] (changes-needed, succeeded) ----
+    - name: protocols-tcp
+      vars:
+        c: "{{ cases.protocols_tcp }}"
+        allow_row: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        deny_row: "{{ rows | select('search', 'proof:deny-protocols_tcp$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        matching: >-
+          {{ rules | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src) | selectattr('status', 'equalto', 'active')
+          | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+      block:
+        - name: The Gateway reaches the port and app-prod does not
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: "{{ item }}"}
+          loop:
+            - {from: nested-gateway,  port: "{{ c.port }}", expect: connect}
+            - {from: nested-app-prod, port: "{{ c.port }}", expect: blocked}
+        - name: One active tcp record, and the allow line sits above the deny
+          ansible.builtin.assert:
+            that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]
+            quiet: true
+      rescue:
+        - name: Record the failed check of protocols-tcp
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'protocols_tcp': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: port-range (changes-needed, succeeded) ----
+    - name: port-range
+      vars:
+        c: "{{ cases.port_range }}"
+        allow_row: "{{ rows | select('search', c.spec ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        deny_row: "{{ rows | select('search', 'proof:deny-port_range$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        matching: "{{ rules | selectattr('status', 'equalto', 'active') | selectattr('port', 'equalto', c.spec) | list }}"
+      block:
+        - name: Every port of the range passes for the Gateway, the port outside it and app-prod stay blocked
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: "{{ item }}"}
+          loop:
+            - {from: nested-gateway,  port: "{{ c.lo }}",      expect: connect}
+            - {from: nested-gateway,  port: "{{ c.mid }}",     expect: connect}
+            - {from: nested-gateway,  port: "{{ c.hi }}",      expect: connect}
+            - {from: nested-gateway,  port: "{{ c.outside }}", expect: blocked}
+            - {from: nested-app-prod, port: "{{ c.mid }}",     expect: blocked}
+        - name: One active record for the range, and the allow line sits above the range deny
+          ansible.builtin.assert:
+            that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]
+            quiet: true
+        - name: Nothing else changed in UFW (rows without the range, numbers removed)
+          ansible.builtin.assert:
+            that: >-
+              (ufw_before.port_range.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.spec) | list)
+              ==
+              (ufw_after.port_range.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.spec) | list)
+            quiet: true
+      rescue:
+        - name: Record the failed check of port-range
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'port_range': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: protected-port (already-applied, succeeded) ----
+    - name: protected-port
+      block:
+        - name: SSH still works, and UFW and the records did not change
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: {from: nested-gateway, port: 22, expect: connect}}
+        - name: Nothing changed
+          ansible.builtin.assert:
+            that: [ufw_before.protected_port == ufw_after.protected_port, records_before.protected_port == records_after.protected_port]
+            quiet: true
+      rescue:
+        - name: Record the failed check of protected-port
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'protected_port': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
     # ---- the verdicts, one line a case; the play fails when any case failed ----
     - name: Verdict of each case
       ansible.builtin.debug:
-        msg: "{{ item }}: {{ 'failed | ' ~ failures[item] if item in (failures | default({})) else 'passed' }} (command {{ ((act[item].secs.split(':')[0] | int * 3600) + (act[item].secs.split(':')[1] | int * 60) + (act[item].secs.split(':')[2] | float)) | round(1) }} s)"
+        msg: "{{ item }}: {{ 'failed | ' ~ failures[item] if item in (failures | default({})) else 'passed' }} (command {{ ((act[item].secs.split(':')[0] | int * 3600) + (act[item].secs.split(':')[1] | int * 60) + (act[item].secs.split(':')[2] | float)) | round(1) }} s, case in converge {{ case_secs[item] }} s)"
       loop: "{{ case_names }}"
 
     - name: Fail when a case failed
