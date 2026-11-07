@@ -78,7 +78,7 @@ function roundWorld(): array
         'wireguard_ip' => '10.44.0.137', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
-        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+        '/pi', str_repeat('a', 64), ['gpt-6']));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public',
         'source_access' => 'github_app', 'merge_check' => 'Required checks', 'review_and_merge' => true]);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Round', 'brief' => 'Round it', 'status' => TaskGroupStatus::WaitingForReview,

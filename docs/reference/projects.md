@@ -274,7 +274,7 @@ A Project can be removed when all its task groups are `cancelled` or `completed`
 
 If any group has another status (`backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, or `failed`), removal is blocked. The Gateway refuses the request with HTTP 409 and `project.has_task_groups` and leaves the Project and its task records unchanged.
 
-If a task VM is in `provisioning`, `ready`, `parked`, `destroying`, or `failed`, the Gateway refuses removal with HTTP 409 and `project.task_vm_not_destroyed`. The message names the VM and its state. The Gateway deletes nothing. Wait until VM destruction finishes, including model-key revocation, before retrying. Only `destroyed` VM rows are deleted with the Project.
+If a task VM is in `provisioning`, `ready`, `parked`, `destroying`, or `failed`, the Gateway refuses removal with HTTP 409 and `project.task_vm_not_destroyed`. The message names the VM and its state. The Gateway deletes nothing. Wait until VM destruction finishes before retrying. Only `destroyed` VM rows are deleted with the Project.
 
 
 Extensions take part in the removal through the `ProjectRemovalHook` [plug-in point](/reference/extensions#plug-in-points), in the same transaction. The documents extension removes the Project's documents and records their stored bytes for cleanup, whether or not its switch is on.

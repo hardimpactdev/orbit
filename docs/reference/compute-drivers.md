@@ -412,7 +412,7 @@ A claim records placement and one native provision intent. The [native root](/re
 2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
 3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
 4. Native steps publish the network from Gateway-rendered files with no private key, and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
-5. The shared router behavior issues the model key under its native lock. The guest prepares Pi through the Process lower. Confirmed native success marks the VM ready.
+5. The guest prepares Pi through the Process lower, with the guard origin and the fixed model key in `models.json`. Confirmed native success marks the VM ready.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
@@ -442,17 +442,17 @@ Enrollment continues when cloud-init reports `done` with no errors and the host 
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
-Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. The workspace creation then logs `workspace-package-cache`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
+Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. The workspace creation then logs `workspace-package-cache`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
 
 Pi preparation runs on 209 with pinned official SSH, and no script reaches the guest. Swamp copies the pinned Pi build from the Gateway to 209 and checks its SHA-256 there; a different build stops before the guest. One command on the guest checks the digest again and installs it as `/home/orbit/.local/bin/pi-server` (0755).
 
-Each file then arrives on stdin of one `install` command: the Orbit root, `models.json` and the token (0600, owned by the managed account), and the `pi-server` unit. The Gateway renders the whole `models.json` with the VM's model key as one vault value, `task-vm-pi-models-<id>`, because Swamp passes a secret only whole. One command reloads systemd and enables and restarts the unit; `systemctl is-active` and one `curl` to Pi's capabilities, with the bearer read on the guest, are the end checks.
+Each file then arrives on stdin of one `install` command: the Orbit root, `models.json` and the token (0600, owned by the managed account), and the `pi-server` unit. The Gateway renders the whole `models.json` with the guard origin and the fixed model key as one vault value, `task-vm-pi-models-<id>`, because Swamp passes a secret only whole. One command reloads systemd and enables and restarts the unit; `systemctl is-active` and one `curl` to Pi's capabilities, with the bearer read on the guest, are the end checks.
 
 The Gateway makes the guest's agent secret when it admits the enrollment, as it does for `node:add`, and keeps only the SHA-256 of the 64 hex characters. The vault copy `agent-secret-node-<id>` arrives on stdin of one `install` command that writes `/etc/orbit/agent/secret` (0600, root) with no trailing newline. The `observer-identity` step hashes the file and the run stops with `agent.secret_mismatch` unless it equals the Gateway's value. The agent sends the secret and the Gateway compares its hash, so the file and the record must describe the same bytes.
 
 The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, and TCP 443 for a routed workspace site (`orbit:task-vm-site`), before it enables ufw. The hub filter lets the Cluster Routers and 209 (`orbit:task-vm-control-web`, for the Route's TLS probe) reach that port. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
 
-The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway retains the model-key record and creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
+The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
 
 #### Skip what the image holds
 
@@ -486,7 +486,7 @@ An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its works
 A parked VM starts before preservation is attempted. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
-2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its volumes.
+2. It sets the row to `destroying` and deletes the VM and its volumes.
 3. It removes the workspace records offline, as for [a VM that died](#a-vm-that-dies-before-its-group-ends).
 4. It queues `DestroyTaskVm`, which removes the Node.
 
@@ -494,7 +494,7 @@ A step that fails keeps the Instance and records the error on the row. The group
 
 Explicit completion, cancellation and workspace removal queue `DestroyTaskVm`. Swamp owns retries and cleanup scheduling. `DestroyTaskVm` then runs these steps:
 
-1. It sets the row to `destroying` and revokes the group's model key.
+1. It sets the row to `destroying`.
 2. It deletes the VM with `incus delete --force`, then the VM's [clone of the topology seed](#incus-provider). Each delete is one pinned `@swamp/ssh` `exec` argument list on the host.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It reads the project's instances and the pool's custom volumes again. A native `assert` checks that neither lists the VM or its seed clone.
@@ -798,7 +798,7 @@ The `TaskVmState` enum has six cases.
 | `parked` | Orbit stopped the VM, or is starting it again. The disk stays. See [Park and resume](#park-and-resume) |
 | `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
-| `destroyed` | The VM, the Node, and the model key are gone. The row stays for audit |
+| `destroyed` | The VM and the Node are gone. The row stays for audit |
 
 Orbit derives progress inside `provisioning` from facts: the VM exists, the row has a Node, the Node is active, and the Pi Process exists. A group has at most one task VM that is not `destroyed`. `failed` is final for the row. Cancel the group to destroy the VM.
 
@@ -1229,14 +1229,14 @@ The command takes every value from Gateway records and settings:
 - the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
 - the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
 - Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
-- the host and port of `task_vms.model_proxy_origin`;
+- the host and port of the model router guard (`TaskVmModelRoute::origin()`, port 8318);
 - every active Node with a recorded Router-role assignment in the dev Cluster, including a provisioning replacement until its assignment is withdrawn.
 
-The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The range must be inside the WireGuard subnet, because every Node routes only the subnet through the tunnel. `TaskVmSettings` checks that. The command refuses a range that holds the address of a Node not named `tvm-<id>`. It also refuses a missing dev Cluster or origin, and an origin whose host is not an IPv4 address outside the range.
+The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The range must be inside the WireGuard subnet, because every Node routes only the subnet through the tunnel. `TaskVmSettings` checks that. The command refuses a range that holds the address of a Node that is not the Node of a live task VM. It also refuses a missing dev Cluster, a model route that is not ready, and a guard origin whose host is not an IPv4 address outside the range.
 
 | Direction | Allowed |
 | --- | --- |
-| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
+| From task VMs | The Gateway API on TCP 443, the model router guard on TCP 8318, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
 | To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
 
 The 209 SSH and TLS probe rules and the Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
@@ -1249,7 +1249,7 @@ TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener fo
 
 Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` for the managed private Swamp Route on the `swamp` Node. The setting adds no hub rule, so a task VM reaches the site only when the hub admits TCP 443 on that Node, as it does on the Gateway and `websocket` Nodes. The exception matches exactly one hostname on port 443 and never a public Ingress site or a block with extra hostnames. The other client-range guard still applies. It admits no sibling site, subdomain, or alternate port. An unset or empty value admits no Swamp site.
 
-Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, `swamp_host`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition, `task_vms.wireguard_range`, and `task_vms.swamp_host`. Another invalid task VM value never changes a Caddyfile or blocks a build.
+Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `swamp_host`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition, `task_vms.wireguard_range`, and `task_vms.swamp_host`. Another invalid task VM value never changes a Caddyfile or blocks a build.
 
 The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Changing or clearing `swamp_host` also reports this drift on the Node that serves the hostname until its next build. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
 
@@ -1269,7 +1269,6 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
 | `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `swamp` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
-| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [ai-router extension](/reference/ai-router) |
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
@@ -1277,11 +1276,9 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#size-of-a-task-vm) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
 
-Each task VM stores `ai_router_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
+Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()`, and `key()`. The [ai-router extension](/reference/ai-router) binds it. `origin()` is the [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node, such as `http://10.44.0.3:8318`, and `key()` is the one fixed placeholder key that every task VM holds. The Gateway keeps the key as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes the origin and the key into the Pi models file of the VM, inside the claim. No start and no release calls the model router, and no per-VM key exists.
 
-`TaskVmRuntime` reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`: `assertReady()`, `origin()`, `issue(origin, key)`, and `revoke(origin, key)`. The [ai-router extension](/reference/ai-router) binds it and keeps the management key and the anchor key, so task VM code never sees them. `TaskVmRuntime` creates the group key and stores it with its origin on the task VM row before it calls `issue()`, so a retry registers the same key.
-
-Every key change holds the lock `ModelKeyIssuer::Lock` (`orbit:compute:model-keys`). Under that lock, preparation calls `assertReady()` before it stores a key, and refuses with `task_vm.model_key_failed` (409) while the router cannot revoke keys. The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses until ai-router holds a management key. `ai-router:teardown` holds the same lock and refuses while a task VM holds a key. See [Teardown](/reference/ai-router#teardown).
+The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:teardown` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
@@ -1289,7 +1286,7 @@ Placement selects active Nodes with this setting and capacity reads their slot b
 
 To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/reference/node-settings#migrate-the-environment-host-list) before removing the variable from `gateway.env`. The Gateway does not read the environment list.
 
-`TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
+`TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id` and at least one host.
 
 The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, the Swamp hostname, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
 
@@ -1299,13 +1296,13 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid, or the ai-router CLIProxyAPI URL is not `model_proxy_origin`. See [Configure task VMs](#configure-task-vms) |
+| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
 | `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 | `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
-| `task_vm.range_in_use` | 409 | A Node not named `tvm-<id>` holds an address in the reserved range |
+| `task_vm.range_in_use` | 409 | A Node that is not the Node of a live task VM holds an address in the reserved range |
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
@@ -1313,7 +1310,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
 | `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
-| `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the ai-router extension holds no management key, or another key operation runs |
 | `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
 | `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
@@ -1418,7 +1414,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 
 Swamp owns UpCloud image cleanup and orphan sweeps. Both run on role `swamp` workers on 209 with the token from the vault. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
 
-Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Model-key steps use the stable router behavior shared with teardown. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
+Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
 
 ### Build the UpCloud template
 
@@ -1594,4 +1590,3 @@ Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Us
 
 The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.
 
-Admission holds the existing model-router teardown lock through its outer database transaction, including the router-ready check and model-key reservation. Teardown sees every committed reservation before it can disable the router. This admission fence does not replace the shared native behavior lock that serializes API-key list changes.

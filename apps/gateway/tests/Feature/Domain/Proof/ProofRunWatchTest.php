@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -24,7 +23,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -79,29 +77,6 @@ it('leaves a proof alone while its request may still be admitting', function ():
     $proof = watchProof(watchNode(), 60);
 
     expect(app(ProofRunWatch::class)->sweep())->toBe(0)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
-});
-
-it('frees the admission lock that the dead request of the proof held, and only that lock', function (): void {
-    $proof = watchProof(watchNode(), 400);
-    // A killed request leaves the lock with its owner until the 600 s limit.
-    expect(Cache::lock(ModelKeyIssuer::Lock, 600, ProofRunWatch::lockOwner($proof->id))->get())->toBeTrue();
-
-    app(ProofRunWatch::class)->sweep();
-
-    $next = Cache::lock(ModelKeyIssuer::Lock, 600);
-    expect($next->get())->toBeTrue();
-    $next->release();
-});
-
-it('keeps an admission lock that another admission or a router teardown holds', function (): void {
-    $proof = watchProof(watchNode(), 400);
-    $other = Cache::lock(ModelKeyIssuer::Lock, 600, 'router-teardown');
-    expect($other->get())->toBeTrue();
-
-    app(ProofRunWatch::class)->sweep();
-
-    expect($proof->refresh()->error_code)->toBe('proof.admission_interrupted')->and(Cache::lock(ModelKeyIssuer::Lock, 600)->get())->toBeFalse();
-    $other->release();
 });
 
 it('leaves a proof alone while its runs are still being handed to Swamp one after another', function (): void {

@@ -43,7 +43,7 @@ jobs:
         run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
         intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
         execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
-  # The VM and its seed clone are deleted, its hub peer is removed and its model key revoked; the Gateway then deletes its Node.
+  # The VM and its seed clone are deleted and its hub peer is removed; the Gateway then deletes its Node.
   # A push that failed keeps the work on the slot: the release waits for a push that passed or did not run.
   - name: Release the slot
     labels: {role: swamp}
@@ -60,7 +60,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: tasks.cancel
         intent: '${{ inputs.intent.release == null ? {} : inputs.intent.release.intent }}'
-        execution_secrets: '${{ inputs.intent.release == null || !has(inputs.intent.release.intent.model) ? {} : inputs.intent.release.execution_secrets }}'
+        execution_secrets: {}
 - name: check
   labels: {role: swamp}
   dependsOn: [{job: cancel, condition: {type: completed}}]

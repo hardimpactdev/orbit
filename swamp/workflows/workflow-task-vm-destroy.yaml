@@ -1,6 +1,6 @@
 id: a5dc9328-9812-4f24-9055-d874830f9bb7
 name: task-vm-destroy
-description: Revoke the VM's model key, delete the VM and its seed volume from 209 over pinned SSH (UpCloud through provider-power), remove its guest Node, and assert the host no longer lists either.
+description: Delete the VM and its seed volume from 209 over pinned SSH (UpCloud through provider-power), remove its guest Node, and assert the host no longer lists either.
 # Shared by task_vm.destroy, tasks.cancel and a failed task_vm.provision: a typed boundary, not an ordering aid.
 queueTimeout: 60
 vaults:
@@ -29,7 +29,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+            pattern: ^(task-vm-pi-token-[1-9][0-9]*|task-vm-upcloud-token)$
         required:
         - vault
         - key
@@ -42,24 +42,7 @@ inputs:
   - execution_secrets
   additionalProperties: false
 jobs:
-- name: revoke
-  steps:
-  - name: Revoke the model key
-    labels: {role: swamp}
-    guard: ${{ !inputs.intent.model_key_required }}
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-model-revoke
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: '${{ inputs.intent.model_key_required ? {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} : {} }}'
 - name: delete
-  dependsOn:
-  - job: revoke
-    condition: {type: succeeded}
   steps:
   # Incus: one forced delete per resource; an absent VM or volume exits 1 and counts as done, the end check proves it.
   - name: Delete the VM

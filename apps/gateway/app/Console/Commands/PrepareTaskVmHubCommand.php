@@ -8,12 +8,14 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\TaskVms\TaskVmHubFilter;
 use App\Infrastructure\TaskVms\TaskVmHubPolicy;
 use App\Models\Node;
+use App\Models\TaskVm;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Config;
@@ -28,21 +30,18 @@ final class PrepareTaskVmHubCommand extends Command
     /** Reverb is served by the `websocket` Node's Caddy site for `reverb.orbit` on this port. */
     private const int ReverbPort = 443;
 
-    /** Task VM Nodes are named `tvm-<task VM id>`. Only they may hold a reserved address. */
-    private const string TaskVmNodeName = '/\Atvm-[0-9]+\z/D';
-
     #[\Override]
     protected $signature = 'task-vms:prepare-hub';
 
     #[\Override]
     protected $description = 'Install the static task VM filter for the reserved WireGuard range on the vpn Node.';
 
-    public function handle(VpnSettings $vpn, TaskVmHubFilter $filter, TaskVmHubPolicy $policy): int
+    public function handle(VpnSettings $vpn, TaskVmHubFilter $filter, TaskVmHubPolicy $policy, TaskVmModelRoute $route): int
     {
         try {
             $settings = resolve(TaskVmSettings::class);
             $range = Ipv4Subnet::from($settings->wireguardRange);
-            $model = $this->modelProxy($settings->modelProxyOrigin, $range);
+            $model = $this->modelProxy($route->origin(), $range);
             $clusterId = $settings->devClusterId ?? throw $this->invalid('dev_cluster_id is not set.');
             $hub = $this->roleNode(RoleName::Vpn);
             $this->guardRange($range);
@@ -71,26 +70,26 @@ final class PrepareTaskVmHubCommand extends Command
         return self::SUCCESS;
     }
 
-    /** The `ip:port` of the normalized model proxy origin. The host must be an IPv4 address outside the range. */
-    private function modelProxy(?string $origin, Ipv4Subnet $range): string
+    /** The `ip:port` of the model route origin, the guard. The host must be an IPv4 address outside the range. */
+    private function modelProxy(string $origin, Ipv4Subnet $range): string
     {
-        $parts = parse_url($origin ?? throw $this->invalid('model_proxy_origin is not set.'));
+        $parts = parse_url($origin);
         $host = is_array($parts) ? ($parts['host'] ?? '') : '';
 
         if (! is_array($parts) || filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $range->contains($host)) {
-            throw $this->invalid("model_proxy_origin [{$origin}] must name an IPv4 address outside [{$range->value()}].");
+            throw $this->invalid("the model route origin [{$origin}] must name an IPv4 address outside [{$range->value()}].");
         }
 
         return $host.':'.($parts['port'] ?? (($parts['scheme'] ?? '') === 'https' ? 443 : 80));
     }
 
+    /** Only the Node of a live task VM may hold an address of the reserved range. */
     private function guardRange(Ipv4Subnet $range): void
     {
-        $nodes = Node::query()->whereNotNull('wireguard_ip')->get(['name', 'wireguard_ip']);
+        $nodes = Node::query()->whereNotNull('wireguard_ip')->get(['id', 'name', 'wireguard_ip']);
 
         foreach ($nodes as $node) {
-            if (is_string($node->wireguard_ip) && $range->contains($node->wireguard_ip)
-                && preg_match(self::TaskVmNodeName, $node->name) !== 1) {
+            if (is_string($node->wireguard_ip) && $range->contains($node->wireguard_ip) && TaskVm::forNode($node) === null) {
                 throw new TaskVmException('task_vm.range_in_use', "Node [{$node->name}] holds [{$node->wireguard_ip}] inside [{$range->value()}].");
             }
         }

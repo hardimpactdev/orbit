@@ -194,7 +194,6 @@ export const ProvisionTerminalArgs = z.object({
         wireguard_public_key: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
         architecture: z.literal("x86_64").optional(),
     }),
-    model: z.object({ task_vm_id: Id, issued: z.literal(true) }),
     process: z.object({ status: z.literal("active") }),
     network_ready: z.literal(true),
     runtime_ready: z.literal(true),
@@ -204,7 +203,6 @@ export const ProvisionTerminalArgs = z.object({
 export function provisionTerminalResult(raw: unknown) {
     const args = ProvisionTerminalArgs.parse(raw);
     if (
-        args.model.task_vm_id !== args.intent.task_vm_id ||
         args.provider.image_fingerprint !== args.intent.image_fingerprint
     ) {
         throw new Error("task_vm.provision_refused");

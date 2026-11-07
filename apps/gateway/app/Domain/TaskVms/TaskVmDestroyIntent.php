@@ -15,7 +15,6 @@ use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskFinalReview;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -26,7 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 /** Immutable same-VM cleanup intent; no provider or guest effect at admission. */
 final readonly class TaskVmDestroyIntent
 {
-    public function __construct(private TaskVmProviderWorkflowInput $provider, private TaskVmModelKeyInputs $models, private SwampCommandStep $shared) {}
+    public function __construct(private TaskVmProviderWorkflowInput $provider) {}
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
@@ -113,19 +112,12 @@ final readonly class TaskVmDestroyIntent
         }
         $snapshot = $node instanceof Node ? app(NodeRemovalPlan::class)->build($node, offline: true, machineDeleted: true) : null;
         $removal = $snapshot === null ? null : app(NodeRemovalInput::class)->capture($snapshot, $workspace);
-        $model = null;
-        if ($vm->model_key !== null) {
-            $gateway = Node::query()->where('status', LifecycleStatus::Active)
-                ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-            $model = $this->models->capture($vm, $gateway->id, $this->shared->executionCopy(...));
-        }
         $provider = $this->provider->capture($vm);
 
         return ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $vm->node_id,
             'workspace_routes' => $workspaceRoutes, 'group_id' => $vm->group_id, 'name' => $vm->name, 'wireguard_ip' => $vm->wireguard_ip,
-            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'model_key_required' => $vm->model_key !== null,
-            'model_intent' => $model['intent'] ?? null, 'node_removal' => $snapshot, 'removal' => $removal['intent'] ?? null,
-            ...$provider, 'execution_secrets' => [...$provider['execution_secrets'], ...($model['execution_secrets'] ?? [])]];
+            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'node_removal' => $snapshot, 'removal' => $removal['intent'] ?? null, ...$provider];
     }
 
     public function owned(Operation $operation, bool $lock = false): TaskVm
@@ -152,8 +144,7 @@ final readonly class TaskVmDestroyIntent
             || ($vm->provider === TaskVmProviderKind::Incus && ($input['node_id'] ?? null) !== $vm->host_node_id)
             || ($input['guest_node_id'] ?? null) !== $vm->node_id || ($input['group_id'] ?? null) !== $vm->group_id
             || ($input['name'] ?? null) !== $vm->name || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip
-            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['provider_id'] ?? null) !== $vm->provider_id
-            || ($input['model_key_required'] ?? null) !== ($vm->model_key !== null)) {
+            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['provider_id'] ?? null) !== $vm->provider_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Destroy no longer owns its admitted VM, provider and cleanup scope.', 422);
         }
     }

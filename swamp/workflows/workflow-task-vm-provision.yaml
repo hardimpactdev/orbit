@@ -31,7 +31,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
+            pattern: ^(task-vm-(pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
         required:
         - vault
         - key
@@ -190,14 +190,12 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
-        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor,"upcloud":inputs.execution_secrets.upcloud}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
           : {} }}'
         intent:
           task_vm_id: ${{ inputs.intent.task_vm_id }}
           guest_node_id: null
           provider: upcloud
-          model_key_required: true
-          model_intent: ${{ inputs.intent.model_intent }}
           removal: null
           provider_input:
             task_vm_id: ${{ inputs.intent.task_vm_id }}

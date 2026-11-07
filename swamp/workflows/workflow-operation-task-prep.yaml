@@ -30,8 +30,8 @@ inputs:
       additionalProperties: false
     execution_secrets:
       type: object
-      # The slot's identity, which the start writes onto the new VM; the claim's model key, registered while the
-      # VM starts; and the claim's Pi token and model file.
+      # The slot's identity, which the start writes onto the new VM; and the claim: the Pi token and the models file with the
+      # fixed model key.
       properties:
         wireguard: &secret
           type: object
@@ -42,27 +42,6 @@ inputs:
           additionalProperties: false
         ssh_host: *secret
         agent_secret: *secret
-        model_key:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_management:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_anchor:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
         claim:
           type: object
           properties:
@@ -78,7 +57,7 @@ inputs:
             key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
-      required: [wireguard, ssh_host, agent_secret, model_key, model_router_management, model_router_anchor, claim, pi_token]
+      required: [wireguard, ssh_host, agent_secret, claim, pi_token]
       additionalProperties: false
     publish_secrets:
       type: object
@@ -122,8 +101,7 @@ jobs:
         kind: tasks.provision
         intent: ${{ inputs.intent.provision }}
         execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
-          "agent_secret": inputs.execution_secrets.agent_secret, "model_key": inputs.execution_secrets.model_key,
-          "model_router_management": inputs.execution_secrets.model_router_management, "model_router_anchor": inputs.execution_secrets.model_router_anchor,
+          "agent_secret": inputs.execution_secrets.agent_secret,
           "claim": inputs.execution_secrets.claim} }}'
   - name: Draft the spec
     labels: {role: swamp}

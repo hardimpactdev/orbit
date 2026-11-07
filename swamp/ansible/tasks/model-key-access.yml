@@ -1,8 +1,0 @@
----
-# Ask the router for its models with `access_token` (empty for no key) and expect `access_status`.
-- name: Check what the router answers to a key
-  no_log: true
-  ansible.builtin.uri:
-    url: "{{ router }}/v1/models"
-    headers: "{{ {'Authorization': 'Bearer ' ~ access_token} if access_token != '' else {} }}"
-    status_code: "{{ access_status }}"

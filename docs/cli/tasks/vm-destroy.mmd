@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: swamp/workflows/workflow-operation-task-vm-destroy.yaml (+ the shared task-vm-destroy child, provider-power for UpCloud, model-revoke and operation-node-remove children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-provision.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Target design: swamp/workflows/workflow-operation-task-vm-destroy.yaml (+ the shared task-vm-destroy child, provider-power for UpCloud and operation-node-remove children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-provision.md, docs/reference/tasks.md, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02 (second pass), rules 22 (one command is one exec argv: the VM delete and the seed volume delete are two argvs, so two steps; no TypeScript plan, seed decode or terminal fold), 9 (one read-back of the VM and the volume, one native `assert`), 14 (no `result` step in the child or the root; the Gateway reads the run's step statuses and builds the receipt from its captured intent), 16 (no read before the forced delete; an absent VM or volume counts as done and the end check proves it), 21 (the child stays: tasks.cancel and failed provisions run it too, so it is a typed boundary).
   %% status: draft
   %% command: none · nothing admits it now
@@ -24,8 +24,8 @@ sequenceDiagram
   %%> - no workspace, Route, protected Node resource or unpublished approved work remains on guest Node 340
   %%> Result:
   %%> - task VM 333 is `destroying`; guest Node 340 is `removing`
-  %%> - task #5181 records the provider input, whether a model key exists, the seed volume name and the Node removal intent
-  %%> - vault copies for the model key, the router keys and, for UpCloud, the API token
+  %%> - task #5181 records the provider input, the seed volume name and the Node removal intent
+  %%> - for UpCloud, a vault copy of the API token
   GW->>SW: Start run, full intent<br/>operation-task-vm-destroy
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -36,16 +36,6 @@ sequenceDiagram
   %%> - the root's one step runs the shared child; its steps follow on its own lane
   %%> Why a child:
   %%> - tasks.cancel and a failed provision run the same child, so it is a typed boundary
-  DC->>DC: Revoke the model key<br/>model · task-vm-model-revoke
-  %%> What it does:
-  %%> - removes VM 333's model key from the model router from 209 and confirms the anchor key stays
-  %%> - two Ansible phases on 209, `anchor` and `revoke`: HTTPS calls to the router, no script
-  %%> When:
-  %%> - a `guard` skips it when VM 333 has no model key
-  %%> Why first:
-  %%> - the provider delete waits for it, so a deleted VM never leaves a live key
-  %%> Held open:
-  %%> - one 209 script until an official HTTP behavior covers the router API
   alt Incus host
     DC->>H: Delete the VM<br/>ssh exec · incus delete --force
     %%> How:
@@ -99,7 +89,7 @@ sequenceDiagram
   else a step fails
     H--xDC: exit ≠ 0 or timeout
     %%> When:
-    %%> - the revoke, a delete, the Node removal or the end check fails
+    %%> - a delete, the Node removal or the end check fails
     DC--xSW: Child failed<br/>failed step
     SW--xGW: Run failed<br/>destroy_failed, failed step
     %%> Result:

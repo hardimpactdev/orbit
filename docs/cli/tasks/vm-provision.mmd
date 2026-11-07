@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: swamp/workflows/workflow-operation-task-vm-provision.yaml (+ task-vm-provision, provider-incus, incus-first-visit, enrollment, ssh-prepare, model-issue, runtime children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-provision.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Target design: swamp/workflows/workflow-operation-task-vm-provision.yaml (+ task-vm-provision, provider-incus, incus-first-visit, enrollment, ssh-prepare, runtime children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-provision.md, docs/reference/tasks.md, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02, rules 1, 2, 3, 6, 9, 14, 15, 16, 18, 19, 20, 22 (provider, first boot, bootstrap and peer steps merged; no input-check, decode or report steps; cfgmgmt on the pinned guest; one end check).
   %% status: draft
   %% command: none · task VM claim for a task group
@@ -23,8 +23,8 @@ sequenceDiagram
   %%> - task VM 333 is `provisioning`, with its Placement on Node 13 and the promoted recipe image
   %%> - no other task holds `task_vm:333`; a repeated admission returns the same open task
   %%> Result:
-  %%> - task #5181 records the full intent: provider, host, image, size, guest Node 340, hub peer file, observer files, Pi Process and model key record
-  %%> - vault copies for the model key, Pi token, Pi models and provider bootstrap; the intent holds only their vault key names
+  %%> - task #5181 records the full intent: provider, host, image, size, guest Node 340, hub peer file, observer files, Pi Process record
+  %%> - vault copies for the Pi token, the Pi models file (the guard origin and the fixed model key) and provider bootstrap; the intent holds only their vault key names
   GW->>SW: Start run, full intent<br/>operation-task-vm-provision
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -75,14 +75,6 @@ sequenceDiagram
   %%> - from here Swamp reaches tvm-333 directly over WireGuard
   %%> Replaces:
   %%> - `peer-publish-command`, `peer-enable`, `peer-start` and `peer-dns-command`
-  SW->>SW: Issue the model key<br/>model · task-vm-model-issue
-  %%> What it does:
-  %%> - adds VM 333's model key on the model router from 209 and confirms the anchor key stays
-  %%> - two Ansible phases on 209, `anchor` and `issue`: HTTPS calls to the router, no script
-  %%> When:
-  %%> - in parallel from the start of the run; it touches no guest (rule 18)
-  %%> Held open:
-  %%> - one 209 script until an official HTTP behavior covers the router API; seven steps become one
   SW->>VM: Start the Node agent<br/>observer · cfgmgmt file · systemd
   %%> What it does:
   %%> - `@swamp/cfgmgmt/file` writes the agent identity, `config.toml` and `ca.pem`; `@swamp/cfgmgmt/systemd` installs and starts `orbit-agent`
@@ -116,11 +108,11 @@ sequenceDiagram
     %%> - records the guest host key with `RecordNodeSshHostKeyAction`, the WireGuard key, observer identity and the `pi-server` Process
     %%> - task VM 333 is `ready`; task #5181 succeeds
   else a step fails
-    SW->>SW: Revoke the model key<br/>model-revoke · on failure
+    SW->>SW: Delete the unready server<br/>cloud-prefix-rollback · UpCloud
     %%> When:
     %%> - `dependsOn` the failed step with condition `failed` (rule 19)
     %%> What it does:
-    %%> - revokes any issued model key; for UpCloud, `cloud-prefix-rollback` also deletes the unready server
+    %%> - for UpCloud, deletes the unready server; there is no model key to revoke
     %%> On the Node:
     %%> - the Incus VM and a published hub peer stay for diagnosis; the next hub convergence drops the peer
     SW--xGW: Run failed<br/>error_code, failed step

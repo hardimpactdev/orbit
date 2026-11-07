@@ -12,8 +12,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-clone-environment-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-environment-(?:testing-)?[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-env-import\\.content\\.[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-(pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^ai-router-(task|anchor)-key-node-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-credentials-operation-[1-9][0-9]*-(probe|apply|confirm)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
@@ -65,7 +64,6 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^conn-pairing-revoke-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-(claim|token)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^swamp-proof-club-api-key$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-vault-sync-plan-[a-f0-9-]{36}-(prepare-inputs-inputs-(client_secret|master_password)|session-session-session-value)$", "actions": ["write", "read"]}

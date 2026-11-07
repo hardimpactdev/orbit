@@ -22,7 +22,10 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
+use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
@@ -36,6 +39,9 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
+use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -50,7 +56,7 @@ function slotPoolHost(int $maxVms = 6, bool $snapshot = true): array
     config(['proof.project' => $project->id]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
         [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB')],
-        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+        '/pi', str_repeat('a', 64), ['gpt-6']));
     $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
         : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
@@ -65,8 +71,8 @@ function slotPoolGroup(Project $project): Task
     return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
 }
 
-/** The Gateway, Swamp and VPN Node a release intent names, and a Swamp dispatch that starts nothing. */
-function slotPoolSweepWorld(): void
+/** The Gateway, Swamp and VPN Node a release intent names, and a Swamp dispatch that starts nothing unless `$dispatch` is false. */
+function slotPoolSweepWorld(bool $dispatch = true): void
 {
     $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit',
@@ -74,10 +80,68 @@ function slotPoolSweepWorld(): void
     foreach ([RoleName::Gateway, RoleName::Swamp, RoleName::Vpn] as $role) {
         $gateway->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
     }
-    app()->instance(SwampDispatch::class, new class
+    if ($dispatch) {
+        app()->instance(SwampDispatch::class, new class
+        {
+            public function start(Operation $operation): void {}
+        });
+    }
+}
+
+/** A Swamp socket that records every vault put, so that a test reads what the Gateway wrote for a run. */
+function slotPoolSocket(): object
+{
+    $socket = new class implements WebSocketClient
     {
-        public function start(Operation $operation): void {}
-    });
+        /** @var list<array<string,mixed>> */
+        public array $frames = [];
+
+        private bool $open = false;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+
+            return [['id' => $frame['id'], 'type' => 'vault.put', 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+
+        /** The value the Gateway put under the vault key. */
+        public function put(string $key): string
+        {
+            foreach ($this->frames as $frame) {
+                if ($frame['payload']['key'] === $key) {
+                    return $frame['payload']['value'];
+                }
+            }
+
+            throw new RuntimeException("Nothing was put under [{$key}].");
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    return $socket;
 }
 
 it('takes the lowest free slot number and mints a fresh identity, its Node active with the public keys pinned', function (): void {
@@ -100,7 +164,7 @@ it('takes the lowest free slot number and mints a fresh identity, its Node activ
 
     // A released slot's number is free again; the new identity shares nothing with the old one.
     $old = [$first->wireguard_private_key, $first->agent_secret];
-    app(TaskVmSlotReleaseProjection::class)->record($first, true, null, true);
+    app(TaskVmSlotReleaseProjection::class)->record($first, true, null);
     $third = $pool->take(slotPoolGroup($project));
     expect($third->slot_number)->toBe(1)->and($third->id)->not->toBe($first->id)
         ->and([$third->wireguard_private_key, $third->agent_secret])->not->toBe($old);
@@ -129,14 +193,14 @@ it('deletes the Node, its workspace Instance and the keys of a released slot', f
     $group = slotPoolGroup($project);
     $slot = app(TaskVmSlotPool::class)->take($group);
     $node = $slot->node;
-    $slot->update(['state' => TaskVmState::Ready, 'model_key' => str_repeat('c', 64)]);
+    $slot->update(['state' => TaskVmState::Ready]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
         'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
 
-    app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
+    app(TaskVmSlotReleaseProjection::class)->record($slot, true, null);
 
     expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed)->and($slot->group_id)->toBeNull()->and($slot->node_id)->toBeNull()
-        ->and($slot->model_key)->toBeNull()->and($slot->wireguard_private_key)->toBeNull()->and($slot->agent_secret)->toBeNull()
+        ->and($slot->wireguard_private_key)->toBeNull()->and($slot->agent_secret)->toBeNull()
         ->and(Node::query()->whereKey($node->id)->exists())->toBeFalse()->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
 });
 
@@ -160,17 +224,17 @@ it('submits a release without secrets with an empty secret map, which the workfl
     expect(json_encode(app(DirectOperation::class)->workflowInputs($operation)['execution_secrets']))->toBe('{}');
 });
 
-it('fails a slot whose release start was refused, keeping the model key to revoke', function (): void {
+it('fails a slot whose release start was refused, keeping its Node for the sweep', function (): void {
     [$host, $project] = slotPoolHost();
     $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    $slot->update(['state' => TaskVmState::Releasing, 'group_id' => null, 'model_key' => str_repeat('c', 64)]);
+    $slot->update(['state' => TaskVmState::Releasing, 'group_id' => null]);
     $operation = Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
         'status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused', 'input' => [], 'triggered_by' => 'test']);
 
     app(TaskVmSlotReleaseProjection::class)->refused($operation);
 
     expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('swamp.start_refused')
-        ->and($slot->model_key)->toBe(str_repeat('c', 64))->and($slot->node)->toBeInstanceOf(Node::class);
+        ->and($slot->node)->toBeInstanceOf(Node::class);
 });
 
 it('has the sweep release each slot that no group holds and no Operation works on, and leaves the others', function (): void {
@@ -249,7 +313,7 @@ it('unbinds a failed start\'s group from the workspace its release deletes, and 
 
     expect(fn () => app(TaskCancelIntent::class)->start($group, 'test', null))->toThrow(ResourceOperationException::class, 'still running');
 
-    app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
+    app(TaskVmSlotReleaseProjection::class)->record($slot, true, null);
     $release->update(['status' => OperationStatus::Succeeded]);
     expect($group->refresh()->taskable_id)->toBeNull();
 
@@ -270,7 +334,7 @@ it('lets a cancel admitted before a failed start\'s release still close the grou
     $group->fill(['status' => TaskGroupStatus::Failed])->save();
     // The cancel is admitted while the release job has not started its Operation yet.
     $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
-    app(TaskVmSlotReleaseProjection::class)->record($slot->refresh(), true, null, true);
+    app(TaskVmSlotReleaseProjection::class)->record($slot->refresh(), true, null);
 
     expect(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
     app(TaskGroupEnding::class)->failed($cancel->input, 'task_vm.slot_release_failed');
@@ -294,4 +358,67 @@ it('has a task start converge reach its VM over WireGuard with the pinned key of
         // What every task VM shares goes into the base, not into each start's identity.
         ->and($base['boot']['trust'])->toBe(['certificate' => "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n",
             'control_ip' => '10.44.0.1', 'gateway_ip' => '10.44.0.1', 'pi_port' => app(PiConnection::class)->port()]);
+});
+
+it('writes the guard origin and the one fixed model key into every claim, and a start or release carries no model intent or secret', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld(dispatch: false);
+    $services = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:services', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'services-public-key']));
+    app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+    Operation::query()->forceCreate(['kind' => 'ai_router.task_guard', 'target_type' => 'node', 'target_id' => $services->id, 'node_id' => $services->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['intent' => ['state' => 'present']]]);
+    $socket = slotPoolSocket();
+    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
+    $runs = app(TaskVmSlotRuns::class);
+    $pool = app(TaskVmSlotPool::class);
+    $first = $pool->take(slotPoolGroup($project));
+    $second = $pool->take(slotPoolGroup($project));
+
+    // The identity of a start reads the hub's public key from the Gateway home.
+    $home = sys_get_temp_dir().'/orbit-claim-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($home.'/wireguard');
+    file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32))."\n");
+    config(['orbit.home' => $home]);
+    try {
+        $start = $runs->claim($first, 'task-1', str_repeat('a', 40));
+        $other = $runs->claim($second, 'task-2', str_repeat('a', 40));
+    } finally {
+        File::deleteDirectory($home);
+    }
+
+    $file = static function (array $claim) use ($socket): array {
+        [$token, $models] = explode("\n", $socket->put($claim['execution_secrets']['claim']['key']), 2);
+
+        return [$token, json_decode($models, true, flags: JSON_THROW_ON_ERROR)['providers']['orbit-task-vm']];
+    };
+    [$token, $provider] = $file($start);
+    [$otherToken, $otherProvider] = $file($other);
+    $first->refresh();
+    $second->refresh();
+    $key = app(AiRouterSecrets::class)->task();
+
+    // The Pi models file holds the guard origin (port 8318, not the router's own 8317) and the fixed key, the same for every VM.
+    expect($provider['baseUrl'])->toBe('http://10.44.0.3:8318/v1')->and($provider['apiKey'])->toBe($key)
+        ->and($otherProvider['apiKey'])->toBe($key)->and($otherProvider['baseUrl'])->toBe($provider['baseUrl'])
+        // The Pi token stays one per claim.
+        ->and($token)->toBe($first->pi_token)->and($otherToken)->toBe($second->pi_token)->and($token)->not->toBe($otherToken)
+        // No model intent, no model secret and no model vault key: the start never calls the model router.
+        ->and($start['intent'])->not->toHaveKey('model')
+        ->and(array_keys($start['execution_secrets']))->toBe(['wireguard', 'ssh_host', 'agent_secret', 'claim'])
+        ->and(json_encode($start))->not->toContain($key)
+        ->and(array_filter(array_column(array_column($socket->frames, 'payload'), 'key'), static fn (string $name): bool => str_contains($name, 'model')))->toBe([]);
+
+    // A release has nothing to revoke.
+    $release = $runs->release($first);
+    expect($release['intent'])->not->toHaveKey('model')->and($release['execution_secrets'])->toBe([]);
+});
+
+it('refuses a task start while the ai-router has no guard', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld(dispatch: false);
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+
+    expect(fn () => app(TaskVmSlotRuns::class)->claim($slot, 'task-1', str_repeat('a', 40)))->toThrow(ResourceOperationException::class, 'ai-router');
 });

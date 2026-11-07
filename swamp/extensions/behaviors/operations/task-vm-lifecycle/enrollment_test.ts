@@ -31,7 +31,6 @@ async function receipts() {
         provider,
         guest: await guestConnection(intent, provider, key),
         peer: { public_key: "p".repeat(43) + "=" },
-        model_stdout: JSON.stringify({ task_vm_id: 42, issued: true }),
         runtime_stdout: JSON.stringify({
             task_vm_id: 42,
             guest_node_id: 142,

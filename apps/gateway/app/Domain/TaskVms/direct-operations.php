@@ -22,13 +22,12 @@ $provision = [
     'terminal_result' => ['job' => 'provision', 'step' => 'result'],
     'private_material' => [],
     'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
 ];
 
-// What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, the claim's model key and its Pi token and
-// model file; and the proof Swamp Club key, which a refresh gives the base VM.
+// What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, and the claim with its Pi token and the Pi
+// models file that holds the fixed model key; and the proof Swamp Club key, which a refresh gives the base VM.
 $taskStart = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'],
-    ['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$'],
     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-(claim|token)-[1-9][0-9]*$']];
 
 return ['task_vm.hub_converge' => [
@@ -56,12 +55,11 @@ return ['task_vm.hub_converge' => [
     'workflow_inputs' => true,
     // No result step: the projector reads the run's step statuses and builds the cleanup receipt from the captured intent.
     'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.provision' => $provision, 'task_vm.slot_release' => [
+    // The delete takes no secret.
     'workflow' => 'operation-task-vm-slot-release', 'projection' => TaskVmSlotReleaseProjection::class, 'workflow_inputs' => true,
     'terminal_result' => ['job' => 'release', 'step' => 'Delete the VM', 'native' => true],
-    // The claim's model key, to revoke; the delete takes no secret.
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$']],
 ], 'task_vm.image_refresh' => [
     'workflow' => 'operation-task-vm-image-refresh',
     'projection' => TaskVmImageRefreshProjection::class,

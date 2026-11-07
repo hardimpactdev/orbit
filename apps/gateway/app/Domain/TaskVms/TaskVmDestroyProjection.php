@@ -112,7 +112,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
                 throw new ResourceOperationException('operation.invalid_result', 'Destroy requires cleanup of its recorded guest Node.', 422);
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null,
-                'model_key' => null, 'provider_bootstrap' => null, 'worker_stop_required' => false,
+                'provider_bootstrap' => null, 'worker_stop_required' => false,
                 'error_code' => null, 'error_message' => null, ...$vm::ForgetTopology]);
         });
     }

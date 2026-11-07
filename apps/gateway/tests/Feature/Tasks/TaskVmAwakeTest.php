@@ -103,7 +103,7 @@ it('admits the resume of a parked VM under a keyed request without the key of th
     $host->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     Node::withoutEvents(fn () => $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]]));
     config([
-        'task_vms.enabled' => true, 'task_vms.dev_cluster_id' => 1, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317',
+        'task_vms.enabled' => true, 'task_vms.dev_cluster_id' => 1,
         'task_vms.pi.artifact_path' => '/srv/pi.tar', 'task_vms.pi.artifact_sha256' => str_repeat('a', 64),
         'swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' fixture',
     ]);
