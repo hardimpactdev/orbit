@@ -2,11 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\TaskVms\TaskVmConvergeProjection;
-use App\Domain\TaskVms\TaskVmFleetBuildProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
-use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 
@@ -21,12 +18,6 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads the end check's status and builds the result from the captured intent.
     'terminal_result' => ['job' => 'hub', 'step' => TaskVmHubProjection::EndCheck, 'native' => true],
     'projection' => TaskVmHubProjection::class,
-], 'task_vm.converge' => [
-    'workflow' => 'operation-task-vm-converge',
-    'projection' => TaskVmConvergeProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the check phase's status and builds the result from the captured intent.
-    'terminal_result' => ['job' => 'check', 'step' => TaskVmConvergeProjection::EndCheck, 'native' => true],
 ], 'task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',
     'projection' => TaskVmResumeProjection::class,
@@ -47,20 +38,4 @@ return ['task_vm.hub_converge' => [
     // The proof Swamp Club key, which the nested Gateway's Swamp runs with while the refresh converges it, and what the task start that
     // proves the candidate writes.
     'execution_copies' => $taskStart,
-], 'task_vm.fleet_build' => [
-    'workflow' => 'operation-task-vm-fleet-build',
-    'projection' => TaskVmFleetBuildProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the run's step statuses; the Ansible wait that asserts the nested Doctor is the end check.
-    'terminal_result' => ['job' => 'end', 'step' => TaskVmFleetBuildProjection::EndCheck, 'native' => true],
-    // The proof Swamp Club key, which the new Gateway's Swamp runs with.
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
-], 'task_vm.ready_copies' => [
-    'workflow' => 'operation-task-vm-ready-copies',
-    'projection' => TaskVmReadyCopiesProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the run's step statuses; the native assert is the end check.
-    'terminal_result' => ['job' => 'end', 'step' => TaskVmReadyCopiesProjection::EndCheck, 'native' => true],
-    // The proof Swamp Club key, which the scan looks for in the guests.
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
 ]];

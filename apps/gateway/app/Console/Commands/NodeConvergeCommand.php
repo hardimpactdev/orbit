@@ -10,8 +10,8 @@ use App\Models\Node;
 use Illuminate\Console\Command;
 
 /**
- * Admits `node.converge` from the Gateway itself, the way `node:converge` does through the API. The Gateway of a fleet build
- * converges its own Node this way, which installs the agent and the CLI on its machine (docs/cli/tasks/vm-fleet-build.mmd).
+ * Admits `node.converge` from the Gateway itself, the way `node:converge` does through the API. The Gateway of a nested fleet
+ * converges its own Node this way, which installs the agent and the CLI on its machine (swamp/ansible/tasks/task-vm-fleet-build.yml).
  */
 final class NodeConvergeCommand extends Command
 {

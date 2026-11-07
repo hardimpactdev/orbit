@@ -2,14 +2,14 @@
 title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{BuildTaskVmFleetCommand,ConvergeTaskVmCommand,RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand,SaveTaskVmReadyCopiesCommand}.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand}.php}
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/database/migrations/2027_01_29_000001_drop_upcloud_task_vm_support.php
-  - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
+  - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
 
 # Compute drivers
@@ -557,9 +557,9 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node. Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. The [image build](#the-base-vm-and-its-snapshot) runs the same playbook on its builder, so an image and a converged VM end in the same state.
+The common converge brings a task VM to the pins of the release. A [base snapshot refresh](#refresh-the-base-snapshot) runs it on the base VM, and every task start runs it on the new VM, in one Ansible run with the host part (`swamp/ansible/task-vm-start.yml`). It has no kind or command of its own. Swamp runs the phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH, so a base and a started VM end in the same state. These are the `software`, `tools` and `check` phases.
 
-The Gateway puts these in the Operation:
+The Gateway puts these in the intent:
 
 - The `recipe.json` of the release and the Vite+ lock.
 - The VM's SSH target with its recorded host key.
@@ -571,9 +571,8 @@ The `software` phase installs Ubuntu packages and file packages at their pins. I
 
 The `tools` phase installs the shape gate linters. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
-- With `--nested-subnet` and `--nested-interface` (default `nested`), the VM leads the nested network of that subnet.
+- The intent names the nested subnet and the interface `nested` (`TaskVmNestedFleet`), so the VM leads the nested network of that subnet.
 - UFW then allows DHCP, DNS and the package cache from the nested bridge, and routes it out.
-- Without those options Incus keeps the network it has.
 - The linters build into `/opt/orbit-shape-gate`, named by the digest of the pins in `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`.
 - `bin/swamp-shape-gate` finds the folder by that name. The handoff check then runs offline.
 
@@ -581,7 +580,7 @@ The `check` phase is the one end check. It asserts every package at its pin, eve
 
 The `check` phase also asserts that `orbit` has UID and GID 1000.
 
-The VM must be `ready` with an active guest Node (`task_vm.converge_refused`). No other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds. A failed phase leaves finished work in place. Run the command again and each phase skips what matches.
+A failed phase leaves finished work in place. A rerun skips each phase whose digest matches.
 
 ### Park and resume
 
@@ -1045,7 +1044,7 @@ A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM st
 
 The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. It waits for the nested Gateway only while it builds the fleet.
 
-The proof task start needs one free slot of the host. The refresh VM of the old design, its group in the proof Project, the kind `task_vm.fleet_build` and the ready copies are not part of this run. The kinds `task_vm.fleet_build`, `task_vm.ready_copies` and `task_vm.converge` stay until a live refresh of an empty host and its task start prove the fleet build of the converge ([old paths](/reference/old-paths)).
+The proof task start needs one free slot of the host. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
 ##### Build the nested fleet in the converge
 
@@ -1061,7 +1060,7 @@ The values come from the converge intent of the Gateway, `TaskVmConvergeInput`, 
 - the mount units of the state;
 - the part of the `gateway-bootstrap` input that the Gateway knows.
 
-That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs the steps of the former `task_vm.fleet_build`, each as one Ansible task with its own `timeout`. First it makes the containers:
+That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs one Ansible task per step, each with its own `timeout`. First it makes the containers:
 
 1. It removes the operator stamp and every container of a half-made fleet, so a build that stops leaves the fleet incomplete and the next one builds it whole.
 2. It makes a missing operator SSH key on the VM. It forgets an earlier Gateway host key.
@@ -1079,43 +1078,17 @@ Then it makes the nested Gateway and its Nodes:
 6. The checkout of the VM becomes the disk device `checkout` of the Gateway and app-dev, and the state is mounted over it.
 7. It waits until Doctor of the nested Gateway is healthy.
 
-The rest of the phase then runs as on any converge: the operator join, the renewal of the Swamp tokens and the code of the commit, each recorded as done. The `base` snapshots of the containers are taken last. The fleet build of `task_vm.fleet_build` took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
+The bootstrap input names the operator address of the VM, 10.45.0.10, so the nested Gateway records the `operator` Node that the operator join gives its key. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk. The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
+
+The rest of the phase then runs as on any converge: the operator join, the renewal of the Swamp tokens and the code of the commit, each recorded as done. The `base` snapshots of the containers are taken last. The earlier standalone fleet build took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
 
 ##### Not built
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 
-##### Save the ready copies
-
-`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/tasks/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
-
-The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested container runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub's peer files. It deletes the proof Swamp Club key and searches every file of the three guests for it. It then stops the guests.
-
-It deletes the earlier `fleet-ready-*` copies and copies each guest without its snapshots. It removes the NIC from each copy, and the `checkout` disk device from the Gateway and app-dev copies, and stores the subnet of the network, the MAC and the address on them. A throwaway copy of each ready copy then boots and is checked. It holds no Club key, no file of a checkout and no `eth0` or `checkout` device.
-
-A booted guest makes mount point directories there and writes a Laravel log, and those are no checkout. Its state is on its own disk, and the Gateway copy has no operator key in the record or on the hub. The budget of the kind is 3,600 seconds.
-
-##### Build the nested fleet
-
-The fleet phase of the converge now [builds the fleet](#build-the-nested-fleet-in-the-converge) with these steps; this kind and the ready copies go once a live refresh of an empty host proves it. `php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
-
-The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three system containers from the stock image with cloud-init and the key of the VM. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
-
-The bootstrap input names the VM's operator address, 10.45.0.10, so the nested Gateway records the `operator` Node that stage 2 gives its key. The local bootstrap run needs the Swamp key on the VM. The build places it there from its vault copy, on stdin, just before that run, and removes it after the run, also after a failure, so no key stays on a VM where a task's agent may run. A build on a proof VM would remove the key that VM got at provision.
-
-Each container allows nesting and has a memory limit and no root size. Cloud-init disables the `wg` and `wg-quick` AppArmor profiles at boot, because the profile of Ubuntu 26.04 kills `wg-quick` in a nested container. The containers live in the pool `topology-seed` of the seed disk, so the ready copies are copies in the seed.
-
-The nested Gateway makes its own root CA for 10 years and signs its leaves for 397 days, and its Swamp tokens last 30 days. The fleet is private to the task VM, and the daily refresh replaces the seed long before any of these runs out.
-
-The new Gateway then does the rest through its own Orbit. It converges its own Node, then its `gateway` role, adds the `websocket` role, and enrolls app-dev and app-prod. Each of these is an Operation of the nested Gateway, and a step waits for its end at a fixed interval inside a literal timeout.
-
-The Gateway and app-dev guests then take their checkout from the outer VM, as they do when a task VM starts from ready copies. The Gateway stops its services and moves its state to `/var/lib/orbit-checkout-state` on its own disk: `.env`, `storage`, `bootstrap/cache` and the state of the Swamp repository. It drops the checkout it built. The step `Attach the checkout` adds the checkout of the outer VM as the disk device `checkout` of both guests, after cloud-init made the `orbit` account, and stock systemd mount units put the state over it. The services start again on the shared checkout.
-
-The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
-
 ##### Apply and check the nested fleet
 
-The child `task-nested-apply` applies the checkout to the nested fleet, and the restore of the `base` snapshot reuses it. The containers start with the checkout already attached. At boot, the bind mount units of the copies put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout.
+The child `task-nested-apply` applies the checkout to the nested fleet, and the restore of the `base` snapshot reuses it. The containers start with the checkout already attached. At boot, the bind mount units of the containers put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout.
 
 The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then runs the migrations of the checked-out code on the nested Gateway. It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
@@ -1130,18 +1103,6 @@ The batch workflow calls it before every batch but the first. The case workflow 
 After the apply step, the VM gets a CLI profile. The steps `Make the CLI home`, `Pin the nested CA` and `Add the CLI profile` read the root CA of the nested Gateway with `incus exec … cat` into `~/.orbit/nested-ca.pem` and run `gateway:add https://10.45.0.1 --name=nested --use --ca=…` with the candidate CLI of the checkout. The proof runner runs that same CLI (`php apps/cli/orbit`) and finds the nested Gateway through the profile. The apply child checks the Swamp services only when the VM has the proof Club key (input `club`), because the nested Swamp serve cannot start without it.
 
 The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
-
-##### The ready copies
-
-One stage 6 step makes them, and the contract is in `swamp/proof/README.md`. The names are `fleet-ready-gateway`, `fleet-ready-app-dev` and `fleet-ready-app-prod`: stopped VMs beside `node-template`. A copy has no NIC, no source mount and no `user.orbit.e2e.*` label. The `user.ready.*` keys hold the set identity, the role, when the copy was made, the MAC, the IP and the subnet. ``user.ready.complete` is written last.
-
-The age of a set does not matter: every provision that starts a fleet from the copies renews the Swamp tokens of the nested Gateway before the apply step (the play `remint` of `gateway-bootstrap.yml`, 30 days), so the refresh has no token step. Copies of format 4 carry the control plan that the play reads; copies of another format are not used. A failed renewal writes the failed task to stderr, which the run records with the step; the tasks print no token.
-
-The ready Gateway's database is encrypted with the application key in the `.env` of the build’s source tree. That tree is a directory of the outer VM and not part of the seed. So the seed also holds a copy of it, with ACLs and owners, as the custom volume `ready-source`. A task VM restores it before it restores the copies.
-
-The proof Swamp Club key is in no copy. `ready` removes it from the Gateway and scans for it. The check then boots a throwaway copy of each ready copy and searches it, and `ready-source`, for the key by path and by value. A key in the seed would reach every task VM of the host. A ready copy itself is never started.
-
-The Gateway keeps no state of its own for a refresh. The succeeded Operation is the record. It holds the seed, the ready copies, the size of the seed (`referenced_bytes`) and the bytes the build wrote (`written_bytes`). The budget is in [Operations](/reference/operations).
 
 ### Claims copy the base snapshot
 

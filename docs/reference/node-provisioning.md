@@ -422,7 +422,7 @@ Missing or damaged protected files require their approved recovery procedure and
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The base snapshot refresh of an Incus host and every task start run it as the common converge ([compute drivers](/reference/compute-drivers#converge-a-running-task-vm)), so a base and a started VM end in the same state. The refresh runs it on the base VM that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
 
 The wait for a nested fleet is not a phase of the role: it is the task file `swamp/ansible/tasks/task-vm-nested-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code. The playbook `task-vm-fleet-wait.yml` runs it from Node 209 for the readiness of a fleet, and the `fleet` phase imports it for the waits of its [fleet build](/reference/compute-drivers#build-the-nested-fleet-in-the-converge).
 
@@ -444,7 +444,7 @@ A task VM with a nested subnet also opens its firewall to the nested bridge (`ta
 
 ## Gateway bootstrap prerequisites
 
-A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-fleet-build.mmd)), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
+A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
 
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 
@@ -454,13 +454,13 @@ The `app` job sets up the Gateway app on the machine: it writes the `.env` (`orb
 
 Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It records the Gateway Node with its Gateway and VPN roles and sets the VPN settings. It also makes the root CA and the Gateway SSH key, and records the host key of the machine. It also records the `swamp` role on that Node, as provisioning. The Gateway finds the Swamp Node by that role, never by an id. The role and route workflows read the control Node from each intent (`control_node_id`) and accept any Node id. The VPN role stays provisioning until Swamp applies the hub.
 
-With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The fleet build of a task VM passes 10.45.0.10, the address stage 2 joins with.
+With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The [fleet phase of the converge](/reference/compute-drivers#build-the-nested-fleet-in-the-converge) passes 10.45.0.10, the address stage 2 joins with.
 
 ### The Swamp control plane
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
-The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when the fleet phase of the converge of a task VM renews them.
 
 The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
 
