@@ -76,8 +76,8 @@ it('asks every Linux task VM host and skips one that refuses', function (): void
         [new TaskVmHost($bare->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB'), new TaskVmHost($mac->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 5, 4, '8GiB', '40GiB')],
         'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
 
-    // The Linux host refuses, as it has no base snapshot; the macOS Node is no task VM host for this run.
-    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['shark' => 'task_vm.image_unavailable']);
+    // The Linux host refuses, as the Gateway release of this test has no commit; the macOS Node is no task VM host for this run.
+    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['shark' => 'task_vm.converge_unavailable']);
 });
 
 it('schedules no recipe reconcile: only the refresh starts work on the image of a task VM host', function (): void {

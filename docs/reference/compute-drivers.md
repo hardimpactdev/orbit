@@ -743,37 +743,15 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state.
+The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set.
 
-One workflow serves both providers. A `guard` on each provider's first step skips the other provider, and its later steps skip with it. The run reads the inventory, plans in TypeScript on Node209, removes the plan with parallel `forEach` steps, reads the inventory again and ends with a native `assert` that no planned name is still listed.
+For each active configured Incus host, the job releases the task VMs that a failed start left: a row with no group whose release failed, or whose Operation ended without its projection. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it. An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
 
-No step ships a script: each Incus command is one official pinned `@swamp/ssh` `exec` argument list with `sudo` and a literal `timeout`, and each UpCloud request is one inline `curl` on Node209 that takes the token through `--variable`, never argv.
+While the UpCloud token file is set, the job records one `task_vm.sweep_host` Operation on the Gateway Node for the [UpCloud sweep](#sweep-upcloud). That Operation holds the lock of the Gateway Node and carries no Incus host input.
 
-The workflow has no format or result step: the Gateway reads the plan step's names once the provider's end check succeeded.
+A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
-A provider or SSH failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection.
-
-The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds, allowing for the 180-second Incus deletion timeout.
-
-The native run reads the images of the host's Incus project with `incus query /1.0/images?project=<project>`, which fails for a project that does not exist. Incus lists the instances of a missing project as empty, so this read makes a missing project fail the host, and the job changes nothing there. The run then compares the instance names with the task VM rows:
-
-- An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
-- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
-- An **orphaned volume** is a custom volume `tvm-<number>-topology-seed` in the project's pool whose VM is an orphan that is absent or deleted in the same run. The job deletes it after the orphaned VMs.
-
-The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying one native root or its projected result never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
-
-Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
-
-The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
-
-A successful Incus sweep releases a failed build's cleanup claim only after its final observation contains none of that build's builder, attempt or smoke names. Failed, cancelled or incomplete sweeps keep the claim. The failed build can then start a fresh attempt through normal resume or recipe retry.
-
-No recipe image build exists now, so only builders that an earlier build left behind exist. The sweep retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours.
-
-Admission records the end of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders. Captured maximum VM and build IDs exclude resources allocated after admission. The sweep preserves live VMs, running builds and names that the operator owns. An absent build row permits cleanup only within those captured ID limits.
-
-The sweep never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds. A provider failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned volumes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
@@ -781,7 +759,7 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders and their smoke VMs only when they are eligible for cleanup, as described above; recent unclaimed failed builds are retained for resume. For every other stray, neither tool changes it: the operator decides. The native sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+Doctor reports what Orbit does not own on a task VM host, and the records that should be gone. It never changes any of it: the operator decides. It reports one finding per stray in the host's `node` family. Builders and volumes that the image builds left behind are strays now, and the operator removes them.
 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
@@ -796,11 +774,11 @@ A **stray volume** is an Incus custom volume in any project and pool of the host
 - a seed under construction of such an image: `-new`;
 - an entry of the host's `operator_owned` list.
 
-The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. The sweep reads only the custom volumes of the host's configured pool, so it logs stray volumes of that pool; Doctor reports every pool. It reads the images of the host's project only to recognize their topology seeds. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
+The audit lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Doctor reports every pool. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`.
 
 A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
 
-A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep logs it while task VMs are enabled.
+A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep job logs it while task VMs are enabled.
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
@@ -1093,9 +1071,9 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/provision.mmd)). There is no Incus image and no publish.
 
-Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot.
+Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
-A host needs its base VM before its first refresh. A refresh never makes it: a host without one fails closed in the first phase, `base-start`, with `the host has no base VM`. A host with no recorded base snapshot is refused at admission with `task_vm.image_unavailable`. The first base VM of a new host is not designed yet.
+A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server. The converge that follows builds everything else, because no digest is recorded yet. The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The UpCloud template build compiles its own input from the same recipe ([Build the UpCloud template](#build-the-upcloud-template)). The base is identified by the recipe identity that its refresh converged to, recorded on the build row.
 
@@ -1114,16 +1092,17 @@ Each task VM host refreshes its own base. Nothing is copied between hosts. An op
 The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
 
 - the SSH target of the host with its recorded host keys, the project and the pool;
-- the recorded base snapshot and the name of the new one;
+- the recorded base snapshot, if any, and the name of the new one;
+- the stock image, the size of the base VM and the cloud-init config for a base VM that does not exist yet;
 - the converge intent of a task start, and a free slot for the proof.
 
-It refuses a host that is not an active, configured task VM host, a host with no recorded base snapshot, a host with no free slot, and a Gateway whose release has no commit. No step of the run calls the Gateway.
+It refuses a host that is not an active, configured task VM host, a host with no free slot, and a Gateway whose release has no commit. No step of the run calls the Gateway.
 
 The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/shell` step per phase of the Ansible playbooks:
 
 | Step | What it does |
 |---|---|
-| `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: fails closed when the host has no base VM, keeps `restricted.snapshots=allow` in the project, starts the base VM, waits for its guest agent, and gives it the proof key. |
+| `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
 | `Converge` | The same converge as a task start (`task-vm-image-ansible`, phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`). It waits for no nested Gateway and wipes no identity. |
 | `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
 | `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free slot, then its release. |
@@ -1136,7 +1115,6 @@ The proof task start needs one free slot of the host. The refresh VM of the old 
 ##### Not built
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
-- The first base VM of a new host.
 
 ##### Save the ready copies
 
@@ -1230,7 +1208,7 @@ A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
-3. Give the host its base VM and a recorded base snapshot. A refresh does not make them ([the base VM and its snapshot](#the-base-vm-and-its-snapshot)).
+3. Run `task-vms:refresh-image {node}`. The first refresh makes the base VM and its first snapshot ([the base VM and its snapshot](#the-base-vm-and-its-snapshot)).
 
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 

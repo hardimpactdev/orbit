@@ -23,7 +23,7 @@ sequenceDiagram
   loop each task VM host, in parallel
     SW->>H: Start the base VM<br/>incus start
     %%> What it does:
-    %%> - a host without a base VM fails closed here (`the host has no base VM; ...`): only a refresh makes a base snapshot, and it never makes the VM
+    %%> - a new host has no base VM yet: it is made here, once, from the stock Ubuntu VM image and an empty seed volume, and the converge that follows builds everything else
     SW->>VM: Converge<br/>the same converge as a task start
     %%> What it does:
     %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed

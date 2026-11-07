@@ -8,29 +8,25 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 
 /**
- * Compares the instances of a task VM host's Incus project with the task VM rows of that host. The sweep job
- * acts on the result, and Doctor reports it.
+ * Compares the instances of a task VM host's Incus project with the task VM rows of that host, and finds the Nodes that no task VM
+ * row owns. Nothing here changes anything: a failed start is released through its own run, and the rest is the operator's.
  *
- * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host. Other names,
- *   Build VMs `tvm-image-<build id>` without a running row on this host are orphaned too.
+ * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host.
  * - A missing VM is a `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
  *
- * It also finds strays, which the sweep and Doctor only report ({@see self::strays()}, {@see self::strayNodes()}).
+ * It also finds strays, which only a report names ({@see self::strays()}, {@see self::strayNodes()}).
  */
 final readonly class TaskVmHostAudit
 {
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
-
-    public const int FailedBuildHours = 24;
 
     /** A `ready` or `parked` row without an open group for longer than this is a stray. */
     public const int RecordMinutes = 60;
@@ -50,7 +46,7 @@ final readonly class TaskVmHostAudit
         return [
             'orphaned' => array_values(array_filter(
                 $names,
-                static fn (string $name): bool => (preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true)) || (self::isChainBuilder($name) && ! self::runningBuildOwns($node, $name)),
+                static fn (string $name): bool => preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true),
             )),
             'missing' => array_values($live->filter(
                 static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
@@ -61,7 +57,7 @@ final readonly class TaskVmHostAudit
     /**
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
-     * against their rows), running and retained failed build VMs and, in the host's pool, the volumes of
+     * against their rows) and the base VM and, in the host's pool, the seed volume of the base VM and the volumes of
      * {@see TaskVmVolumes::owns()}: VM clones and the topology seeds of the images the project keeps.
      * The host's `operator_owned` entries are the operator's. Everything else is a stray. Nothing here deletes or
      * changes anything.
@@ -75,14 +71,14 @@ final readonly class TaskVmHostAudit
         $ciRunner = $node->roles()->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists();
         $instances = [];
         foreach ($inventory['instances'] as ['project' => $project, 'name' => $name]) {
-            if (! ($ciRunner && $project === 'orbit-ci') && ! $host->operatorOwns($project, $name) && ! ($project === $host->project && $this->ownsInstance($node, $name))) {
+            if (! ($ciRunner && $project === 'orbit-ci') && ! $host->operatorOwns($project, $name) && ! ($project === $host->project && self::ownsInstance($node, $name))) {
                 $instances[] = "{$project}/{$name}";
             }
         }
         $volumes = [];
         $fingerprints = array_keys($this->incus->images($host, $node));
         foreach ($inventory['volumes'] as ['project' => $project, 'pool' => $pool, 'name' => $name]) {
-            $owned = $project === $host->project && $pool === $host->pool && TaskVmVolumes::owns($name, $fingerprints);
+            $owned = $project === $host->project && $pool === $host->pool && (TaskVmVolumes::owns($name, $fingerprints) || $name === TaskVmPromotedImage::baseSeed($node));
             if (! $owned && ! ($ciRunner && $project === 'orbit-ci') && ! $host->operatorOwns($project, $name)) {
                 $volumes[] = "{$project}/{$pool}/{$name}";
             }
@@ -134,54 +130,8 @@ final readonly class TaskVmHostAudit
             && in_array($node->id, array_map(static fn (Node $stray): int => $stray->id, self::strayNodes()), true);
     }
 
-    /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
-    private static function isChainBuilder(string $name): bool
+    private static function ownsInstance(Node $node, string $name): bool
     {
-        return preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name) === 1;
-    }
-
-    public static function runningBuildOwns(Node $node, string $name): bool
-    {
-        if (preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name, $match) !== 1) {
-            return false;
-        }
-
-        return TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id)
-            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
-                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
-                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(self::FailedBuildHours))))->exists();
-    }
-
-    /**
-     * Fence resume before deleting a recorded builder or smoke VM. The conditional write either
-     * wins against resume or skips a running build; an absent host-local row needs no fence.
-     * Non-chain names have no recorded owner.
-     */
-    public static function claimBuildCleanup(Node $node, string $name, bool $discardFailed = false): bool
-    {
-        if (preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name, $match) !== 1) {
-            return true;
-        }
-        $build = TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id);
-        $candidate = (clone $build)->where('state', '!=', TaskVmImageBuildState::Running);
-        if (! $discardFailed) {
-            $candidate->where(fn ($query) => $query->where('state', '!=', TaskVmImageBuildState::Failed)
-                ->orWhereNotNull('cleanup_started_at')->orWhere('updated_at', '<=', now()->subHours(self::FailedBuildHours)));
-        }
-        $claimed = $candidate->update(['cleanup_started_at' => now()]);
-
-        return $claimed === 1 || ! $build->exists();
-    }
-
-    private function ownsInstance(Node $node, string $name): bool
-    {
-        if (preg_match(self::TaskVmName, $name) === 1) {
-            return true;
-        }
-        if (self::isChainBuilder($name)) {
-            return self::runningBuildOwns($node, $name);
-        }
-
-        return false;
+        return preg_match(self::TaskVmName, $name) === 1 || $name === TaskVmPromotedImage::baseVm($node);
     }
 }

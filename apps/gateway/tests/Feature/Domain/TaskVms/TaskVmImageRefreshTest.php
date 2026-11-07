@@ -77,8 +77,6 @@ it('refuses a host that cannot refresh', function (): void {
 
     expect(imageRefreshRefusal(fn () => $intent->start($other, 'test')))->toBe('task_vm.host_unavailable');
 
-    TaskVmImageBuild::query()->where('host_node_id', $host->id)->delete();
-    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test')))->toBe('task_vm.image_unavailable');
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -138,7 +136,8 @@ it('uses only a refresh snapshot as the base: a promoted image of the retired bu
     // A promoted virtual-machine build is not a usable base.
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
         'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
-    expect(imageRefreshRefusal(fn () => $images->forHost($host, $location)))->toBe('task_vm.image_unavailable')
+    expect($images->recorded($host, $location))->toBeNull()
+        ->and(imageRefreshRefusal(fn () => $images->forHost($host, $location)))->toBe('task_vm.image_unavailable')
         ->and(imageRefreshRefusal(fn () => $images->snapshot($host, $location)))->toBe('task_vm.image_unavailable');
 
     // A snapshot is the base, and an image promoted after it does not replace it.
@@ -147,6 +146,7 @@ it('uses only a refresh snapshot as the base: a promoted image of the retired bu
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-3', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
         'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
 
-    expect($images->forHost($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
+    expect($images->recorded($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
+        ->and($images->forHost($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
         ->and($images->snapshot($host, $location)['snapshot'])->toBe(ImageRefreshSnapshot);
 });

@@ -17,10 +17,10 @@ use App\Domain\WireGuard\Ipv4Subnet;
  */
 final readonly class TaskVmHost
 {
-    /** The stock Ubuntu cloud image that `incus.prepare-host` copies. Only the base image build launches it. */
+    /** The stock Ubuntu cloud image that `incus.prepare-host` copies. The base VM of a host is made from it once. */
     public const string SourceImage = 'ubuntu-26.04-vm';
 
-    /** The alias of the base image that every task VM launches. Each build also adds a dated alias `orbit-task-base-<time>`. */
+    /** The alias of the base image of the UpCloud template and of the Incus project. */
     public const string BaseImage = 'orbit-task-base';
 
     /** @param  list<string>  $operatorOwned  `<project>/<name>` or `<project>/*` */

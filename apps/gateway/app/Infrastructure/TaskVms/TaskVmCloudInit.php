@@ -57,21 +57,12 @@ final readonly class TaskVmCloudInit
     public const array WorkspaceTools = ['rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev'];
 
     /**
-     * The user-data of a task VM, which boots from the base image. The image build already put `orbit` in
-     * `incus-admin`, because cloud-init adds groups only to a user it creates.
+     * The user-data of a task VM, which boots from the base image. The base already has `orbit` in `incus-admin`,
+     * because cloud-init adds groups only to a user it creates.
      */
     public function render(string $gatewayPublicKey): string
     {
         return self::document(['users' => [$this->user($gatewayPublicKey)]]);
-    }
-
-    /** The user-data of the base image builder, which boots from the stock image. */
-    public function renderImageBuilder(string $gatewayPublicKey): string
-    {
-        // The stock image creates the user's primary group. The image build's check phase refuses a UID or GID mismatch.
-        return self::document([
-            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'no_user_group' => false]],
-        ]);
     }
 
     /** @return array<string, mixed> */

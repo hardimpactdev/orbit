@@ -27,20 +27,31 @@ final readonly class TaskVmPromotedImage
     }
 
     /**
-     * The host's recorded base snapshot, and the recipe identity it converged to.
+     * The host's recorded base snapshot and the recipe identity it converged to, or null before the host's first refresh.
      *
-     * @return array{recipe_identity:string,snapshot:string}
+     * @return array{recipe_identity:string,snapshot:string}|null
      */
-    public function forHost(Node $host, TaskVmHost $location): array
+    public function recorded(Node $host, TaskVmHost $location): ?array
     {
         $build = $this->latest($host);
         $base = $build?->images['base'] ?? null;
         if (! $build instanceof TaskVmImageBuild || ! is_array($base) || ($base['project'] ?? null) !== $location->project
             || ($base['type'] ?? null) !== 'snapshot' || ! is_string($base['snapshot'] ?? null) || $base['snapshot'] === '') {
-            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no base snapshot; only a refresh makes one.', 409);
+            return null;
         }
 
         return ['recipe_identity' => (string) $build->recipe_identity, 'snapshot' => $base['snapshot']];
+    }
+
+    /**
+     * The base a task start needs: the recorded snapshot, which only a refresh makes.
+     *
+     * @return array{recipe_identity:string,snapshot:string}
+     */
+    public function forHost(Node $host, TaskVmHost $location): array
+    {
+        return $this->recorded($host, $location)
+            ?? throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no base snapshot; only a refresh makes one.', 409);
     }
 
     /**

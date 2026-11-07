@@ -1,7 +1,7 @@
 ---
 # The Incus work of a task VM host, one tagged part per Swamp phase. The host keeps one stopped base VM that never gets an identity;
 # its ZFS snapshot is the base a task start copies (docs/cli/tasks/vm-image-refresh.mmd):
-# - `base-start`: start the base VM; a host without one fails closed.
+# - `base-start`: start the base VM; a host without one gets it once, from the stock Ubuntu VM image and an empty seed volume.
 # - `base-snapshot`: stop the base VM and snapshot it and its seed volume under the run's name.
 # - `base-prune`: keep the new snapshot and the recorded one, which becomes `-previous`; remove the others.
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
@@ -47,12 +47,35 @@
           ansible.builtin.command: { argv: "{{ incus + ['list', '--format', 'json', '--', '^' ~ base.vm ~ '$'] }}" }
           register: base_read
           changed_when: false
-        # The host already has its base VM. A host without one fails here: a refresh never makes it.
-        - name: Refuse a host without a base VM
-          ansible.builtin.assert:
-            that: base_read.stdout | from_json | length > 0
-            fail_msg: "the host has no base VM; create {{ base.vm }} with its seed volume {{ base.seed }} on the host first, a refresh does not make it"
-            quiet: true
+        # Once per host: a host without a base VM gets it from the stock image that `task-vms:prepare-host` copied and a blank seed volume.
+        # The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge that
+        # follows builds everything else, and it builds all of it when no digest is recorded.
+        - name: Make the base VM
+          when: base_read.stdout | from_json | length == 0
+          block:
+            # A creation that failed half way leaves the seed; the VM does not exist, so its seed is not in use.
+            - name: Remove the seed a failed creation left
+              ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, base.seed] }}" }
+              register: base_seed_delete
+              changed_when: base_seed_delete.rc == 0
+              failed_when: base_seed_delete.rc != 0 and 'not found' not in base_seed_delete.stderr
+            - name: Create the blank seed volume
+              ansible.builtin.command:
+                argv: "{{ incus + ['storage', 'volume', 'create', host.pool, base.seed, 'size=' ~ base.seed_size, '--type', 'block'] }}"
+              changed_when: true
+            - name: Create the base VM
+              ansible.builtin.command:
+                argv: "{{ incus + ['init', '--vm', '--config', 'limits.cpu=' ~ base.cpus, '--config', 'limits.memory=' ~ base.memory,
+                       '--device', 'root,size=' ~ base.disk, '--device', 'eth0,network=' ~ host.network, '--device', 'eth0,security.port_isolation=true',
+                       '--', host.image, base.vm] }}"
+                stdin: "{{ base.launch_config }}"
+              changed_when: true
+        # The disk name is the one the nested Incus database of the base VM knows its seed pool by. A creation that stopped before it adds it now.
+        - name: Attach the seed
+          when: "base_read.stdout | from_json | length == 0 or 'topology-seed' not in ((base_read.stdout | from_json | first).devices | default({}))"
+          ansible.builtin.command:
+            argv: "{{ incus + ['config', 'device', 'add', base.vm, 'topology-seed', 'disk', 'pool=' ~ host.pool, 'source=' ~ base.seed] }}"
+          changed_when: true
         # The base is a snapshot, so the project must allow snapshots; `restricted=true` blocks them by default. Only a client of the
         # host's Incus API can take one: a task VM reaches only its guest socket, which cannot, so this opens nothing to a task.
         - name: Read the snapshot rule of the project
@@ -70,6 +93,12 @@
         - name: Wait for its guest agent
           ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', base.vm, 'agent'] }}" }
           changed_when: false
+        # A new VM makes its host keys and installs the SSH server in its first boot; a base VM that has booted before returns at once.
+        - name: Wait for the first boot
+          ansible.builtin.command: { argv: "{{ ['timeout', '320'] + incus + ['exec', base.vm, '--', 'cloud-init', 'status', '--wait'] }}" }
+          register: base_cloud_init
+          changed_when: false
+          failed_when: base_cloud_init.rc not in [0, 2]
         # The nested Swamp runs with the proof Swamp Club key; every task VM copied from the base has it from its first boot.
         - name: Give the base VM the Club key
           no_log: true

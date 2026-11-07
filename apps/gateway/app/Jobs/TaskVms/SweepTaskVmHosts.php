@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\StartTaskVmDestroyAction;
 use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
@@ -24,7 +23,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/** Records independent host Operations. Swamp continues other hosts when one host fails. */
+/**
+ * Releases the task VMs that a failed start left on each Incus host, through the release of a task start
+ * (docs/cli/tasks/vm-release.mmd), and records the sweep of the UpCloud servers. An Incus host has no sweep of its own.
+ */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 {
     use TaskVmJob;
@@ -67,18 +69,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
     {
-        foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
-            try {
-                app(StartTaskVmDestroyAction::class)->execute($retired->id);
-            } catch (ResourceOperationException $refused) {
-                // Admission refused this row; the next sweep asks again. Other rows and the host sweeps still run.
-                Log::warning('A destroying task VM was not readmitted.', ['task_vm_id' => $retired->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
-            } catch (Throwable $broken) {
-                report($broken);
-            }
-        }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {
-            $operations->execute($node->id, 'incus');
             $this->releaseStale($node->id);
         }
         foreach ($settings->enabled ? TaskVmHostAudit::strayNodes() : [] as $stray) {
@@ -86,7 +77,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         }
         if ($settings->upcloud !== null) {
             $gateway = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-            $operations->execute($gateway->id, 'upcloud');
+            $operations->execute($gateway->id);
         }
     }
 }

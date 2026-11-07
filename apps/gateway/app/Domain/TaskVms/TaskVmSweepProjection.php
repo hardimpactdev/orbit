@@ -11,7 +11,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -19,25 +18,22 @@ use Illuminate\Support\Facades\DB;
 /** Safe current ownership reads and projection of native host observations; no host/provider calls. */
 final readonly class TaskVmSweepProjection implements DirectOperationProjection
 {
-    public const string IncusCheck = 'Check the VMs are gone';
-
     public const string CloudCheck = 'Check the cloud removals';
 
-    /** The admitted provider's plan step: the names it deletes and the names that stay once its end check passes.
+    /** The plan step: the names it deletes and the names that stay once its end check passes.
      * @return array<string,array{job:string,step:string}>
      */
     public static function captures(): array
     {
-        return ['incus' => ['job' => 'inventory', 'step' => 'Plan the removals'], 'upcloud' => ['job' => 'inventory', 'step' => 'Plan the cloud removals']];
+        return ['upcloud' => ['job' => 'inventory', 'step' => 'Plan the cloud removals']];
     }
 
     public function input(Operation $operation): array
     {
         $input = $operation->input;
         if ($operation->kind !== 'task_vm.sweep_host' || $operation->target_type !== 'task_vm_sweep'
-            || $operation->target_id !== $operation->node_id || ($input['node_id'] ?? null) !== $operation->node_id
-            || ! in_array($input['provider'] ?? null, ['incus', 'upcloud'], true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'A sweep needs its admitted provider and exact Node.', 422);
+            || $operation->target_id !== $operation->node_id || ($input['node_id'] ?? null) !== $operation->node_id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'A sweep needs its exact Node.', 422);
         }
 
         return TaskVmProviderWorkflowInput::envelope($input);
@@ -51,7 +47,7 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
         }
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $observe = $status === OperationStatus::Succeeded;
-        $plan = ValidatedData::object($data['result'] ?? [])[ValidatedData::string($operation->input['provider'])] ?? null;
+        $plan = ValidatedData::object($data['result'] ?? [])['upcloud'] ?? null;
         if ($observe && (! is_array($plan) || ! isset($plan['observed_names'], $plan['deleted_names']))) {
             $this->refuse();
         }
@@ -72,12 +68,8 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
             $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, [...$data, 'error_code' => $code], $result);
             if ($observe && ! $terminal) {
-                $query = TaskVm::query()->live()->where('provider', $operation->input['provider'])
+                $query = TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)
                     ->whereIn('name', ValidatedData::stringList(ValidatedData::object($operation->input['scope'])['live_names']));
-                if ($operation->input['provider'] === 'incus') {
-                    $this->completeImageCleanup($operation, $names);
-                    $query->where('host_node_id', $operation->node_id);
-                }
                 foreach ($query->get() as $vm) {
                     $key = 'task-vms:sweep-missing:'.$vm->id;
                     if (in_array($vm->name, $names, true) || ! in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true)) {
@@ -99,21 +91,6 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
 
             return $projected;
         });
-    }
-
-    /** @param list<string> $observed */
-    private function completeImageCleanup(Operation $operation, array $observed): void
-    {
-        $scope = ValidatedData::object($operation->input['scope']);
-        foreach (TaskVmImageBuild::query()->where('host_node_id', $operation->node_id)
-            ->whereIn('id', ValidatedData::integerList($scope['retired_build_ids']))
-            ->where('state', TaskVmImageBuildState::Failed)->whereNotNull('cleanup_started_at')
-            ->where('cleanup_started_at', '<=', $operation->created_at)->lockForUpdate()->get() as $build) {
-            $pattern = '/\Atvm-image-'.$build->id.'(?:-attempt-[0-9]+)?(?:-smoke)?\z/D';
-            if (! array_any($observed, static fn (string $name): bool => preg_match($pattern, $name) === 1)) {
-                $build->forceFill(['cleanup_started_at' => null])->save();
-            }
-        }
     }
 
     private function refuse(): never

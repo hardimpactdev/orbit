@@ -1,8 +1,6 @@
 id: aa946b88-1dfe-4010-a85d-bd9ddfe9110a
 name: operation-task-vm-sweep
-description: Sweep one host's admitted ownership scope from 209 over pinned official SSH or UpCloud HTTPS; only the admitted provider's steps run.
-# Only the admitted provider's steps run: a guard skips the other provider's first step and its dependents.
-# The whole workflow is evaluated at run start, so an expression that only one provider's intent fills reads it optionally.
+description: Sweep the UpCloud servers and templates of the admitted ownership scope from 209 over HTTPS. Incus hosts have no sweep; a failed start is released by task_vm.slot_release.
 queueTimeout: 60
 vaults:
 - orbit-control-inputs
@@ -22,19 +20,6 @@ inputs:
         node_id:
           type: integer
           minimum: 1
-        provider:
-          type: string
-          enum:
-          - incus
-          - upcloud
-        ci_runner:
-          type: boolean
-        stray_vm_ids: &id002
-          type: array
-          items:
-            type: integer
-            minimum: 1
-          maxItems: 4096
         image_cutoff:
           type: integer
         running_stamps:
@@ -46,37 +31,19 @@ inputs:
           properties:
             live_names:
               type: array
-              items: &id001
+              items:
                 type: string
                 pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$
               maxItems: 4096
             max_task_vm_id:
               type: integer
               minimum: 0
-            project: *id001
-            pool: *id001
-            operator_owned:
-              type: array
-              items:
-                type: string
-              maxItems: 4096
-            max_build_id:
-              type: integer
-              minimum: 0
-            recorded_build_ids: *id002
-            retired_build_ids: *id002
-            protected_build_ids: *id002
           required:
           - live_names
           - max_task_vm_id
           additionalProperties: false
-        ssh_execution:
-          type: object
       required:
       - node_id
-      - provider
-      - ci_runner
-      - stray_vm_ids
       - image_cutoff
       - running_stamps
       - scope
@@ -110,56 +77,8 @@ inputs:
 jobs:
 - name: inventory
   steps:
-  - name: Read the inventory
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.provider == "upcloud" }}
-    forEach:
-      item: read
-      in: '${{ ["instances", "volumes", "images"] }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-sweep-read-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-vm-sweep-read-" + string(inputs.node_id) + "-" + string(self._index) }}
-        transport: &transport
-          kind: ssh
-          user: ${{ inputs.intent.?ssh_execution.?target.?user.orValue("") }}
-          port: ${{ inputs.intent.?ssh_execution.?target.?port.orValue(22) }}
-          identityFile: ${{ inputs.intent.?ssh_execution.?identity_file.orValue("") }}
-        hosts: &hosts
-        - name: target
-          address: ${{ inputs.intent.?ssh_execution.?target.?host.orValue("") }}
-          transport:
-            hostKeys: ${{ inputs.intent.?ssh_execution.?target.?host_keys.orValue([]) }}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv:
-        - timeout
-        - '60'
-        - incus
-        - query
-        - '${{ {"instances": "/1.0/instances?all-projects=true", "volumes": "/1.0/storage-pools/" + inputs.intent.scope.pool + "/volumes/custom?all-projects=true", "images": "/1.0/images?project=" + inputs.intent.scope.project}[self.read] }}'
-  - name: Plan the removals
-    labels: {role: swamp}
-    dependsOn:
-    - step: Read the inventory
-      condition: {type: succeeded}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: '${{ "task-vm-sweep-plan" }}'
-      methodName: incus_plan
-      inputs:
-        intent: ${{ inputs.intent }}
-        instances: ${{ steps["Read the inventory-instances"].outputs.stdout }}
-        volumes: ${{ steps["Read the inventory-volumes"].outputs.stdout }}
-        images: ${{ steps["Read the inventory-images"].outputs.stdout }}
   - name: List servers, templates
     labels: {role: swamp}
-    guard: ${{ inputs.intent.provider != "upcloud" }}
     task: &cloud_inventory
       type: behavior
       behaviorType: command/shell
@@ -197,25 +116,6 @@ jobs:
   - job: inventory
     condition: {type: succeeded}
   steps:
-  - name: Remove orphaned VMs
-    labels: {role: swamp}
-    writes: true
-    forEach:
-      item: instance
-      in: ${{ steps[?"Plan the removals"].?outputs.?instances.orValue([]) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-sweep-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: exec
-      globalArgs: &remove_args
-        name: ${{ "task-vm-sweep-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
-        transport: *transport
-        hosts: *hosts
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '180', incus, delete, --force, --project, '${{ inputs.intent.scope.?project.orValue("") }}', --, '${{ self.instance }}']
   - name: Stop started servers
     labels: {role: swamp}
     writes: true
@@ -241,22 +141,6 @@ jobs:
   - job: first
     condition: {type: succeeded}
   steps:
-  - name: Remove orphaned volumes
-    labels: {role: swamp}
-    writes: true
-    forEach:
-      item: volume
-      in: ${{ steps[?"Plan the removals"].?outputs.?volumes.orValue([]) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-sweep-remove-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: exec
-      globalArgs: *remove_args
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '180', incus, storage, volume, delete, --project, '${{ inputs.intent.scope.?project.orValue("") }}', --, '${{ inputs.intent.scope.?pool.orValue("") }}', '${{ self.volume }}']
   - name: Delete servers, templates
     labels: {role: swamp}
     writes: true
@@ -281,36 +165,8 @@ jobs:
   - job: second
     condition: {type: succeeded}
   steps:
-  - name: Read the project again
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.provider == "upcloud" }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-sweep-read-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-vm-sweep-read-" + string(inputs.node_id) }}
-        transport: *transport
-        hosts: *hosts
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', incus, query, '${{ "/1.0/instances?project=" + inputs.intent.scope.?project.orValue("") }}']
-  - name: Check the VMs are gone
-    labels: {role: swamp}
-    dependsOn:
-    - step: Read the project again
-      condition: {type: succeeded}
-    task:
-      type: assert
-      # `incus query` lists `/1.0/instances/<name>?project=<p>`; names hold no character it encodes.
-      expr: 'steps["Plan the removals"].outputs.instances.all(n, !steps["Read the project again"].outputs.stdout.contains("/1.0/instances/" + n + "?") && !steps["Read the project again"].outputs.stdout.contains("/1.0/instances/" + n + "\""))'
-      severity: high
-      message: task_vm.host_command_failed
   - name: List again
     labels: {role: swamp}
-    guard: ${{ inputs.intent.provider != "upcloud" }}
     task: *cloud_inventory
   - name: Check the cloud removals
     labels: {role: swamp}

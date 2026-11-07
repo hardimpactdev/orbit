@@ -578,7 +578,7 @@ The `node` phase gives the swamp account the Swamp start cache, `/tmp/deno-compi
 
 A new Swamp release reaches serve and its workers through the role, with one restart in a quiet moment.
 
-1. Merge the pin change in the recipe and the other pins. The recipe reconcile builds the task VM images.
+1. Merge the pin change in the recipe and the other pins. Each task VM host then refreshes its base snapshot.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
 3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then both workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b`. The workers retry until serve listens.
 4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).
