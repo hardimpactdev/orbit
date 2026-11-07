@@ -1,0 +1,39 @@
+---
+# The commands of the batch, run on the task VM (the operator side) with the real CLI against the nested Gateway.
+# Swamp does not run them. One data list per case (argv, what the answer must be); act.yml does the work.
+- ansible.builtin.import_playbook: facts.yml
+
+- name: Run the commands of the batch
+  hosts: localhost
+  gather_facts: false
+  vars:
+    app_dev_id: "{{ node_ids['app-dev'] }}"
+    src: "{{ hostvars['nested-gateway'].gateway_src }}"
+    checkout: /home/orbit/apps/orbit/workspace
+    orbit: [php, "{{ checkout }}/apps/cli/orbit"]
+    cli_env: {PATH: /usr/local/bin:/usr/bin:/bin, HOME: /home/orbit, ORBIT_HOME: /home/orbit/.orbit}
+    commands:
+      - id: new_restricted_allow
+        argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+        expect: {rc: 0, status: succeeded}
+      - id: already_applied
+        setup:
+          - [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+        argv: [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+        expect: {rc: 0, status: succeeded, skipped: firewall.rule_exists}
+      - id: partial_application
+        argv: [firewall:allow, "{{ cases.partial_application.port }}", "--node={{ app_dev_id }}", "--from={{ src }}"]
+        expect: {rc: 0, status: succeeded}
+      - id: conflict
+        setup:
+          - [firewall:deny, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+        argv: [firewall:allow, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+        expect: {rc: 1, code: firewall.rule_conflict, request: false}
+      - id: failure_code
+        argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}"]
+        expect: {rc: 1, code: firewall.node_id_invalid, request: false}
+  tasks:
+    - name: Run each case
+      ansible.builtin.include_tasks: act.yml
+      loop: "{{ commands }}"
+      loop_control: {loop_var: c, label: "{{ c.id }}"}
