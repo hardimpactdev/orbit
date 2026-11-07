@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Activity;
 
 use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Models\Activity;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -93,10 +94,11 @@ final class ActivityShutdownFinalizer
         try {
             self::allowShutdownMemory();
 
-            FinalizeInterruptedActivitiesAction::finalize(
+            // PHP does not terminate the application after a fatal error, so the notice cannot wait for it.
+            RecordEventBroadcaster::immediately(fn (): int => FinalizeInterruptedActivitiesAction::finalize(
                 Activity::query()->whereKey($this->activityId),
                 Carbon::now(),
-            );
+            ));
         } catch (Throwable) {
             // The scheduled sweep ends the row when the database is unavailable here.
         }

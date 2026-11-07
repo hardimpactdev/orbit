@@ -19,11 +19,34 @@ use Throwable;
  * `websocket` role assignment resolves a connection; otherwise this is a
  * no-op with no database access beyond the one lazy, memoized lookup.
  */
-final readonly class RecordEventBroadcaster
+final class RecordEventBroadcaster
 {
+    /** Depth of {@see immediately()} calls in progress. */
+    private static int $immediate = 0;
+
     public function __construct(
-        private RealtimeConnection $realtime,
+        private readonly RealtimeConnection $realtime,
     ) {}
+
+    /**
+     * Runs work whose events must go out at once, even inside a request: code that runs in a PHP shutdown
+     * function after a fatal error, where the application never terminates.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $work
+     * @return T
+     */
+    public static function immediately(Closure $work): mixed
+    {
+        self::$immediate++;
+
+        try {
+            return $work();
+        } finally {
+            self::$immediate--;
+        }
+    }
 
     /**
      * Sends the event to the serving Reverb and, during a `websocket` move, also to the old Node's Reverb,
@@ -31,19 +54,32 @@ final readonly class RecordEventBroadcaster
      * the other.
      *
      * The HTTP call to Reverb runs after the surrounding transaction commits, never under SQLite's write lock, and a
-     * rolled-back change broadcasts nothing. Outside a transaction it runs at once.
+     * rolled-back change broadcasts nothing. In an HTTP request it then waits for the response to go out, so the caller
+     * never waits for Reverb; the events leave in the order the changes committed. Outside a request, such as in a
+     * queue job or a console command, it runs at once.
      *
      * @param  array<string, mixed>  $data
      * @param  string  $channel  the private channel without its `private-` prefix
      */
     public function broadcast(RecordEventType $type, int|string $id, array $data, string $channel = 'orbit'): void
     {
-        DB::afterCommit(fn () => $this->deliver(new RecordBroadcast($type, $id, $data, $channel), $type, $id));
+        DB::afterCommit(function () use ($type, $id, $data, $channel): void {
+            $event = new RecordBroadcast($type, $id, $data, $channel);
+
+            if (self::$immediate > 0 || request()->route() === null) {
+                $this->deliver($event, $type, $id);
+
+                return;
+            }
+
+            // A terminating callback added while the application terminates still runs, in order, so a broadcast
+            // that a terminating callback causes is not lost.
+            app()->terminating(fn () => $this->deliver($event, $type, $id));
+        });
     }
 
     private function deliver(RecordBroadcast $event, RecordEventType $type, int|string $id): void
     {
-
         try {
             $connections = $this->realtime->all();
         } catch (Throwable $exception) {

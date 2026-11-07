@@ -39,8 +39,9 @@ return [
                 'port' => 443,
                 'scheme' => 'https',
                 'useTLS' => true,
-                // Every broadcast runs inside the request that caused it, including an Activity notice for
-                // almost every request (ADR 0159), so a slow or unreachable Reverb must not hold the request.
+                // A request sends its broadcasts after its response, including an Activity notice for almost
+                // every request (ADR 0159); a queued job sends them at once. A slow or unreachable Reverb must
+                // not hold the job or the PHP worker.
                 'timeout' => 3,
             ],
             'client_options' => [
