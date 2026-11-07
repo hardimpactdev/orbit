@@ -111,14 +111,16 @@ An allow also skips when its entire port or range lies inside one protected entr
 
 The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
 
-`--label` is optional free text of at most 255 characters. The UFW comment Orbit writes is `orbit` plus the label, sanitized: printable characters only, quotes removed, at most 64 characters. Matching never reads the comment; only the identity selects a rule.
+`--label` is optional free text of at most 255 characters. The UFW comment Orbit writes is `orbit` plus the label, sanitized: printable characters only, quotes removed, at most 64 characters. Only the identity selects a rule to change. Labels need not be unique; [`firewall:list --live`](/cli/firewall/list#compare-with-the-live-firewall) checks complete operator tuples before using labels as evidence of drift.
 
 ### Order on the Node
 
 UFW stops at the first rule that matches, so Orbit sets the order of every operator rule it writes:
 
-- Operator rules sit above Orbit's own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
+- Orbit places new operator rules above its own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
 - A narrower rule sits above a broader one, allow or deny alike: one address above a CIDR above anywhere.
+
+An existing equal allow is not moved merely to sit above a source-disjoint managed rule; its comment is preserved. [`firewall:allow`](/cli/firewall/allow) describes how Orbit repairs a partially applied rule.
 
 Overlap at a different scope is the way to restrict a port. These pairs are admitted:
 
