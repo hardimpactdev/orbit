@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseAutomationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** Shows the state of automatic Gateway releases. */
+/** Public command: gateway:auto-release:status. Shows the state of automatic Gateway releases. */
 final class ShowGatewayReleaseAutomationRequest extends GatewayRequest
 {
     #[\Override]

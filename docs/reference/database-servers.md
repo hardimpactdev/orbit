@@ -125,10 +125,10 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 
 ## Close an adopted server
 
-`database:server:close` gives `default` the admin password, so a client without a password gets no access. Run it after each client of an open server has [its own user](#create-an-acl-user-on-a-valkey-server).
+`database:server:update <slug> --require-password` requires a password for the default user, so a client without a password gets no access. Run it after each client of an open server has [its own user](#create-an-acl-user-on-a-valkey-server).
 
 ```bash
-orbit database:server:close beast-valkey
+orbit database:server:update beast-valkey --require-password
 ```
 
 Swamp runs one `valkey-cli` call per step from 209, in a throwaway `valkey/valkey:8.1` container on the server's Node. Each call reads its whole stdin from the vault: an `AUTH default` line with the admin password, then the step's commands. The password never enters argv. The close sends `ACL SETUSER default resetpass #<sha256 of the admin password>`, `ACL SAVE` and `CLIENT KILL USER default SKIPME yes`. The end check is a `PING` without a password, which must answer `NOAUTH`. The command refuses with `database.server_in_use` (409) and changes nothing while either of these holds:
@@ -137,6 +137,8 @@ Swamp runs one `valkey-cli` call per step from 209, in a throwaway `valkey/valke
 - A client other than the Gateway is logged in as `default`. The result contains only the fixed refusal code.
 
 After saving the password, the close revokes every other `default` session, including one accepted between the client check and the password change. A failed save has no rollback: the live ACL stays closed, and a rerun repeats the close. The Gateway deletes both vault inputs when the task ends. A client that is not connected at that moment is not seen, so move every client before you close the server. The command exists only for the two adopted Processes.
+
+The API is `PATCH /api/v1/database-servers/{database_server}` with JSON `{"require_password":true}`. Missing or false input is refused. No option reopens passwordless access. A server already requiring a password runs the existing readiness check.
 
 ## Create a database on a server
 
@@ -418,7 +420,7 @@ PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure fai
 
 ### Direct default-user closure
 
-`database:server:close` starts `operation-database-server-close` with captured public intent and two vault inputs. Native steps on 209 use official SSH and ship no script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/server-close.mmd) shows the steps. The Gateway records `default_open=false` only after the end check passed, and reads a failed `Prove no other client` as `database.server_in_use`; any other failed step is `database.server_command_failed`.
+`database:server:update --require-password` starts `operation-database-server-close` with captured public intent and two vault inputs. Native steps on 209 use official SSH and ship no script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/server-update.mmd) shows the steps. The Gateway records `default_open=false` only after the end check passed, and reads a failed `Prove no other client` as `database.server_in_use`; any other failed step is `database.server_command_failed`.
 
 A first Valkey adoption refused before mutation releases only its reserved Database server record. Its existing Process, container, data volume and connection remain unchanged, so correcting the connection password permits another adoption. Later or uncertain failures retain their records for inspection.
 
