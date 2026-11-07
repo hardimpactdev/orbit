@@ -114,10 +114,12 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.ready_copies }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
   # The refresh VM yields only its seed disk: it is stopped, never published. The image comes from a clean builder.
+  # The VM stops, and the image, its seed and the promotion follow, only when every step before passed: a failed step makes the steps
+  # after it `skipped`, which the guards of `seed=keep` also give, so this step names each of them.
   - name: 'Stop the refresh VM'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Create the VM', condition: {type: succeeded}}, {step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Converge the nested Nodes', condition: *done}, {step: 'Save the ready copies', condition: *done}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

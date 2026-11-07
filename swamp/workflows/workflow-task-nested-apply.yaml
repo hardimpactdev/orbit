@@ -27,6 +27,15 @@ jobs:
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-check-the-state" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-check-the-state" + "-" + self.role).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh_execution.target.user }}', port: '${{ inputs.ssh_execution.target.port }}', identityFile: '${{ inputs.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.ssh_execution.target.host_keys }}'}}]},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.fleet.guests[self.role] }}', '--', 'sh', '-c', 'for u; do systemctl is-active --quiet "$u" || { echo "$u is not active" >&2; exit 1; }; done', 'sh', 'home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'], timeoutSec: 40}}
+  # The nested Gateway reads the agent it gives its Nodes from `apps/agent/delivery/manifest.json`, an ignored file of the shared checkout,
+  # so a checkout that a fleet from ready copies mounts has none. It is the checkout's pin, as on a released Gateway: the pin is a byte copy
+  # of the published release manifest.
+  - name: 'Place the agent delivery'
+    labels: {role: swamp}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-place-the-agent-delivery").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-place-the-agent-delivery").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--user', '1000', '--', 'install', '-D', '-m', '0444', '/home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json', '/home/orbit/orbit/apps/agent/delivery/manifest.json'], timeoutSec: 40}}
+    dependsOn: [{step: 'Check the state', condition: {type: succeeded}}]
   # A failed task writes its message to stderr, which the run records with the failed step.
   # The Swamp tokens of the nested Gateway are renewed from the mounted checkout, so the tokens of the ready copies never decide how long a fleet lives (play `remint` of `gateway-bootstrap.yml`, with the control plan the build left on the machine). Only a fleet that starts from ready copies needs it: a restore of `base` brings back tokens that were renewed before it.
   - name: 'Re-mint the Swamp tokens'
@@ -35,7 +44,7 @@ jobs:
     guard: '${{ !(has(inputs.remint) && inputs.remint) }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-re-mint-the-swamp-tokens").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '900', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--', 'env', 'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true', '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'], timeoutSec: 910}}
-    dependsOn: [{step: 'Check the state', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Place the agent delivery', condition: {type: succeeded}}]
   # The ready copies hold an older database; the checked-out code owns the schema.
   - name: 'Migrate'
     labels: {role: swamp}

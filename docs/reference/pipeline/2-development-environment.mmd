@@ -80,6 +80,7 @@ sequenceDiagram
   SW->>NT: Apply the code<br/>migrate · restart
   %%> What it does:
   %%> - the bind-mount units of the copies put `.env`, `storage` and `bootstrap/cache` (each guest's own disk) over the shared checkout at boot
+  %%> Decided by the orchestrator, for Nick's review (2026-11-07): places the checkout's agent pin (`resources/agent/frozen-manifest.json`) as the nested Gateway's delivery manifest (`apps/agent/delivery/manifest.json`, an ignored file of the shared checkout); a fleet from ready copies mounts a checkout without it, and its `node:converge` refused to start
   %%> - then the re-mint below, migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
   %%> - the checkout is the disk device of the fleet start; there is no NFS export, NFS mount or mount ordering step any more
