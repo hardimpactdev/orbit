@@ -59,6 +59,26 @@
           - renewal_stop.stdout.split()[0] == 't'
           - renewal_stop.stdout.split()[1] | int >= 4500000000
         fail_msg: The worker unit must converge before renewal can start
+    - name: Refresh peer status after the live probe
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
+      become: true
+      become_user: "{{ orbit_user }}"
+      environment: "{{ renewal_environment }}"
+      register: renewal_peer_check
+      changed_when: false
+      no_log: true
+    # Swamp checks capacity BEFORE drain status. A capacity refusal alone is not
+    # evidence of admission: require this same instance still to be accepting.
+    - name: Require the checked peer still to accept work
+      ansible.builtin.assert:
+        that:
+          - >-
+            (renewal_peer_check.stdout | from_json).workers
+            | selectattr('name', 'equalto', renewal_peer_name)
+            | selectattr('instanceUuid', 'equalto', renewal_other.instanceUuid)
+            | selectattr('status', 'in', renewal_accepting) | list | length == 1
+        fail_msg: "Peer {{ renewal_peer }} changed during its live check; no worker will be stopped"
     # KillMode=mixed sends SIGTERM to the CLI only. The pinned CLI drains its runners.
     - name: Drain active dispatches and restart this worker
       ansible.builtin.systemd_service:

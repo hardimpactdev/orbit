@@ -20,7 +20,8 @@
       - renewal_check.workers[0].name == 'swamp-role-' ~ orbit_node_id ~ '-' ~ renewal_verify_slot
     fail_msg: "Worker {{ renewal_verify_slot }} is not connected"
 # The pinned native verify selects connected workers. An exact at_capacity refusal
-# proves the live worker is full; requiring a free probe slot could starve renewal.
+# proves a live connection is full. The caller separately checks fresh admission
+# status: capacity is checked before draining. Requiring a free slot could starve renewal.
 - name: Require a successful probe or the native full capacity refusal
   ansible.builtin.assert:
     that:

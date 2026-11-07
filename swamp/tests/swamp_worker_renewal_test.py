@@ -72,6 +72,9 @@ elif cmd == 'swamp':
         slot = sys.argv[3][-1]
         event('verify-' + slot)
         error = s.get('probe_error', {}).get(slot)
+        if s.get('drain_on_probe') == slot:
+            s['workers'][slot]['status'] = 'draining'
+            save()
         if error == 'empty':
             print(json.dumps({'workers': [], 'total': 0, 'passed': 0, 'failed': 0}))
         elif error:
@@ -179,6 +182,12 @@ class RenewalTest(unittest.TestCase):
         self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is at capacity"}
         self.start()
         self.assertIn('drain-b', self.result())
+
+    def test_capacity_refusal_cannot_hide_a_peer_that_started_draining(self):
+        self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is at capacity"}
+        self.state['drain_on_probe'] = 'b'
+        self.start()
+        self.assertEqual(self.result(success=False), ['verify-b'])
 
     def test_other_probe_error_prevents_drain(self):
         self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is draining"}
