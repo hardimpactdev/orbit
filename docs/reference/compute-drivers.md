@@ -1118,7 +1118,17 @@ The command `incus network set` runs the whole setup of the bridge again: the fi
 
 The value is merged. The part keeps every line of the operator and adds `log-queries=extra` and `log-facility=<file>` only when a line is missing. When the operator already logs to another file, the part leaves the setting alone and warns.
 
-Only a safety check fails the part, and with it the refresh. An observation check prints a warning with its code, and the refresh goes on, because the missing agent fact shows the gap. The connection log is set up in a block of its own, first, so a bad rsyslog rule or rotation file cannot stop it. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. Each Incus and systemd task has a timeout, so a hung task fails or warns and does not hold the refresh.
+Only a safety check fails the part, and with it the refresh. An observation check records a warning with its code, and the refresh goes on, because a log-only failure must not block the base refresh. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. Each Incus and systemd task has a timeout, so a hung task fails or warns and does not hold the refresh.
+
+Each setup item is a block of its own with its own rescue: the connection log, the log files, the rsyslog rule, the log rotation and the DNS log. A failure in one block cannot skip another. The connection log comes first.
+
+A rescued failure keeps the part green. The part prints each warning in Ansible's log before the safety checks, with the error text of the failed tool.
+
+The end checks, such as `egress.config_missing`, only print `WARNING` lines in that log. An operation does not carry the log of a step, so a rescued failure is visible only in the Swamp run log of the refresh, which Swamp keeps for about 30 minutes, and as an `egress` fact with no rows. The agent reads an absent or empty log file as empty, so a missing rsyslog rule gives a fact that is present and has no rows, not a missing fact.
+
+To check a host, run `ls /etc/rsyslog.d/19-orbit-egress.conf /etc/logrotate.d/orbit-egress` and `incus network get <network> raw.dnsmasq --project default`.
+
+AppArmor confines `rsyslogd` to `/etc/rsyslog.conf` and `/etc/rsyslog.d/**`, even for `-N1`. The rsyslog rule is therefore not checked with `validate:` on a temporary file. When the content differs, the part stages the rule as `/etc/rsyslog.d/19-orbit-egress.conf.new`, a name that rsyslog does not include. It runs `rsyslogd -N1 -f` on that path and then copies the file to its name. It removes the staged file in every case, also when the rule is unchanged and a crash left the file. A rule that fails the check never replaces the old rule.
 
 | Check | Result |
 |---|---|
@@ -1130,6 +1140,7 @@ Only a safety check fails the part, and with it the refresh. An observation chec
 | rsyslog and `orbit-egress-log.service` are active (`egress.service_inactive`) | Warns |
 | Others can read both logs and enter the folder, and the DNS log has mode 0664 (`egress.log_unreadable`) | Warns |
 | An action of the log setup failed (`egress.setup_failed`) | Warns |
+| The rsyslog rule or the log rotation file is missing (`egress.config_missing`) | Warns |
 
 The `Log egress` step runs before the base VM is touched. A failed safety check fails the refresh and starts no rollback. To run only this part, start the workflow `task-vm-host-phase` with `tags: egress-log` and the intent of a refresh.
 

@@ -364,7 +364,7 @@
 # the bridge and its ACL are read and checked, never changed. `host.network` is the only input.
 # Only a safety check fails the part, and with it the image refresh: a table that does not load (`nft -c`), a bridge with IPv6, an ACL that
 # lost its drop rule. Everything else only observes. A failed action or a failed observation check prints a warning and the part goes on,
-# because the missing agent fact shows it and a broken log must not stop the base refresh.
+# because a broken log must not stop the base refresh.
 - name: Task VM egress log
   hosts: task_vm_host
   become: true
@@ -521,10 +521,14 @@
           ansible.builtin.systemd: { name: orbit-egress-log.service, enabled: true, state: started, daemon_reload: true }
           timeout: 60
       rescue:
-        - name: Warn that the connection log setup failed
-          ansible.builtin.debug:
-            msg: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
-    - name: Set up the logs
+        - name: Record that the connection log failed
+          ansible.builtin.set_fact:
+            egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+          vars:
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
+    # Every item of the setup is a block of its own with its own rescue, so a failure in one cannot skip another. A rescue records a
+    # warning, which the end of the part prints in Ansible's log.
+    - name: Make the log files
       block:
         - name: Make the folder of the logs
           ansible.builtin.file: { path: /var/log/orbit, state: directory, owner: syslog, group: adm, mode: "0755" }
@@ -532,7 +536,7 @@
         # log. When dnsmasq starts as root with a log file whose group is root and that lacks the group write bit, it runs fchmod(0660) and
         # fchown(incus), which would take the world-read bit away. So its file is root:root with mode 0664: dnsmasq leaves the mode, and
         # only the owner changes. The part sets no owner on it, so a rerun does not flip the owner back. Touching keeps the times.
-        - name: Make the log files
+        - name: Touch the log files
           ansible.builtin.file:
             path: "{{ item.path }}"
             state: touch
@@ -545,16 +549,61 @@
             - { path: /var/log/orbit/task-egress.log, owner: syslog, group: adm, mode: "0644" }
             - { path: "{{ dnsmasq_log }}", mode: "0664" }
           loop_control: { label: "{{ item.path }}" }
-        # The tools that read the files check them before they replace the old ones.
-        - name: Write the rsyslog rule
-          ansible.builtin.copy:
-            dest: /etc/rsyslog.d/19-orbit-egress.conf
-            content: "{{ rsyslog_rules }}"
-            owner: root
-            group: root
-            mode: "0644"
-            validate: /usr/sbin/rsyslogd -N1 -f %s
-          notify: Restart rsyslog
+      rescue:
+        - name: Record that the log files failed
+          ansible.builtin.set_fact:
+            egress_logs_failed: true
+            egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+          vars:
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
+    # The rsyslog rule. AppArmor confines rsyslogd, even for `-N1`, to read /etc/rsyslog.conf and /etc/rsyslog.d/** only, so `validate:` on
+    # the temporary file of `copy` fails with "Permission denied". The rule is staged under /etc/rsyslog.d with a name that does not end in
+    # `.conf`, so rsyslog does not include it, checked there, and only then copied to its name. It is staged only when the content
+    # differs, so a rerun changes nothing. A failed check removes the staged file and keeps the old rule.
+    - name: Set up the rsyslog rule
+      block:
+        - name: Read the rsyslog rule
+          ansible.builtin.stat: { path: /etc/rsyslog.d/19-orbit-egress.conf, checksum_algorithm: sha1 }
+          register: rsyslog_now
+        - name: Check and replace the rsyslog rule
+          when: not rsyslog_now.stat.exists or rsyslog_now.stat.checksum != (rsyslog_rules | hash('sha1'))
+          block:
+            - name: Stage the rsyslog rule
+              ansible.builtin.copy:
+                dest: /etc/rsyslog.d/19-orbit-egress.conf.new
+                content: "{{ rsyslog_rules }}"
+                owner: root
+                group: root
+                mode: "0644"
+            - name: Check the staged rsyslog rule
+              ansible.builtin.command: { argv: [/usr/sbin/rsyslogd, -N1, -f, /etc/rsyslog.d/19-orbit-egress.conf.new] }
+              changed_when: false
+              timeout: 60
+            - name: Put the rsyslog rule in place
+              ansible.builtin.copy:
+                src: /etc/rsyslog.d/19-orbit-egress.conf.new
+                remote_src: true
+                dest: /etc/rsyslog.d/19-orbit-egress.conf
+                owner: root
+                group: root
+                mode: "0644"
+              notify: Restart rsyslog
+      rescue:
+        # The command module's `msg` is only "non-zero return code": the reason is in stderr and stdout.
+        - name: Record that the rsyslog rule failed
+          ansible.builtin.set_fact:
+            egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+          vars:
+            reasons: "{{ [ansible_failed_result.msg | default(''), ansible_failed_result.stderr | default(''), ansible_failed_result.stdout | default('')] }}"
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ reasons | map('trim') | select | join(' | ') }}"
+      # Whatever happened, and also after a crash that left it, no staged file stays: it is not read by rsyslog, but a stale one is not
+      # a rule the part wrote. Nothing is reported for it.
+      always:
+        - name: Remove the staged rsyslog rule
+          ansible.builtin.file: { path: /etc/rsyslog.d/19-orbit-egress.conf.new, state: absent }
+          changed_when: false
+    - name: Set up the log rotation
+      block:
         - name: Write the log rotation
           ansible.builtin.copy:
             dest: /etc/logrotate.d/orbit-egress
@@ -563,17 +612,29 @@
             group: root
             mode: "0644"
             validate: /usr/sbin/logrotate -d %s
-        # DNS lookups of the task VMs, to our own file. A value with the lines already in it sets nothing, so a rerun does not run the
-        # setup of the bridge again.
+      rescue:
+        - name: Record that the log rotation failed
+          ansible.builtin.set_fact:
+            egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+          vars:
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
+    # DNS lookups of the task VMs, to our own file. A value with the lines already in it sets nothing, so a rerun does not run the setup
+    # of the bridge again. It waits for the log files, so dnsmasq does not make its own file with mode 0640.
+    - name: Set up the DNS log
+      when: not (egress_logs_failed | default(false) | bool)
+      block:
         - name: Log the DNS queries of the bridge
           when: (dnsmasq_missing | length > 0) and not (dnsmasq_taken | bool)
           ansible.builtin.command: { argv: [incus, network, set, "{{ bridge }}", "raw.dnsmasq={{ dnsmasq_raw }}", --project, default] }
           changed_when: true
           timeout: 120
       rescue:
-        - name: Warn that the log setup failed
-          ansible.builtin.debug:
-            msg: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
+        - name: Record that the DNS log failed
+          ansible.builtin.set_fact:
+            egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+          vars:
+            reasons: "{{ [ansible_failed_result.msg | default(''), ansible_failed_result.stderr | default(''), ansible_failed_result.stdout | default('')] }}"
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ reasons | map('trim') | select | join(' | ') }}"
     - name: Apply the changed rules
       ansible.builtin.meta: flush_handlers
     # A unit that stays active does not bring back a table that something deleted.
@@ -617,14 +678,23 @@
       loop: [/var/log/orbit, /var/log/orbit/task-egress.log, "{{ dnsmasq_log }}"]
       register: egress_files
       check_mode: false
-    # Observation: a failed check prints a warning with its code, and the refresh goes on. The agent fact shows the same gap.
+    - name: Read the setup files at the end
+      ansible.builtin.stat: { path: "{{ item }}" }
+      loop: [/etc/rsyslog.d/19-orbit-egress.conf, /etc/logrotate.d/orbit-egress]
+      register: egress_config_files
+      check_mode: false
+    # Observation: a failed check records a warning with its code, and the refresh goes on. The warning shows only in the Swamp run log.
     - name: Warn about the rules
       when: [not ansible_check_mode, "not (table_ok | bool)"]
-      ansible.builtin.debug: { msg: "WARNING egress.rules_missing: the table orbit_egress is missing or not as the part writes it" }
+      ansible.builtin.set_fact:
+        egress_warnings: >-
+          {{ egress_warnings | default([]) + ['WARNING egress.rules_missing: the table orbit_egress is missing or not as the part writes it'] }}
     - name: Warn about the DNS log setting
       when: [not ansible_check_mode, "dnsmasq_lines | reject('in', end_raw_lines) | list | length > 0"]
-      ansible.builtin.debug:
-        msg: >-
+      ansible.builtin.set_fact:
+        egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
+      vars:
+        warning: >-
           WARNING egress.dnsmasq_unset: raw.dnsmasq of {{ bridge }} lacks {{ dnsmasq_lines | reject('in', end_raw_lines) | list }}
           {{ '(it logs to another file: egress.dnsmasq_log_taken)' if dnsmasq_taken | bool else '' }}
     # The agent reads the logs as other, without a capability: each file exists and others may read it, and others may enter the folder.
@@ -636,14 +706,29 @@
           (egress_files.results | map(attribute='stat') | selectattr('exists') | selectattr('roth') | list | length != 3)
           or not egress_files.results[0].stat.xoth
           or egress_files.results[2].stat.mode | default('') != '0664'
-      ansible.builtin.debug: { msg: "WARNING egress.log_unreadable: a log file is missing or has the wrong mode, or others cannot enter its folder" }
+      ansible.builtin.set_fact:
+        egress_warnings: >-
+          {{ egress_warnings | default([]) + ['WARNING egress.log_unreadable: a log file is missing, has the wrong mode, or its folder is closed'] }}
+    # A rescued failure of the rsyslog rule or the rotation leaves no file behind; the part says so even when nothing else shows it.
+    - name: Warn about the setup files
+      when:
+        - not ansible_check_mode
+        - egress_config_files.results | map(attribute='stat') | selectattr('exists') | list | length != 2
+      ansible.builtin.set_fact:
+        egress_warnings: "{{ egress_warnings | default([]) + ['WARNING egress.config_missing: the rsyslog rule or the log rotation file is missing'] }}"
     - name: Warn about the services
       when:
         - not ansible_check_mode
         - >-
           egress_units.results[0].status.ActiveState | default('') != 'active'
           or egress_units.results[1].status.ActiveState | default('') != 'active'
-      ansible.builtin.debug: { msg: "WARNING egress.service_inactive: rsyslog or orbit-egress-log.service is not active" }
+      ansible.builtin.set_fact:
+        egress_warnings: "{{ egress_warnings | default([]) + ['WARNING egress.service_inactive: rsyslog or orbit-egress-log.service is not active'] }}"
+    # The warnings are printed in Ansible's log, before the safety checks so that a failed part shows them too. An operation does not carry
+    # the log of a step, so a warning shows only in the Swamp run log. A missing rule leaves the agent fact in place with no rows.
+    - name: Print the warnings
+      when: egress_warnings | default([]) | length > 0
+      ansible.builtin.debug: { msg: "{{ egress_warnings }}" }
     # Safety: the log must change nothing for a task VM. The bridge has no IPv6, and the ACL still drops the private ranges.
     - name: Check that the bridge has no IPv6
       when: not ansible_check_mode
