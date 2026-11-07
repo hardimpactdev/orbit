@@ -12,6 +12,8 @@
   vars:
     recipe: "{{ intent.recipe }}"
     profile: "{{ intent.profile | default('base') }}"
+    # The proof Swamp Club key: a slot's enrol writes it here on its root disk; the nested Gateway reads it through a disk device.
+    fleet_club_key: /etc/orbit/swamp-club-api-key
     orbit_user: orbit
     orbit_home: "/home/orbit"
     vp_home: "/home/orbit/.local/share/vite-plus"
@@ -33,6 +35,30 @@
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }
     - { name: Software, ansible.builtin.import_tasks: tasks/task-vm-software.yml, tags: [software] }
     - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
+    - { name: Boot, ansible.builtin.import_tasks: tasks/task-vm-boot.yml, tags: [boot] }
+    - { name: Checkout, ansible.builtin.import_tasks: tasks/task-vm-checkout.yml, tags: [checkout] }
+    - { name: Fleet, ansible.builtin.import_tasks: tasks/task-vm-fleet.yml, tags: [fleet] }
     - { name: Check, ansible.builtin.import_tasks: tasks/task-vm-check.yml, tags: [check] }
+
+# The nested fleet is ready when Doctor of the nested Gateway is healthy; the wait gives up after its delays (task-vm-fleet-wait.yml).
+- name: Wait for the nested fleet
+  ansible.builtin.import_playbook: task-vm-fleet-wait.yml
+  vars: { wait_kind: doctor, wait_seconds: 300 }
+  tags: [fleet]
+
+- name: Task VM image
+  hosts: task_vm
+  become: true
+  gather_facts: false
+  vars:
+    orbit_user: orbit
+    orbit_home: "/home/orbit"
+  tasks:
+    # `base` is the state a claim starts the containers from: plain container snapshots, no memory.
+    - name: Take the base snapshots
+      tags: [fleet]
+      ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
+      loop: "{{ intent.fleet.guests.values() | list }}"
+      changed_when: true
     - { name: Clean, ansible.builtin.import_tasks: tasks/task-vm-clean.yml, tags: [clean] }
     - { name: Template, ansible.builtin.import_tasks: tasks/task-vm-template-check.yml, tags: [template] }

@@ -1,0 +1,30 @@
+---
+# How a VM from a refreshed task image boots (docs/cli/tasks/vm-image-refresh.mmd). A slot boots its `clean` snapshot at every
+# claim, so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd
+# makes its host keys only when none exist. A slot's enrol writes its own host keys onto its root disk before its `clean` snapshot (docs/cli/tasks/vm-
+# slot-enrol.mmd).
+- name: Turn cloud-init off
+  ansible.builtin.copy: { dest: /etc/cloud/cloud-init.disabled, content: "", mode: "0644" }
+- name: Make the SSH folder of orbit
+  ansible.builtin.file: { path: "{{ orbit_home }}/.ssh", state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0700" }
+- name: Keep the key of the Swamp control Node
+  ansible.builtin.copy:
+    dest: "{{ orbit_home }}/.ssh/authorized_keys"
+    content: "{{ intent.boot.authorized_key }}\n"
+    owner: "{{ orbit_user }}"
+    group: "{{ orbit_user }}"
+    mode: "0600"
+- name: Make the folder of the sshd drop-ins
+  ansible.builtin.file: { path: /etc/systemd/system/ssh.service.d, state: directory, mode: "0755" }
+# The unit runs `sshd -t` before it starts; with no host key that check fails, so the keys are made first.
+- name: Make missing SSH host keys before sshd starts
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ssh.service.d/orbit-host-keys.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPre=
+      ExecStartPre=/usr/bin/ssh-keygen -A
+      ExecStartPre=/usr/sbin/sshd -t
+- name: Read the units again
+  ansible.builtin.systemd: { daemon_reload: true }
