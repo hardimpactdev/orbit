@@ -31,5 +31,6 @@
   failed_when: tools_nfs_stopped.failed and 'Could not find the requested service' not in (tools_nfs_stopped.msg | default(''))
 - { name: Initialise Incus, ansible.builtin.import_tasks: task-vm-incus.yml }
 - { name: Open the firewall to the nested bridge, ansible.builtin.import_tasks: task-vm-nested-firewall.yml }
+- { name: Route the nested bridge out of the VM, ansible.builtin.import_tasks: task-vm-nested-route.yml }
 - { name: Build the shape gate tools, ansible.builtin.import_tasks: task-vm-shape-gate.yml }
 - { name: Leave the downloads out of an image, ansible.builtin.import_tasks: task-vm-image-cache.yml }

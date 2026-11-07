@@ -169,7 +169,7 @@
     - name: Stop with how the VM routes
       ansible.builtin.fail:
         msg: "The nested Gateway cannot reach the Swamp Club: {{ ansible_failed_result.stderr | default('') }}
-          {{ fleet_route.results | map(attribute='stdout') | list }}"
+          {{ fleet_route.results | map(attribute='stdout', default='') | list }}"
 - name: Renew the nested Swamp tokens
   block:
     - name: Run the token renewal of the nested Gateway
