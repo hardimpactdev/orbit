@@ -612,9 +612,9 @@ On Swamp, use the shared `directOperation` template with family-owned read, acti
 
 Swamp runs a step that has not written again when its worker is lost (the session of a worker ends after 8 hours), and fails a step that has. A step that changes an external system without writing Swamp data is invisible to the scheduler until it declares `writes: true`. Without the key the second run of a step fails it (`destination path already exists`) or leaves a second token.
 
-A step that cannot run twice must declare it: a `git clone`, a `git worktree add`, a mint, a one-shot API call that is not safe to repeat, an account change, the deletion of a VM. A repeat of a `DELETE` or `PUT` call is harmless, so a token revoke stays re-runnable.
+A step that cannot run twice must declare it: a `git clone`, a `git worktree add`, a mint, a one-shot API call that is not safe to repeat, an account change, the deletion of a VM. A token revoke stays re-runnable: a second `DELETE installation/token` answers 401, and the revoke steps tolerate it.
 
-Swamp defines the key and what it does. Our rule is the test `swamp/tests/writes_declared_test.ts`: every step with an external effect declares `writes: true` or is listed in `swamp/tests/writes-reviewed.json` as read-only, idempotent or unreviewed, and the unreviewed count only shrinks.
+Swamp defines the key and what it does. Our rule is the test `swamp/tests/writes_declared_test.ts`: every step with an external effect declares `writes: true` or is listed in `swamp/tests/writes-reviewed.json` as read-only, idempotent or unreviewed, and the unreviewed count is pinned, so a rise shows in the diff.
 
 `instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. `instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
 
