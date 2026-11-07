@@ -192,5 +192,5 @@ sequenceDiagram
     %%> Result:
     %%> - the line names the failed check; the receipt in this task VM has the rest
     %%> - in CI (stage 4) the proof VM is destroyed, so only the verdict lines stay; the author reruns `orbit proof` in their own task VM for the full receipt
-    %%> - `proof:run --keep-failed` is the exception: a failed run keeps its VM for 60 minutes so that a person can read the fleet; then the Gateway destroys it
+    %%> - `proof:run --keep-failed` is the exception: a run that failed for any reason, in its setup as well as in a case, keeps its VM for 60 minutes so that a person can read the fleet; then the Gateway destroys it
   end

@@ -126,7 +126,8 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
     /**
      * The record of the VM that a failed run kept, or null when the run kept none: the flag was off, the workflow destroyed (or never
-     * started to destroy) the VM, or the run did not fail. The keep ends at the time recorded here (ProofRunWatch).
+     * started to destroy) the VM, the run did not fail, or its group has no VM. A run that failed in its setup keeps the VM it has, in whatever
+     * state. The keep ends at the time recorded here (ProofRunWatch).
      *
      * @param  array<string,mixed>  $input
      * @param  array<string,mixed>  $native
@@ -136,7 +137,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     private function kept(Operation $run, array $input, array $native, array $data): ?array
     {
         if (($input['keep_failed'] ?? false) !== true || ($data['status'] ?? null) !== 'failed'
-            || NativeRunResult::stepStatus($native, 'Destroy the VM') !== 'skipped' || NativeRunResult::stepStatus($native, 'Pin the VM') !== 'succeeded') {
+            || NativeRunResult::stepStatus($native, 'Destroy the VM') !== 'skipped') {
             return null;
         }
         $groupId = ValidatedData::integer($input['group_id']);

@@ -104,7 +104,7 @@ describe('the keep_failed input of one run', function (): void {
         expect($workflow['inputs']['properties']['keep_failed'])->toBe(['type' => 'boolean'])
             ->and(array_keys(ProofCommandProjection::keepFlag(['keep_failed' => true])))->each->toBeIn(array_keys($workflow['inputs']['properties']))
             // Swamp skips a step whose guard is true, so the guard names the flag and the two steps whose outcome keeps the VM.
-            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Pin the VM"]', 'steps[?"Prove the command"]')
+            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Create the VM"]', 'steps[?"Pin the VM"]', 'steps[?"Prove the command"]')
             // The destroy step is still one of the steps that the projection reads, and the report waits for it whether it ran or was skipped.
             ->and($destroy['dependsOn'])->toContain(['step' => 'Prove the command', 'condition' => ['type' => 'always']])
             ->and(collect($steps['Report']['dependsOn'])->firstWhere('step', 'Destroy the VM')['condition'])->toBe(['type' => 'always']);
@@ -277,7 +277,7 @@ describe('keep_failed', function (): void {
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     });
 
-    it('cancels the group the normal way when the destroy step ran and failed, or the VM was never ready, although the flag is on', function (array $steps, string $destroy): void {
+    it('cancels the group the normal way when the destroy step ran and failed, although the flag is on', function (array $steps, string $destroy): void {
         Queue::fake();
         [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
         $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
@@ -288,8 +288,50 @@ describe('keep_failed', function (): void {
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     })->with([
         'a destroy that failed' => [[], 'failed'],
-        'a pin that did not succeed' => [['Pin the VM' => ['status' => 'failed']], 'skipped'],
     ]);
+
+    it('keeps the VM of a run that failed in its setup, whatever the step, with the VM in the state the failure left it', function (array $steps): void {
+        Queue::fake();
+        Carbon::setTestNow('2026-11-07 10:00:00');
+        [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:list']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        // M5 try 11: the nested fleet did not start inside `Create the VM`, so the run never pinned the VM and never ran a case.
+        $ended = proofEnded('failed', [...$steps, 'Pin the VM' => ['status' => 'skipped'], 'Prove the command' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'skipped']]);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        $kept = ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z', 'cancel_requested_at' => null];
+        expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('proof.run_failed')->and($projected->result['kept'])->toBe($kept)
+            ->and($vm->refresh()->state)->not->toBe(TaskVmState::Destroyed)->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+            ->and($proof->refresh()->result['kept'])->toBe([['command' => 'firewall:list', 'vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z']]);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    })->with([
+        'the VM step failed' => [['Create the VM' => ['status' => 'failed']]],
+        'the nested fleet did not start' => [['Create the VM' => ['status' => 'failed'], 'Start the nested fleet' => ['status' => 'failed'], 'Pin the nested CA' => ['status' => 'failed']]],
+    ]);
+
+    it('cancels the group the normal way when the same setup failure happens without the flag', function (): void {
+        Queue::fake();
+        [, [[$run]]] = proofRuns(['firewall:list']);
+        $ended = proofEnded('failed', ['Create the VM' => ['status' => 'failed'], 'Pin the VM' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'failed']]);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('keeps nothing for a run that never got a VM, and cancels its group the normal way', function (): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:list']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        $vm->update(['state' => TaskVmState::Destroyed]);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Create the VM' => ['status' => 'failed'], 'Destroy the VM' => ['status' => 'skipped']]));
+
+        expect($projected->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
 
     it('does not keep a VM for a run that passed', function (): void {
         Queue::fake();

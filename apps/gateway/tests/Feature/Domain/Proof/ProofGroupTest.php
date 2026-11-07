@@ -167,6 +167,19 @@ it('still admits the cancel of a group that is marked cancelled while its VM is 
     expect($code())->toBe('none');
 });
 
+it('needs the cancel of the failed group of a kept run whose VM failed to provision, until the group is cancelled and the VM gone', function (): void {
+    $run = proofRunning();
+    Task::topLevel()->findOrFail($run->target_id)->update(['status' => TaskGroupStatus::Failed]);
+    $vm = TaskVm::query()->create(['group_id' => $run->target_id, 'host_node_id' => $run->node_id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
+        'state' => TaskVmState::Failed, 'size' => TaskVmSize::Normal]);
+
+    expect(app(ProofGroup::class)->needsCancel($run))->toBeTrue();
+
+    Task::topLevel()->findOrFail($run->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
+    expect(app(ProofGroup::class)->needsCancel($run))->toBeTrue();
+    $vm->update(['state' => TaskVmState::Destroyed]);
+    expect(app(ProofGroup::class)->needsCancel($run))->toBeFalse();
+});
 it('runs the cancel of the group in a job', function (): void {
     $proof = proofRunning();
     Task::topLevel()->findOrFail($proof->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
