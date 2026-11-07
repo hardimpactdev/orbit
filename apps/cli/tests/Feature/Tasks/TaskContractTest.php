@@ -58,8 +58,8 @@ describe('tasks contract', function (): void {
         Sleep::fake(syncWithCarbon: true);
         try {
             foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
-                run_contract(['tasks-park-queued', 'tasks-park-succeeded', 'realtime/realtime-show/unconfigured'], 'tasks:park', ['group' => '1', '--idempotency-key' => 'review.fixture', ...$mode], 'tasks/tasks-park/succeeded.'.$extension, 0);
-                run_contract('tasks-park-refused', 'tasks:park', ['group' => '1', '--idempotency-key' => 'review.refused', ...$mode], 'tasks/tasks-park/refused.'.$extension, 1);
+                run_contract(['task-park-queued', 'task-park-succeeded', 'realtime/realtime-show/unconfigured'], 'task:park', ['task' => '1', '--idempotency-key' => 'review.fixture', ...$mode], 'tasks/task-park/succeeded.'.$extension, 0);
+                run_contract('task-park-refused', 'task:park', ['task' => '1', '--idempotency-key' => 'review.refused', ...$mode], 'tasks/task-park/refused.'.$extension, 1);
             }
         } finally {
             Sleep::fake(false);
@@ -67,62 +67,62 @@ describe('tasks contract', function (): void {
     });
 
     it('renders a refused check', function (): void {
-        run_task_contract('tasks/tasks-publish/not-orchestrated', 'tasks:publish', ['group' => '1', '--check' => '1'], 1);
-        run_task_contract('tasks/tasks-check/not-orchestrated', 'tasks:check', ['group' => '1', '--subtask' => '2', '--phase' => 'baseline'], 1);
+        run_task_contract('tasks/task-publish/not-orchestrated', 'task:publish', ['task' => '1', '--check' => '1'], 1);
+        run_task_contract('tasks/task-check/not-orchestrated', 'task:check', ['task' => '2', '--phase' => 'baseline'], 1);
     });
 
     it('renders a refused external turn', function (): void {
-        run_task_contract('tasks/tasks-turn/not-orchestrated', 'tasks:turn', ['group' => '1', '--subtask' => '2', '--role' => 'implementer', '--prompt' => 'Implement exactly this prompt.', '--thread' => 'new'], 1);
+        run_task_contract('tasks/task-turn/not-orchestrated', 'task:turn', ['task' => '2', '--role' => 'implementer', '--prompt' => 'Implement exactly this prompt.', '--thread' => 'new'], 1);
     });
 
     it('renders a refused provision', function (): void {
-        run_task_contract('tasks/tasks-provision/not-orchestrated', 'tasks:provision', ['group' => '1'], 1);
+        run_task_contract('tasks/task-start/not-orchestrated', 'task:start', ['task' => '1'], 1);
     });
 
     it('renders a declared workload node', function (): void {
-        run_task_contract('tasks/tasks-subtask-create/topology', 'tasks:subtask:create', [
-            'group' => '1', 'title' => 'Use a workload node', '--brief' => 'Verify the private app-dev node.', '--topology' => '["app-dev"]',
+        run_task_contract('tasks/task-create/child-topology', 'task:create', [
+            '--parent' => '1', 'title' => 'Use a workload node', '--brief' => 'Verify the private app-dev node.', '--topology' => '["app-dev"]',
         ], 0);
     });
 
     it('renders tasks status', function (): void {
-        run_task_contract('tasks/tasks-status/enabled', 'tasks:status', [], 0);
-        run_task_contract('tasks/tasks-status/assistance', 'tasks:status', [], 0);
-        run_task_contract('tasks/tasks-status/merges', 'tasks:status', [], 0);
+        run_task_contract('tasks/task-status/enabled', 'task:status', [], 0);
+        run_task_contract('tasks/task-status/assistance', 'task:status', [], 0);
+        run_task_contract('tasks/task-status/merges', 'task:status', [], 0);
     });
 
     it('renders the review-and-merge state of an incoming pull request', function (): void {
-        run_task_contract('tasks-show/review-and-merge', 'tasks:show', ['group' => '1'], 0);
+        run_task_contract('task-show/review-and-merge', 'task:show', ['task' => '1'], 0);
     });
 
     it('renders the group list and an empty list', function (): void {
-        run_task_contract('tasks-list/default', 'tasks:list', [], 0);
-        run_task_contract('tasks-list/empty', 'tasks:list', [], 0);
+        run_task_contract('task-list/default', 'task:list', [], 0);
+        run_task_contract('task-list/empty', 'task:list', [], 0);
     });
 
     it('renders one group with its brief and subtasks', function (): void {
-        run_task_contract('tasks-show/default', 'tasks:show', ['group' => '1'], 0);
+        run_task_contract('task-show/default', 'task:show', ['task' => '1'], 0);
     });
 
     it('renders a watched pull request in the group JSON without changing pr_url', function (): void {
-        run_task_contract('tasks-show/watched', 'tasks:show', ['group' => '1'], 0);
+        run_task_contract('task-show/watched', 'task:show', ['task' => '1'], 0);
     });
 
     it('renders a created group and a refused todo create', function (): void {
-        run_task_contract('tasks-create/created', 'tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
-        run_task_contract('tasks/tasks-create/external', 'tasks:create', ['title' => 'External work', '--project' => '1', '--brief' => 'An orchestrator drives it.', '--orchestration' => 'external'], 0);
-        run_task_contract('tasks-create/no-subtasks', 'tasks:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
+        run_task_contract('task-create/created', 'task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
+        run_task_contract('tasks/task-create/external', 'task:create', ['title' => 'External work', '--project' => '1', '--brief' => 'An orchestrator drives it.', '--orchestration' => 'external'], 0);
+        run_task_contract('task-create/no-subtasks', 'task:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
     });
 
     it('renders group updates, a refused update, and complete', function (): void {
-        run_task_contract('tasks-update/updated', 'tasks:update', ['group' => '1', '--title' => 'Add the tasks command family'], 0);
-        run_task_contract('tasks-update/not-in-backlog', 'tasks:update', ['group' => '1', '--title' => 'Too late'], 1);
-        run_task_contract('tasks/tasks-complete/completed', 'tasks:complete', ['group' => '2', '--yes' => true], 0);
+        run_task_contract('task-update/updated', 'task:update', ['task' => '1', '--title' => 'Add the tasks command family'], 0);
+        run_task_contract('task-update/not-in-backlog', 'task:update', ['task' => '1', '--title' => 'Too late'], 1);
+        run_task_contract('tasks/task-complete/completed', 'task:complete', ['task' => '2', '--yes' => true], 0);
     });
 
     it('renders completion of an ended watched pull request and refusal of an open one', function (): void {
-        run_task_contract('tasks/tasks-complete/ended', 'tasks:complete', ['group' => '1', '--yes' => true], 0);
-        run_task_contract('tasks/tasks-complete/not-ready', 'tasks:complete', ['group' => '1', '--yes' => true], 1);
+        run_task_contract('tasks/task-complete/ended', 'task:complete', ['task' => '1', '--yes' => true], 0);
+        run_task_contract('tasks/task-complete/not-ready', 'task:complete', ['task' => '1', '--yes' => true], 1);
     });
 
     it('renders subtask create, update, and destroy', function (): void {
@@ -135,16 +135,16 @@ describe('tasks contract', function (): void {
             ['id' => 'docs-lint', 'type' => 'command', 'description' => 'The documentation lint passes', 'command' => 'composer docs-lint'],
         ], JSON_THROW_ON_ERROR));
 
-        run_task_contract('tasks-subtask-create/created', 'tasks:subtask:create', ['group' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/tasks.mdx.', '--deliverables' => $deliverables], 0);
-        run_task_contract('tasks-subtask-update/deliverables-locked', 'tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--deliverables' => $deliverables], 1);
-        run_task_contract('tasks-subtask-update/updated', 'tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--position' => '2'], 0);
-        run_task_contract('tasks-subtask-destroy/destroyed', 'tasks:subtask:destroy', ['group' => '1', 'subtask' => '1', '--yes' => true], 0);
+        run_task_contract('task-create/child-created', 'task:create', ['--parent' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/tasks.mdx.', '--deliverables' => $deliverables], 0);
+        run_task_contract('task-update/child-deliverables-locked', 'task:update', ['task' => '1', '--deliverables' => $deliverables], 1);
+        run_task_contract('task-update/child-updated', 'task:update', ['task' => '1', '--position' => '2'], 0);
+        run_task_contract('task-destroy/child-destroyed', 'task:destroy', ['task' => '1', '--yes' => true], 0);
     });
 
     it('renders a cancelled subtask, a subtask that is not running, and a failed interrupt', function (): void {
-        run_task_contract('tasks-subtask-cancel/cancelled', 'tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true], 0);
-        run_task_contract('tasks-subtask-cancel/not-running', 'tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true], 1);
-        run_task_contract('tasks-subtask-cancel/interrupt-failed', 'tasks:subtask:cancel', ['group' => '2', 'subtask' => '3', '--yes' => true], 1);
+        run_task_contract('task-cancel/child-cancelled', 'task:cancel', ['task' => '1', '--yes' => true], 0);
+        run_task_contract('task-cancel/child-not-running', 'task:cancel', ['task' => '1', '--yes' => true], 1);
+        run_task_contract('task-cancel/child-interrupt-failed', 'task:cancel', ['task' => '3', '--yes' => true], 1);
     });
 
     it('refuses a deliverables file that is not a list of objects with string fields', function (string $contents): void {
@@ -155,8 +155,8 @@ describe('tasks contract', function (): void {
         file_put_contents($deliverables, $contents);
 
         foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
-            expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--deliverables' => $deliverables, ...$mode]))->toBe(1);
-            expect_output(Artisan::output(), "tasks/tasks-subtask-update/deliverables-invalid.{$extension}");
+            expect(Artisan::call('task:update', ['task' => '1', '--deliverables' => $deliverables, ...$mode]))->toBe(1);
+            expect_output(Artisan::output(), "tasks/task-update/child-deliverables-invalid.{$extension}");
         }
     })->with([
         'an object' => ['{"id":"docs"}'],
@@ -166,38 +166,38 @@ describe('tasks contract', function (): void {
     ]);
 
     it('renders group assistance comments and refusals', function (): void {
-        $request = ['group' => '1', '--type' => 'assistance_requested', '--body' => 'Work item X, publish-retry, cycle 2, gate: may I republish?', '--author' => 'driver'];
-        run_task_contract('tasks/tasks-group-comment-create/requested', 'tasks:group:comment:create', $request, 0);
-        run_task_contract('tasks/tasks-group-comment-create/resolved', 'tasks:group:comment:create', [...$request, '--type' => 'resolution', '--body' => 'Approved for this work item, stage and cycle.', '--author' => 'nick'], 0);
-        run_task_contract('tasks/tasks-group-comment-create/subtask-open', 'tasks:group:comment:create', $request, 1);
-        run_task_contract('tasks/tasks-group-comment-create/group-closed', 'tasks:group:comment:create', $request, 1);
-        run_task_contract('tasks/tasks-group-comment-list/default', 'tasks:group:comment:list', ['group' => '1'], 0);
-        run_task_contract('tasks/tasks-group-comment-list/empty', 'tasks:group:comment:list', ['group' => '1'], 0);
+        $request = ['task' => '1', '--type' => 'assistance_requested', '--body' => 'Work item X, publish-retry, cycle 2, gate: may I republish?', '--author' => 'driver'];
+        run_task_contract('tasks/task-comment-create/parent-requested', 'task:comment:create', $request, 0);
+        run_task_contract('tasks/task-comment-create/parent-resolved', 'task:comment:create', [...$request, '--type' => 'resolution', '--body' => 'Approved for this work item, stage and cycle.', '--author' => 'nick'], 0);
+        run_task_contract('tasks/task-comment-create/parent-subtask-open', 'task:comment:create', $request, 1);
+        run_task_contract('tasks/task-comment-create/parent-group-closed', 'task:comment:create', $request, 1);
+        run_task_contract('tasks/task-comment-list/parent-default', 'task:comment:list', ['task' => '1'], 0);
+        run_task_contract('tasks/task-comment-list/parent-empty', 'task:comment:list', ['task' => '1'], 0);
     });
 
     it('renders comments and agent threads', function (): void {
-        run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);
-        run_task_contract('tasks-comment-list/default', 'tasks:comment:list', ['group' => '1', 'subtask' => '1'], 0);
-        run_task_contract('tasks-agents/default', 'tasks:agents', ['group' => '1'], 0);
-        run_task_contract('tasks-egress/default', 'tasks:egress', ['group' => '1'], 0);
-        run_task_contract('tasks-egress/empty', 'tasks:egress', ['group' => '1'], 0);
+        run_task_contract('task-comment-create/created', 'task:comment:create', ['task' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);
+        run_task_contract('task-comment-list/default', 'task:comment:list', ['task' => '1'], 0);
+        run_task_contract('task-agent-list/default', 'task:agent:list', ['task' => '1'], 0);
+        run_task_contract('task-egress/default', 'task:egress', ['task' => '1'], 0);
+        run_task_contract('task-egress/empty', 'task:egress', ['task' => '1'], 0);
     });
 
     it('renders a live and an archived agent thread snapshot', function (): void {
-        run_task_contract('tasks/tasks-agent-show/default', 'tasks:agent:show', ['group' => '1', 'session' => '3'], 0);
-        run_task_contract('tasks/tasks-agent-show/archived', 'tasks:agent:show', ['group' => '1', 'session' => '4'], 0);
-        run_task_contract('tasks/tasks-agent-show/delta', 'tasks:agent:show', ['group' => '1', 'session' => '3', '--after-sequence' => 'run-1.7'], 0);
-        run_task_contract('tasks/tasks-agent-show/pending', 'tasks:agent:show', ['group' => '1', 'session' => '5'], 0);
+        run_task_contract('tasks/task-agent-show/default', 'task:agent:show', ['task' => '1', 'session' => '3'], 0);
+        run_task_contract('tasks/task-agent-show/archived', 'task:agent:show', ['task' => '1', 'session' => '4'], 0);
+        run_task_contract('tasks/task-agent-show/delta', 'task:agent:show', ['task' => '1', 'session' => '3', '--after-sequence' => 'run-1.7'], 0);
+        run_task_contract('tasks/task-agent-show/pending', 'task:agent:show', ['task' => '1', 'session' => '5'], 0);
     });
 
     it('renders the question list and an empty list', function (): void {
-        run_task_contract('tasks-question-list/default', 'tasks:question:list', [], 0);
-        run_task_contract('tasks-question-list/empty', 'tasks:question:list', [], 0);
+        run_task_contract('task-question-list/default', 'task:question:list', [], 0);
+        run_task_contract('task-question-list/empty', 'task:question:list', [], 0);
     });
 
     it('renders a closed question and a refused close', function (): void {
         $arguments = ['question' => '1', '--status' => 'superseded', '--reason' => 'A later subtask owns the continuation.'];
-        run_task_contract('tasks-question-close/closed', 'tasks:question:close', $arguments, 0);
-        run_task_contract('tasks-question-close/already-closed', 'tasks:question:close', $arguments, 1);
+        run_task_contract('task-question-close/closed', 'task:question:close', $arguments, 0);
+        run_task_contract('task-question-close/already-closed', 'task:question:close', $arguments, 1);
     });
 });

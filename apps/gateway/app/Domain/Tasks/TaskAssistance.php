@@ -130,7 +130,7 @@ final class TaskAssistance
                     'question' => $question === null ? null : $sanitizer->redactText($question),
                     'reason' => $reason === null ? null : $sanitizer->redactText($reason),
                 ],
-                'request_id' => is_string($requestId) ? $requestId : (string) Str::uuid(), 'command' => $source === null ? 'tasks:assistance' : 'tasks:comment', 'status' => 'completed',
+                'request_id' => is_string($requestId) ? $requestId : (string) Str::uuid(), 'command' => $source === null ? 'task:assistance' : 'task:comment', 'status' => 'completed',
             ]);
             app(TaskBroadcasts::class)->groupChanged($record->parent_id ?? $record->id);
 

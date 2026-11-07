@@ -15,10 +15,10 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Task VM<br/>reached over ssh
   participant GH as GitHub<br/>repo · Checks
-  CLI->>GW: task:check 42<br/>--subtask=7 --phase=handoff
+  CLI->>GW: task:check 7<br/> --phase=handoff
   %%> Command:
-  %%> - `orbit task:check 42 --subtask=7 --phase=handoff`
-  %%> - syntax: `<group> --subtask=<id> --phase=baseline|handoff [--idempotency-key=KEY] [--json]`
+  %%> - `orbit task:check 7 --phase=handoff`
+  %%> - syntax: `<task> --phase=baseline|handoff [--idempotency-key=KEY] [--json]`
   Note over GW: Admit the check<br/>check 17 · task #5170
   %%> Requirements:
   %%> - group 42 is open and external, with its own task VM workspace, else `tasks.no_workspace`

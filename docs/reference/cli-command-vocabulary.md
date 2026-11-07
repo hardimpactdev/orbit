@@ -129,7 +129,6 @@ Six commands end in a noun.
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
-| `task:agent:list` | The CLI lists the agent threads of a [task](/reference/tasks). |
 | `task:egress` | The CLI lists the outside hosts that a [task](/reference/tasks)'s VM connected to. |
 
 ## Gateway route names

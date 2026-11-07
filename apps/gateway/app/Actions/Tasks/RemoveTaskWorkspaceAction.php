@@ -123,7 +123,7 @@ final readonly class RemoveTaskWorkspaceAction
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
         if ($vm->state !== TaskVmState::Releasing) {
-            app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');
+            app(TaskVmSlotRuns::class)->startRelease($vm, 'task-complete');
         }
 
         throw new TaskWorkspaceWaiting("The release of task VM [{$vm->name}] removes the workspace of Instance [{$instance->name}] when it ends.");

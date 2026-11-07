@@ -5,7 +5,7 @@ covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
   - "apps/gateway/app/{Actions/Tasks/**,Jobs/{PublishTaskVmCommit.php,Problems/**}}"
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
+  - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
@@ -24,7 +24,7 @@ A Project can opt in to [review and merge](#review-and-merge). Orbit then review
 
 The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
-Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
+Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`task` CLI family](/cli/task) runs the same operations from a terminal. There is no web UI to create or change a task. The API, the CLI, and the web app call a child task a subtask.
 
 A [Project removal](/reference/projects#remove-a-project) deletes its task groups and their dependent records only when every group is `cancelled` or `completed`. Any other group status, including `failed`, blocks removal with HTTP 409 and `project.has_task_groups`. Every associated task VM row must also be `destroyed`. A VM in `provisioning`, `ready`, `parked`, `destroying`, or `failed` returns HTTP 409 and `project.task_vm_not_destroyed`, with its name and state in the message. Wait until destruction finishes before retrying. Both refusals leave all records unchanged; only `destroyed` VM rows are deleted with the Project.
 
@@ -77,9 +77,9 @@ Clearing the assistance flag can keep the last reason.
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
-`GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `task-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
+`GET /api/v1/tasks/{task}/comments` and the MCP tool `task-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
 
-`GET /api/v1/task-groups` and `GET /api/v1/task-groups/{group}`, and their MCP tools `task-list` and `task-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
+`GET /api/v1/tasks` and `GET /api/v1/tasks/{group}`, and their MCP tools `task-list` and `task-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
 
 ### External orchestration
 
@@ -87,7 +87,7 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 #### Park an external group for review
 
-`POST /api/v1/task-groups/{group}/park`, CLI `task:park GROUP --idempotency-key=KEY`, and MCP `task-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
+`POST /api/v1/tasks/{group}/park`, CLI `task:park GROUP --idempotency-key=KEY`, and MCP `task-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
 
 Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
 
@@ -103,7 +103,7 @@ A resource observation job checks every parked VM once a minute, including group
 
 #### Provision an external group
 
-`task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
+`task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/tasks/{task}/start`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
@@ -173,7 +173,7 @@ Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 Ki
 
 #### Check an external group
 
-`task:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
+`task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
 
 The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows, and `Report the result` prints the result and fails the run on its error code. A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
@@ -215,7 +215,7 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 #### Run a tracked repository script
 
-`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
+`POST /api/v1/tasks/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
 
 A script captures its run budget at admission: the history of the kind (see [Native run budgets](/reference/operations#native-run-budgets)). Every SSH step of the workflow ends at that budget. When the Gateway times the script out, it asks Swamp to cancel the run. Ending the group asks Swamp again for any run of the group that outlived its timeout.
 
@@ -239,7 +239,7 @@ Cancellation uses native Swamp cancel and official SSH session teardown. It does
 
 #### Install a private package
 
-`POST /api/v1/task-groups/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `task-package`. There is no `orbit` command.
+`POST /api/v1/tasks/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `task-package`. There is no `orbit` command.
 
 An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
 
@@ -249,7 +249,7 @@ The package manager changes the manifest and the lock file in the workspace; not
 
 #### Run an external turn
 
-`task:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
 A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
 
@@ -281,7 +281,7 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 #### Publish an external group
 
-`task:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
+`task:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/tasks/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
@@ -305,7 +305,7 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 #### Prepare a command
 
-`task:prep` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command`.
+`task:prep` starts `tasks.prep` through `POST /api/v1/tasks/{group}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command`.
 
 It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `task:pr-ready`; the MCP tool `task-prep` is the caller. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
 
@@ -363,7 +363,7 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 #### Apply the corrections
 
-`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
+`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/tasks/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
 
 Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `task:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
 
@@ -429,31 +429,31 @@ List, show, and `task:question:list` accept any authorized peer. Update and the 
 
 | Operation | Route | Access |
 | --- | --- | --- |
-| `task:create` | `POST /api/v1/task-groups` | Gateway |
-| `task:update` | `PATCH /api/v1/task-groups/{group}` | Workspace Node |
-| `task:list` | `GET /api/v1/task-groups` | Any peer |
-| `task:show` | `GET /api/v1/task-groups/{group}` | Any peer |
-| `task:start` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
-| `task:check` | `POST /api/v1/task-groups/{group}/check` | Gateway |
-| `task:turn` | `POST /api/v1/task-groups/{group}/turn` | Gateway |
-| `task:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
-| `task:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
-| `task:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
-| `task:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
-| `task:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
-| `task:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/cancel` | Gateway |
-| `task:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
-| `task:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
-| `task:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
-| `task:comment:create` | `POST /api/v1/task-groups/{group}/comments` | Gateway |
-| `task:comment:list` | `GET /api/v1/task-groups/{group}/comments` | Gateway |
+| `task:create` | `POST /api/v1/tasks` | Gateway |
+| `task:update` | `PATCH /api/v1/tasks/{group}` | Workspace Node |
+| `task:list` | `GET /api/v1/tasks` | Any peer |
+| `task:show` | `GET /api/v1/tasks/{group}` | Any peer |
+| `task:start` | `POST /api/v1/tasks/{task}/start` | Gateway |
+| `task:check` | `POST /api/v1/tasks/{task}/check` | Gateway |
+| `task:turn` | `POST /api/v1/tasks/{task}/turn` | Gateway |
+| `task:complete` | `POST /api/v1/tasks/{group}/complete` | Gateway |
+| `task:cancel` | `POST /api/v1/tasks/{group}/cancel` | Gateway |
+| `task:create` | `POST /api/v1/tasks/{group}/tasks` | Workspace Node |
+| `task:update` | `PATCH /api/v1/tasks/{task}` | Workspace Node |
+| `task:destroy` | `DELETE /api/v1/tasks/{task}` | Workspace Node |
+| `task:cancel` | `POST /api/v1/tasks/{task}/cancel` | Gateway |
+| `task:check:cancel` | `POST /api/v1/tasks/{task}/check/cancel` | Gateway |
+| `task:comment:create` | `POST /api/v1/tasks/{task}/comments` | Gateway |
+| `task:comment:list` | `GET /api/v1/tasks/{task}/comments` | Gateway |
+| `task:comment:create` | `POST /api/v1/tasks/{group}/comments` | Gateway |
+| `task:comment:list` | `GET /api/v1/tasks/{group}/comments` | Gateway |
 | `task:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `task:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
-| `task:agent:list` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
-| `task:egress` | `GET /api/v1/task-groups/{group}/egress` | Gateway |
-| `task:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
+| `task:agent:list` | `GET /api/v1/tasks/{group}/agents` | Gateway |
+| `task:egress` | `GET /api/v1/tasks/{group}/egress` | Gateway |
+| `task:agent:show` | `GET /api/v1/tasks/{group}/agents/{session}` | Gateway |
 
-Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
+Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
 Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
@@ -874,7 +874,7 @@ A task VM holds only its task's workspace, and destroying the VM waits only for 
 
 ## Swamp run output
 
-The task page reads `GET /api/v1/task-groups/{group}/swamp-runs` through the Gateway. It shows the five newest Swamp runs whose `inputs.group` exactly equals the group id, their steps and states, each step's output, and the run log. It works without an agent thread. Subtasks are not valid group ids. The route requires Gateway access and the Tasks extension. It changes no task or Swamp state.
+The task page reads `GET /api/v1/tasks/{group}/swamp-runs` through the Gateway. It shows the five newest Swamp runs whose `inputs.group` exactly equals the group id, their steps and states, each step's output, and the run log. It works without an agent thread. Subtasks are not valid group ids. The route requires Gateway access and the Tasks extension. It changes no task or Swamp state.
 
 The browser polls every five seconds while the page is open. The Gateway caches each group snapshot for five seconds, reads within the Gateway-wide [Swamp read budget](/reference/swamp-command-steps), and keeps the last successful, redacted snapshot for 24 hours. `availability` is `available`, `stale` when a read fails or the budget refuses it but a snapshot remains, or `unavailable` without a snapshot. `observed_at` records the successful read time and remains unchanged on failure. An available empty list means no matching runs. An unavailable response has no runs. These states return HTTP 200 so an outage does not break the rest of the task page.
 
@@ -982,7 +982,7 @@ A non-empty resolution clears its matching request and remains in comment histor
 
 #### Group assistance after all children end
 
-An open group with no unfinished child accepts an `assistance_requested` or `resolution` comment through `POST /api/v1/task-groups/{group}/comments`, CLI `task:comment:create`, or MCP `task-comment-create`. The body contains `type`, nonblank `body` (at most 100,000 characters) and `author` (at most 255 characters). The response is `201 {data: TaskCommentData, meta: {request_id}}`. An ended group returns `tasks.group_closed`; an unfinished child returns `tasks.assistance_subtask_open`.
+An open group with no unfinished child accepts an `assistance_requested` or `resolution` comment through `POST /api/v1/tasks/{group}/comments`, CLI `task:comment:create`, or MCP `task-comment-create`. The body contains `type`, nonblank `body` (at most 100,000 characters) and `author` (at most 255 characters). The response is `201 {data: TaskCommentData, meta: {request_id}}`. An ended group returns `tasks.group_closed`; an unfinished child returns `tasks.assistance_subtask_open`.
 
 #### Direction requests
 
@@ -994,7 +994,7 @@ Use the comment API, CLI or MCP to post a resolution. This changes assistance on
 
 ### Bring the workspace up to date
 
-`task:sync` starts `tasks.sync` through `POST /api/v1/task-groups/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
+`task:sync` starts `tasks.sync` through `POST /api/v1/tasks/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
 
 The admission checks an open external group with its own task VM workspace and wakes a parked VM, as the other work admissions do. It captures the repository, the default branch, the branch `task-<group>`, the workspace path and the SSH target, and names the vault key of a read token. As it starts the run, the Gateway mints that token with `contents: read` and writes it to the key. No step of the run calls the Gateway.
 
@@ -1084,7 +1084,7 @@ Both steps hold the group execution lock and refuse a second task on the group w
 
 ### Ready step
 
-`POST /api/v1/task-groups/{group}/pr-ready` takes `{head_sha, mode}` and an `Idempotency-Key`. `mode` is `manual` or `automatic`. Admission reads GitHub with read-only App tokens and requires:
+`POST /api/v1/tasks/{group}/pr-ready` takes `{head_sha, mode}` and an `Idempotency-Key`. `mode` is `manual` or `automatic`. Admission reads GitHub with read-only App tokens and requires:
 
 - an open external group whose published pull request is open, with a head that is exactly `head_sha`
 - a pass of the Project's merge check, normally `Required checks`, on that head
@@ -1098,7 +1098,7 @@ Swamp takes the pull request out of draft with the GraphQL `markPullRequestReady
 
 ### Merge step
 
-`POST /api/v1/task-groups/{group}/pr-merge` takes `{head_sha}` and an `Idempotency-Key`. Admission makes the same reads as the ready step and requires the pull request to be out of draft. It then checks the manual gate.
+`POST /api/v1/tasks/{group}/pr-merge` takes `{head_sha}` and an `Idempotency-Key`. Admission makes the same reads as the ready step and requires the pull request to be out of draft. It then checks the manual gate.
 
 The gate is the reviewer's latest review that approves, requests changes or is dismissed. It passes only when that review is an approval whose commit is exactly `head_sha`. A comment changes no decision, and an approval of an older head does not count. A failed gate refuses with `tasks_pr.approval_missing`, and `error.details.state` is `waiting`, `changes_requested` or `head_moved`. The Gateway has no webhooks, so a caller that polls the command sees the approval. A refusal starts no task.
 
@@ -1232,7 +1232,7 @@ The strip shows tokens per merged PR with its cost, lead time, yield, first-pass
 
 ## Agent viewer
 
-The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads](#read-a-thread) the thread's normalized conversation, as a snapshot or as a delta after a cursor. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
+The Agents section lists every started thread of the task. `GET /api/v1/tasks/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/tasks/{group}/agents/{session}` [reads](#read-a-thread) the thread's normalized conversation, as a snapshot or as a delta after a cursor. `GET /api/v1/tasks/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
 
 Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
 
@@ -1240,7 +1240,7 @@ A snapshot replaces the browser transcript. Entries merge by id and kind, so an 
 
 ### Read a thread
 
-`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`task:agent:show`](/cli/task/agent-show) and the MCP tool `task-agent-show` call it. An agent polls it to follow a thread without a stream.
+`GET /api/v1/tasks/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`task:agent:show`](/cli/task/agent-show) and the MCP tool `task-agent-show` call it. An agent polls it to follow a thread without a stream.
 
 A first read returns a transcript snapshot. If it exceeds the Gateway budget, the snapshot keeps the newest entries that fit and starts with an explicit truncation marker. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
 
@@ -1523,7 +1523,7 @@ The Gateway reads Swamp's own run history rather than recording a second run led
 
 ## Dependency batch squash admission
 
-Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result.
+Dependency batches may use `POST /api/v1/tasks/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result.
 
 Admission holds the group execution lock and names two vault keys. It mints no token. The first step of the run asks the Gateway for two repository-scoped tokens (`purpose: dependency_merge`): Contents and Pull requests write, and Contents, Pull requests, Checks and Actions read. The Gateway writes them to the named keys. Native `gh api` commands read tokens from the environment. No other execution step reads credentials or reports results through a Gateway callback.
 

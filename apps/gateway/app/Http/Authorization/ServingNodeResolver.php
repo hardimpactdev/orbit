@@ -62,13 +62,14 @@ final readonly class ServingNodeResolver
      */
     private function taskGroupOwning(Request $request): array
     {
-        $group = $request->route('group');
+        $group = $request->route('task') ?? $request->input('parent_id');
 
         if (! $group instanceof Task) {
             $id = $this->positiveInteger($group);
-            $group = $id === null ? null : Task::topLevel()->find($id);
+            $group = $id === null ? null : Task::withoutGlobalScope('subtask')->find($id);
         }
 
+        $group = $group?->parent_id === null ? $group : $group->parent;
         $instance = $group?->taskable;
 
         return $instance instanceof Instance ? [Node::query()->findOrFail($instance->node_id)] : $this->gateway();

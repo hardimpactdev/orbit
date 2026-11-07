@@ -12,10 +12,10 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Task VM<br/>SSH workspace · Pi
-  CLI->>GW: task:turn 42<br/>--subtask=43 --role=reviewer
+  CLI->>GW: task:turn 43<br/> --role=reviewer
   %%> Command:
-  %%> - `orbit task:turn 42 --subtask=43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --idempotency-key=review-1`
-  %%> - syntax: `<group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID [--check=ID] [--json]`
+  %%> - `orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --idempotency-key=review-1`
+  %%> - syntax: `<task> --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID [--check=ID] [--json]`
   Note over GW: Admit the turn<br/>owned VM · current child
   %%> Requirements:
   %%> - group 42 is external and open; child 43 is current and open

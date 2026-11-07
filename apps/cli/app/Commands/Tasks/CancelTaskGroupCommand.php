@@ -9,9 +9,13 @@ use App\Commands\Tasks\Concerns\ConfirmsTaskChanges;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CancelTaskRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
+use Orbit\Sdk\Responses\Tasks\TaskCancellationResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class CancelTaskGroupCommand extends TaskCommand
 {
@@ -19,8 +23,8 @@ final class CancelTaskGroupCommand extends TaskCommand
     use FollowsOperations;
 
     #[\Override]
-    protected $signature = 'tasks:cancel
-        {group? : Numeric task group ID}
+    protected $signature = 'task:cancel
+        {task? : Numeric Task ID}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--yes : Confirm without prompting}
         {--json : Return machine-readable JSON}';
@@ -30,7 +34,7 @@ final class CancelTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;
@@ -50,7 +54,10 @@ final class CancelTaskGroupCommand extends TaskCommand
         }
 
         $consented = $this->consent(function () use ($connector, $groupId): ?string {
-            $group = $this->loadGroup($connector, $groupId);
+            $group = $this->send($connector, new ShowTaskRequest($groupId), TaskRecordResponse::class);
+            if ($group instanceof SubtaskResponse) {
+                return "Cancel subtask [{$group->id}] ({$group->title})?";
+            }
 
             if (! $group instanceof TaskGroupResponse) {
                 return null;
@@ -67,7 +74,12 @@ final class CancelTaskGroupCommand extends TaskCommand
 
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'tasks.cancel.'.Str::uuid();
-        $operation = $this->send($connector, new CancelTaskGroupRequest($groupId, $key), OperationResponse::class);
+        $operation = $this->send($connector, new CancelTaskRequest($groupId, $key), TaskCancellationResponse::class);
+
+        $operation = $operation instanceof TaskCancellationResponse ? $operation->result : null;
+        if ($operation instanceof SubtaskResponse) {
+            return $this->renderSubtask($operation);
+        }
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Cancel task group [{$groupId}]", 'Cancel')

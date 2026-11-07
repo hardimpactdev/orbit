@@ -1,7 +1,7 @@
 {
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Tasks\\ListTaskGroupCommentsRequest",
-    "route": "GET /api/v1/task-groups/{group}/comments",
+    "route": "GET /api/v1/tasks/{group}/comments",
     "status": 200,
     "body": {
         "data": [

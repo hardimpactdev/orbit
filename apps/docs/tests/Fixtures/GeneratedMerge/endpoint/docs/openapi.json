@@ -997,7 +997,7 @@
               "string",
               "null"
             ],
-            "description": "The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started."
+            "description": "The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `task:agent:stream`. Null for a saved transcript or a thread that has not started."
           },
           "archived": {
             "type": "boolean",

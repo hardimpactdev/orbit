@@ -135,9 +135,9 @@ describe("task events", () => {
         flushTaskRefetches();
 
         expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["task-groups"], exact: true },
-            { queryKey: ["task-groups", "7"], exact: true },
-            { queryKey: ["task-groups", "8"], exact: true },
+            { queryKey: ["tasks"], exact: true },
+            { queryKey: ["tasks", "7"], exact: true },
+            { queryKey: ["tasks", "8"], exact: true },
         ]);
     });
 
@@ -154,9 +154,9 @@ describe("task events", () => {
         vi.advanceTimersByTime(TASK_REFETCH_DELAY_MS);
 
         expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["task-groups"], exact: true },
-            { queryKey: ["task-groups", "8"], exact: true },
-            { queryKey: ["task-groups", "8", "agents"], exact: false },
+            { queryKey: ["tasks"], exact: true },
+            { queryKey: ["tasks", "8"], exact: true },
+            { queryKey: ["tasks", "8", "agents"], exact: false },
         ]);
     });
 
@@ -170,16 +170,16 @@ describe("task events", () => {
                     return [];
                 },
             });
-        await query(["task-groups"]);
-        await query(["task-groups", "8"]);
-        await query(["task-groups", "8", "agents"]);
-        await query(["task-groups", "8", "tasks", "3", "comments"]);
+        await query(["tasks"]);
+        await query(["tasks", "8"]);
+        await query(["tasks", "8", "agents"]);
+        await query(["tasks", "8", "tasks", "3", "comments"]);
         fetched.length = 0;
         // invalidateQueries refetches only queries with an observer; observe each one.
         const observers = client
             .getQueryCache()
             .getAll()
-            .filter((cached) => cached.queryKey[0] === "task-groups")
+            .filter((cached) => cached.queryKey[0] === "tasks")
             .map((cached) =>
                 new QueryObserver(client, {
                     queryKey: cached.queryKey,
@@ -193,11 +193,11 @@ describe("task events", () => {
         await vi.waitFor(() => expect(fetched).toHaveLength(2));
         observers.forEach((unsubscribe) => unsubscribe());
 
-        expect(fetched.sort()).toEqual(["task-groups", "task-groups/8"]);
+        expect(fetched.sort()).toEqual(["tasks", "tasks/8"]);
     });
 
     it("lets an event's refetch replace a request that started before the change", async () => {
-        const key = ["task-groups", "8"];
+        const key = ["tasks", "8"];
         let calls = 0;
         let answerOldRequest: (value: unknown) => void = () => {};
         const queryFn = () => {
@@ -233,7 +233,7 @@ describe("task events", () => {
         flushTaskRefetches();
 
         expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["task-groups", "8", "tasks", "3", "comments"], exact: false },
+            { queryKey: ["tasks", "8", "tasks", "3", "comments"], exact: false },
         ]);
     });
 
@@ -252,8 +252,8 @@ describe("task events", () => {
         flushTaskRefetches();
 
         expect(invalidated(invalidate)).toEqual([
-            { queryKey: ["task-groups", "8", "agents"], exact: false },
-            { queryKey: ["task-groups", "8"], exact: true },
+            { queryKey: ["tasks", "8", "agents"], exact: false },
+            { queryKey: ["tasks", "8"], exact: true },
         ]);
     });
 
@@ -268,10 +268,10 @@ describe("task events", () => {
 
     it("stores the extension status from tasks.updated without a refetch", () => {
         const invalidate = vi.spyOn(client, "invalidateQueries");
-        client.setQueryData(["tasks-status"], { enabled: true });
+        client.setQueryData(["task-status"], { enabled: true });
         applyEvent(client, { ...event("tasks.updated", { enabled: false }), id: 0 });
 
-        expect(client.getQueryData(["tasks-status"])).toEqual({ enabled: false });
+        expect(client.getQueryData(["task-status"])).toEqual({ enabled: false });
         flushTaskRefetches();
         expect(invalidate).not.toHaveBeenCalled();
     });
@@ -279,7 +279,7 @@ describe("task events", () => {
     it("stores the extension status before the status query loaded", () => {
         applyEvent(client, { ...event("tasks.updated", { enabled: true }), id: 0 });
 
-        expect(client.getQueryData(["tasks-status"])).toEqual({ enabled: true });
+        expect(client.getQueryData(["task-status"])).toEqual({ enabled: true });
     });
 });
 

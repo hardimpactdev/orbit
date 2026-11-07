@@ -19,7 +19,7 @@ final class ParkTaskGroupRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/park";
+        return "/api/v1/tasks/{$this->groupId}/park";
     }
 
     /** @return array<string, string> */

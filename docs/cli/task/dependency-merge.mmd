@@ -15,7 +15,7 @@ sequenceDiagram
   participant GH as GitHub<br/>repository · PRs
   CLI->>GW: Merge batch of group 42<br/>publish #5165 · head 9f3c…
   %%> Command:
-  %%> - `POST /api/v1/task-groups/42/dependency-merge` with `publish_operation_id` 5165, `head_sha` and an `Idempotency-Key`
+  %%> - `POST /api/v1/tasks/42/dependency-merge` with `publish_operation_id` 5165, `head_sha` and an `Idempotency-Key`
   %%> - syntax: the MCP tool `task-dependency-merge` with `group`, `publish_operation_id`, `head_sha`
   %%> Who can call it:
   %%> - only the configured Services Node; there is no `orbit` command

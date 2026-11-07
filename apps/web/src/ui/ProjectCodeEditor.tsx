@@ -11,7 +11,7 @@ export function ProjectCodeEditor({ project }: { project: Project }) {
         mutationFn: () => api<Project>("PATCH", `/api/v1/projects/${project.id}`, { code }),
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ["projects"] });
-            await queryClient.invalidateQueries({ queryKey: ["task-groups"] });
+            await queryClient.invalidateQueries({ queryKey: ["tasks"] });
         },
     });
     return (

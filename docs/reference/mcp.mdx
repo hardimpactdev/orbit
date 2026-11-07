@@ -10,7 +10,7 @@ covers:
 
 # MCP server
 
-`tasks-swamp-runs` reads one task group's latest five Swamp runs, step states, bounded output, and log tails. It returns a snapshot, not a stream. Poll every five seconds and inspect `availability` and `observed_at` before treating output as current. [Swamp run output](/reference/tasks#swamp-run-output) defines the read and credential boundary.
+`task-swamp-runs` reads one task group's latest five Swamp runs, step states, bounded output, and log tails. It returns a snapshot, not a stream. Poll every five seconds and inspect `availability` and `observed_at` before treating output as current. [Swamp run output](/reference/tasks#swamp-run-output) defines the read and credential boundary.
 
 The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way.
 

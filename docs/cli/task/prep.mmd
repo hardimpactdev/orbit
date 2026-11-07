@@ -16,7 +16,7 @@ sequenceDiagram
   participant GH as GitHub<br/>draft PR
   CLI->>GW: task:prep 42<br/>command firewall:deny
   %%> Command:
-  %%> - the MCP tool `task-prep`, or `POST /api/v1/task-groups/42/prep` with `{"command": "firewall:deny"}` and an `Idempotency-Key`
+  %%> - the MCP tool `task-prep`, or `POST /api/v1/tasks/42/prep` with `{"command": "firewall:deny"}` and an `Idempotency-Key`
   Note over GW: Admit one prep run<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway

@@ -15,7 +15,7 @@ sequenceDiagram
   participant GH as GitHub<br/>repository · PRs
   CLI->>GW: Merge the PR of GROUP<br/>head SHA
   %%> Command:
-  %%> - `POST /api/v1/task-groups/GROUP/pr-merge` with `head_sha` and an `Idempotency-Key`
+  %%> - `POST /api/v1/tasks/GROUP/pr-merge` with `head_sha` and an `Idempotency-Key`
   %%> - syntax: the MCP tool `task-pr-merge` with `group`, `head_sha`
   %%> Who can call it:
   %%> - a Node with an access grant to the Gateway; there is no `orbit` command

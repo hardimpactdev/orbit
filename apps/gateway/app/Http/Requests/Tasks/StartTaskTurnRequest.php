@@ -6,6 +6,7 @@ namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\TaskTurnData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\Task;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
@@ -16,7 +17,7 @@ final class StartTaskTurnRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'subtask' => ['required', 'integer:strict', 'min:1'],
+
             'role' => ['required', 'string', 'in:implementer,reviewer,consult'],
             'prompt' => ['required', 'string', 'max:100000'],
             'thread' => ['required', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
@@ -29,7 +30,7 @@ final class StartTaskTurnRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            $fields = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['subtask', 'role', 'prompt', 'thread', 'model', 'check']);
+            $fields = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['role', 'prompt', 'thread', 'model', 'check']);
 
             return $fields;
         } catch (UnexpectedValueException $exception) {
@@ -39,6 +40,9 @@ final class StartTaskTurnRequest extends FormRequest
 
     public function payload(): TaskTurnData
     {
-        return TaskTurnData::from($this->validated());
+        $task = $this->route('task');
+        abort_unless($task instanceof Task, 404);
+
+        return TaskTurnData::from([...$this->validated(), 'subtask' => $task->id]);
     }
 }

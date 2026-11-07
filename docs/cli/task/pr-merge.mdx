@@ -9,7 +9,7 @@ Merge the published pull request of an external task group straight into its bas
 There is no `orbit` command yet. Use the API or the MCP tool `task-pr-merge`.
 
 ```bash
-curl -X POST "$GATEWAY/api/v1/task-groups/42/pr-merge" \
+curl -X POST "$GATEWAY/api/v1/tasks/42/pr-merge" \
   -H "Idempotency-Key: pr-merge-42-9f3c" \
   -d '{"head_sha": "9f3c0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b"}'
 ```

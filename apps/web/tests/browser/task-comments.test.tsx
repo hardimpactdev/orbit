@@ -89,7 +89,7 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         },
     };
     queryClient.setQueryData<TaskComment[]>(
-        ["task-groups", "12", "tasks", "31", "comments"],
+        ["tasks", "12", "tasks", "31", "comments"],
         (previous) => [approved, ...(previous ?? [])],
     );
     await expect.element(comments.getByRole("article").nth(1)).toMatchTextContent("Approved");
@@ -102,7 +102,7 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         .toMatchTextContent("No breaking changes");
     expect(
         app.gateway.requests.some(
-            (request) => request.path === "/api/v1/task-groups/12/tasks/31/comments",
+            (request) => request.path === "/api/v1/tasks/31/comments",
         ),
     ).toBe(true);
 
@@ -140,7 +140,7 @@ it("shows the role before the comment type and collapses a long comment to three
         pull_request: null,
     };
     queryClient.setQueryData<TaskComment[]>(
-        ["task-groups", "12", "tasks", "31", "comments"],
+        ["tasks", "12", "tasks", "31", "comments"],
         (previous) => [long, ...(previous ?? [])],
     );
     const card = comments.getByRole("article", { name: "Reviewer · Changes requested" }).first();

@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - the orchestrator, which decides that the package may be installed, then sends the request below
   CLI->>GW: Install a package<br/>group 42 · composer · acme/ui
   %%> Command:
-  %%> - `POST /api/v1/task-groups/42/package` with `manager` (`composer` or `npm`), `package` and an `Idempotency-Key`
+  %%> - `POST /api/v1/tasks/42/package` with `manager` (`composer` or `npm`), `package` and an `Idempotency-Key`
   %%> - syntax: the MCP tool `task-package` with `group`, `manager`, `package`
   Note over GW: Check the group<br/>task #5170 · key names
   %%> Requirements:

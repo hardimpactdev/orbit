@@ -15,8 +15,8 @@ final class CompleteTaskGroupCommand extends TaskCommand
     use ConfirmsTaskChanges;
 
     #[\Override]
-    protected $signature = 'tasks:complete
-        {group? : Numeric task group ID}
+    protected $signature = 'task:complete
+        {task? : Numeric Task ID}
         {--yes : Confirm without prompting}
         {--json : Return machine-readable JSON}';
 
@@ -28,7 +28,7 @@ final class CompleteTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;

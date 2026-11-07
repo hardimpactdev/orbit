@@ -9,7 +9,7 @@ Apply the review of the owner to the spec of a parked prep group. The group resu
 There is no `orbit` command yet. Use the API or the MCP tool `task-prep-fix`. You do not need to: while the task VM is parked and the build has not started, the gate check calls it every minute when the owner's latest review requests changes on the current head of the draft pull request, with the review text and the inline comments as `corrections`.
 
 ```bash
-curl -X POST "$GATEWAY/api/v1/task-groups/42/prep-fix" \
+curl -X POST "$GATEWAY/api/v1/tasks/42/prep-fix" \
   -H "Idempotency-Key: prep-fix-42-review-1" \
   -d '{"corrections": "Finding 1: ... Decision on finding 4: ..."}'
 ```

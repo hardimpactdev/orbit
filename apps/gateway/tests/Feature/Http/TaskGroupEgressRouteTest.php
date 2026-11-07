@@ -36,7 +36,7 @@ function egress_http_group(): Task
 
 function egress_http_read(Node $caller, Task $group): TestResponse
 {
-    return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->getJson("/api/v1/task-groups/{$group->id}/egress");
+    return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->getJson("/api/v1/tasks/{$group->id}/egress");
 }
 
 function egress_http_report(Node $node, array $data, string $subject = 'shark-tvm-1'): TestResponse
@@ -45,7 +45,7 @@ function egress_http_report(Node $node, array $data, string $subject = 'shark-tv
         ->postJson('/api/v1/agent/facts', ['kind' => 'egress', 'subject' => $subject, 'observed_at' => '2026-11-07T19:00:10Z', 'data' => $data]);
 }
 
-describe('GET /api/v1/task-groups/{group}/egress', function (): void {
+describe('GET /api/v1/tasks/{group}/egress', function (): void {
     beforeEach(function (): void {
         $this->gateway = egress_http_node('gateway', '10.44.0.2');
         $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);

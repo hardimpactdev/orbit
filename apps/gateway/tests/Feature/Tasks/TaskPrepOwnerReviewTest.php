@@ -34,7 +34,7 @@ it('points to the review when the owner wrote no text', function (): void {
     expect(TaskPrepOwnerReview::corrections(ownerReview(''), [], 'nick'))->toBe('The owner requested changes and wrote no text: https://github.com/hardimpactdev/orbit/pull/7#pullrequestreview-31');
 });
 
-it('cuts the corrections at the limit of tasks:prep-fix, whole characters only, and says so', function (string $text): void {
+it('cuts the corrections at the limit of task:prep-fix, whole characters only, and says so', function (string $text): void {
     $corrections = TaskPrepOwnerReview::corrections(ownerReview($text), [], 'nick');
 
     expect(strlen($corrections))->toBeLessThanOrEqual(TaskPrepOwnerReview::Limit)

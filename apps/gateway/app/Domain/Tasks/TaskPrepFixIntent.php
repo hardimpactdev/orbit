@@ -21,7 +21,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 
 /**
- * Admits `tasks:prep-fix`: one run that applies the review of the owner to a parked prep group. The shared task admission holds
+ * Admits `task:prep-fix`: one run that applies the review of the owner to a parked prep group. The shared task admission holds
  * the lock, the busy check and the replay; this class checks that the group is a parked prep group and captures the whole
  * intent, so no step of the run calls the Gateway but the push token mint. See docs/cli/tasks/prep-fix.mmd.
  */

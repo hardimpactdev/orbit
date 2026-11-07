@@ -1,9 +1,0 @@
-Cancelling subtask...
-
-┌  Cancel subtask
-│
-├  ● Cancelling subtask
-│
-└  Operation failed.
-
-Only a todo or running subtask can be cancelled.

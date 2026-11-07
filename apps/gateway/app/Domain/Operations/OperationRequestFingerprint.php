@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
+use App\Models\Task;
 use App\Support\StrictJson;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
@@ -19,6 +20,30 @@ final readonly class OperationRequestFingerprint
     /** @param array<string, mixed> $parameters */
     public function make(?Node $caller, ?string $command, array $parameters, #[\SensitiveParameter] string $content, StartsOperation $start): string
     {
+        // Public selectors changed; retries still identify the original logical operation.
+        if (str_starts_with($command ?? '', 'task:') && str_starts_with($start->kind, 'tasks.')) {
+            $task = $parameters['task'] ?? null;
+            if ($task instanceof Task) {
+                $parameters = ['group' => in_array($start->kind, ['tasks.check', 'tasks.turn'], true) ? $task->parent_id : $task->id];
+                $command = 'tasks:'.substr($command, 5);
+                if ($command === 'tasks:start') {
+                    $command = 'tasks:provision';
+                }
+                if (in_array($start->kind, ['tasks.check', 'tasks.turn'], true)) {
+                    try {
+                        $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
+                        if ($input instanceof stdClass && ! property_exists($input, 'subtask')) {
+                            new TopLevelJsonObjectInspector()->inspect($content, array_keys(get_object_vars($input)));
+                            $input->subtask = $task->id;
+                            $content = json_encode($input, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+                        }
+                    } catch (JsonException|UnexpectedValueException) {
+                        // The normal invalid-JSON fingerprint below retains the original bytes.
+                    }
+                }
+            }
+        }
+
         return hash('sha256', json_encode([
             ...($start->bindCaller ? ['caller_node_id' => $caller?->id, 'command' => $command] : []),
             'target' => array_map(static fn (mixed $value): mixed => $value instanceof Model ? $value->getKey() : $value, $parameters),

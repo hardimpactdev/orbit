@@ -5,37 +5,33 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CancelTaskRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskRequest;
+use Orbit\Sdk\Requests\Tasks\DestroyTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskEgressRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
-use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
+use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
-use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
+use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentSnapshotResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
+use Orbit\Sdk\Responses\Tasks\TaskCancellationResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskEgressResponse;
@@ -55,39 +51,39 @@ describe('task transport', function (): void {
             ->and($request->resolveEndpoint())->toBe($endpoint);
     })->with([
         'status' => [new ShowTasksStatusRequest, Method::GET, '/api/v1/tasks/status'],
-        'list' => [new ListTaskGroupsRequest, Method::GET, '/api/v1/task-groups'],
-        'create' => [new CreateTaskGroupRequest(1, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups'],
-        'show' => [new ShowTaskGroupRequest(13), Method::GET, '/api/v1/task-groups/13'],
-        'update' => [new UpdateTaskGroupRequest(13), Method::PATCH, '/api/v1/task-groups/13'],
-        'publish' => [new PublishTaskGroupRequest(13, 17), Method::POST, '/api/v1/task-groups/13/publish'],
-        'cancel' => [new CancelTaskGroupRequest(13, 'cancel.13'), Method::POST, '/api/v1/task-groups/13/cancel'],
-        'check' => [new CheckTaskGroupRequest(13, 21, 'baseline'), Method::POST, '/api/v1/task-groups/13/check'],
-        'turn' => [new TurnTaskGroupRequest(13, 14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/task-groups/13/turn'],
-        'park' => [new ParkTaskGroupRequest(13, 'park.13'), Method::POST, '/api/v1/task-groups/13/park'],
-        'provision' => [new ProvisionTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/provision'],
-        'complete' => [new CompleteTaskGroupRequest(13), Method::POST, '/api/v1/task-groups/13/complete'],
-        'subtask create' => [new CreateSubtaskRequest(13, 'Title', 'Brief'), Method::POST, '/api/v1/task-groups/13/tasks'],
-        'subtask update' => [new UpdateSubtaskRequest(13, 57), Method::PATCH, '/api/v1/task-groups/13/tasks/57'],
-        'subtask destroy' => [new DestroySubtaskRequest(13, 57), Method::DELETE, '/api/v1/task-groups/13/tasks/57'],
-        'subtask cancel' => [new CancelSubtaskRequest(13, 57), Method::POST, '/api/v1/task-groups/13/tasks/57/cancel'],
-        'group comment create' => [new CreateTaskGroupCommentRequest(13, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/comments'],
-        'group comment list' => [new ListTaskGroupCommentsRequest(13), Method::GET, '/api/v1/task-groups/13/comments'],
-        'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
-        'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
+        'list' => [new ListTasksRequest, Method::GET, '/api/v1/tasks'],
+        'create' => [new CreateTaskRequest(1, 'Title', 'Brief'), Method::POST, '/api/v1/tasks'],
+        'show' => [new ShowTaskRequest(13), Method::GET, '/api/v1/tasks/13'],
+        'update' => [new UpdateTaskRequest(13), Method::PATCH, '/api/v1/tasks/13'],
+        'publish' => [new PublishTaskGroupRequest(13, 17), Method::POST, '/api/v1/tasks/13/publish'],
+        'cancel' => [new CancelTaskRequest(13, 'cancel.13'), Method::POST, '/api/v1/tasks/13/cancel'],
+        'check' => [new CheckTaskRequest(21, 'baseline'), Method::POST, '/api/v1/tasks/21/check'],
+        'turn' => [new TurnTaskRequest(14, 'implementer', 'Prompt', 'new'), Method::POST, '/api/v1/tasks/14/turn'],
+        'park' => [new ParkTaskGroupRequest(13, 'park.13'), Method::POST, '/api/v1/tasks/13/park'],
+        'provision' => [new StartTaskRequest(13), Method::POST, '/api/v1/tasks/13/start'],
+        'complete' => [new CompleteTaskGroupRequest(13), Method::POST, '/api/v1/tasks/13/complete'],
+        'subtask create' => [new CreateTaskRequest(projectId: null, title: 'Title', brief: 'Brief', parentId: 13), Method::POST, '/api/v1/tasks'],
+        'subtask update' => [new UpdateTaskRequest(57), Method::PATCH, '/api/v1/tasks/57'],
+        'subtask destroy' => [new DestroyTaskRequest(57), Method::DELETE, '/api/v1/tasks/57'],
+        'subtask cancel' => [new CancelTaskRequest(57, 'cancel.child'), Method::POST, '/api/v1/tasks/57/cancel'],
+        'group comment create' => [new CreateTaskCommentRequest(13, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/tasks/13/comments'],
+        'group comment list' => [new ListTaskCommentsRequest(13), Method::GET, '/api/v1/tasks/13/comments'],
+        'comment create' => [new CreateTaskCommentRequest(57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/tasks/57/comments'],
+        'comment list' => [new ListTaskCommentsRequest(57), Method::GET, '/api/v1/tasks/57/comments'],
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
         'question close' => [new CloseTaskQuestionRequest(98, 'superseded', 'Stale.'), Method::POST, '/api/v1/task-questions/98/close'],
-        'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
-        'egress' => [new ListTaskEgressRequest(13), Method::GET, '/api/v1/task-groups/13/egress'],
-        'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/task-groups/13/agents/21'],
+        'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/tasks/13/agents'],
+        'egress' => [new ListTaskEgressRequest(13), Method::GET, '/api/v1/tasks/13/egress'],
+        'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/tasks/13/agents/21'],
     ]);
 
     it('transports only group assistance fields and preserves every supplied filter', function (): void {
-        expect(new CreateTaskGroupCommentRequest(13, 'resolution', '', '')->body()->all())
+        expect(new CreateTaskCommentRequest(13, 'resolution', '', '')->body()->all())
             ->toBe('{"type":"resolution","body":"","author":""}')
-            ->and(new CreateTaskGroupCommentRequest(13, 'resolution', 'Done.', 'nick')->headers()->get('Content-Type'))->toBe('application/json')
-            ->and(new ListTaskGroupCommentsRequest(13)->query()->all())->toBe([])
-            ->and(new ListTaskGroupCommentsRequest(13, 'resolution', 1)->query()->all())->toBe(['type' => 'resolution', 'limit' => 1])
-            ->and(new ListTaskGroupCommentsRequest(13, '', 0)->query()->all())->toBe(['type' => '', 'limit' => 0]);
+            ->and(new CreateTaskCommentRequest(13, 'resolution', 'Done.', 'nick')->headers()->get('Content-Type'))->toBe('application/json')
+            ->and(new ListTaskCommentsRequest(13)->query()->all())->toBe([])
+            ->and(new ListTaskCommentsRequest(13, 'resolution', 1)->query()->all())->toBe(['type' => 'resolution', 'limit' => 1])
+            ->and(new ListTaskCommentsRequest(13, '', 0)->query()->all())->toBe(['type' => '', 'limit' => 0]);
     });
 
     it('sends the agent thread cursor only when one is given', function (): void {
@@ -96,25 +92,25 @@ describe('task transport', function (): void {
     });
 
     it('sends create fields and omits only absent optional values', function (): void {
-        expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
+        expect(new CreateTaskRequest(1, 'Title', 'Brief')->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', tasks: [new SubtaskInput('One', 'First.')])->body()->all())
-            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."}]}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', currentRecipe: true)->body()->all())
+            ->and(new CreateTaskRequest(1, 'Title', 'Brief', 'todo', subtasks: [new SubtaskInput('One', 'First.')])->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","subtasks":[{"title":"One","brief":"First."}]}')
+            ->and(new CreateTaskRequest(1, 'Title', 'Brief', currentRecipe: true)->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief","current_recipe":true}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', tasks: [])->body()->all())
-            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","tasks":[]}')
-            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))
+            ->and(new CreateTaskRequest(1, 'Title', 'Brief', subtasks: [])->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","subtasks":[]}')
+            ->and(new CreateTaskRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))
             ->toBe('application/json');
     });
 
     it('sends only the supplied update fields and an empty object when none is supplied', function (): void {
-        expect(new UpdateTaskGroupRequest(13)->body()->all())->toBe('{}')
-            ->and(new UpdateTaskGroupRequest(13, status: 'todo')->body()->all())->toBe('{"status":"todo"}')
-            ->and(new UpdateTaskGroupRequest(13, '', 'Brief')->body()->all())->toBe('{"title":"","brief":"Brief"}')
-            ->and(new UpdateSubtaskRequest(13, 57)->body()->all())->toBe('{}')
-            ->and(new UpdateSubtaskRequest(13, 57, position: 2)->body()->all())->toBe('{"position":2}')
-            ->and(new UpdateSubtaskRequest(13, 57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']])->body()->all())
+        expect(new UpdateTaskRequest(13)->body()->all())->toBe('{}')
+            ->and(new UpdateTaskRequest(13, status: 'todo')->body()->all())->toBe('{"status":"todo"}')
+            ->and(new UpdateTaskRequest(13, '', 'Brief')->body()->all())->toBe('{"title":"","brief":"Brief"}')
+            ->and(new UpdateTaskRequest(57)->body()->all())->toBe('{}')
+            ->and(new UpdateTaskRequest(57, position: 2)->body()->all())->toBe('{"position":2}')
+            ->and(new UpdateTaskRequest(57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']])->body()->all())
             ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}]}');
     });
 
@@ -122,25 +118,25 @@ describe('task transport', function (): void {
         $docs = ['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any'];
         $repro = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'Fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
 
-        expect(new CreateSubtaskRequest(13, 'Title', 'Brief')->body()->all())
-            ->toBe('{"title":"Title","brief":"Brief"}')
-            ->and(new CreateSubtaskRequest(13, 'Title', 'Brief', [$docs])->body()->all())
-            ->toBe('{"title":"Title","brief":"Brief","deliverables":[{"id":"docs","type":"file","description":"Docs","path":"docs\\/a.md","change":"any"}]}')
-            ->and(new CreateSubtaskRequest(13, 'Title', 'Brief', [$repro])->body()->all())
+        expect(new CreateTaskRequest(projectId: null, title: 'Title', brief: 'Brief', parentId: 13)->body()->all())
+            ->toBe('{"parent_id":13,"title":"Title","brief":"Brief"}')
+            ->and(new CreateTaskRequest(projectId: null, title: 'Title', brief: 'Brief', parentId: 13, deliverables: [$docs])->body()->all())
+            ->toBe('{"parent_id":13,"title":"Title","brief":"Brief","deliverables":[{"id":"docs","type":"file","description":"Docs","path":"docs\\/a.md","change":"any"}]}')
+            ->and(new CreateTaskRequest(projectId: null, title: 'Title', brief: 'Brief', parentId: 13, deliverables: [$repro])->body()->all())
             ->toContain('"fails_on_base":true')
-            ->and(new UpdateSubtaskRequest(13, 57, deliverables: [$repro])->body()->all())
+            ->and(new UpdateTaskRequest(57, deliverables: [$repro])->body()->all())
             ->toContain('"fails_on_base":true')
             ->and(new SubtaskInput('One', 'First.', [$docs])->toArray())
             ->toBe(['title' => 'One', 'brief' => 'First.', 'deliverables' => [$docs]])
-            ->and(new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick')->body()->all())
+            ->and(new CreateTaskCommentRequest(57, 'resolution', 'Done.', 'nick')->body()->all())
             ->toBe('{"type":"resolution","body":"Done.","author":"nick"}')
-            ->and(new CreateTaskCommentRequest(13, 57, 'assistance_requested', 'Stuck.', 'nick', 4)->body()->all())
+            ->and(new CreateTaskCommentRequest(57, 'assistance_requested', 'Stuck.', 'nick', 4)->body()->all())
             ->toBe('{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":4}');
     });
 
     it('puts list filters in the query and omits absent ones', function (): void {
-        expect(new ListTaskGroupsRequest()->query()->all())->toBe([])
-            ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog'])
+        expect(new ListTasksRequest()->query()->all())->toBe([])
+            ->and(new ListTasksRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog'])
             ->and(new ListTaskQuestionsRequest()->query()->all())->toBe([])
             ->and(new ListTaskQuestionsRequest(4, 'contract_gap', 'answered', '2026-10-07T00:00:00Z')->query()->all())
             ->toBe(['project_id' => 4, 'cause' => 'contract_gap', 'status' => 'answered', 'since' => '2026-10-07T00:00:00Z']);
@@ -160,24 +156,24 @@ describe('task transport', function (): void {
         expect($request)->not->toBeInstanceOf(HasBody::class)
             ->and((string) $mockClient->getLastPendingRequest()?->createPsrRequest()->getBody())->toBeEmpty();
     })->with([
-        'group comment list' => [new ListTaskGroupCommentsRequest(13)],
+        'group comment list' => [new ListTaskCommentsRequest(13)],
         'status' => [new ShowTasksStatusRequest],
         'question list' => [new ListTaskQuestionsRequest],
-        'cancel' => [new CancelTaskGroupRequest(13, 'cancel.13')],
+        'cancel' => [new CancelTaskRequest(13, 'cancel.13')],
         'complete' => [new CompleteTaskGroupRequest(13)],
-        'destroy' => [new DestroySubtaskRequest(13, 57)],
-        'subtask cancel' => [new CancelSubtaskRequest(13, 57)],
+        'destroy' => [new DestroyTaskRequest(57)],
+        'subtask cancel' => [new CancelTaskRequest(57, 'cancel.child')],
         'agent show' => [new ShowTaskAgentRequest(13, 21)],
     ]);
 });
 
 describe('task responses from recorded Gateway fixtures', function (): void {
     it('keeps group ownership and the ordinary conflict envelope', function (): void {
-        $comment = task_fixture_send('tasks-group-comment-create/requested', new CreateTaskGroupCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'));
+        $comment = task_fixture_send('task-comment-create/parent-requested', new CreateTaskCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'));
         expect($comment)->toBeInstanceOf(TaskCommentResponse::class)
             ->and($comment->taskId)->toBe(1)->and($comment->taskGroupId)->toBe(1)->and($comment->agentThreadId)->toBeNull();
         try {
-            task_fixture_send('tasks-group-comment-create/subtask-open', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'));
+            task_fixture_send('task-comment-create/parent-subtask-open', new CreateTaskCommentRequest(1, 'resolution', 'Approved.', 'nick'));
             test()->fail('Expected a group admission refusal.');
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe('tasks.assistance_subtask_open');
@@ -186,44 +182,47 @@ describe('task responses from recorded Gateway fixtures', function (): void {
 
     it('maps each recorded success to its typed DTO', function (string $fixture, GatewayRequest $request, string $class): void {
         $response = task_fixture_send($fixture, $request);
+        if ($response instanceof TaskCancellationResponse) {
+            $response = $response->result;
+        }
 
         expect($response)->toBeInstanceOf($class)
             ->and($response->requestId)->toBe(task_request_id());
     })->with([
-        'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
-        'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
-        'review-and-merge status' => ['tasks-status/merges', new ShowTasksStatusRequest, TasksStatusResponse::class],
-        'review-and-merge show' => ['tasks-show/review-and-merge', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
-        'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
-        'empty list' => ['tasks-list/empty', new ListTaskGroupsRequest, TaskGroupsResponse::class],
-        'create' => ['tasks-create/created', new CreateTaskGroupRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
-        'show' => ['tasks-show/default', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
-        'update' => ['tasks-update/updated', new UpdateTaskGroupRequest(1, 'Add the tasks command family'), TaskGroupResponse::class],
-        'complete' => ['tasks-complete/completed', new CompleteTaskGroupRequest(2), TaskGroupResponse::class],
-        'subtask create' => ['tasks-subtask-create/created', new CreateSubtaskRequest(1, 'Document the commands', 'Brief'), SubtaskResponse::class],
-        'subtask update' => ['tasks-subtask-update/updated', new UpdateSubtaskRequest(1, 1, position: 2), SubtaskResponse::class],
-        'subtask destroy' => ['tasks-subtask-destroy/destroyed', new DestroySubtaskRequest(1, 1), SubtaskResponse::class],
-        'subtask cancel' => ['tasks-subtask-cancel/cancelled', new CancelSubtaskRequest(1, 1), SubtaskResponse::class],
-        'group comment request' => ['tasks-group-comment-create/requested', new CreateTaskGroupCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'), TaskCommentResponse::class],
-        'group comment resolution' => ['tasks-group-comment-create/resolved', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'), TaskCommentResponse::class],
-        'group comment list' => ['tasks-group-comment-list/default', new ListTaskGroupCommentsRequest(1), TaskCommentsResponse::class],
-        'empty group comment list' => ['tasks-group-comment-list/empty', new ListTaskGroupCommentsRequest(1), TaskCommentsResponse::class],
-        'comment create' => ['tasks-comment-create/created', new CreateTaskCommentRequest(1, 1, 'resolution', 'Body', 'nick'), TaskCommentResponse::class],
-        'comment list' => ['tasks-comment-list/default', new ListTaskCommentsRequest(1, 1), TaskCommentsResponse::class],
-        'question list' => ['tasks-question-list/default', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
-        'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
-        'question close' => ['tasks-question-close/closed', new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.'), TaskQuestionResponse::class],
-        'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
-        'egress' => ['tasks-egress/default', new ListTaskEgressRequest(1), TaskEgressResponse::class],
-        'empty egress' => ['tasks-egress/empty', new ListTaskEgressRequest(1), TaskEgressResponse::class],
-        'agent show' => ['tasks-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
-        'archived agent show' => ['tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
-        'agent delta' => ['tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
-        'pending agent show' => ['tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5), TaskAgentSnapshotResponse::class],
+        'status' => ['task-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'assisted status' => ['task-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge status' => ['task-status/merges', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge show' => ['task-show/review-and-merge', new ShowTaskRequest(1), TaskGroupResponse::class],
+        'list' => ['task-list/default', new ListTasksRequest, TaskGroupsResponse::class],
+        'empty list' => ['task-list/empty', new ListTasksRequest, TaskGroupsResponse::class],
+        'create' => ['task-create/created', new CreateTaskRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
+        'show' => ['task-show/default', new ShowTaskRequest(1), TaskGroupResponse::class],
+        'update' => ['task-update/updated', new UpdateTaskRequest(1, 'Add the tasks command family'), TaskGroupResponse::class],
+        'complete' => ['task-complete/completed', new CompleteTaskGroupRequest(2), TaskGroupResponse::class],
+        'subtask create' => ['task-create/child-created', new CreateTaskRequest(projectId: null, title: 'Document the commands', brief: 'Brief', parentId: 1), SubtaskResponse::class],
+        'subtask update' => ['task-update/child-updated', new UpdateTaskRequest(1, position: 2), SubtaskResponse::class],
+        'subtask destroy' => ['task-destroy/child-destroyed', new DestroyTaskRequest(1), SubtaskResponse::class],
+        'subtask cancel' => ['task-cancel/child-cancelled', new CancelTaskRequest(1, 'cancel.child'), SubtaskResponse::class],
+        'group comment request' => ['task-comment-create/parent-requested', new CreateTaskCommentRequest(1, 'assistance_requested', 'May I republish?', 'driver'), TaskCommentResponse::class],
+        'group comment resolution' => ['task-comment-create/parent-resolved', new CreateTaskCommentRequest(1, 'resolution', 'Approved.', 'nick'), TaskCommentResponse::class],
+        'group comment list' => ['task-comment-list/parent-default', new ListTaskCommentsRequest(1), TaskCommentsResponse::class],
+        'empty group comment list' => ['task-comment-list/parent-empty', new ListTaskCommentsRequest(1), TaskCommentsResponse::class],
+        'comment create' => ['task-comment-create/created', new CreateTaskCommentRequest(1, 'resolution', 'Body', 'nick'), TaskCommentResponse::class],
+        'comment list' => ['task-comment-list/default', new ListTaskCommentsRequest(1), TaskCommentsResponse::class],
+        'question list' => ['task-question-list/default', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
+        'empty question list' => ['task-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
+        'question close' => ['task-question-close/closed', new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.'), TaskQuestionResponse::class],
+        'agents' => ['task-agent-list/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
+        'egress' => ['task-egress/default', new ListTaskEgressRequest(1), TaskEgressResponse::class],
+        'empty egress' => ['task-egress/empty', new ListTaskEgressRequest(1), TaskEgressResponse::class],
+        'agent show' => ['task-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
+        'archived agent show' => ['task-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
+        'agent delta' => ['task-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
+        'pending agent show' => ['task-agent-show/pending', new ShowTaskAgentRequest(1, 5), TaskAgentSnapshotResponse::class],
     ]);
 
     it('keeps the transcript, cursor, and source of live and archived agent snapshots', function (): void {
-        $snapshot = task_fixture_send('tasks-agent-show/default', new ShowTaskAgentRequest(1, 3));
+        $snapshot = task_fixture_send('task-agent-show/default', new ShowTaskAgentRequest(1, 3));
 
         expect($snapshot)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
             ->and($snapshot->threadId)->toBe(3)
@@ -235,7 +234,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($snapshot->tokens)->toBe(48_200)
             ->and($snapshot->toArray())->toMatchArray(['thread_id' => 3, 'kind' => 'snapshot', 'cursor' => 'run-1.7', 'archived' => false, 'request_id' => task_request_id()]);
 
-        $archived = task_fixture_send('tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4));
+        $archived = task_fixture_send('task-agent-show/archived', new ShowTaskAgentRequest(1, 4));
 
         expect($archived)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
             ->and($archived->archived)->toBeTrue()
@@ -245,8 +244,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($archived->modelCalls)->toBeNull()
             ->and($archived->entries[0]['text'])->toBe('Approved.');
 
-        $delta = task_fixture_send('tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
-        $pending = task_fixture_send('tasks-agent-show/pending', new ShowTaskAgentRequest(1, 5));
+        $delta = task_fixture_send('task-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
+        $pending = task_fixture_send('task-agent-show/pending', new ShowTaskAgentRequest(1, 5));
 
         expect($delta)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
             ->and($delta->kind)->toBe('delta')->and($delta->cursor)->toBe('run-1.9')
@@ -257,9 +256,9 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps the review-and-merge state of a task and of tasks status', function (): void {
-        $group = task_fixture_send('tasks-show/review-and-merge', new ShowTaskGroupRequest(1));
-        $status = task_fixture_send('tasks-status/merges', new ShowTasksStatusRequest);
-        $plain = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+        $group = task_fixture_send('task-show/review-and-merge', new ShowTaskRequest(1));
+        $status = task_fixture_send('task-status/merges', new ShowTasksStatusRequest);
+        $plain = task_fixture_send('task-show/default', new ShowTaskRequest(1));
 
         expect($group)->toBeInstanceOf(TaskGroupResponse::class)
             ->and($status)->toBeInstanceOf(TasksStatusResponse::class)
@@ -282,7 +281,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps the Gateway fields of a group and its ordered subtasks', function (): void {
-        $group = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+        $group = task_fixture_send('task-show/default', new ShowTaskRequest(1));
 
         expect($group)->toBeInstanceOf(TaskGroupResponse::class);
         assert($group instanceof TaskGroupResponse);
@@ -298,22 +297,22 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->assistanceReason)->toBeNull()
             ->and($group->questions)->toBe(0)
             ->and($group->escalations)->toBe(0)
-            ->and($group->tasks[0]->assistanceRequested)->toBeFalse()
-            ->and($group->tasks[0]->assistanceKind)->toBeNull()
-            ->and($group->tasks[0]->assistanceQuestion)->toBeNull()
-            ->and($group->tasks[0]->assistanceReason)->toBeNull()
-            ->and($group->tasks[0]->questions)->toBe(0)
-            ->and($group->tasks[0]->escalations)->toBe(0)
-            ->and(array_map(static fn (SubtaskResponse $task): int => $task->position, $group->tasks))->toBe([1, 2])
+            ->and($group->subtasks[0]->assistanceRequested)->toBeFalse()
+            ->and($group->subtasks[0]->assistanceKind)->toBeNull()
+            ->and($group->subtasks[0]->assistanceQuestion)->toBeNull()
+            ->and($group->subtasks[0]->assistanceReason)->toBeNull()
+            ->and($group->subtasks[0]->questions)->toBe(0)
+            ->and($group->subtasks[0]->escalations)->toBe(0)
+            ->and(array_map(static fn (SubtaskResponse $task): int => $task->position, $group->subtasks))->toBe([1, 2])
             ->and($group->toArray())->not->toHaveKey('tasks.0.request_id')
-            ->and($group->toArray()['tasks'][0])->not->toHaveKey('request_id')
+            ->and($group->toArray()['subtasks'][0])->not->toHaveKey('request_id')
             ->and($group->toArray()['request_id'])->toBe(task_request_id());
     });
 
     it('lists assisted groups on tasks status', function (): void {
-        $enabled = task_fixture_send('tasks-status/enabled', new ShowTasksStatusRequest);
-        $clear = task_fixture_send('tasks-status/enabled', new ShowTasksStatusRequest);
-        $assisted = task_fixture_send('tasks-status/assistance', new ShowTasksStatusRequest);
+        $enabled = task_fixture_send('task-status/enabled', new ShowTasksStatusRequest);
+        $clear = task_fixture_send('task-status/enabled', new ShowTasksStatusRequest);
+        $assisted = task_fixture_send('task-status/assistance', new ShowTasksStatusRequest);
 
         assert($enabled instanceof TasksStatusResponse && $clear instanceof TasksStatusResponse && $assisted instanceof TasksStatusResponse);
 
@@ -351,7 +350,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps an assistance request on the group and each subtask', function (): void {
-        $mockClient = new MockClient([ShowTaskGroupRequest::class => MockResponse::make([
+        $mockClient = new MockClient([ShowTaskRequest::class => MockResponse::make([
             'data' => [
                 'id' => 4,
                 'project_id' => 1,
@@ -365,10 +364,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'assistance_reason' => 'The implementer is blocked.',
                 'questions' => 3,
                 'escalations' => 1,
-                'tasks' => [
+                'subtasks' => [
                     [
                         'id' => 8,
-                        'task_group_id' => 4,
+                        'parent_id' => 4,
                         'position' => 1,
                         'title' => 'Blocked step',
                         'brief' => 'Needs a decision.',
@@ -382,7 +381,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                     ],
                     [
                         'id' => 9,
-                        'task_group_id' => 4,
+                        'parent_id' => 4,
                         'position' => 2,
                         'title' => 'Later step',
                         'brief' => 'Not blocked.',
@@ -396,7 +395,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         ])]);
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
-        $group = $connector->send(new ShowTaskGroupRequest(4))->dto();
+        $group = $connector->send(new ShowTaskRequest(4))->dto();
 
         expect($group)->toBeInstanceOf(TaskGroupResponse::class);
         assert($group instanceof TaskGroupResponse);
@@ -404,10 +403,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->assistanceQuestion)->toBe('Which database should this use?')
             ->and($group->questions)->toBe(3)
             ->and($group->escalations)->toBe(1)
-            ->and($group->tasks[0]->questions)->toBe(2)
-            ->and($group->tasks[0]->escalations)->toBe(1)
-            ->and($group->tasks[1]->questions)->toBe(0)
-            ->and($group->tasks[1]->escalations)->toBe(0)
+            ->and($group->subtasks[0]->questions)->toBe(2)
+            ->and($group->subtasks[0]->escalations)->toBe(1)
+            ->and($group->subtasks[1]->questions)->toBe(0)
+            ->and($group->subtasks[1]->escalations)->toBe(0)
             ->and($group->toArray())->toMatchArray([
                 'assistance_requested' => true,
                 'assistance_kind' => 'direction',
@@ -415,14 +414,14 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'assistance_reason' => 'The implementer is blocked.',
                 'questions' => 3,
                 'escalations' => 1,
-            ])->and($group->toArray()['tasks'][0])->toMatchArray([
+            ])->and($group->toArray()['subtasks'][0])->toMatchArray([
                 'assistance_requested' => true,
                 'assistance_kind' => 'direction',
                 'assistance_question' => 'Which database should this use?',
                 'assistance_reason' => 'The implementer is blocked.',
                 'questions' => 2,
                 'escalations' => 1,
-            ])->and($group->toArray()['tasks'][1])->toMatchArray([
+            ])->and($group->toArray()['subtasks'][1])->toMatchArray([
                 'assistance_requested' => false,
                 'assistance_kind' => null,
                 'assistance_question' => null,
@@ -434,7 +433,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
 
     it('sends the close status and reason, and reads the closed question', function (): void {
         $request = new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.');
-        $question = task_fixture_send('tasks-question-close/closed', $request);
+        $question = task_fixture_send('task-question-close/closed', $request);
 
         expect($request->body()->all())->toBe('{"status":"superseded","reason":"A later subtask owns the continuation."}')
             ->and($question)->toBeInstanceOf(TaskQuestionResponse::class);
@@ -446,7 +445,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('reads the task question list', function (): void {
-        $questions = task_fixture_send('tasks-question-list/default', new ListTaskQuestionsRequest);
+        $questions = task_fixture_send('task-question-list/default', new ListTaskQuestionsRequest);
 
         expect($questions)->toBeInstanceOf(TaskQuestionsResponse::class);
         assert($questions instanceof TaskQuestionsResponse);
@@ -477,7 +476,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'cause' => 'contract_gap',
             ]);
 
-        $empty = task_fixture_send('tasks-question-list/empty', new ListTaskQuestionsRequest);
+        $empty = task_fixture_send('task-question-list/empty', new ListTaskQuestionsRequest);
 
         expect($empty)->toBeInstanceOf(TaskQuestionsResponse::class);
         assert($empty instanceof TaskQuestionsResponse);
@@ -486,7 +485,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps the watched pull request separate from the published pull request', function (): void {
-        $group = task_fixture_send('tasks-show/watched', new ShowTaskGroupRequest(1));
+        $group = task_fixture_send('task-show/watched', new ShowTaskRequest(1));
         assert($group instanceof TaskGroupResponse);
 
         expect($group->watchedPrUrl)->toBe('https://github.com/hardimpactdev/orbit/pull/451')
@@ -499,7 +498,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'watched_pr_state' => 'open',
                 'pr_url' => null,
             ]);
-        $unwatched = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+        $unwatched = task_fixture_send('task-show/default', new ShowTaskRequest(1));
         assert($unwatched instanceof TaskGroupResponse);
         expect($unwatched->watchedPrUrl)->toBeNull()
             ->and($unwatched->watchedPrNumber)->toBeNull()
@@ -507,9 +506,9 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('replays the complete recorded review fixup through existing brief and deliverables', function (): void {
-        $group = task_fixture_send('tasks-show/review-fixup', new ShowTaskGroupRequest(1));
+        $group = task_fixture_send('task-show/review-fixup', new ShowTaskRequest(1));
         assert($group instanceof TaskGroupResponse);
-        $fixup = $group->tasks[2];
+        $fixup = $group->subtasks[2];
         $lines = array_filter(explode("\n", $fixup->brief), static fn (string $line): bool => str_starts_with($line, '> '));
         $source = json_decode(implode("\n", array_map(static fn (string $line): string => substr($line, 2), $lines)), true, flags: JSON_THROW_ON_ERROR);
 
@@ -530,10 +529,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps fails_on_base on a test deliverable', function (): void {
-        $mockClient = new MockClient([CreateSubtaskRequest::class => MockResponse::make([
+        $mockClient = new MockClient([CreateTaskRequest::class => MockResponse::make([
             'data' => [
                 'id' => 1,
-                'task_group_id' => 1,
+                'parent_id' => 1,
                 'position' => 1,
                 'title' => 'Layout',
                 'brief' => 'Fix the layout.',
@@ -549,7 +548,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         ])]);
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
-        $subtask = $connector->send(new CreateSubtaskRequest(1, 'Layout', 'Fix the layout.'))->dto();
+        $subtask = $connector->send(new CreateTaskRequest(projectId: null, title: 'Layout', brief: 'Fix the layout.', parentId: 1))->dto();
 
         expect($subtask)->toBeInstanceOf(SubtaskResponse::class);
         assert($subtask instanceof SubtaskResponse);
@@ -557,8 +556,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps comments newest first and agent errors', function (): void {
-        $comments = task_fixture_send('tasks-comment-list/default', new ListTaskCommentsRequest(1, 1));
-        $agents = task_fixture_send('tasks-agents/default', new ListTaskAgentsRequest(1));
+        $comments = task_fixture_send('task-comment-list/default', new ListTaskCommentsRequest(1));
+        $agents = task_fixture_send('task-agent-list/default', new ListTaskAgentsRequest(1));
 
         assert($comments instanceof TaskCommentsResponse && $agents instanceof TaskAgentsResponse);
 
@@ -577,7 +576,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('keeps the destination order, the null port of a name and the sources of an egress row', function (): void {
-        $egress = task_fixture_send('tasks-egress/default', new ListTaskEgressRequest(1));
+        $egress = task_fixture_send('task-egress/default', new ListTaskEgressRequest(1));
 
         assert($egress instanceof TaskEgressResponse);
 
@@ -595,11 +594,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             expect($exception->errorCode())->toBe($code);
         }
     })->with([
-        'group closed' => ['tasks-group-comment-create/group-closed', new CreateTaskGroupCommentRequest(1, 'resolution', 'Approved.', 'nick'), 'tasks.group_closed'],
-        'no subtasks' => ['tasks-create/no-subtasks', new CreateTaskGroupRequest(1, 'Empty', 'No subtasks.', 'todo'), 'tasks.no_subtasks'],
-        'not in backlog' => ['tasks-update/not-in-backlog', new UpdateTaskGroupRequest(1, 'Too late'), 'tasks.not_in_backlog'],
-        'subtask not running' => ['tasks-subtask-cancel/not-running', new CancelSubtaskRequest(1, 1), 'tasks.subtask_not_running'],
-        'subtask interrupt failed' => ['tasks-subtask-cancel/interrupt-failed', new CancelSubtaskRequest(2, 3), 'tasks.subtask_interrupt_failed'],
+        'group closed' => ['task-comment-create/parent-group-closed', new CreateTaskCommentRequest(1, 'resolution', 'Approved.', 'nick'), 'tasks.group_closed'],
+        'no subtasks' => ['task-create/no-subtasks', new CreateTaskRequest(1, 'Empty', 'No subtasks.', 'todo'), 'tasks.no_subtasks'],
+        'not in backlog' => ['task-update/not-in-backlog', new UpdateTaskRequest(1, 'Too late'), 'tasks.not_in_backlog'],
+        'subtask not running' => ['task-cancel/child-not-running', new CancelTaskRequest(1, 'cancel.child'), 'tasks.subtask_not_running'],
+        'subtask interrupt failed' => ['task-cancel/child-interrupt-failed', new CancelTaskRequest(3, 'cancel.child'), 'tasks.subtask_interrupt_failed'],
     ]);
 
     it('rejects malformed task records', function (GatewayRequest $request, mixed $data): void {
@@ -612,17 +611,17 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'status without enabled' => [new ShowTasksStatusRequest, ['enabled' => 'yes']],
         'status assistance is not a list' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => 'blocked']],
         'status assistance entry without an id' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => [['title' => 'Stalled', 'status' => 'running']]]],
-        'group without title' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'brief' => 'B', 'status' => 'backlog', 'tasks' => []]],
-        'group with scalar subtasks' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
-        'group list member without id' => [new ListTaskGroupsRequest, [['title' => 'T']]],
-        'subtask without position' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo']],
-        'subtask with a scalar deliverable' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],
-        'comment without author' => [new CreateTaskCommentRequest(1, 1, 'resolution', 'B', 'nick'), ['id' => 1, 'task_group_id' => 1, 'task_id' => 1, 'type' => 'resolution', 'body' => 'B', 'posted_at' => 'now']],
-        'agent without driver' => [new ListTaskAgentsRequest(1), [['id' => 1, 'task_group_id' => 1, 'role' => 'reviewer', 'external_id' => 'x']]],
+        'group without title' => [new ShowTaskRequest(1), ['id' => 1, 'project_id' => 1, 'brief' => 'B', 'status' => 'backlog', 'tasks' => []]],
+        'group with scalar subtasks' => [new ShowTaskRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
+        'group list member without id' => [new ListTasksRequest, [['title' => 'T']]],
+        'subtask without position' => [new CreateTaskRequest(projectId: null, title: 'T', brief: 'B', parentId: 1), ['id' => 1, 'parent_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo']],
+        'subtask with a scalar deliverable' => [new CreateTaskRequest(projectId: null, title: 'T', brief: 'B', parentId: 1), ['id' => 1, 'parent_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],
+        'comment without author' => [new CreateTaskCommentRequest(1, 'resolution', 'B', 'nick'), ['id' => 1, 'parent_id' => 1, 'task_id' => 1, 'type' => 'resolution', 'body' => 'B', 'posted_at' => 'now']],
+        'agent without driver' => [new ListTaskAgentsRequest(1), [['id' => 1, 'parent_id' => 1, 'role' => 'reviewer', 'external_id' => 'x']]],
         'agent snapshot without its source' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'entries' => []]],
         'agent snapshot with an entry without text' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'archived' => true, 'entries' => [['id' => 'e1', 'kind' => 'message', 'label' => 'user', 'at' => 'now']]]],
         'agent snapshot with entries that are not a list' => [new ShowTaskAgentRequest(1, 3), ['thread_id' => 3, 'kind' => 'snapshot', 'archived' => false, 'entries' => 'none']],
-        'group with a question count that is not an integer' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'questions' => 'many', 'tasks' => []]],
+        'group with a question count that is not an integer' => [new ShowTaskRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'questions' => 'many', 'tasks' => []]],
         'question without an id' => [new ListTaskQuestionsRequest, [['task_id' => 1, 'subtask_id' => 2, 'attempt' => 1, 'asked_by' => 'implementer', 'question' => 'Which database?', 'status' => 'open', 'asked_at' => '2026-10-07T00:00:00+00:00']]],
     ]);
 });
@@ -668,7 +667,7 @@ it('bounds observed VM power without inferring it from group status', function (
 ]);
 
 it('accepts task groups with missing power and ignores unknown response fields', function (): void {
-    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/task-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
     $data = $fixture['body']['data'];
     unset($data['vm_power']);
     $data['future_optional_field'] = 'running';
@@ -681,7 +680,7 @@ it('accepts task groups with missing power and ignores unknown response fields',
 });
 
 it('transports preview omission and explicit booleans', function (?bool $preview): void {
-    foreach ([new CreateTaskGroupRequest(1, 'Work', 'Brief', preview: $preview), new UpdateTaskGroupRequest(1, preview: $preview)] as $request) {
+    foreach ([new CreateTaskRequest(1, 'Work', 'Brief', preview: $preview), new UpdateTaskRequest(1, preview: $preview)] as $request) {
         $body = json_decode($request->body()->all(), true, flags: JSON_THROW_ON_ERROR);
         if ($preview === null) {
             expect($body)->not->toHaveKey('preview');
@@ -692,12 +691,12 @@ it('transports preview omission and explicit booleans', function (?bool $preview
 })->with([null, false, true]);
 
 it('transports declared topology including an explicit empty replacement', function (): void {
-    expect(json_decode(new CreateSubtaskRequest(13, 'Step', 'Work', topology: ['app-dev'])->body()->all(), true))
-        ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-dev']]);
-    expect(json_decode(new UpdateSubtaskRequest(13, 57, topology: [])->body()->all(), true))->toBe(['topology' => []]);
+    expect(json_decode(new CreateTaskRequest(projectId: null, title: 'Step', brief: 'Work', parentId: 13, topology: ['app-dev'])->body()->all(), true))
+        ->toBe(['parent_id' => 13, 'title' => 'Step', 'brief' => 'Work', 'topology' => ['app-dev']]);
+    expect(json_decode(new UpdateTaskRequest(57, topology: [])->body()->all(), true))->toBe(['topology' => []]);
     expect(new SubtaskInput('Step', 'Work', topology: ['app-prod-2'])->toArray())
         ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-prod-2']]);
-    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/task-create/child-created.json'), true, flags: JSON_THROW_ON_ERROR);
     $data = [...$fixture['body']['data'], 'topology' => ['app-dev', 'app-prod']];
     $result = SubtaskResponse::fromGatewayData($data, task_request_id());
     expect($result->topology)->toBe(['app-dev', 'app-prod']);
@@ -705,37 +704,37 @@ it('transports declared topology including an explicit empty replacement', funct
 });
 
 it('rejects malformed topology response types', function (mixed $topology): void {
-    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/task-create/child-created.json'), true, flags: JSON_THROW_ON_ERROR);
     expect(fn () => SubtaskResponse::fromGatewayData([...$fixture['body']['data'], 'topology' => $topology], task_request_id()))
         ->toThrow(GatewayApiException::class);
 })->with(['scalar' => ['app-dev'], 'non-string' => [[1]], 'object' => [['name' => 'app-dev']]]);
 
 it('transports an explicit orchestration mode', function (string $mode): void {
-    $request = new CreateTaskGroupRequest(1, 'Work', 'Brief', orchestration: $mode);
+    $request = new CreateTaskRequest(1, 'Work', 'Brief', orchestration: $mode);
     expect(json_decode($request->body()->all(), true, flags: JSON_THROW_ON_ERROR)['orchestration'])->toBe($mode);
 })->with(['tick', 'external']);
 
 it('returns the external orchestration mode from the Gateway', function (): void {
-    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-create/external.json'), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/task-create/external.json'), true, flags: JSON_THROW_ON_ERROR);
     $group = TaskGroupResponse::fromGatewayData($fixture['body']['data'], task_request_id());
     expect($group->orchestration)->toBe('external')->and($group->toArray()['orchestration'])->toBe('external');
 });
 
 it('preserves external board status inputs on partial updates', function (): void {
-    expect(new UpdateTaskGroupRequest(13, status: 'reviewing')->body()->all())->toBe('{"status":"reviewing"}');
-    expect(new UpdateSubtaskRequest(13, 57, status: 'completed')->body()->all())->toBe('{"status":"completed"}');
-    expect(new UpdateSubtaskRequest(13, 57, status: '')->body()->all())->toBe('{"status":""}');
+    expect(new UpdateTaskRequest(13, status: 'reviewing')->body()->all())->toBe('{"status":"reviewing"}');
+    expect(new UpdateTaskRequest(57, status: 'completed')->body()->all())->toBe('{"status":"completed"}');
+    expect(new UpdateTaskRequest(57, status: '')->body()->all())->toBe('{"status":""}');
 });
 
 it('transports keyed native cancellation and parses the accepted Operation', function (): void {
-    $request = new CancelTaskGroupRequest(13, 'cancel.13');
-    $mock = new MockClient([CancelTaskGroupRequest::class => MockResponse::make(['data' => [
+    $request = new CancelTaskRequest(13, 'cancel.13');
+    $mock = new MockClient([CancelTaskRequest::class => MockResponse::make(['data' => [
         'id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 13,
         'status' => 'queued', 'sequence' => 1,
     ]], 202)]);
     $connector = new GatewayConnector('https://gateway.test');
     $connector->withMockClient($mock);
-    $operation = $connector->send($request)->dto();
+    $operation = $connector->send($request)->dto()->result;
     expect($operation)->toBeInstanceOf(OperationResponse::class)
         ->and($operation->kind)->toBe('tasks.cancel')->and($operation->status)->toBe('queued')
         ->and($request->headers()->get('Idempotency-Key'))->toBe('cancel.13')

@@ -21,24 +21,24 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class AgentThreadsController extends Controller
 {
-    public function index(Request $request, Task $group, ShowAgentThreadsAction $action): JsonResponse
+    public function index(Request $request, Task $task, ShowAgentThreadsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($group)->map(static fn (AgentThread $session): array => AgentThreadData::fromModel($session)->toArray())->all(),
+            'data' => $action->execute($task)->map(static fn (AgentThread $session): array => AgentThreadData::fromModel($session)->toArray())->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
 
-    public function show(TaskAgentCursorRequest $request, Task $group, AgentThread $session, ReadAgentThreadAction $action): JsonResponse
+    public function show(TaskAgentCursorRequest $request, Task $task, AgentThread $session, ReadAgentThreadAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($group, $session, $request->afterSequence()),
+            'data' => $action->execute($task, $session, $request->afterSequence()),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }
 
-    public function stream(TaskAgentCursorRequest $request, Task $group, AgentThread $session, StreamAgentThreadAction $action): StreamedResponse
+    public function stream(TaskAgentCursorRequest $request, Task $task, AgentThread $session, StreamAgentThreadAction $action): StreamedResponse
     {
-        return $action->execute($group, $session, $request->afterSequence());
+        return $action->execute($task, $session, $request->afterSequence());
     }
 }

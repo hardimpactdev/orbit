@@ -12,7 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Task VM<br/>reached over ssh
-  CLI->>GW: Run repository script<br/>POST task-groups/42/script
+  CLI->>GW: Run repository script<br/>POST tasks/42/script
   %%> Input:
   %%> - child 7, the tracked repository path and literal arguments, with an idempotency key
   %%> What it does:

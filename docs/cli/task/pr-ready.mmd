@@ -15,7 +15,7 @@ sequenceDiagram
   participant GH as GitHub<br/>repository · PRs
   CLI->>GW: Ready the PR of GROUP<br/>head SHA · mode MODE
   %%> Command:
-  %%> - `POST /api/v1/task-groups/GROUP/pr-ready` with `head_sha`, `mode` (`manual` or `automatic`) and an `Idempotency-Key`
+  %%> - `POST /api/v1/tasks/GROUP/pr-ready` with `head_sha`, `mode` (`manual` or `automatic`) and an `Idempotency-Key`
   %%> - syntax: the MCP tool `task-pr-ready` with `group`, `head_sha`, `mode`
   %%> Who can call it:
   %%> - a Node with an access grant to the Gateway; there is no `orbit` command

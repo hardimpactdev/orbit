@@ -12,7 +12,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
  * The state of automatic Gateway releases: the switch, a pause, the release that is current, the
  * last runner tick, since when a transient cause has kept releases from making progress, and the
  * branch head the runner last read with since when it differs from the deployed commit, and whether the
- * current release's own scheduler has run `tasks:tick` since it went live.
+ * current release's own scheduler has run `task:tick` since it went live.
  */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class GatewayReleaseAutomationData extends Data

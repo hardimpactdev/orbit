@@ -16,7 +16,7 @@ sequenceDiagram
   participant GH as GitHub<br/>origin
   CLI->>GW: task:sync 42<br/>refresh the refs
   %%> Command:
-  %%> - the MCP tool `task-sync`, or `POST /api/v1/task-groups/42/sync` with an `Idempotency-Key` and no body
+  %%> - the MCP tool `task-sync`, or `POST /api/v1/tasks/42/sync` with an `Idempotency-Key` and no body
   Note over GW: Admit the sync<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway

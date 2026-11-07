@@ -9,7 +9,7 @@ Bring the branch of the pull request and the default branch into the workspace o
 There is no `orbit` command yet. Use the API or the MCP tool `task-sync`.
 
 ```bash
-curl -X POST "$GATEWAY/api/v1/task-groups/42/sync" \
+curl -X POST "$GATEWAY/api/v1/tasks/42/sync" \
   -H "Idempotency-Key: sync-42-1"
 ```
 

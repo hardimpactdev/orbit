@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -41,20 +41,20 @@ it('reports unknown rows and direct-operation guidance when no profile is active
         ->and($output)->toContain('"enabled":null')
         ->and($output)->toContain('gateway.profile_missing');
 
-    $exit = Artisan::call('tasks:list', ['--json' => true]);
+    $exit = Artisan::call('task:list', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(1)
         ->and($output)->not->toContain('extension.state_unknown')
         ->and($output)->toContain('gateway.profile_missing');
 
-    $exit = Artisan::call('tasks:status', ['--json' => true]);
+    $exit = Artisan::call('task:status', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(1)
         ->and($output)->toContain('gateway.profile_missing')
         ->and($output)->not->toContain('extension.state_unknown');
 
     $mock->assertSentCount(0, ListExtensionsRequest::class);
-    $mock->assertSentCount(0, ListTaskGroupsRequest::class);
+    $mock->assertSentCount(0, ListTasksRequest::class);
 });
 
 it('retains gateway trust guidance when discovery cannot verify the certificate', function (): void {
@@ -103,7 +103,7 @@ it('reports a bounded unknown state when discovery times out', function (): void
     ));
     $discoveryCalls = 0;
     $mock = MockClient::global([
-        ...gateway_fixture_mock('tasks/tasks-list/default'),
+        ...gateway_fixture_mock('tasks/task-list/default'),
         ListExtensionsRequest::class => static function (PendingRequest $request) use (&$discoveryCalls): never {
             $discoveryCalls++;
             throw new FatalRequestException(
@@ -119,7 +119,7 @@ it('reports a bounded unknown state when discovery times out', function (): void
         ->and($output)->toContain('gateway.unreachable')
         ->and($output)->toContain('timed out after 2 seconds');
 
-    $exit = Artisan::call('tasks:list', ['--json' => true]);
+    $exit = Artisan::call('task:list', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(0)
         ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toHaveKey('task_groups')
@@ -127,5 +127,5 @@ it('reports a bounded unknown state when discovery times out', function (): void
         ->and($discoveryCalls)->toBe(1);
 
     $mock->assertSentCount(0, ListExtensionsRequest::class);
-    $mock->assertSentCount(1, ListTaskGroupsRequest::class);
+    $mock->assertSentCount(1, ListTasksRequest::class);
 });

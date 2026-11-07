@@ -14,7 +14,7 @@
       "order": 8,
       "pages": [
         {
-          "group": "tasks",
+          "group": "task",
           "pages": [
             "cli/task/index",
             "cli/task/status",

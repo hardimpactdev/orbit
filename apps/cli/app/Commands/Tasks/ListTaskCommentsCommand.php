@@ -8,14 +8,12 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
-use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 
 final class ListTaskCommentsCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:comment:list
-        {group? : Numeric task group ID}
-        {subtask? : Numeric subtask ID}
+    protected $signature = 'task:comment:list
+        {task? : Numeric Task ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -23,10 +21,9 @@ final class ListTaskCommentsCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
-        $subtaskId = $groupId === false ? false : $this->idArgument('subtask', 'Subtask', 'subtask');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
-        if ($groupId === false || $subtaskId === false) {
+        if ($groupId === false) {
             return self::FAILURE;
         }
 
@@ -42,17 +39,7 @@ final class ListTaskCommentsCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        if ($subtaskId === null) {
-            $group = $this->loadGroup($connector, $groupId);
-
-            if (! $group instanceof TaskGroupResponse) {
-                return self::FAILURE;
-            }
-
-            $subtaskId = $this->selectSubtask($group);
-        }
-
-        $comments = $this->sendWithProgress($connector, new ListTaskCommentsRequest($groupId, $subtaskId), TaskCommentsResponse::class, ['List comments', 'Loading comments', 'Loaded comments']);
+        $comments = $this->sendWithProgress($connector, new ListTaskCommentsRequest($groupId), TaskCommentsResponse::class, ['List comments', 'Loading comments', 'Loaded comments']);
 
         if (! $comments instanceof TaskCommentsResponse) {
             return self::FAILURE;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPIKE, throwaway. Run by `orbit tasks:script` from the repository root of a task VM. Times three `orbit firewall:allow` calls against the nested
+# SPIKE, throwaway. Run by `orbit task:script` from the repository root of a task VM. Times three `orbit firewall:allow` calls against the nested
 # Gateway (a new rule, a repeat that only skips, and a partial apply that adds the UDP line) and prints each Operation's steps with their timestamps,
 # so the seconds of one call can be split into the CLI, the admission, the Swamp dispatch, each step, the projection of the result and the CLI's wait.
 #

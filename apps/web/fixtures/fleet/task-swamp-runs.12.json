@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "route": "GET /api/v1/task-groups/{group}/swamp-runs",
+    "route": "GET /api/v1/tasks/{task}/swamp-runs",
     "status": 200,
     "body": {
         "data": {

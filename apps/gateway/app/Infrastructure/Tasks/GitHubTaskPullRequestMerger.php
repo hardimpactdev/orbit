@@ -40,7 +40,7 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
     public function checkRuns(Task $group, string $sha): ?array
     {
         $repository = $this->githubRepository($group);
-        $key = 'tasks:commit-checks:v4:'.$repository->owner.'/'.$repository->name.'@'.$sha;
+        $key = 'task:commit-checks:v4:'.$repository->owner.'/'.$repository->name.'@'.$sha;
         $cached = self::decoded(Cache::get($key), GitHubCheckRun::fromArray(...));
         if ($cached !== null) {
             return $cached;

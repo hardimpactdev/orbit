@@ -213,7 +213,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'schedule:show',
         'schedule:update',
         'self-update',
-        'tasks:status',
+        'task:status',
         'tool:adopt',
         'tool:install',
         'tool:list',
@@ -415,8 +415,8 @@ it('hides optional command families when Gateway extension state is unknown', fu
         ->keys()
         ->all());
 
-    expect($visibleCommands)->not->toContain('tasks:create', 'ai-router:status', 'project:document:list', 'project:document-storage:show', 'vault:status')
-        ->and($visibleCommands)->toContain('tasks:status');
+    expect($visibleCommands)->not->toContain('task:create', 'ai-router:status', 'project:document:list', 'project:document-storage:show', 'vault:status')
+        ->and($visibleCommands)->toContain('task:status');
 });
 
 it('removes only owned command-surface fixtures and leaves caller configuration intact', function (): void {
@@ -991,21 +991,21 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
-        'tasks:question:close' => [['question'], [
+        'task:question:close' => [['question'], [
             'status' => null,
             'reason' => null,
             'json' => false,
         ]],
-        'tasks:question:list' => [[], [
+        'task:question:list' => [[], [
             'project' => null,
             'cause' => null,
             'status' => null,
             'since' => null,
             'json' => false,
         ]],
-        'tasks:group:comment:create' => [['group'], ['type' => null, 'body' => null, 'author' => null, 'json' => false]],
-        'tasks:group:comment:list' => [['group'], ['json' => false]],
-        'tasks:status' => [[], ['json' => false]],
+        'task:comment:create' => [['task'], ['type' => null, 'body' => null, 'author' => null, 'agent-thread' => null, 'json' => false]],
+        'task:comment:list' => [['task'], ['type' => null, 'limit' => null, 'json' => false]],
+        'task:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'idempotency-key' => null, 'json' => false]],
         'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
@@ -1065,11 +1065,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'gateway:release:deploy' => ['commit'],
             'gateway:release:rollback', 'gateway:release:show' => ['release'],
             'route:create' => ['instance', 'domain'],
-            'tasks:agents', 'tasks:egress', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update', 'tasks:group:comment:create', 'tasks:group:comment:list' => ['group'],
-            'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
-            'tasks:create' => ['title'],
-            'tasks:question:close' => ['question'],
-            'tasks:subtask:create' => ['group', 'title'],
+            'task:agent:list', 'task:egress', 'task:cancel', 'task:complete', 'task:show', 'task:update', 'task:comment:create', 'task:comment:list', 'task:destroy' => ['task'],
+            'task:create' => ['title'],
+            'task:question:close' => ['question'],
             default => [],
         };
         expect(collect($definition->getArguments())
@@ -1379,7 +1377,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--command' => 'php artisan report:send',
         ], ...$profileMissing],
         'self-update' => [[], ...$profileMissing],
-        'tasks:status' => [[], ...$profileMissing],
+        'task:status' => [[], ...$profileMissing],
         'tool:adopt' => [
             ['package' => 'jq', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,

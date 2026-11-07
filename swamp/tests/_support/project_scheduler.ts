@@ -53,10 +53,10 @@ export function fixture(token?: Record<string, unknown>) {
                 });
             }
             if (
-                url.pathname === "/api/v1/task-groups" && req.method === "GET"
+                url.pathname === "/api/v1/tasks" && req.method === "GET"
             ) return json([...groups.values()]);
             if (
-                url.pathname === "/api/v1/task-groups" && req.method === "POST"
+                url.pathname === "/api/v1/tasks" && req.method === "POST"
             ) {
                 createAttempts++;
                 if (createStatus !== 201) {
@@ -67,7 +67,7 @@ export function fixture(token?: Record<string, unknown>) {
                     });
                 }
                 const body = await req.json();
-                if (!taskInputs.safeParse(body.tasks).success) {
+                if (!taskInputs.safeParse(body.subtasks).success) {
                     return Response.json({
                         error: { code: "validation.failed" },
                     }, {
@@ -80,7 +80,7 @@ export function fixture(token?: Record<string, unknown>) {
                     id,
                     taskable_id: null,
                     vm_power: null,
-                    tasks: body.tasks.map((t: unknown) => ({
+                    subtasks: body.subtasks.map((t: unknown) => ({
                         ...(t as object),
                         id: id * 10,
                         status: "todo",
@@ -94,7 +94,7 @@ export function fixture(token?: Record<string, unknown>) {
                 const body = await req.json();
                 const group = groups.get(id)!;
                 const error = body.status === "todo"
-                    ? todoError(group.tasks)
+                    ? todoError(group.subtasks)
                     : null;
                 if (error) {
                     return Response.json({ error: { code: error } }, {

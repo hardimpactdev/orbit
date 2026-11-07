@@ -6,10 +6,10 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
+use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -55,7 +55,7 @@ function operation_connector(MockClient $mock): GatewayConnector
 
 describe('operation requests', function (): void {
     it('starts a task check with typed input and preserves its result and key', function (): void {
-        $request = new CheckTaskGroupRequest(17, 21, 'handoff', 'task.check.c1');
+        $request = new CheckTaskRequest(21, 'handoff', 'task.check.c1');
         $result = ['outcome' => 'failed', 'deliverables' => [['id' => 'test', 'outcome' => 'failed', 'failures' => ['Command failed.']]],
             'check_id' => 31, 'commit' => null, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'output' => 'Failed.'];
         $mock = new MockClient([$request::class => MockResponse::make(['data' => operation_payload([
@@ -65,10 +65,10 @@ describe('operation requests', function (): void {
         $response = operation_connector($mock)->send($request)->dto();
 
         expect($request->getMethod())->toBe(Method::POST);
-        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/check');
-        expect($request->body()->all())->toBe(['subtask' => 21, 'phase' => 'handoff']);
+        expect($request->resolveEndpoint())->toBe('/api/v1/tasks/21/check');
+        expect($request->body()->all())->toBe(['phase' => 'handoff']);
         expect($request->headers()->get('Idempotency-Key'))->toBe('task.check.c1');
-        expect(new CheckTaskGroupRequest(17, 21, 'baseline')->headers()->get('Idempotency-Key'))->toBeNull();
+        expect(new CheckTaskRequest(21, 'baseline')->headers()->get('Idempotency-Key'))->toBeNull();
         expect($response)->toBeInstanceOf(OperationResponse::class);
         expect($response->result)->toBe($result);
         expect($response->succeeded())->toBeTrue();
@@ -77,7 +77,7 @@ describe('operation requests', function (): void {
     });
 
     it('transports turn inputs and the key and returns typed operation evidence', function (): void {
-        $request = new TurnTaskGroupRequest(17, 18, 'reviewer', "Review.\nKeep this prompt.", '23', check: 24, idempotencyKey: 'review.c1');
+        $request = new TurnTaskRequest(18, 'reviewer', "Review.\nKeep this prompt.", '23', check: 24, idempotencyKey: 'review.c1');
         $mock = new MockClient([
             $request::class => MockResponse::make(['data' => operation_payload([
                 'kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded',
@@ -87,13 +87,13 @@ describe('operation requests', function (): void {
         $response = operation_connector($mock)->send($request)->dto();
 
         expect($request->getMethod())->toBe(Method::POST);
-        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/turn');
-        expect(json_decode((string) $request->body(), true))->toBe(['subtask' => 18, 'role' => 'reviewer', 'prompt' => "Review.\nKeep this prompt.", 'thread' => '23', 'check' => 24]);
+        expect($request->resolveEndpoint())->toBe('/api/v1/tasks/18/turn');
+        expect(json_decode((string) $request->body(), true))->toBe(['role' => 'reviewer', 'prompt' => "Review.\nKeep this prompt.", 'thread' => '23', 'check' => 24]);
         expect($request->headers()->get('Idempotency-Key'))->toBe('review.c1');
         expect($response)->toBeInstanceOf(OperationResponse::class);
         expect($response->result)->toBe(['receipt' => null, 'thread' => 23, 'state' => 'done']);
-        $new = new TurnTaskGroupRequest(17, 18, 'implementer', '', 'new', model: '');
-        expect(json_decode((string) $new->body(), true))->toBe(['subtask' => 18, 'role' => 'implementer', 'prompt' => '', 'thread' => 'new', 'model' => '']);
+        $new = new TurnTaskRequest(18, 'implementer', '', 'new', model: '');
+        expect(json_decode((string) $new->body(), true))->toBe(['role' => 'implementer', 'prompt' => '', 'thread' => 'new', 'model' => '']);
         expect($new->headers()->get('Idempotency-Key'))->toBeNull();
         $mock->assertSentCount(1);
     });
@@ -107,7 +107,7 @@ describe('operation requests', function (): void {
         $response = operation_connector($mock)->send($request)->dto();
 
         expect($request->getMethod())->toBe(Method::POST);
-        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/publish');
+        expect($request->resolveEndpoint())->toBe('/api/v1/tasks/17/publish');
         expect($request->body()->all())->toBe($pull ? ['check' => 31, 'pull_request' => $input] : ['check' => 31]);
         expect($request->headers()->get('Idempotency-Key'))->toBe('task.publish.c1');
         expect(new PublishTaskGroupRequest(17, 31)->headers()->get('Idempotency-Key'))->toBeNull();
@@ -118,7 +118,7 @@ describe('operation requests', function (): void {
     })->with([false, true]);
 
     it('starts task provision without a body and preserves the key and typed operation result', function (): void {
-        $request = new ProvisionTaskGroupRequest(17, 'task.provision.c1');
+        $request = new StartTaskRequest(17, 'task.provision.c1');
         $mock = new MockClient([
             $request::class => MockResponse::make(['data' => operation_payload([
                 'kind' => 'tasks.provision', 'target_type' => 'task_group', 'status' => 'succeeded',
@@ -128,10 +128,10 @@ describe('operation requests', function (): void {
         $response = operation_connector($mock)->send($request)->dto();
 
         expect($request->getMethod())->toBe(Method::POST);
-        expect($request->resolveEndpoint())->toBe('/api/v1/task-groups/17/provision');
+        expect($request->resolveEndpoint())->toBe('/api/v1/tasks/17/start');
         expect($request)->not->toBeInstanceOf(HasBody::class);
         expect($request->headers()->get('Idempotency-Key'))->toBe('task.provision.c1');
-        expect(new ProvisionTaskGroupRequest(17)->headers()->get('Idempotency-Key'))->toBeNull();
+        expect(new StartTaskRequest(17)->headers()->get('Idempotency-Key'))->toBeNull();
         expect($response)->toBeInstanceOf(OperationResponse::class);
         expect($response->kind)->toBe('tasks.provision');
         expect($response->targetType)->toBe('task_group');
@@ -158,7 +158,7 @@ describe('operation requests', function (): void {
                 ->and($operation->toArray()['result'])->toBe($data['result']);
         }
         $mock->assertSentCount(2);
-    })->with(['tasks-park-succeeded']);
+    })->with(['task-park-succeeded']);
 
     it('uses the exact Gateway methods, paths, and queries', function (): void {
         expect([

@@ -7,7 +7,7 @@ covers:
 
 # API reference generation
 
-The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
+The task page reads Swamp history through `GET /api/v1/tasks/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
 
@@ -25,7 +25,7 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `docs/openapi.json` and `docs/docs.json` are ignored build outputs, so nothing compares them with a stored copy. The script fails when the sources disagree with the API contract. Continuous integration and the local candidate gate run it, then `bin/mcp-tools` and `bin/api-fixtures --check`.
 
-Group assistance comments have separate collection and create schemas: `GET /api/v1/task-groups/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
+Group assistance comments have separate collection and create schemas: `GET /api/v1/tasks/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
 
 The description of `POST /api/v1/proof/verify` is fixed text in the script too. It names the optional `group` field, which a Node with Gateway access sends to prove on the VM of that task group.
 

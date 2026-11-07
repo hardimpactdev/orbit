@@ -65,7 +65,7 @@ Name implementation paths only where the contract fixes them. Express each promi
 
 Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the group in Backlog with `tasks-create` for the Orbit Project, and its subtasks with `tasks-subtask-create`.
+Create the group in Backlog with `task-create` for the Orbit Project, and its subtasks with `task-create`.
 
 ## Implement a subtask
 

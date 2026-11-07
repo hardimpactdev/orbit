@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "route": "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
+    "route": "GET /api/v1/tasks/{task}/comments",
     "status": 200,
     "body": {
         "data": [

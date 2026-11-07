@@ -16,8 +16,8 @@ final class PublishTaskGroupCommand extends TaskCommand
     use FollowsOperations;
 
     #[\Override]
-    protected $signature = 'tasks:publish
-        {group? : Numeric task group ID}
+    protected $signature = 'task:publish
+        {task? : Numeric Task ID}
         {--check= : Passed handoff check ID}
         {--title= : Pull request title (requires --body)}
         {--body= : Pull request body (requires --title)}
@@ -30,7 +30,7 @@ final class PublishTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
         if ($groupId === false) {
             return self::FAILURE;
         }
@@ -41,12 +41,12 @@ final class PublishTaskGroupCommand extends TaskCommand
         $title = $this->option('title');
         $body = $this->option('body');
         if (($title === null) !== ($body === null) || $title === '' || $body === '') {
-            $this->renderGatewayFailure('tasks.pull_request_invalid', 'Supply --title and --body together.');
+            $this->renderGatewayFailure('task.pull_request_invalid', 'Supply --title and --body together.');
 
             return self::FAILURE;
         }
         if ($this->option('draft') === true && $title === null) {
-            $this->renderGatewayFailure('tasks.pull_request_invalid', 'Supply --draft with --title and --body.');
+            $this->renderGatewayFailure('task.pull_request_invalid', 'Supply --draft with --title and --body.');
 
             return self::FAILURE;
         }

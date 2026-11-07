@@ -24,7 +24,7 @@ final class PublishTaskGroupRequest extends GatewayRequest implements HasBody
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/publish";
+        return "/api/v1/tasks/{$this->groupId}/publish";
     }
 
     /** @return array<string, string> */

@@ -8,7 +8,7 @@ covers:
   - "packages/php-sdk/src/Responses/Tasks/**"
 ---
 
-The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `task:create` is the MCP tool `task-create`. Some operations have no CLI command. Use the MCP tool `task-check-cancel` to stop a running task check. The two merge steps of a task pull request, [`task:pr-ready`](/cli/task/pr-ready) and [`task:pr-merge`](/cli/task/pr-merge), are API and MCP only. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app; [`task:agent:show`](/cli/task/agent-show) reads the same conversation, as a snapshot or as a delta after a cursor.
+The `task` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `task:create` is the MCP tool `task-create`. Some operations have no CLI command. Use the MCP tool `task-check-cancel` to stop a running task check. The two merge steps of a task pull request, [`task:pr-ready`](/cli/task/pr-ready) and [`task:pr-merge`](/cli/task/pr-merge), are API and MCP only. The agent thread stream, `GET /api/v1/tasks/{task}/agents/{session}/stream`, serves the web app; [`task:agent:show`](/cli/task/agent-show) reads the same conversation, as a snapshot or as a delta after a cursor.
 
 A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
@@ -95,4 +95,4 @@ Every command belongs to `task:*`. Select either level with its existing Task ID
 | `task:comment:create <task>`, `task:comment:list <task>` | Select either level. Parent assistance requires an open external parent with all children ended. Comments never start work. History remains readable after completion. |
 | `task:agent:list <task>`, `task:agent:show <task> <session>` | Require the parent and verify session ownership. The transcript stream stays outside MCP. |
 
-This is a hard switch. Old command names and `/task-groups` URLs have no aliases or adapters. Internal `tasks.*` operation kinds, workflow IDs, vault schemas, receipts and idempotency identities retain their names.
+This is a hard switch. Old command names and `/tasks` URLs have no aliases or adapters. Internal `tasks.*` operation kinds, workflow IDs, vault schemas, receipts and idempotency identities retain their names.

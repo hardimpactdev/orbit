@@ -15,7 +15,7 @@ use Illuminate\Console\Command;
 final class TaskPullRequestGateCommand extends Command
 {
     #[\Override]
-    protected $signature = 'tasks:pr-gate';
+    protected $signature = 'task:pr-gate';
 
     #[\Override]
     protected $description = 'Admit the ready step of a green draft pull request and the merge step of an approved one.';

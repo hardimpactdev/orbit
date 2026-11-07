@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateTaskCommentRequest",
+    "route": "POST /api/v1/tasks/{task}/comments",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.group_closed",
+            "message": "This task group has ended.",
+            "details": {}
+        }
+    }
+}

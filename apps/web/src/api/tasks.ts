@@ -7,10 +7,10 @@ type LineChanges = { lines_added?: number | null; lines_deleted?: number | null 
 export type Task = Omit<Required<components["schemas"]["Task"]>, keyof LineChanges> & LineChanges;
 export type TaskGroup = Omit<
     Required<components["schemas"]["TaskGroup"]>,
-    "tasks" | "project_code" | keyof LineChanges
+    "subtasks" | "project_code" | keyof LineChanges
 > &
     LineChanges & {
-        tasks: Task[];
+        subtasks: Task[];
         project_code?: string;
     };
 export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
@@ -201,15 +201,15 @@ export function tasksForInstance(groups: readonly TaskGroup[], instanceId: numbe
 // 5 minutes while it is live, as a safety net for a lost notice.
 
 export const taskGroupsQuery = queryOptions({
-    queryKey: ["task-groups"],
-    queryFn: () => get<TaskGroup[]>("/api/v1/task-groups"),
+    queryKey: ["tasks"],
+    queryFn: () => get<TaskGroup[]>("/api/v1/tasks"),
     retry: false,
 });
 
 export const taskGroupQuery = (id: string) =>
     queryOptions({
-        queryKey: ["task-groups", id],
-        queryFn: () => get<TaskGroup>(`/api/v1/task-groups/${encodeURIComponent(id)}`),
+        queryKey: ["tasks", id],
+        queryFn: () => get<TaskGroup>(`/api/v1/tasks/${encodeURIComponent(id)}`),
         retry: false,
     });
 
@@ -219,17 +219,17 @@ export const taskGroupQuery = (id: string) =>
  */
 export const taskAgentsQuery = (groupId: number) =>
     queryOptions({
-        queryKey: ["task-groups", String(groupId), "agents"],
-        queryFn: () => get<AgentThread[]>(`/api/v1/task-groups/${groupId}/agents`),
+        queryKey: ["tasks", String(groupId), "agents"],
+        queryFn: () => get<AgentThread[]>(`/api/v1/tasks/${groupId}/agents`),
         retry: false,
     });
 
 /** Comments and turn receipts on one task, newest first. */
 export const taskCommentsQuery = (groupId: number, taskId: number) =>
     queryOptions({
-        queryKey: ["task-groups", String(groupId), "tasks", String(taskId), "comments"],
+        queryKey: ["tasks", String(groupId), "tasks", String(taskId), "comments"],
         queryFn: () =>
-            get<TaskComment[]>(`/api/v1/task-groups/${groupId}/tasks/${taskId}/comments`),
+            get<TaskComment[]>(`/api/v1/tasks/${taskId}/comments`),
         retry: false,
     });
 

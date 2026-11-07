@@ -15,8 +15,8 @@ use Orbit\Sdk\Responses\Tasks\TaskEgressRowResponse;
 final class ListTaskEgressCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:egress
-        {group? : Numeric task group ID}
+    protected $signature = 'task:egress
+        {task? : Numeric Task ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -24,7 +24,7 @@ final class ListTaskEgressCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;

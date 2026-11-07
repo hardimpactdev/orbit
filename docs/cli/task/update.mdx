@@ -3,10 +3,10 @@ title: "orbit task:update"
 sidebarTitle: "task:update"
 ---
 
-Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` records work for Swamp. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
 ```
 
 | Option | Meaning |
@@ -21,7 +21,7 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 orbit task:update 13 --status=todo
 ```
 
-In a terminal, the task list includes active tasks for a status update. Title and brief selection still uses `backlog` and `todo`. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
+In a terminal, the task list includes active tasks for a status update. Title and brief selection still uses `backlog` and `todo`. Without a change option, the CLI prompts for a new title. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
 
 ## Errors
 

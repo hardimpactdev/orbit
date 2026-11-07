@@ -64,7 +64,7 @@ final readonly class CloseTaskQuestionAction
                 'log_name' => 'tasks', 'description' => 'question closed', 'subject_type' => Task::class,
                 'subject_id' => $subtask->id,
                 'properties' => ['question_id' => $locked->id, 'status' => $status->value, 'reason' => $reason, 'comment_id' => $audit->id],
-                'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'tasks:question:close', 'status' => 'completed',
+                'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:question:close', 'status' => 'completed',
             ]);
 
             return $locked->refresh();

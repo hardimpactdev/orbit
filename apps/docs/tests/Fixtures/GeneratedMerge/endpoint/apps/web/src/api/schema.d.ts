@@ -161,7 +161,7 @@ export interface components {
             error?: string | null;
             /** @enum {string|null} */
             provider_error?: "overloaded" | "rate_limited" | "server_error" | null;
-            /** @description The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started. */
+            /** @description The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `task:agent:stream`. Null for a saved transcript or a thread that has not started. */
             cursor: string | null;
             /** @description True when the snapshot is the transcript Orbit saved before the task VM was deleted. */
             archived: boolean;

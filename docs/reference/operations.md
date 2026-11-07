@@ -250,16 +250,16 @@ Use the kind and target type to start or find the work of a command.
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `task:park` | `tasks.park` | `task_group` | Gateway |
 | `task:start` | `tasks.provision` | `task_group` | Gateway |
-| `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
-| `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
-| `POST task-groups/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
+| `POST tasks/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
+| `POST tasks/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
+| `POST tasks/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `task:check` | `tasks.check` | `task_group` | Gateway |
-| `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
-| `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
+| `POST tasks/{group}/script` | `tasks.script` | `task_group` | Gateway |
+| `POST tasks/{group}/package` | `tasks.package` | `task_group` | Gateway |
 | `task:turn` | `tasks.turn` | `task_group` | Gateway |
 | `task:publish` | `tasks.publish` | `task_group` | Gateway |
-| `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
-| `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
+| `POST tasks/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
+| `POST tasks/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
 | `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
 | the gate check `task:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
 | the gate check `task:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
@@ -291,7 +291,7 @@ When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` an
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`), `POST /api/v1/task-groups/{group}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/task-groups/{group}/turn` (`tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{group}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{group}/turn` (`tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 Automatic deploy starts bind caller and command as well as target and input. The [automatic deploy start](/reference/deployments#pinned-commits-and-automatic-callers) requires a key and Gateway Node access. Manual deploys and other kinds retain their key scope across callers.
 

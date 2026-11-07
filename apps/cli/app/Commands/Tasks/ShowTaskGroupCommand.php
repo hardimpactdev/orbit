@@ -6,14 +6,16 @@ namespace App\Commands\Tasks;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
+use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class ShowTaskGroupCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:show
-        {group? : Numeric task group ID}
+    protected $signature = 'task:show
+        {task? : Numeric Task ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -21,7 +23,7 @@ final class ShowTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;
@@ -39,8 +41,8 @@ final class ShowTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $group = $this->sendWithProgress($connector, new ShowTaskGroupRequest($groupId), TaskGroupResponse::class, ['Show task group', 'Loading task group', 'Loaded task group']);
+        $group = $this->sendWithProgress($connector, new ShowTaskRequest($groupId), TaskRecordResponse::class, ['Show task group', 'Loading task group', 'Loaded task group']);
 
-        return $group instanceof TaskGroupResponse ? $this->renderGroup($group) : self::FAILURE;
+        return $group instanceof SubtaskResponse ? $this->renderSubtask($group) : ($group instanceof TaskGroupResponse ? $this->renderGroup($group) : self::FAILURE);
     }
 }

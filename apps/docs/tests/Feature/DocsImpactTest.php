@@ -210,14 +210,14 @@ it('docs impact reports removed Doctor codes from a retained enum file', functio
 it('docs impact reports a registered command removed from a retained file', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Console/Kernel.php';
-    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->everyMinute();\n");
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('task:tick')->everyMinute();\n");
     exec('git -C '.escapeshellarg($root).' add '.escapeshellarg($path));
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm command-registration');
     $base = trim(shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
     file_put_contents($root.'/'.$path, "<?php // the registration was removed\n");
     $report = new DocsImpact($root)->report($base, [$path]);
 
-    expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('Removed from current source: registered command tasks:tick');
+    expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('Removed from current source: registered command task:tick');
 });
 
 it('docs impact extracts node error literals from CLI support code', function (): void {
@@ -364,7 +364,7 @@ it('docs impact maps scheduled commands and schedule timing', function (): void 
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
     $path = 'apps/gateway/app/Console/Kernel.php';
-    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->everyMinute();\n");
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('task:tick')->everyMinute();\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
     expect(collect($report['impacted_pages'])->pluck('page'))
@@ -868,7 +868,7 @@ it('docs impact ignores comment-only changes to actual CLI commands with error i
 
 it('docs impact ignores comment-only changes to the actual Gateway task command', function (): void {
     $root = docsImpactFixture();
-    $path = 'apps/gateway/app/Console/Commands/RenderTaskPromptCommand.php';
+    $path = 'apps/gateway/app/Console/Commands/TaskPullRequestGateCommand.php';
     $source = file_get_contents(dirname(__DIR__, 4).'/'.$path);
     expect($source)->toBeString();
     file_put_contents($root.'/'.$path, $source);
@@ -966,10 +966,10 @@ it('docs impact reports Laravel console route schedule changes', function (): vo
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
     $path = 'apps/gateway/routes/console.php';
-    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->dailyAt('02:30');\n");
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('task:tick')->dailyAt('02:30');\n");
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
-    file_put_contents($root.'/'.$path, "<?php Schedule::command('tasks:tick')->dailyAt('02:45');\n");
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('task:tick')->dailyAt('02:45');\n");
 
     $report = new DocsImpact($root)->report('HEAD', [$path]);
 
@@ -989,7 +989,7 @@ it('docs impact reports Gateway TaskSchedule registration changes only from regi
     $scheduleReport = new DocsImpact($root)->report('HEAD', [$path]);
 
     $unrelated = 'apps/gateway/app/Domain/Tasks/TaskScheduleComment.php';
-    file_put_contents($root.'/'.$unrelated, "<?php // Schedule::command('tasks:tick')->everyMinute() is discussed here.\n");
+    file_put_contents($root.'/'.$unrelated, "<?php // Schedule::command('task:tick')->everyMinute() is discussed here.\n");
     $unrelatedReport = new DocsImpact($root)->report(null, [$unrelated]);
 
     expect(collect($scheduleReport['impacted_pages'])->pluck('page'))->toContain('docs/reference/schedules.md')
@@ -1049,4 +1049,18 @@ it('maps a Form Request in a route group to its versioned OpenAPI operation', fu
     $report = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Requests/Widgets/UpdateWidgetRequest.php']);
     expect($report['errors'])->toBe([]);
     expect(array_column($report['surfaces'], 'owner'))->toContain('PUT /api/v1/widgets');
+});
+
+it('routes a renamed command to its current page without requiring a retired family', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/cli/app/Commands/RenamedCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class RenamedCommand { protected \$signature = 'retired:list'; }\n");
+    exec('timeout 60 git -C '.escapeshellarg($root).' add .');
+    exec('timeout 60 git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    file_put_contents($root.'/'.$path, "<?php class RenamedCommand { protected \$signature = 'node:list'; }\n");
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx');
 });

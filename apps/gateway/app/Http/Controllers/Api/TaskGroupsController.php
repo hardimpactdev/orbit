@@ -27,6 +27,7 @@ use App\Actions\Tasks\StoreTaskGroupCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Operations\OperationData;
+use App\Data\Tasks\StoreTaskGroupCommentData;
 use App\Data\Tasks\TaskCheckData;
 use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
@@ -39,7 +40,6 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
-use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
@@ -52,9 +52,7 @@ use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
-use App\Http\Requests\Tasks\StoreTaskGroupCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
-use App\Http\Requests\Tasks\UpdateTaskRequest;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
@@ -63,14 +61,17 @@ use Illuminate\Http\Request;
 
 final class TaskGroupsController extends Controller
 {
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function store(CreateTaskGroupRequest $request, CreateTaskGroupAction $action): JsonResponse
+    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
+    public function store(CreateTaskGroupRequest $request, CreateTaskGroupAction $action, CreateTaskAction $childAction): JsonResponse
     {
         $caller = $request->user();
-        $group = $action->execute($request->payload(), $caller instanceof Node ? $caller : null);
+        $parent = $request->parentTask();
+        $task = $parent === null
+            ? $action->execute($request->parentPayload(), $caller instanceof Node ? $caller : null)
+            : $childAction->execute($parent, $request->childPayload());
 
         return response()->json([
-            'data' => TaskGroupData::fromModel($group)->toArray(),
+            'data' => ($task->parent_id === null ? TaskGroupData::fromModel($task) : TaskData::fromModel($task))->toArray(),
             'meta' => $this->meta($request),
         ], 201);
     }
@@ -78,10 +79,10 @@ final class TaskGroupsController extends Controller
     /** Starts tasks.turn and answers 202 with the queued operation. */
     #[StartsOperation(OperationKinds::TasksTurn, maxJsonBytes: PHP_INT_MAX)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function turn(StartTaskTurnRequest $request, Task $group, StartTaskTurnAction $action): JsonResponse
+    public function turn(StartTaskTurnRequest $request, Task $task, StartTaskTurnAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task->parent()->firstOrFail(), $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json([
             'data' => OperationData::fromModel($operation)->toArray(),
@@ -92,10 +93,10 @@ final class TaskGroupsController extends Controller
     /** Starts tasks.provision and answers 202 with the queued operation. */
     #[StartsOperation(OperationKinds::TasksProvision)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function provision(EmptyTasksRequest $request, Task $group, StartTaskProvisionAction $action): JsonResponse
+    public function provision(EmptyTasksRequest $request, Task $task, StartTaskProvisionAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json([
             'data' => OperationData::fromModel($operation)->toArray(),
@@ -106,10 +107,10 @@ final class TaskGroupsController extends Controller
     /** Park an external group's existing VM and confirm stopped power before succeeding. */
     #[StartsOperation(OperationKinds::TasksPark, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function park(EmptyTasksRequest $request, Task $group, StartTaskParkAction $action): JsonResponse
+    public function park(EmptyTasksRequest $request, Task $task, StartTaskParkAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
@@ -117,10 +118,10 @@ final class TaskGroupsController extends Controller
     /** Fetch the default branch and the task branch from origin into the VM workspace of an external group. */
     #[StartsOperation(OperationKinds::TasksSync, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function sync(EmptyTasksRequest $request, Task $group, StartTaskSyncAction $action): JsonResponse
+    public function sync(EmptyTasksRequest $request, Task $task, StartTaskSyncAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
@@ -128,10 +129,10 @@ final class TaskGroupsController extends Controller
     /** Prepare the spec of one command and open its draft pull request in one run. */
     #[StartsOperation(OperationKinds::TasksPrep, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function prep(StartTaskPrepRequest $request, Task $group, StartTaskPrepAction $action): JsonResponse
+    public function prep(StartTaskPrepRequest $request, Task $task, StartTaskPrepAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
@@ -139,158 +140,100 @@ final class TaskGroupsController extends Controller
     /** Apply the review of the owner to a parked prep group and push the corrections to its draft pull request. */
     #[StartsOperation(OperationKinds::TasksPrepFix, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function prepFix(StartTaskPrepFixRequest $request, Task $group, StartTaskPrepFixAction $action): JsonResponse
+    public function prepFix(StartTaskPrepFixRequest $request, Task $task, StartTaskPrepFixAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation(OperationKinds::TasksPublish)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function publish(StartTaskPublishRequest $request, Task $group, StartTaskPublishAction $action): JsonResponse
+    public function publish(StartTaskPublishRequest $request, Task $task, StartTaskPublishAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation(OperationKinds::TasksPackage, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function package(StartTaskPackageRequest $request, Task $group, StartTaskPackageAction $action): JsonResponse
+    public function package(StartTaskPackageRequest $request, Task $task, StartTaskPackageAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation(OperationKinds::TasksScript, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function script(StartTaskScriptRequest $request, Task $group, StartTaskScriptAction $action): JsonResponse
+    public function script(StartTaskScriptRequest $request, Task $task, StartTaskScriptAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation(OperationKinds::TasksCheck)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function check(StartTaskCheckRequest $request, Task $group, StartTaskCheckAction $action): JsonResponse
+    public function check(StartTaskCheckRequest $request, Task $task, StartTaskCheckAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($group, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($task->parent()->firstOrFail(), $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
-    public function update(UpdateTaskGroupRequest $request, Task $group, UpdateTaskGroupAction $action): JsonResponse
+    public function update(UpdateTaskGroupRequest $request, Task $task, UpdateTaskGroupAction $action, UpdateTaskAction $childAction): JsonResponse
     {
         return response()->json([
-            'data' => TaskGroupData::fromModel($action->execute($group, $request->payload()))->toArray(),
+            'data' => ($task->parent_id === null
+                ? TaskGroupData::fromModel($action->execute($task, $request->parentPayload()))
+                : TaskData::fromModel($childAction->execute($task->parent()->firstOrFail(), $task, $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'))))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
 
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
-    public function createTask(CreateTaskRequest $request, Task $group, CreateTaskAction $action): JsonResponse
+    public function destroyTask(EmptyTasksRequest $request, Task $task, DestroyTaskAction $action): JsonResponse
     {
-        $task = $action->execute($group, $request->payload());
 
         return response()->json([
-            'data' => TaskData::fromModel($task)->toArray(),
-            'meta' => $this->meta($request),
-        ], 201);
-    }
-
-    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
-    public function updateTask(UpdateTaskRequest $request, Task $group, Task $task, UpdateTaskAction $action): JsonResponse
-    {
-        abort_unless($task->parent_id === $group->id, 404);
-
-        return response()->json([
-            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
-    public function destroyTask(EmptyTasksRequest $request, Task $group, Task $task, DestroyTaskAction $action): JsonResponse
-    {
-        abort_unless($task->parent_id === $group->id, 404);
-
-        return response()->json([
-            'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
+            'data' => TaskData::fromModel($action->execute($task->parent()->firstOrFail(), $task))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function cancelSubtask(EmptyTasksRequest $request, Task $group, Task $task, CancelRunningSubtaskAction $action): JsonResponse
+    public function cancelCheck(EmptyTasksRequest $request, Task $task, CancelTaskCheckAction $action): JsonResponse
     {
-        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
-            'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
+            'data' => TaskCheckData::fromModel($action->execute($task->parent()->firstOrFail(), $task))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function cancelCheck(EmptyTasksRequest $request, Task $group, Task $task, CancelTaskCheckAction $action): JsonResponse
+    public function storeComment(StoreTaskCommentRequest $request, Task $task, StoreTaskCommentAction $action, StoreTaskGroupCommentAction $parentAction): JsonResponse
     {
-        abort_unless($task->parent_id === $group->id, 404);
-
-        return response()->json([
-            'data' => TaskCheckData::fromModel($action->execute($group, $task))->toArray(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function storeComment(StoreTaskCommentRequest $request, Task $group, Task $task, StoreTaskCommentAction $action): JsonResponse
-    {
-        abort_unless($task->parent_id === $group->id, 404);
-        $comment = $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
+        $comment = $task->parent_id === null
+            ? $parentAction->execute($task, StoreTaskGroupCommentData::from($request->validated()), $request->attributes->getString('orbit.request_id'))
+            : $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function comments(ListTaskCommentsRequest $request, Task $group, Task $task): JsonResponse
+    public function comments(ListTaskCommentsRequest $request, Task $task): JsonResponse
     {
-        abort_unless($task->parent_id === $group->id, 404);
         $comments = $task->comments()->latest('posted_at');
 
-        if ($request->type() !== null) {
-            $comments->where('type', $request->type());
-        }
-        if ($request->limit() !== null) {
-            $comments->limit($request->limit());
-        }
-
-        return response()->json([
-            'data' => $comments->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
-            'meta' => $this->meta($request),
-        ]);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function storeGroupComment(StoreTaskGroupCommentRequest $request, Task $group, StoreTaskGroupCommentAction $action): JsonResponse
-    {
-        $comment = $action->execute($group, $request->payload(), $request->attributes->getString('orbit.request_id'));
-
-        return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
-    }
-
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function groupComments(ListTaskCommentsRequest $request, Task $group): JsonResponse
-    {
-        $comments = $group->comments()->latest('posted_at');
         if ($request->type() !== null) {
             $comments->where('type', $request->type());
         }
@@ -308,10 +251,13 @@ final class TaskGroupsController extends Controller
     public function index(ListTaskGroupsRequest $request, ListTaskGroupsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($request->projectId(), $request->status())
-                ->map(static fn (Task $group): array => $request->boolean('compact')
-                    ? TaskGroupData::fromModel($group)->toCompactArray()
-                    : TaskGroupData::fromModel($group)->toArray())
+            'data' => ($request->parentTask()?->tasks()
+                ->when($request->validated('status'), static fn ($query, $status) => $query->where('status', $status))
+                ->when($request->projectId(), static fn ($query, $project) => $query->where('project_id', $project))
+                ->orderBy('position')->get() ?? $action->execute($request->projectId(), $request->status()))
+                ->map(static fn (Task $task): array => $request->boolean('compact')
+                    ? ($task->parent_id === null ? TaskGroupData::fromModel($task) : TaskData::fromModel($task))->toCompactArray()
+                    : ($task->parent_id === null ? TaskGroupData::fromModel($task) : TaskData::fromModel($task))->toArray())
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),
@@ -319,9 +265,9 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Collection)]
-    public function show(ShowTaskGroupRequest $request, Task $group, ShowTaskGroupAction $action): JsonResponse
+    public function show(ShowTaskGroupRequest $request, Task $task, ShowTaskGroupAction $action): JsonResponse
     {
-        $data = TaskGroupData::fromModel($action->execute($group));
+        $data = $task->parent_id === null ? TaskGroupData::fromModel($action->execute($task)) : TaskData::fromModel($task);
 
         return response()->json([
             'data' => $request->boolean('compact') ? $data->toCompactArray() : $data->toArray(),
@@ -330,20 +276,24 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function complete(EmptyTasksRequest $request, Task $group, CompleteTaskGroupAction $action): JsonResponse
+    public function complete(EmptyTasksRequest $request, Task $task, CompleteTaskGroupAction $action): JsonResponse
     {
         return response()->json([
-            'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),
+            'data' => TaskGroupData::fromModel($action->execute($task))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
 
     #[StartsOperation('tasks.cancel', requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function cancel(EmptyTasksRequest $request, Task $group, TaskCancelIntent $action): JsonResponse
+    public function cancel(EmptyTasksRequest $request, Task $task, TaskCancelIntent $action, CancelRunningSubtaskAction $childAction): JsonResponse
     {
+        if ($task->parent_id !== null) {
+            return response()->json(['data' => TaskData::fromModel($childAction->execute($task->parent()->firstOrFail(), $task))->toArray(), 'meta' => $this->meta($request)]);
+        }
+
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->start($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->start($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::summary($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }

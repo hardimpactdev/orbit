@@ -131,7 +131,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
     }
 
     /**
-     * The spec is done once the App has opened its PR, so the group has no open subtask and `tasks:park` can stop its VM while the
+     * The spec is done once the App has opened its PR, so the group has no open subtask and `task:park` can stop its VM while the
      * spec waits for review.
      */
     public static function completeSubtasks(int $group, int $pullRequest): void

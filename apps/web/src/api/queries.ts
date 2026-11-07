@@ -217,7 +217,7 @@ export const aiRouterStatusQuery = queryOptions({
  * A `tasks.updated` event stores a change, so callers poll task status only with `useTaskPoll()`.
  */
 export const tasksStatusQuery = queryOptions({
-    queryKey: ["tasks-status"],
+    queryKey: ["task-status"],
     queryFn: () => get<TasksStatus>("/api/v1/tasks/status").catch(() => ({ enabled: false })),
     retry: false,
 });

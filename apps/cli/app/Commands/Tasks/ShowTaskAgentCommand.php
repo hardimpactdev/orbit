@@ -13,8 +13,8 @@ use Orbit\Sdk\Responses\Tasks\TaskAgentSnapshotResponse;
 final class ShowTaskAgentCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:agent:show
-        {group? : Numeric task group ID}
+    protected $signature = 'task:agent:show
+        {task? : Numeric Task ID}
         {session? : Numeric agent thread ID}
         {--after-sequence= : The cursor of a previous read; return only the entries after it}
         {--json : Return machine-readable JSON}';
@@ -24,7 +24,7 @@ final class ShowTaskAgentCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
         $sessionId = $groupId === false ? false : $this->idArgument('session', 'Agent thread', 'agent_thread');
 
         if ($groupId === false || $sessionId === false) {

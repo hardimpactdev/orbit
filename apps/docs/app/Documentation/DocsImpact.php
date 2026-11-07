@@ -18,7 +18,7 @@ final readonly class DocsImpact
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
         'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'ai-router',
-        'realtime', 'route', 'schedule', 'self-update', 'tasks', 'tool', 'vault', 'websocket', 'workspace',
+        'realtime', 'route', 'schedule', 'self-update', 'task', 'tool', 'vault', 'websocket', 'workspace',
     ];
 
     private const array CLI_FAMILY_OWNERS = [
@@ -29,7 +29,9 @@ final readonly class DocsImpact
         'project-documents:cleanup:work' => 'docs/reference/project-documents.md',
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
-        'tasks:tick' => 'docs/reference/tasks.md',
+        'task:pr-gate' => 'docs/reference/tasks.md',
+        'tasks:pr-gate' => 'docs/reference/tasks.md',
+        'task:tick' => 'docs/reference/tasks.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity/index.mdx',
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
@@ -39,16 +41,16 @@ final readonly class DocsImpact
         'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
         'orbit:tasks:jev-report' => 'docs/reference/tasks.md',
         'orbit:runtime-hibernator' => 'docs/reference/gateway-recovery.md',
-        'tasks:render-prompt' => 'docs/reference/tasks.md',
+        'task:render-prompt' => 'docs/reference/tasks.md',
         'orbit:private-dns-serve' => 'docs/reference/gateway-trust.md',
         'orbit:agent-view-publish' => 'docs/reference/node-agent.md',
         'orbit:activity-redact' => 'docs/cli/activity/index.mdx',
         'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
         'orbit:node-provision' => 'docs/reference/node-agent.md',
-        'tasks:collect-t3-metrics' => 'docs/reference/tasks.md',
+        'task:collect-t3-metrics' => 'docs/reference/tasks.md',
         'problems:collect' => 'docs/reference/tasks.md',
         'problems:file' => 'docs/reference/tasks.md',
-        'tasks:archive-threads' => 'docs/reference/tasks.md',
+        'task:archive-threads' => 'docs/reference/tasks.md',
         'orbit:node-recipe' => 'docs/reference/incus-topologies.md',
         'orbit:machine-recipe' => 'docs/reference/compute-drivers.md',
         // The task VM worker. Keyed by name, so a change of its options keeps the owner.
@@ -359,6 +361,8 @@ final readonly class DocsImpact
      */
     private function mergeChangedSourceSnapshots(string $path, array $currentSurfaces, array $baseSurfaces, array $currentErrors, array $baseErrors, array &$surfaces, array &$impacts, array &$errors, bool $unchangedSnapshot = false, bool $deleted = false): void
     {
+        $replacedCli = array_any($currentSurfaces, static fn (array $surface): bool => $surface['kind'] === 'cli_signature' && $surface['owner'] !== 'unowned');
+        $removedCli = $deleted || $replacedCli;
         $currentByKey = [];
         foreach ($currentSurfaces as $surface) {
             $currentByKey[$this->surfaceKey($surface)] = $surface;
@@ -372,6 +376,9 @@ final readonly class DocsImpact
         }
         if (! $unchangedSnapshot) {
             foreach (array_diff_key($baseByKey, $currentByKey) as $surface) {
+                if ($removedCli && $surface['kind'] === 'cli_signature' && $surface['owner'] === 'unowned') {
+                    continue;
+                }
                 if ($deleted && ! $this->isApiPath($path) && $surface['owner'] === 'unowned' && in_array($surface['kind'], ['error_code', 'registered_command', 'migration'], true)) {
                     continue;
                 }
@@ -390,6 +397,9 @@ final readonly class DocsImpact
             }
         }
         foreach ($baseErrors as $error) {
+            if ($removedCli && (str_starts_with($error, 'Unknown CLI command family [') || (str_starts_with($error, 'CLI command [') && str_contains($error, '] has no documentation page at ')))) {
+                continue;
+            }
             // A deleted non-API source needs no new ownership binding. Owned removals are routed above.
             // The API generators decide for a deleted API source. A deleted CLI command needs no page.
             if ($deleted && ! $this->isApiPath($path) && (str_starts_with($error, 'Unowned error identifier [') || str_starts_with($error, 'Unowned Gateway console command [') || str_starts_with($error, 'Unowned migration surface')

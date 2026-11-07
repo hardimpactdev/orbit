@@ -17,8 +17,8 @@ final class ParkTaskGroupCommand extends TaskCommand
     use FollowsOperations;
 
     #[\Override]
-    protected $signature = 'tasks:park
-        {group? : Numeric task group ID}
+    protected $signature = 'task:park
+        {task? : Numeric Task ID}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -27,7 +27,7 @@ final class ParkTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;
@@ -46,7 +46,7 @@ final class ParkTaskGroupCommand extends TaskCommand
         }
 
         $key = $this->option('idempotency-key');
-        $key = is_string($key) && $key !== '' ? $key : 'tasks.park.'.Str::uuid();
+        $key = is_string($key) && $key !== '' ? $key : 'task.park.'.Str::uuid();
         $operation = $this->send($connector, new ParkTaskGroupRequest($groupId, $key), OperationResponse::class);
 
         return $operation instanceof OperationResponse

@@ -222,7 +222,7 @@ Run `molecule test -s unit` before every push. CI runs the same cases through `b
 The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A flow PR without one fails review. Measure it:
 
 - **Phase times:** run the phase with `ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks`. The recap lists every task with its time.
-- **Slow task:** a task over one second needs a decision. Use fewer tasks or one module call for a list.
+- **Slow tasks:** a task over one second needs a decision. Use fewer tasks or one module call for a list.
 - **End to end:** take step `durationMs` and the run's start and end from native history. Use live runs on a disposable topology. State the sample size and the median.
 
 An Ansible phase has a fixed cost: the step dispatch (about 1.1 s), the start of `ansible-playbook` (about 1.1 s), the SSH connection, and about 0.35 s for each remote task. A native `@swamp/ssh exec` step costs the dispatch and one connection. A phase wins when it replaces several steps or any serial dispatch.

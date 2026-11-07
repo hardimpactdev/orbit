@@ -1,11 +1,13 @@
 ---
 title: "orbit task:comment:list"
 sidebarTitle: "task:comment:list"
-description: "List a subtask's comments, newest first. The list includes the turn receipts that its agents stored."
+description: "List the selected task’s comments, newest first. The list includes the turn receipts that its agents stored."
 ---
 
 ```bash
-orbit task:comment:list <task> [--json]
+orbit task:comment:list <task> [--type=TYPE] [--limit=N] [--json]
 ```
 
 Human output prints one header line for each comment, with its time, type, author, review attempt, and commit when present. The full body follows, indented by two spaces.
+
+A parent history supports type and limit filters. A child history includes turn receipts.

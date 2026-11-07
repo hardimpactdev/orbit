@@ -15,11 +15,11 @@ use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
-use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
-use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
+use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -355,7 +355,7 @@ describe('operation commands', function (): void {
     });
 });
 
-describe('tasks:provision', function (): void {
+describe('task:start', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
         app(GatewayExtensionState::class)->discover();
@@ -369,9 +369,9 @@ describe('tasks:provision', function (): void {
             cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'provision']),
             cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null,
                 'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]]),
-        ], $seen, ProvisionTaskGroupRequest::class, $identity);
+        ], $seen, StartTaskRequest::class, $identity);
 
-        expect(Artisan::call('tasks:provision', ['group' => '17', '--idempotency-key' => 'group.provision.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        expect(Artisan::call('task:start', ['task' => '17', '--idempotency-key' => 'group.provision.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
         $output = Artisan::output();
         if ($json) {
             $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
@@ -380,8 +380,8 @@ describe('tasks:provision', function (): void {
         } else {
             expect($output)->toContain('Provision task group [17]', 'Provision succeeded.');
         }
-        $mock->assertSentCount(1, ProvisionTaskGroupRequest::class);
-        expect($mock->findResponseByRequest(ProvisionTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.provision.c1');
+        $mock->assertSentCount(1, StartTaskRequest::class);
+        expect($mock->findResponseByRequest(StartTaskRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.provision.c1');
         expect($seen)->toBe($json ? ['', '', ''] : ['', '']);
     })->with([false, true]);
 
@@ -390,21 +390,21 @@ describe('tasks:provision', function (): void {
         $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
         cli_deploy_gateway([
             cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'provision', 'error_code' => 'task_vm.invalid_config', 'poll_after_seconds' => null]),
-        ], $seen, ProvisionTaskGroupRequest::class, $identity);
+        ], $seen, StartTaskRequest::class, $identity);
 
-        expect(Artisan::call('tasks:provision', ['group' => '17', '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(Artisan::call('task:start', ['task' => '17', '--json' => true, '--no-interaction' => true]))->toBe(1);
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error_code'])->toBe('task_vm.invalid_config');
     });
 
     it('refuses missing or invalid group input before Gateway access', function (?string $group, string $code): void {
         $mock = MockClient::global([]);
-        expect(Artisan::call('tasks:provision', [...($group === null ? [] : ['group' => $group]), '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(Artisan::call('task:start', [...($group === null ? [] : ['task' => $group]), '--json' => true, '--no-interaction' => true]))->toBe(1);
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
         $mock->assertNothingSent();
-    })->with([[null, 'tasks.group_required'], ['bad', 'tasks.group_invalid']]);
+    })->with([[null, 'task.task_required'], ['bad', 'task.task_invalid']]);
 });
 
-describe('tasks:check', function (): void {
+describe('task:check', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
         app(GatewayExtensionState::class)->discover();
@@ -418,14 +418,14 @@ describe('tasks:check', function (): void {
         $mock = cli_deploy_gateway([
             cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'check']),
             cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result]),
-        ], $seen, CheckTaskGroupRequest::class, $identity);
+        ], $seen, CheckTaskRequest::class, $identity);
 
-        expect(Artisan::call('tasks:check', ['group' => '17', '--subtask' => '21', '--phase' => 'handoff', '--idempotency-key' => 'group.check.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        expect(Artisan::call('task:check', ['task' => '21', '--phase' => 'handoff', '--idempotency-key' => 'group.check.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
         $output = Artisan::output();
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
         } else {
-            expect($output)->toContain('Check task group [17]', 'Check: 31', match ($outcome) {
+            expect($output)->toContain('Check task [21]', 'Check: 31', match ($outcome) {
                 'passed' => 'Check passed.',
                 'failed' => 'Check failed.',
                 'changed' => 'Check changed the tree.',
@@ -435,26 +435,25 @@ describe('tasks:check', function (): void {
                 expect($output)->toContain('Commit: '.str_repeat('c', 40));
             }
         }
-        $mock->assertSentCount(1, CheckTaskGroupRequest::class);
-        $pending = $mock->findResponseByRequest(CheckTaskGroupRequest::class)->getPendingRequest();
-        expect($pending->body()->all())->toBe(['subtask' => 21, 'phase' => 'handoff']);
+        $mock->assertSentCount(1, CheckTaskRequest::class);
+        $pending = $mock->findResponseByRequest(CheckTaskRequest::class)->getPendingRequest();
+        expect($pending->body()->all())->toBe(['phase' => 'handoff']);
         expect($pending->headers()->get('Idempotency-Key'))->toBe('group.check.c1');
     })->with([[false, 'passed'], [false, 'failed'], [false, 'changed'], [true, 'passed'], [true, 'failed'], [true, 'changed']]);
 
     it('refuses missing and invalid inputs before Gateway access', function (array $arguments, string $code): void {
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:check', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(Artisan::call('task:check', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
 
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
         $mock->assertNothingSent();
     })->with([
-        [[], 'tasks.group_required'],
-        [['group' => 'bad'], 'tasks.group_invalid'],
-        [['group' => '17'], 'tasks.subtask_required'],
-        [['group' => '17', '--subtask' => 'bad'], 'tasks.subtask_invalid'],
-        [['group' => '17', '--subtask' => '21'], 'tasks.phase_required'],
-        [['group' => '17', '--subtask' => '21', '--phase' => 'bad'], 'tasks.phase_invalid'],
+        [[], 'task.task_required'],
+        [['task' => 'bad'], 'task.task_invalid'],
+                [['task' => 'bad'], 'task.task_invalid'],
+        [['task' => '21'], 'task.phase_required'],
+        [['task' => '21', '--phase' => 'bad'], 'task.phase_invalid'],
     ]);
 });
 
@@ -462,17 +461,17 @@ it('follows a turn operation and preserves its typed input in JSON', function ()
     $seen = [];
     $mock = cli_deploy_gateway([
         cli_operation(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['receipt' => ['outcome' => 'ready_for_review'], 'thread' => 9], 'poll_after_seconds' => null]),
-    ], $seen, TurnTaskGroupRequest::class, ['kind' => 'tasks.turn', 'target_type' => 'task_group']);
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.turn', 'target_type' => 'task_group']);
 
-    expect(Artisan::call('tasks:turn', ['group' => '17', '--subtask' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
     $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     expect($output['result']['receipt']['outcome'])->toBe('ready_for_review');
-    $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskGroupRequest
+    $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskRequest
         && $request->headers()->get('Idempotency-Key') === 'turn.c1'
-        && json_decode((string) $request->body(), true) === ['subtask' => 18, 'role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
+        && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
 });
 
-describe('tasks:publish', function (): void {
+describe('task:publish', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
         app(GatewayExtensionState::class)->discover();
@@ -488,7 +487,7 @@ describe('tasks:publish', function (): void {
             cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result]),
         ], $seen, PublishTaskGroupRequest::class, $identity);
 
-        expect(Artisan::call('tasks:publish', ['group' => '17', '--check' => '31', ...($pull ? ['--title' => 'Title', '--body' => 'Body'] : []), '--idempotency-key' => 'group.publish.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        expect(Artisan::call('task:publish', ['task' => '17', '--check' => '31', ...($pull ? ['--title' => 'Title', '--body' => 'Body'] : []), '--idempotency-key' => 'group.publish.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
 
         $output = Artisan::output();
         if ($json) {
@@ -508,18 +507,18 @@ describe('tasks:publish', function (): void {
     it('refuses missing, invalid, or incomplete publish inputs before Gateway access', function (array $arguments, string $code): void {
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:publish', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
+        expect(Artisan::call('task:publish', [...$arguments, '--json' => true, '--no-interaction' => true]))->toBe(1);
 
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
         $mock->assertNothingSent();
     })->with([
-        [[], 'tasks.group_required'],
-        [['group' => 'bad'], 'tasks.group_invalid'],
-        [['group' => '17'], 'tasks.check_required'],
-        [['group' => '17', '--check' => 'bad'], 'tasks.check_invalid'],
-        [['group' => '17', '--check' => '31', '--title' => 'Title'], 'tasks.pull_request_invalid'],
-        [['group' => '17', '--check' => '31', '--body' => 'Body'], 'tasks.pull_request_invalid'],
-        [['group' => '17', '--check' => '31', '--draft' => true], 'tasks.pull_request_invalid'],
+        [[], 'task.task_required'],
+        [['task' => 'bad'], 'task.task_invalid'],
+        [['task' => '17'], 'task.check_required'],
+        [['task' => '17', '--check' => 'bad'], 'task.check_invalid'],
+        [['task' => '17', '--check' => '31', '--title' => 'Title'], 'task.pull_request_invalid'],
+        [['task' => '17', '--check' => '31', '--body' => 'Body'], 'task.pull_request_invalid'],
+        [['task' => '17', '--check' => '31', '--draft' => true], 'task.pull_request_invalid'],
     ]);
 
     it('opens the pull request as a draft with --draft', function (): void {
@@ -528,14 +527,14 @@ describe('tasks:publish', function (): void {
         $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => 12, 'pull_request_url' => 'https://github.com/acme/shop/pull/12'];
         $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result])], $seen, PublishTaskGroupRequest::class, $identity);
 
-        expect(Artisan::call('tasks:publish', ['group' => '17', '--check' => '31', '--title' => 'Spec', '--body' => 'Chart, page and cases', '--draft' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
+        expect(Artisan::call('task:publish', ['task' => '17', '--check' => '31', '--title' => 'Spec', '--body' => 'Chart, page and cases', '--draft' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
 
         $pending = $mock->findResponseByRequest(PublishTaskGroupRequest::class)->getPendingRequest();
         expect($pending->body()->all())->toBe(['check' => 31, 'pull_request' => ['title' => 'Spec', 'body' => 'Chart, page and cases', 'draft' => true]]);
     });
 });
 
-describe('tasks:park', function (): void {
+describe('task:park', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());
         app(GatewayExtensionState::class)->discover();
@@ -546,7 +545,7 @@ describe('tasks:park', function (): void {
         $identity = ['kind' => 'tasks.park', 'target_type' => 'task_group'];
         $result = ['group_id' => 17, 'task_vm_id' => 8, 'instance_id' => 12, 'status' => 'waiting_for_review', 'power' => 'stopped'];
         $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 4, 'poll_after_seconds' => null, 'result' => $result])], $seen, ParkTaskGroupRequest::class, $identity);
-        expect(Artisan::call('tasks:park', ['group' => '17', '--idempotency-key' => 'group.park.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+        expect(Artisan::call('task:park', ['task' => '17', '--idempotency-key' => 'group.park.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
         $output = Artisan::output();
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);

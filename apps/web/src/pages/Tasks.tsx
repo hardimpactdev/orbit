@@ -79,7 +79,7 @@ function TaskStatus({ status }: { status: TaskGroup["status"] }) {
 }
 
 function lineDiffProperty(detail: TaskGroup | Task) {
-    const accumulated = "tasks" in detail ? accumulatedLineChanges(detail.tasks) : null;
+    const accumulated = "subtasks" in detail ? accumulatedLineChanges(detail.subtasks) : null;
     const added = accumulated?.lines_added ?? detail.lines_added;
     const deleted = accumulated?.lines_deleted ?? detail.lines_deleted;
     return [
@@ -349,7 +349,7 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                                 groups.dataUpdatedAt,
                                                 now,
                                             )}
-                                            progress={completedSubtaskProgress(group.tasks)}
+                                            progress={completedSubtaskProgress(group.subtasks)}
                                         />
                                     </Link>
                                 ))}
@@ -385,7 +385,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const task = group.data;
     const project = projects.data?.find((item) => item.id === task?.project_id);
     const detail =
-        subtaskId === undefined ? task : task?.tasks.find((item) => String(item.id) === subtaskId);
+        subtaskId === undefined ? task : task?.subtasks.find((item) => String(item.id) === subtaskId);
     const question = detail === undefined ? null : taskDirectionQuestion(detail);
     // The group's duration counts forward every second while it is active. A subtask's duration is
     // the value the Gateway stored when it last refreshed the group.
@@ -394,7 +394,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const now = useNow(1_000, countsForward);
     const subtaskLanes = filledLanes(
         subtaskColumns,
-        [...(task?.tasks ?? [])].sort((a, b) => a.position - b.position),
+        [...(task?.subtasks ?? [])].sort((a, b) => a.position - b.position),
     );
     if (!tasksEnabled) {
         return (
