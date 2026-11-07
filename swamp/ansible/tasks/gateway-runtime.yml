@@ -13,6 +13,13 @@
   when: >-
     rt.gateway.pool in (runtime_files.results | selectattr('changed') | map(attribute='item.path'))
   ansible.builtin.systemd: { name: php8.5-fpm.service, state: reloaded }
+# Settings no code reads any more leave the shared Gateway environment; the release links this file as each release's `.env`.
+- name: Remove retired settings from the Gateway environment
+  ansible.builtin.lineinfile:
+    path: "{{ rt.gateway.environment }}"
+    regexp: "^{{ item | regex_escape }}="
+    state: absent
+  loop: "{{ rt.gateway.retired_settings }}"
 # Hourly log rotation, unless an operator masked logrotate.
 - name: Read the logrotate mask
   ansible.builtin.command: { argv: [systemctl, is-enabled, logrotate.service, logrotate.timer] }

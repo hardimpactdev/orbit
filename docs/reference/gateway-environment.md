@@ -3,6 +3,7 @@ title: "Gateway environment"
 description: "Where the Gateway reads its own .env settings, how to apply a change, and what each key in the example file does."
 covers:
   - apps/gateway/.env.example
+  - apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php
   - apps/gateway/app/Actions/Tasks/*SwampReaderCredentialAction.php
   - apps/gateway/app/Console/Commands/*SwampReaderCredentialCommand.php
   - apps/gateway/app/Domain/Tasks/SwampReaderCredential.php
@@ -13,6 +14,15 @@ covers:
 # Gateway environment
 
 The Gateway is a Laravel application, so it reads its own settings from a `.env` file. This page covers that file. [Instance environment variables](/reference/environment-variables) covers the `.env` files that the Gateway manages for Instances.
+
+## Settings no code reads
+
+A setting that no code reads any more leaves the file through the `gateway` role's convergence, never by hand. `GatewayRuntimeFiles::RetiredSettings` lists them, and the role's runtime phase removes each key from `shared/gateway.env`. Every release links that file as its `.env`. It now lists the four UpCloud task VM settings, which nothing reads since #3181 removed UpCloud:
+
+- `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE`
+- `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS`
+- `ORBIT_TASK_VMS_UPCLOUD_PLAN`
+- `ORBIT_TASK_VMS_UPCLOUD_DISK_GB`
 
 ## Services dependency detection
 
