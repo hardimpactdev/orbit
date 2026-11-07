@@ -4,24 +4,22 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\TaskVms\TaskVmError;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 
 /**
- * The durable record of one base image build. Steps stay in execution order; a program step carries its recipe name.
+ * The durable record of one promoted task VM base: a refresh of the host's base VM records its snapshot (docs/cli/tasks/vm-image-refresh.mmd).
+ * Rows of the retired recipe image build stay readable; their `images` hold an image, which is never a usable base.
  *
  * @property int $id
  * @property int $host_node_id
  * @property string|null $recipe_identity
  * @property string|null $recipe_json
  * @property int|null $recipe_generation
- * @property array<string, array<string, string>> $images an image build: {project, alias, fingerprint, type: virtual-machine}; a refresh: {project, type: snapshot, vm, seed, snapshot}
+ * @property array<string, array<string, string>> $images a refresh: {project, type: snapshot, vm, seed, snapshot}; a retired image build: {project, alias, fingerprint, type: virtual-machine}
  * @property Carbon|null $promoted_at
  * @property int $attempt
  * @property string|null $source_alias
@@ -68,40 +66,6 @@ final class TaskVmImageBuild extends Model
             'steps' => 'array',
             'cleanup_started_at' => 'datetime',
         ];
-    }
-
-    public function restartsAutomatically(): bool
-    {
-        return $this->state === TaskVmImageBuildState::Failed && $this->current_step === TaskVmImageBuildStep::Launch;
-    }
-
-    /**
-     * Let the database arbitrate concurrent starts and resumes. Assign the builder name in the same transaction
-     * as the insert, once SQLite has assigned the build id.
-     *
-     * @param  array{touch?: bool|null}  $options
-     */
-    #[\Override]
-    public function save(array $options = []): bool
-    {
-        try {
-            return $this->getConnection()->transaction(function () use ($options): bool {
-                $creating = ! $this->exists;
-                $saved = parent::save($options);
-                if ($saved && $creating) {
-                    $this->builder_vm_name = 'tvm-image-'.$this->id;
-                    parent::save($options);
-                }
-
-                return $saved;
-            });
-        } catch (UniqueConstraintViolationException $exception) {
-            if (! str_contains($exception->getMessage(), 'task_vm_image_builds.host_node_id')) {
-                throw $exception;
-            }
-
-            throw new TaskVmException(TaskVmError::ImageBuildRunning, 'A task VM image build is already running on this host.', previous: $exception);
-        }
     }
 
     /** @return BelongsTo<Node, $this> */

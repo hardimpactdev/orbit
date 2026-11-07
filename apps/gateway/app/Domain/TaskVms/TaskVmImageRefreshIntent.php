@@ -12,10 +12,8 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -45,14 +43,11 @@ final readonly class TaskVmImageRefreshIntent
             ->whereNotIn('status', OperationStatus::terminalValues())->first();
     }
 
-    /** Refuses a host that cannot refresh: not a configured, active task VM host, or an image build running on it. */
+    /** Refuses a host that cannot refresh: not a configured, active task VM host. */
     public function assertCanRefresh(Node $host): TaskVmHost
     {
         if (! $this->settings->enabled || ! $this->settings->hasHost($host->id) || $host->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException('task_vm.host_unavailable', 'A refresh needs an active, configured task VM host.', 409);
-        }
-        if (TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Running)->exists()) {
-            throw new ResourceOperationException('task_vm.image_build_running', 'An image build is running on this host. Refresh after it ends.', 409);
         }
 
         return $this->settings->host($host->id);
@@ -93,8 +88,6 @@ final readonly class TaskVmImageRefreshIntent
         }
         $converge = $this->converge->for($host, $commit);
         $jump = $this->ssh->forNode($host);
-        $identity = $this->ssh->identity();
-        $large = TaskVmSize::Large->resources();
         // One task start with a slot and a fresh identity proves the candidate, as a group gets it; the refresh releases it when it ends.
         try {
             $slot = $this->slots->take(null, $host->id);
@@ -108,16 +101,14 @@ final readonly class TaskVmImageRefreshIntent
         return [
             'commit' => $commit, 'recipe_identity' => $converge['recipe_identity'], 'task_vm_id' => $slot->id,
             'intent' => [
-                // The base VM holds the nested fleet, so it has the resources of a large task VM; a task start copies it. Before the host's
-                // first refresh, the base is the recipe image, from which the base VM is made once.
-                'host' => ['node_id' => $host->id, 'ssh' => $jump, 'project' => $location->project, 'pool' => $location->pool, 'network' => $location->network,
-                    'seed_prefix' => TaskVmVolumes::SeedPrefix, 'image' => $base['image'], 'current' => $base['snapshot'], 'snapshot' => $snapshot,
-                    'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'cpus' => $large->cpus,
-                        'memory' => $large->memory, 'disk' => $location->disk, 'launch_config' => TaskVmLaunchConfig::for($identity['public_key']),
-                        'club_key' => self::ClubKey]],
+                // The host already has its base VM, which holds the nested fleet; a task start copies its snapshot. A host without a base VM
+                // fails closed in the `base-start` phase.
+                'host' => ['node_id' => $host->id, 'ssh' => $jump, 'project' => $location->project, 'pool' => $location->pool,
+                    'current' => $base['snapshot'], 'snapshot' => $snapshot,
+                    'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'club_key' => self::ClubKey]],
                 'converge' => $converge['converge'],
-                // The Pi server is fetched only when the base's recipe is older than the release's, or a recipe image becomes the base VM.
-                'with_pi' => $base['snapshot'] === null || $base['recipe_identity'] !== $converge['recipe_identity'],
+                // The Pi server is fetched only when the base's recipe is older than the release's.
+                'with_pi' => $base['recipe_identity'] !== $converge['recipe_identity'],
                 'prove' => ['start' => $start, 'release' => $this->runs->release($slot)],
             ],
             'execution_secrets' => ['club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],

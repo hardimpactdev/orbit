@@ -17,7 +17,7 @@ sequenceDiagram
   participant G as Build servers<br/>reached over ssh
   Note over GW: Admit attempt 9<br/>UpCloud · task #5182
   %%> Started by:
-  %%> - `php artisan task-vms:build-upcloud-image`, `task-vms:build-recipe --retry` or `--rebuild`, or `RefreshUpCloudTaskVmBaseImage` when no verified template matches the deployed recipe
+  %%> - `php artisan task-vms:build-upcloud-image`; a recipe change does not start it
   %%> Requirements:
   %%> - UpCloud is configured and no other UpCloud build runs; the ledger records attempt 9 before any remote work
   %%> Result:
@@ -104,7 +104,7 @@ sequenceDiagram
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Mark attempt 9 failed<br/>previous template stays
     %%> Result:
-    %%> - the failed step names its own code; reconcile alerts for the identity; `task-vms:build-recipe --retry` records a new attempt
+    %%> - the failed step names its own code; `php artisan task-vms:build-upcloud-image` records a new attempt
   end
   %% Open, not designed here:
   %% - the Node agent is not in the template. Enrolment writes its identity and unit, as for the Incus image, and the delivery of its binary is a chart of its own

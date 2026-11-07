@@ -329,7 +329,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-A release that went live also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) when it changed playbooks, pins or lock files since the release it replaced. A release of code only starts nothing, and the refresh never holds the release.
+A release that went live also queues the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) when it changed playbooks, pins or lock files since the release it replaced. A release of code only starts nothing, and the refresh never holds the release.
 
 ```bash
 orbit gateway:release:auto:enable
@@ -474,7 +474,7 @@ The alert records `release|{kind}|{resource}|{attempt}|{fault}`, with the source
 
 An open incident keeps one linked group. Further observations update its generated brief while the group and its subtasks remain untouched. Operator edits or a move out of Backlog preserve the group. Confirmed recovery or supersession cancels an untouched generated group. A successful stage is held and does not confirm recovery. Filing clears an occurrence episode; that reset is not recovery evidence.
 
-Image-build alerts use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Only failures that need operator recovery alert. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
+The recipe image build raised alerts that use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Nothing raises one since the build was removed. An alert raised before stays open until its build is superseded or a later promoted build resolves it.
 
 The incident resolves when a later attempt succeeds, the desired recipe identity differs from the build, or the build row is gone. An attempt that is still running or failed does not prove recovery. A recipe revert to the failed build’s identity does not resolve the incident, even at a newer generation.
 

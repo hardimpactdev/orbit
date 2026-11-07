@@ -61,9 +61,6 @@ final class OperationBudgetTable
         // No native run yet. Basis: the legacy fill's one overall 1,700 s budget, plus margin for the run start and the
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
         'task_vm.fill_package_cache' => 2100,
-        // Provisional. Basis: the three Ansible phases on a stock builder at their step bound of 3,300 s, plus the launch, the smoke and the promotion.
-        // Replace with the 14-day p95 after the first successes.
-        'task_vm.image_build' => 3600,
         // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
         // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
         'task_vm.ready_copies' => 3600,

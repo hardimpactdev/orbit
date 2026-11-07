@@ -17,7 +17,7 @@ sequenceDiagram
   SW->>H: Start the base VM<br/>incus start
   %%> What it does:
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
-  %%> - a host without a base VM gets one once, from its recipe image and seed (`task_vm.image_build`)
+  %%> - a host without a base VM fails closed here (`the host has no base VM; ...`): a refresh never makes one, and no recipe image build exists
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:

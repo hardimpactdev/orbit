@@ -22,15 +22,15 @@ An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [o
 
 The Gateway also runs `orbit:auto-deploy` every minute without overlap for [automatic deployments](/reference/deployments#automatic-deployments). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
-While task VMs are enabled, the Gateway checks the deployed recipe each minute and queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. The same recipe reconcile queues the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) when UpCloud is configured and no verified template matches the deployed recipe. UpCloud has no separate nightly schedule.
+While task VMs are enabled, the Gateway queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. No schedule builds the [UpCloud template](/reference/compute-drivers#refresh-the-upcloud-template): `task-vms:build-upcloud-image` does.
 
-The Gateway also queues the [refresh of the task images](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
+The Gateway also queues the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
 
 While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
 
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 
-Release handoff queues [base image builds](/reference/compute-drivers#build-the-base-image) on each configured host when the deployed recipe changes. The minute check recovers missed dispatches.
+No schedule or release step builds a recipe image: the [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) is the only way a host gets a new base.
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. The [documents extension](/reference/extensions) registers this entry and the cleanup worker below from its provider, and both run whether or not its switch is on. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 

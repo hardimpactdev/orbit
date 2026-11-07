@@ -48,7 +48,7 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
 - Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), [`tasks:cancel`](/cli/tasks/cancel#how-it-works) and the [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd).
-- Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the task image and the topology seed](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed).
+- Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
 
@@ -93,7 +93,7 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
 - Charts: the stage chart above and the per-host run [`task_vm.image_refresh`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd).
-- Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
+- Docs: [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot), [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
 - Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
 
 ## Change the development pipeline

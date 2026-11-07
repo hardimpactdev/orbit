@@ -52,14 +52,4 @@ final class UpCloudTaskVmImageBuild extends Model
         return $this->state === TaskVmImageBuildState::Running && $this->started_at->lte(now()->subSeconds(self::RunningSeconds))
             ? 'stale-running' : $this->state->value;
     }
-
-    public function fenced(): bool
-    {
-        return $this->state === TaskVmImageBuildState::Failed || $this->status() === 'stale-running';
-    }
-
-    public function fenceMessage(): string
-    {
-        return "UpCloud recipe [{$this->recipe_identity}] is fenced: attempt [{$this->id}] is {$this->status()} and no verified template exists. Retry with php artisan task-vms:build-recipe --retry (also retries failed Incus builds).";
-    }
 }

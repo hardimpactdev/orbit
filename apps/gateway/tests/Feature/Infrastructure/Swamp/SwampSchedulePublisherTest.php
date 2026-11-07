@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Projects\ScheduledProjectMaintenance;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\ImageReaper;
+use App\Domain\SwampDatastore\SwampDatastoreWatch;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampSchedulePublisher;
@@ -104,7 +104,7 @@ it('remembers each workflow and each Swamp address on its own', function (): voi
     $publisher = app(SwampSchedulePublisher::class);
 
     $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
-    $publisher->publish(ImageReaper::Workflow, '40 17 * * * *', []);
+    $publisher->publish(SwampDatastoreWatch::Workflow, '40 17 * * * *', []);
     config(['swamp.address' => '10.44.0.16']);
     $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
 
@@ -130,7 +130,7 @@ it('sends only a trigger set with a workflow, a cadence and inputs, so a paused 
 
     $publisher->publish(ScheduledProjectMaintenance::Workflow, '40 17 * * * *', []);
     $publisher->publish(ScheduledProjectMaintenance::Workflow, '0 17 * * * *', ['revision' => 2]);
-    $publisher->publish(ImageReaper::Workflow, '40 17 * * * *', []);
+    $publisher->publish(SwampDatastoreWatch::Workflow, '40 17 * * * *', []);
 
     // Serve keeps a pause apart from the trigger, in a file named by the workflow id. The only way this frame could touch a pause is a field
     // for it, or another kind of frame, and there is neither.

@@ -7,12 +7,11 @@ namespace App\Domain\TaskVms;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
-use Illuminate\Support\Str;
 
 /**
- * The base a host's task VMs start from: its latest promoted build. A refresh records a snapshot of the host's base VM
- * (docs/cli/tasks/vm-image-refresh.mmd), which a task start copies. A recipe image build records an image, from which the first refresh
- * makes the base VM once.
+ * The base a host's task VMs start from: the snapshot of its base VM that its latest refresh recorded
+ * (docs/cli/tasks/vm-image-refresh.mmd), which a task start copies. Only a refresh makes a base. The output of the retired recipe image
+ * build is an image, not a snapshot, so it is never a base and never replaces the snapshot.
  */
 final readonly class TaskVmPromotedImage
 {
@@ -28,24 +27,20 @@ final readonly class TaskVmPromotedImage
     }
 
     /**
-     * The host's recorded base: a snapshot of its base VM, or before its first refresh, the recipe image.
+     * The host's recorded base snapshot, and the recipe identity it converged to.
      *
-     * @return array{recipe_identity:string,snapshot:string|null,image:string|null}
+     * @return array{recipe_identity:string,snapshot:string}
      */
     public function forHost(Node $host, TaskVmHost $location): array
     {
         $build = $this->latest($host);
         $base = $build?->images['base'] ?? null;
-        if (! $build instanceof TaskVmImageBuild || ! is_array($base) || ($base['project'] ?? null) !== $location->project) {
-            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no promoted task base.', 409);
-        }
-        $snapshot = ($base['type'] ?? null) === 'snapshot' && is_string($base['snapshot'] ?? null) ? $base['snapshot'] : null;
-        $image = ($base['type'] ?? null) === 'virtual-machine' && Str::of((string) ($base['fingerprint'] ?? ''))->isMatch('/\A[a-f0-9]{12,64}\z/D') ? $base['fingerprint'] : null;
-        if ($snapshot === null && $image === null) {
-            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no promoted task base.', 409);
+        if (! $build instanceof TaskVmImageBuild || ! is_array($base) || ($base['project'] ?? null) !== $location->project
+            || ($base['type'] ?? null) !== 'snapshot' || ! is_string($base['snapshot'] ?? null) || $base['snapshot'] === '') {
+            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no base snapshot; only a refresh makes one.', 409);
         }
 
-        return ['recipe_identity' => (string) $build->recipe_identity, 'snapshot' => $snapshot, 'image' => $image];
+        return ['recipe_identity' => (string) $build->recipe_identity, 'snapshot' => $base['snapshot']];
     }
 
     /**
@@ -56,17 +51,14 @@ final readonly class TaskVmPromotedImage
     public function snapshot(Node $host, TaskVmHost $location): array
     {
         $base = $this->forHost($host, $location);
-        if ($base['snapshot'] === null) {
-            throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no base snapshot yet; its first refresh makes one.', 409);
-        }
 
         return ['vm' => self::baseVm($host), 'seed' => self::baseSeed($host), 'snapshot' => $base['snapshot'], 'recipe_identity' => $base['recipe_identity']];
     }
 
-    /** The host's latest promoted build. */
+    /** The host's latest promoted refresh. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */
     public function latest(Node $host): ?TaskVmImageBuild
     {
         return TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('state', TaskVmImageBuildState::Succeeded)
-            ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
+            ->where('images->base->type', 'snapshot')->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
     }
 }

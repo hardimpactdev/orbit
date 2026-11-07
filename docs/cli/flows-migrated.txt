@@ -54,7 +54,6 @@ schedule.run
 task_vm.destroy
 task_vm.fill_package_cache
 task_vm.hub_converge
-task_vm.image_build
 task_vm.resume
 task_vm.sweep_host
 task_vm.upcloud_image_build

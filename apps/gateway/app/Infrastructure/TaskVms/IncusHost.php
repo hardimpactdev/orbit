@@ -74,8 +74,8 @@ final readonly class IncusHost
             throw match ($error->errorCode) {
                 'task_vm.vm_missing' => new TaskVmException($error->errorCode, "Task VM [{$name}] is gone from its host.", 502),
                 'task_vm.image_mismatch' => new TaskVmException($error->errorCode, 'The task VM did not launch its claimed recipe image.'),
-                'task_vm.topology_seed_missing' => new TaskVmException($error->errorCode, "The host of task VM [{$name}] has no topology seed for its base image. Build it with task-vms:build-image."),
-                'task_vm.base_image_missing' => new TaskVmException($error->errorCode, "The Incus project [{$host->project}] on the host of task VM [{$name}] has no base image [{$host->imageAlias}]. Build it with task-vms:build-image."),
+                'task_vm.topology_seed_missing' => new TaskVmException($error->errorCode, "The host of task VM [{$name}] has no topology seed for its base image. Refresh the host with task-vms:refresh-image <host>."),
+                'task_vm.base_image_missing' => new TaskVmException($error->errorCode, "The Incus project [{$host->project}] on the host of task VM [{$name}] has no base image [{$host->imageAlias}]. Refresh the host with task-vms:refresh-image <host>."),
                 default => $error,
             };
         }
