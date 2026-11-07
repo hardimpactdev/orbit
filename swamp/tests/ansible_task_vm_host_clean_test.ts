@@ -14,7 +14,15 @@ const own = { "features.images": "true", "features.storage.volumes": "true" };
 const projects = [
   { name: "default", config: {} },
   { name: "orbit-tasks", config: own },
-  { name: "orbit-baselines", config: own },
+  // As on beast: the images are those of default, the profiles its own.
+  {
+    name: "orbit-baselines",
+    config: {
+      "features.images": "false",
+      "features.storage.volumes": "true",
+      "features.profiles": "true",
+    },
+  },
   {
     name: "orbit-measure-nr",
     config: { ...own, "features.networks": "false" },
@@ -53,6 +61,10 @@ const listings: Record<string, unknown> = {
     fingerprint: "faf0e887aa8d",
   }],
   "--project orbit-baselines storage volume list default --format json": [],
+  "--project orbit-baselines profile list --format json": [
+    { name: "default" },
+    { name: "baseline" },
+  ],
   "--project orbit-baselines storage volume list orbit-tasks --format json": [
     { name: "orbit-baseline-verify-seed", type: "custom" },
   ],
@@ -182,8 +194,8 @@ Deno.test({
       "--project orbit-tasks storage volume delete orbit-tasks orbit-topology-seed-add4d4eaefac",
       "--project orbit-tasks storage volume delete orbit-tasks orbit-baseline-seed",
       "--project orbit-baselines delete --force orbit-baseline-gateway",
-      "--project orbit-baselines image delete faf0e887aa8d",
       "--project orbit-baselines storage volume delete orbit-tasks orbit-baseline-verify-seed",
+      "--project orbit-baselines profile delete baseline",
       "project delete orbit-baselines",
       "--project orbit-measure-nr delete --force nr-builder",
       "--project orbit-measure-nr delete --force nr-task",
