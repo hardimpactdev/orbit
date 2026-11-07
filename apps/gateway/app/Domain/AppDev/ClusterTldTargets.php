@@ -30,7 +30,7 @@ final readonly class ClusterTldTargets
             }
 
             $tld = $this->name(array_key_exists('tld', $pending) ? $pending['tld'] : $cluster->tld);
-            $router = $this->router($cluster, $pending['router_node_id'] ?? null);
+            $router = $this->router($cluster, $pending);
             $address = $router instanceof Node ? app(RouteRenderContext::class)->wireguardIp($router) : null;
 
             if ($tld !== null && is_string($address) && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
@@ -41,10 +41,18 @@ final readonly class ClusterTldTargets
         return $targets;
     }
 
-    /** A pending Router, else a Router replacement that has published DNS, else the active Router. */
-    private function router(Cluster $cluster, ?int $pendingRouterId): ?Node
+    /**
+     * A pending Router (a pending null means no Router), else a Router replacement that has published DNS, else the active Router.
+     *
+     * @param  array{tld?: ?string, state?: string, router_node_id?: ?int}  $pending
+     */
+    private function router(Cluster $cluster, array $pending): ?Node
     {
-        $candidateId = $pendingRouterId ?? new ClusterRouterTransition()->dnsRouters()[$cluster->id] ?? null;
+        if (array_key_exists('router_node_id', $pending)) {
+            return is_int($pending['router_node_id']) ? Node::query()->find($pending['router_node_id']) : null;
+        }
+
+        $candidateId = new ClusterRouterTransition()->dnsRouters()[$cluster->id] ?? null;
 
         if (is_int($candidateId)) {
             return Node::query()->find($candidateId);

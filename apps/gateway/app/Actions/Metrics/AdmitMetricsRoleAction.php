@@ -12,8 +12,6 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Routes\NativeRoutePublicationInput;
-use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -50,17 +48,13 @@ final readonly class AdmitMetricsRoleAction
             if (! $enabled && ! $force) {
                 throw new ResourceOperationException('metrics.force_required', 'Metrics removal requires force.', 422);
             }
-            $before = [];
-            foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
-                $before[$dnsNode->id] = app(NativeRoutePublicationInput::class)->dns();
-            }
             $assignment = $enabled ? app(AssignRoleAction::class)->execute($node, RoleName::Metrics) : $assignments->sole();
             if ($enabled) {
                 app(MetricsCredentialManager::class)->passwordForConvergence($node);
             } else {
                 $assignment->update(['status' => LifecycleStatus::Removing, 'failed_step' => null, 'error_code' => null]);
             }
-            $intent = app(MetricsRoleInput::class)->capture($assignment, $enabled, $purge, $before);
+            $intent = app(MetricsRoleInput::class)->capture($assignment, $enabled, $purge);
 
             return app(StartOperationAction::class)->execute($kind, 'metrics', $node->id, $node->id, $intent, 'operator', request()->attributes->getString('orbit.request_id'));
         });

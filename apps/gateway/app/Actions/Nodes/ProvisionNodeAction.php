@@ -498,7 +498,7 @@ final readonly class ProvisionNodeAction
     private function convergeRoles(Node $node, ProvisionNodeData $data): void
     {
         $converge = function () use ($node, $data): void {
-            // VPN owns the private DNS listener runtime used by the publishing roles.
+            // VPN converges first: its dnsmasq answers the private names that the publishing roles register.
             $roles = $data->roles;
             if (in_array(RoleName::Vpn, $roles, true)) {
                 $roles = [RoleName::Vpn, ...array_filter($roles, static fn (RoleName $role): bool => $role !== RoleName::Vpn)];
@@ -794,10 +794,6 @@ final readonly class ProvisionNodeAction
         throw $failure;
     }
 
-    /**
-     * @param  list<int>  $clusterIds
-     * @param  ?array<string, mixed>  $priorActiveState
-     */
     private function enrollsMacOs(Node $node, ProvisionNodeData $data): bool
     {
         if ($data->platform === 'macos') {

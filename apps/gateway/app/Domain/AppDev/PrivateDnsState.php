@@ -55,7 +55,7 @@ final readonly class PrivateDnsState
         ksort($records);
         ksort($tlds);
 
-        return new self(array_values($listen), $tlds, $records);
+        return new self($listen, $tlds, $records);
     }
 
     /** The most specific TLD that names the record, if any. */

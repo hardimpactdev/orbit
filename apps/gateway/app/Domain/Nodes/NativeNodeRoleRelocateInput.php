@@ -6,8 +6,6 @@ namespace App\Domain\Nodes;
 
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Metrics\MetricsRoleInput;
-use App\Domain\Routes\NativeRoutePublicationInput;
-use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -32,23 +30,16 @@ final readonly class NativeNodeRoleRelocateInput
     public function __construct(private NativeNodeRoleRemovalInput $removal, private SwampSshExecutionInput $ssh) {}
 
     /** Snapshots that must be read before the assignment moves.
-     * @return array{target:list<array<string,mixed>>,source:list<array<string,mixed>>,dns:array<int,array<string,mixed>>}
+     * @return array{target:list<array<string,mixed>>,source:list<array<string,mixed>>}
      */
     public function before(Node $target, Node $source, RoleName $role): array
     {
-        $dns = [];
-        if ($role === RoleName::Metrics) {
-            foreach (PrivateDnsPublicationNodes::query()->get() as $node) {
-                $dns[$node->id] = app(NativeRoutePublicationInput::class)->dns();
-            }
-        }
-
         return ['target' => $role === RoleName::Metrics ? [] : $this->removal->publications($target, $role, source: $source),
-            'source' => $this->removal->publications($source, $role), 'dns' => $dns];
+            'source' => $this->removal->publications($source, $role)];
     }
 
     /** Capture after the assignment names the target. No Node is contacted.
-     * @param  array{target:list<array<string,mixed>>,source:list<array<string,mixed>>,dns:array<int,array<string,mixed>>}  $before
+     * @param  array{target:list<array<string,mixed>>,source:list<array<string,mixed>>}  $before
      * @return array<string,mixed>
      */
     public function capture(Node $target, Node $source, NodeRole $assignment, array $before): array
@@ -71,7 +62,7 @@ final readonly class NativeNodeRoleRelocateInput
 
         return ['schema_version' => 1, 'role' => $role->value, 'assignment_id' => $assignment->id,
             'target_node_id' => $target->id, 'source_node_id' => $source->id, 'ssh' => $ssh,
-            'metrics' => $role === RoleName::Metrics ? $this->metrics($assignment, $before['dns']) : null,
+            'metrics' => $role === RoleName::Metrics ? $this->metrics($assignment) : null,
             'websocket' => $websocket, 'gateway' => $role === RoleName::Gateway ? $this->gateway($target) : null,
             'certificates' => $role === RoleName::Metrics ? ['leaves' => [], 'withdrawals' => []] : $this->certificates($target, $plan),
             'firewall' => $firewall, 'publications' => $publications,
@@ -98,7 +89,7 @@ final readonly class NativeNodeRoleRelocateInput
                 ?? throw new \LogicException('Role relocation needs the complete prior publication.');
             $result[] = ['node_id' => $after['node_id'], 'control_node_id' => SwampNode::id(),
                 'host_keys' => $after['host_keys'], 'connection' => $after['connection'],
-                'before' => array_intersect_key($prior, array_flip(['caddy', 'php', 'dns'])),
+                'before' => array_intersect_key($prior, array_flip(['caddy', 'php'])),
                 'after' => array_intersect_key($after, array_flip(['caddy', 'php', 'dns']))];
         }
 
@@ -140,12 +131,11 @@ final readonly class NativeNodeRoleRelocateInput
     }
 
     /** Metrics keeps its Gateway site and certificate, so its role workflow signs nothing here.
-     * @param  array<int,array<string,mixed>>  $dns
      * @return array<string,mixed>
      */
-    private function metrics(NodeRole $assignment, array $dns): array
+    private function metrics(NodeRole $assignment): array
     {
-        return [...app(MetricsRoleInput::class)->capture($assignment, true, false, $dns), 'certificates' => ['leaves' => [], 'withdrawals' => []]];
+        return [...app(MetricsRoleInput::class)->capture($assignment, true, false), 'certificates' => ['leaves' => [], 'withdrawals' => []]];
     }
 
     /** Leaves on the target, each with the pinned SSH globals its certificate child uses.

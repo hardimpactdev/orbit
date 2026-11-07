@@ -97,7 +97,7 @@ final readonly class NativeRouteCreatePlan
             }
             // A domain inside the TLD changes no record: private DNS already answers the whole TLD.
             $dnsArtifacts = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['artifacts'])['dns'] ?? [];
-            $artifact = static fn (mixed $index): mixed => is_int($index) && is_array($dnsArtifacts) ? ($dnsArtifacts[$index] ?? null) : null;
+            $artifact = static fn (mixed $index): ?array => is_int($index) && is_array($dnsArtifacts) && is_array($dnsArtifacts[$index] ?? null) ? ValidatedData::object($dnsArtifacts[$index]) : null;
             if ($after['dns'] !== null && ! PrivateDnsPublication::same($artifact($after['dns']), $artifact($before['dns'])) && is_array($render['dns'])) {
                 $plan['dns'][] = ['node_id' => $nodeId, 'dns' => ValidatedData::object($render['dns'])];
                 $touched[$nodeId] = true;

@@ -8,7 +8,6 @@ use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
@@ -146,13 +145,7 @@ final readonly class NativeRouteConvergenceIntent
             $workloads[] = [...$member, ...$extra, 'lan' => $lan, 'served_web_roots' => $served];
         }
 
-        $dns = null;
-        if (in_array($callerNodeId, ValidatedData::integerList($intent['dns_node_ids']), true)) {
-            $renderer = app(DevelopmentDnsConfigRenderer::class);
-            $records = $renderer->render();
-            $catalog = json_encode(['requesters' => $renderer->registeredRequesters(), ...$renderer->catalog()->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-            $dns = ['node_id' => $callerNodeId, 'records' => $records, 'catalog' => $catalog, 'digest' => hash('sha256', $catalog)];
-        }
+        $dns = in_array($callerNodeId, ValidatedData::integerList($intent['dns_node_ids']), true) ? app(NativeRoutePublicationInput::class)->dns() : null;
 
         $firewall = null;
         $role = $callerNodeId === $intent['ingress_node_id'] ? RoleName::Ingress : RoleName::AppProd;

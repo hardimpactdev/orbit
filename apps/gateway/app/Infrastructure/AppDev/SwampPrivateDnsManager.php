@@ -44,7 +44,7 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
                     throw $exception;
                 }
 
-                $busy = Operation::query()->find($exception->details['operation_id'] ?? 0);
+                $busy = Operation::query()->where('lock_key', AdmitPrivateDnsPublicationAction::lockKey($node))->first();
 
                 if ($busy instanceof Operation) {
                     $this->await($busy, $node);

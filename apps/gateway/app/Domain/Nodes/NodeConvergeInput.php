@@ -11,16 +11,15 @@ use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
-use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -58,7 +57,9 @@ final readonly class NodeConvergeInput
 
         $native = [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'agent' => $this->agentFiles($node, $payloads),
-            'roles' => $this->roles($node, $payloads), 'verifier_hash' => $node->agent_secret_hash];
+            // A VPN Node republishes the complete private DNS on every converge: a fresh render, taken now, not the digest of an artifact.
+            'roles' => $this->roles($node, $payloads, PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists() ? app(PrivateDnsPublication::class)->entry($node) : null),
+            'verifier_hash' => $node->agent_secret_hash];
 
         return $native['agent'] === null || ! is_string($native['verifier_hash']) ? $native : [...$native, 'footprint_check' => self::footprintCheck($native)];
     }
@@ -93,13 +94,13 @@ final readonly class NodeConvergeInput
      * Caddyfile the Gateway could not render is null too, and the projection reports it as skipped.
      *
      * @param  array<string,mixed>  $payloads
+     * @param  array<string,mixed>|null  $dns  The private DNS publication entry of a VPN Node.
      * @return array<string,mixed>
      */
-    public function roles(Node $node, array $payloads): array
+    public function roles(Node $node, array $payloads, ?array $dns = null): array
     {
         $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
         $caddy = isset($payloads['caddy']) ? ValidatedData::object($payloads['caddy']) : null;
-        $dns = isset($payloads['private-dns']) ? ValidatedData::object($payloads['private-dns']) : null;
         $php = [];
         $configurations = isset($payloads['php-runtime']) ? ValidatedData::object($payloads['php-runtime'])['configurations'] : [];
         foreach (is_array($configurations) ? $configurations : [] as $configuration) {
@@ -110,7 +111,7 @@ final readonly class NodeConvergeInput
         return ['user' => $node->user, 'home' => $home,
             'caddy_package' => isset($payloads['caddy-package']) ? NativeCaddyPackageInput::make() : null,
             'caddy' => $caddy === null || isset($caddy['error_code']) ? null : $caddy,
-            'dns' => $dns === null || isset($dns['error_code']) ? null : $this->privateDns($node, $dns),
+            'dns' => $dns,
             'php' => (object) $php, 'php_versions' => array_keys($php),
             'tmpfiles' => isset($payloads['tmpfiles']) ? ValidatedData::string(ValidatedData::object($payloads['tmpfiles'])['rule']) : null,
             'residue' => isset($payloads['route-residue']) ? $this->residueParts($node, ValidatedData::object($payloads['route-residue']), new ManagedUserAccount($node->user, $node->user, $home)) : null];
@@ -133,33 +134,6 @@ final readonly class NodeConvergeInput
         }
 
         return implode("\n", $lines)."\n";
-    }
-
-    /**
-     * The listener release as folders and files under its release folder, and the address its socket answers on.
-     *
-     * @param  array<string,mixed>  $part
-     * @return array<string,mixed>
-     */
-    public function privateDns(Node $node, array $part): array
-    {
-        $listener = ValidatedData::object($part['listener']);
-        $publication = ValidatedData::object($part['publication']);
-        $release = '/var/lib/orbit/private-dns/releases/'.ValidatedData::string($listener['release_id']);
-        $directories = [$release];
-        $files = [];
-        foreach (is_array($listener['files']) ? $listener['files'] : [] as $file) {
-            $file = ValidatedData::object($file);
-            $path = $release.'/'.ValidatedData::string($file['path']);
-            $directories[] = dirname($path);
-            $files[] = ['path' => $path, 'content' => ValidatedData::string($file['contents'])];
-        }
-        $directories = array_values(array_unique($directories));
-        sort($directories, SORT_STRING);
-        $catalog = ValidatedData::string($publication['catalog']);
-
-        return ['release' => $release, 'directories' => $directories, 'files' => $files, 'service' => $listener['service'], 'socket' => $listener['socket'],
-            'address' => $node->wireguard_ip, 'records' => $publication['records'], 'catalog' => $catalog, 'catalog_sha256' => hash('sha256', $catalog)];
     }
 
     /**
@@ -207,16 +181,6 @@ final readonly class NodeConvergeInput
         $network = null;
         foreach ($this->artifacts as $artifact) {
             $name = $artifact->name();
-            if ($name === 'private-dns') {
-                if (! PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()) {
-                    continue;
-                }
-                try {
-                    $expected[$name] = hash('sha256', $this->delivery->pin($node)."\0".$artifact->digest($node));
-                } catch (\Throwable) {
-                    $expected[$name] = 'unavailable:private-dns';
-                }
-            }
             if (! array_key_exists($name, $expected)) {
                 continue;
             }
@@ -229,7 +193,7 @@ final readonly class NodeConvergeInput
 
                 continue;
             }
-            if (! in_array($name, ['agent', 'ai-router', 'caddy-package', 'caddy', 'network', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
+            if (! in_array($name, ['agent', 'ai-router', 'caddy-package', 'caddy', 'network', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
                 $refusal = 'operation.kind_unavailable';
 
                 continue;
@@ -254,9 +218,6 @@ final readonly class NodeConvergeInput
                     'url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
                 'caddy-package' => NativeCaddyPackageInput::make(),
                 'caddy' => $this->caddy($node),
-                'private-dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()
-                    ? ['listener' => app(NodePrivateDnsListenerFootprint::class)->input($node), 'publication' => $this->dns()]
-                    : ['error_code' => 'node.private_dns_owner_changed'],
                 'route-residue' => $this->residue($node),
                 'php-runtime' => ['configurations' => app(PhpRuntimeFootprintArtifact::class)->inputs($node)],
                 'tmpfiles' => ['rule' => TmpfilesFootprintArtifact::Rule],
@@ -275,16 +236,6 @@ final readonly class NodeConvergeInput
         $render = app(NodeCaddyfileRenderer::class)->render($node);
 
         return $render->buildable() ? CaddyPublicationPlan::input($render, $node->id) : ['error_code' => 'caddy.render_failed', 'stage' => 'render'];
-    }
-
-    /** @return array{records:string,catalog:string} */
-    public function dns(): array
-    {
-        $renderer = app(DevelopmentDnsConfigRenderer::class);
-
-        return ['records' => $renderer->render(), 'catalog' => json_encode([
-            'requesters' => $renderer->registeredRequesters(), ...$renderer->catalog()->toPublished(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n"];
     }
 
     /** @return Builder<RouteRemovalResidue> */
@@ -326,7 +277,6 @@ final readonly class NodeConvergeInput
             'php' => $rows->contains(static fn (RouteRemovalResidue $row): bool => in_array('php', $row->steps, true)) ? (object) $configurations : null,
             'certificates' => $certificates, 'firewall' => $firewall,
             'ingress' => $firewall !== [] && $node->roles()->where('role', RoleName::Ingress)->exists()
-                ? app(NodeRoleFirewallInput::class)->converge($node, RoleName::Ingress) : null,
-            'dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists() ? $this->dns() : null];
+                ? app(NodeRoleFirewallInput::class)->converge($node, RoleName::Ingress) : null];
     }
 }

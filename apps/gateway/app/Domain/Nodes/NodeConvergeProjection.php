@@ -88,7 +88,6 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
                 && ($status('Apply recorded network') === 'skipped' || $status('Check the handshake') === 'succeeded'),
             'caddy-package' => $status('Install Caddy') === 'succeeded',
             'caddy' => $status('Publish Caddy sites') === 'succeeded',
-            'private-dns' => $status('Install private DNS') === 'succeeded',
             'php-runtime' => $status('Restart the Node agent') === 'succeeded'
                 && array_all($versions, static fn (mixed $version): bool => is_string($version) && $status('Configure PHP-FPM-'.$version) === 'succeeded'),
             'tmpfiles' => $status('Write the tmpfiles rule') === 'succeeded',

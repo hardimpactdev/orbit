@@ -63,8 +63,9 @@ final readonly class DevelopmentDnsConfigRenderer
 
         $gateway = $this->roleNode(RoleName::Gateway);
 
-        if ($gateway instanceof Node) {
-            $address = app(RouteRenderContext::class)->wireguardIp($gateway);
+        $address = $gateway instanceof Node ? app(RouteRenderContext::class)->wireguardIp($gateway) : null;
+
+        if ($address !== null) {
             $hosts[ReservedPrivateHostname::Gateway] = $address;
 
             if ($this->roleNode(RoleName::Metrics) instanceof Node) {
@@ -73,15 +74,17 @@ final readonly class DevelopmentDnsConfigRenderer
         }
 
         $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket));
+        $address = $websocket instanceof Node ? app(RouteRenderContext::class)->wireguardIp($websocket) : null;
 
-        if ($websocket instanceof Node) {
-            $hosts[WebSocketHostname::Value] = app(RouteRenderContext::class)->wireguardIp($websocket);
+        if ($address !== null) {
+            $hosts[WebSocketHostname::Value] = $address;
         }
 
         $analytics = $this->roleNode(RoleName::Analytics);
+        $address = $analytics instanceof Node ? app(RouteRenderContext::class)->wireguardIp($analytics) : null;
 
-        if ($analytics instanceof Node) {
-            $hosts[AnalyticsHostname::Value] = app(RouteRenderContext::class)->wireguardIp($analytics);
+        if ($address !== null) {
+            $hosts[AnalyticsHostname::Value] = $address;
         }
 
         foreach ($this->hostnames as $contribution) {

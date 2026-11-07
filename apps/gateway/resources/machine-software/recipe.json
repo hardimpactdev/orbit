@@ -1099,8 +1099,7 @@
     "roles": {
         "vpn": [
             "dnsmasq",
-            "openssl",
-            "php:8.5"
+            "openssl"
         ],
         "router": [
             "caddy",

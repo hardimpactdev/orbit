@@ -16,12 +16,11 @@ use App\Domain\TaskVms\TaskVmAptCache;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\VpnDnsmasqBackendListen;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
-use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -61,7 +60,7 @@ final readonly class NativeNodeEnrollmentInput
             'agent' => ['url' => '', 'sha256' => '', 'unit' => '', 'environment_group' => NodeAgentSshExecutor::EnvGroup, 'files' => []],
             'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
-            'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
+            'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'cli' => null,
             'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
         if ($candidate['platform'] === 'macos') {
             return ['intent' => $intent, 'execution_secrets' => $copies, 'role_snapshots' => [],
@@ -80,7 +79,6 @@ final readonly class NativeNodeEnrollmentInput
             $requested = ['vpn', ...array_values(array_diff($requested, ['vpn']))];
         }
         $participants = [SwampNode::id(), $node->id];
-        $beforeDns = app(NodeConvergeInput::class)->dns();
         $agentSecret = bin2hex(random_bytes(32));
         $copies['agent_secret'] = app(SwampCommandStep::class)->executionCopy(
             'orbit-control-inputs', 'agent-secret-node-'.$node->id, $agentSecret);
@@ -142,10 +140,8 @@ final readonly class NativeNodeEnrollmentInput
                 ? $original['wireguard_ip'].'/'.Ipv4Subnet::from(app(VpnSettings::class)->subnet())->prefixLength() : null;
             $participants = [...$participants, ...ValidatedData::integerList($intent['network']['participant_node_ids'])];
             if ($intent['network']['is_hub'] === true) {
-                $dns = app(NodeConvergeInput::class);
-                $intent['private_dns'][] = ['node_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-                    'backend' => VpnDnsmasqBackendListen::apply("# Managed by Orbit: private DNS backend.\n"),
-                    'dns' => $dns->privateDns($node, ['listener' => app(NodePrivateDnsListenerFootprint::class)->input($node), 'publication' => $dns->dns()])];
+                // The hub gets its own complete private DNS as the first entry, rendered with the Node as it will stand after this run.
+                $intent['dns'][] = app(PrivateDnsPublication::class)->entry($node);
             }
             foreach (app(NativeNodeRoleRemovalInput::class)->publications($node, RoleName::Gateway) as $publication) {
                 if ($publication['node_id'] === $node->id && $intent['network']['is_hub'] === true) {
@@ -153,7 +149,7 @@ final readonly class NativeNodeEnrollmentInput
                 }
                 if ($publication['dns'] !== null) {
                     $intent['dns'][] = ['node_id' => $publication['node_id'], 'connection' => $publication['connection'],
-                        'host_keys' => $publication['host_keys'], 'before' => $beforeDns, 'after' => $publication['dns'], 'alternatives' => []];
+                        'host_keys' => $publication['host_keys'], 'dns' => $publication['dns']];
                 }
             }
         } finally {

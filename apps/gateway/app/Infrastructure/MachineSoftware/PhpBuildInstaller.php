@@ -115,18 +115,6 @@ final readonly class PhpBuildInstaller
         return $files;
     }
 
-    /**
-     * VPN Nodes without an FPM role must not enable the unused shared master at boot.
-     *
-     * @param  list<string>  $profiles
-     * @return 'disabled'|'all'
-     */
-    public static function fpmForProfiles(array $profiles): string
-    {
-        return in_array('vpn', $profiles, true) && array_intersect($profiles, ['gateway', 'app-dev', 'app-prod']) === []
-            ? 'disabled' : 'all';
-    }
-
     /** A one-line explanation of a refusal, for an operator. */
     public static function describe(ProgramResult $result): string
     {
