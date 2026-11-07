@@ -7,6 +7,8 @@ covers:
 
 # API reference generation
 
+`database:server:update` is PATCH `/api/v1/database-servers/{database_server}`. It requires JSON `{"require_password":true}`; the generated schema fixes this field to true. The operation receipt keeps kind `database_server.close`. See [Database servers](/reference/database-servers#close-an-adopted-server).
+
 The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.

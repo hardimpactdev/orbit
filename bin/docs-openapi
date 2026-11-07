@@ -703,6 +703,7 @@ SUMMARIES = {
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
     'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Add a database user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:server:update': 'Require a password for the default user on an adopted Valkey server.',
     'database:server:list': 'List Database servers', 'database:server:show': 'Show a Database server', 'database:server:create': 'Create a Database server', 'database:server:destroy': 'Remove a Database server',
     'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
@@ -806,6 +807,7 @@ DESCRIPTIONS = {
     'database:create': 'Registers an existing database, or with `server` creates a MySQL/PostgreSQL database and owner or a Valkey ACL user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database (plus a bounded PostgreSQL worker pool, configured by `test_processes`), and attaches the connection under prefix DB. The response never contains a password.',
     'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
     'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
+    'database:server:update': 'Requires a password for the default user on an adopted Valkey server. Only JSON require_password:true is accepted. All registered connections must have passwords. An already protected server runs its readiness check. The internal operation kind remains database_server.close.',
     'database:server:show': 'Shows one Database server with the connections of the databases on it.',
     'websocket:app:create': 'Saves a Reverb app and requests live application without restarting Reverb. Returns HTTP 202 with a normal Operation. Swamp proves fresh process reports after periodic Reverb reconciliation. No response contains the secret. Reuse Idempotency-Key after a lost response. A taken name, `gateway`, or an invalid slug returns `validation.failed`.',
     'websocket:app:destroy': 'Removes an app and closes only its sockets with code 4001. Returns HTTP 202 with a normal Operation. Swamp waits until every required process confirms. The Gateway app returns `websocket.app_reserved` (409). An app attached to an Instance returns `websocket.app_in_use` (409).',
@@ -1985,6 +1987,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         body_schema['anyOf'] = [{'required': ['name']}, {'required': ['parent_id']}]
     if route['name'] == 'tasks:publish' and body_schema:
         body_schema['properties']['pull_request']['required'] = ['title', 'body']
+    if route['name'] == 'database:server:update' and body_schema:
+        body_schema['properties']['require_password']['const'] = True
     if body_schema is not None:
         if 'oneOf' not in body_schema:
             body_schema['additionalProperties'] = False

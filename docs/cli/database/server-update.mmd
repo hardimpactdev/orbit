@@ -12,7 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: database:server:update<br/>beast-valkey
+  CLI->>GW: database:server:update<br/>--require-password
   %%> Command:
   %%> - `orbit database:server:update beast-valkey --require-password`
   %%> - syntax: `<slug> --require-password [--idempotency-key=KEY] [--json]`

@@ -9,9 +9,9 @@ Require a password for the default user on an [adopted Valkey server](/reference
 orbit database:server:update <slug> --require-password [--idempotency-key=KEY] [--json]
 ```
 
-The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed runs a readiness check. The command exists only for the adopted Valkey Processes.
+Orbit refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed runs a readiness check. The command exists only for the adopted Valkey Processes.
 
-`--require-password` is required. Orbit refuses a missing flag; the API requires JSON `{"require_password":true}`. False is refused. This command cannot reopen passwordless access.
+`--require-password` is required. Without it, Orbit refuses with `database.require_password_required`; the API requires JSON `{"require_password":true}`. False is refused. This command cannot reopen passwordless access.
 
 ## How it works
 

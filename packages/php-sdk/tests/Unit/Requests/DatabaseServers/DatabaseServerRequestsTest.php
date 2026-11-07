@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use Orbit\Sdk\Responses\DatabaseServers\DatabaseServerResponse;
 use Orbit\Sdk\Responses\DatabaseServers\DatabaseServersResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -105,13 +105,15 @@ describe('database server requests', function (): void {
     ]);
 });
 
-it('transports the Valkey driver and keeps the close request bodyless', function (): void {
+it('transports the Valkey driver and sends the explicit password requirement', function (): void {
     expect(new CreateDatabaseServerRequest('cache', 2, driver: 'redis')->body()->all())
         ->toBe(['slug' => 'cache', 'node_id' => 2, 'driver' => 'redis']);
-    $request = new CloseDatabaseServerRequest('cache');
-    expect($request->getMethod())->toBe(Method::POST)
-        ->and($request->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close')
-        ->and($request)->not->toBeInstanceOf(HasBody::class);
+    $request = new UpdateDatabaseServerRequest('cache', true);
+    expect($request->getMethod())->toBe(Method::PATCH)
+        ->and($request->resolveEndpoint())->toBe('/api/v1/database-servers/cache')
+        ->and($request)->toBeInstanceOf(HasBody::class)
+        ->and($request->body()->all())->toBe(['require_password' => true])
+        ->and(new UpdateDatabaseServerRequest('cache', false)->body()->all())->toBe(['require_password' => false]);
 });
 
 it('preserves the Valkey driver and accepts a legacy MySQL response', function (): void {

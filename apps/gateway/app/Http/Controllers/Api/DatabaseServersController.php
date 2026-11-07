@@ -15,6 +15,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatabaseServers\StoreDatabaseServerRequest;
+use App\Http\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -60,7 +61,7 @@ final class DatabaseServersController extends Controller
     }
 
     #[StartsOperation('database_server.close')]
-    public function close(Request $request, string $databaseServer, CloseDatabaseServerAction $action): JsonResponse
+    public function update(UpdateDatabaseServerRequest $request, string $databaseServer, CloseDatabaseServerAction $action): JsonResponse
     {
         $server = DatabaseServer::query()->where('slug', $databaseServer)->firstOrFail();
 

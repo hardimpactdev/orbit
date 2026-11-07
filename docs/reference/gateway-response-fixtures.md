@@ -11,6 +11,8 @@ covers:
 
 # Gateway response fixtures
 
+The `database-server-update` fixtures replay [`database:server:update --require-password`](/cli/database/server-update). The request uses PATCH and an explicit true field; its Operation fixture retains `database_server.close`, the persisted execution kind.
+
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
 The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists.
