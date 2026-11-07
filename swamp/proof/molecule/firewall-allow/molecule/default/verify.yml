@@ -254,7 +254,7 @@
     # ---- the verdicts, one line a case; the play fails when any case failed ----
     - name: Verdict of each case
       ansible.builtin.debug:
-        msg: "{{ item }}: {{ 'failed | ' ~ failures[item] if item in (failures | default({})) else 'passed' }} (command {{ ((act[item].secs.split(':')[0] | int * 3600) + (act[item].secs.split(':')[1] | int * 60) + (act[item].secs.split(':')[2] | float)) | round(1) }} s)"
+        msg: "{{ item }}: {{ 'failed | ' ~ failures[item] if item in (failures | default({})) else 'passed' }} (command {{ ((act[item].secs.split(':')[0] | int * 3600) + (act[item].secs.split(':')[1] | int * 60) + (act[item].secs.split(':')[2] | float)) | round(1) }} s, case in converge {{ case_secs[item] }} s)"
       loop: "{{ case_names }}"
 
     - name: Fail when a case failed

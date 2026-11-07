@@ -5,6 +5,10 @@
 # verify.yml prints one verdict per case.
 - name: "{{ c.id }}"
   block:
+    - name: "{{ c.id }}: start the clock"
+      ansible.builtin.set_fact:
+        case_t0: "{{ now().timestamp() }}"
+
     - name: "{{ c.id }}: setup commands"
       ansible.builtin.command:
         argv: "{{ orbit + item + ['--json'] }}"
@@ -113,6 +117,7 @@
         ufw_after: "{{ ufw_after | default({}) | combine({c.id: ufw_post.stdout | default('')}) }}"
         ops_before: "{{ ops_before | default({}) | combine({c.id: ((ops_pre.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
         ops_after: "{{ ops_after | default({}) | combine({c.id: ((ops_post.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
+        case_secs: "{{ case_secs | default({}) | combine({c.id: ((now().timestamp() - case_t0 | float) | round(1))}) }}"
         records_before: "{{ records_before | default({}) | combine({c.id: (rec_pre.json | default({})).data | default([])}) }}"
         records_after: "{{ records_after | default({}) | combine({c.id: (rec_post.json | default({})).data | default([])}) }}"
         cacheable: true
