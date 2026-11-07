@@ -61,7 +61,7 @@ jobs:
     labels: {role: swamp}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-network-address").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-read-the-network-address").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['incus', 'network', 'get', '${{ inputs.intent.fleet.network }}', 'ipv4.address'], timeoutSec: 40}}
-    dependsOn: [{step: 'Look for the network', condition: {type: succeeded}}, {step: 'Create the nested network', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Look for the network', condition: {type: succeeded}}, {step: 'Read the subnet', condition: {type: succeeded}}, {step: 'Create the nested network', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   - name: 'Check the subnet'
     labels: {role: swamp}
     task: {type: assert, expr: 'steps["Read the network address"].outputs.stdout.split("\n")[0] == steps["Read the subnet"].outputs.stdout.split("\n")[0]', severity: high, message: The nested network does not have the subnet that the ready copies store}
@@ -82,7 +82,7 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'add', '${{ inputs.intent.fleet.guests[self.role] }}', 'eth0', 'nic', '${{ "network=" + inputs.intent.fleet.network }}', '${{ "hwaddr=" + steps["Read the MAC-" + self.role].outputs.stdout.split("\n")[0] }}', '${{ "ipv4.address=" + steps["Read the address-" + self.role].outputs.stdout.split("\n")[0] }}'], timeoutSec: 40}}
     dependsOn: [{step: 'Copy the ready copies', condition: {type: succeeded}}, {step: 'Read the MAC', condition: {type: succeeded}}, {step: 'Read the address', condition: {type: succeeded}}]
   # The checkout of the task is a disk device of the Gateway and app-dev containers, as the fleet build attached its own: the copies hold none. The ID shift gives the container's orbit the rights of this VM's orbit on it.
-  # The checkout device is added after the NIC: two config writes of one container at once make Incus refuse the second (`ETag doesn't match`, refresh 12520).
+  # The checkout device is added after the NIC: two config writes of one container at once make Incus refuse the second (`ETag doesn't match`).
   - name: 'Attach the checkout'
     labels: {role: swamp}
     writes: true
@@ -225,7 +225,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', guest_node_id: '${{ inputs.intent.guest_node_id }}', ssh_execution: '${{ steps.guest.outputs.workspace.ssh_execution }}', fleet: '${{ inputs.intent.fleet }}', club: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}', remint: '${{ has(inputs.intent.proof_club_required) && inputs.intent.proof_club_required }}'}}
-    dependsOn: [{step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the tunnel', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Push the Club key', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Make the Club key folder', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Check the tunnel', condition: {type: succeeded}}]
   # Ready: every Node agent online, the operator known, Doctor healthy (child `task-nested-ready`, which every restore of `base` reuses).
   - name: 'Check readiness'
     labels: {role: swamp}

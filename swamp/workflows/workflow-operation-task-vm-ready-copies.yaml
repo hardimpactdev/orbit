@@ -115,13 +115,14 @@ jobs:
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'remove', '${{ "fleet-ready-" + self.role }}', 'eth0'], timeoutSec: 40}}
     dependsOn: [{step: 'Copy the guests', condition: {type: succeeded}}]
   # A copy with the checkout device would name the checkout of this VM: a task VM attaches its own when it starts the copies.
+  # After the NIC: two config writes of one container at once make Incus refuse the second (`ETag doesn't match`).
   - name: 'Remove the checkout device'
     labels: {role: swamp}
     writes: true
     forEach: {item: role, in: '${{ ["gateway", "app-dev"] }}'}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-checkout-device" + "-" + self.role).split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("ready-copies-" + string(inputs.intent.guest_node_id) + "-remove-the-checkout-device" + "-" + self.role).split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '30', 'incus', 'config', 'device', 'remove', '${{ "fleet-ready-" + self.role }}', 'checkout'], timeoutSec: 40}}
-    dependsOn: [{step: 'Copy the guests', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Copy the guests', condition: {type: succeeded}}, {step: 'Remove the NIC', condition: {type: succeeded}}]
   # Keys on each copy: role, set identity, time, subnet, MAC and address.
   - name: 'Record the network'
     labels: {role: swamp}
