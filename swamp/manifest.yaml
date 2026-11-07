@@ -51,7 +51,7 @@ additionalFiles:
   - ansible/task-vm-fleet-wait.yml
   - ansible/shape-gate-requirements.txt
   - ansible/tasks/task-vm-ready.yml
-- ansible/tasks/task-vm-recipe.yml
+  - ansible/tasks/task-vm-recipe.yml
   - ansible/tasks/task-vm-software.yml
   - ansible/tasks/task-vm-apt.yml
   - ansible/tasks/task-vm-apt-config.yml

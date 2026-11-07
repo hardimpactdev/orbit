@@ -1,6 +1,5 @@
 ---
 # The task VM role, in the phases of a Node converge: software, tools, check.
-# An image build adds two: clean, and template, which checks the template that the build made.
 # One playbook, two callers: the Incus base refresh runs it on the builder, a converge runs it on a running task VM.
 # Versions come from intent.recipe, the recipe.json of the release; this file names none.
 - name: Task VM role

@@ -28,10 +28,10 @@ class TaskVmRoleTest(unittest.TestCase):
         play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
         self.assertEqual(play['hosts'], 'task_vm')
         self.assertEqual({task['name']: task['tags'] for task in play['tasks']},
-                         {'Resolve the recipe': ['always'], 'Software': ['software'], 'Record the software': ['software'],
+                         {'Wait for a new server': ['always'], 'Resolve the recipe': ['always'], 'Software': ['software'], 'Record the software': ['software'],
                           'Tools': ['tools'], 'Record the tools': ['tools'], 'Boot': ['boot'], 'Record the boot': ['boot'], 'Checkout': ['checkout'], 'Branch': ['branch'],
                           'Fleet': ['fleet'], 'Check': ['check'], 'Record the check': ['check']})
-        # The image phases: the containers' `base` snapshots, then the clean of a recipe image build. No play waits for the nested fleet.
+        # The image phase takes the containers' `base` snapshots. No play waits for the nested fleet.
         image = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]
         self.assertEqual({task['name']: task['tags'] for task in image['tasks']},
                          {'Take the base snapshots': ['fleet']})
@@ -191,6 +191,16 @@ class TaskVmRoleTest(unittest.TestCase):
             self.assertIs(apt['install_recommends'], False, name)
             self.assertIs(apt['fail_on_autoremove'], True, name)
         self.assertIs(found['Install the Ubuntu packages']['ansible.builtin.apt']['allow_downgrade'], True)
+
+    def test_the_wait_for_a_new_server_is_for_an_image_only(self):
+        phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-ready.yml').read_text())
+        self.assertEqual([task['when'] for task in phase], ['intent.image'])
+        steps = {task['name']: task for task in phase[0]['block']}
+        self.assertIn('ansible.builtin.wait_for_connection', steps['Wait until SSH answers'])
+        wait = steps['Wait for cloud-init']
+        self.assertEqual(wait['ansible.builtin.command']['argv'][:2], ['timeout', '900'])
+        self.assertEqual(wait['failed_when'], 'ready_cloud_init.rc not in [0, 2]')
+
 
 if __name__ == '__main__':
     unittest.main()
