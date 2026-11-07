@@ -1,0 +1,471 @@
+---
+# Cases of the private DNS templates (swamp/ansible/templates/dns-*.j2). Each case is data: fixed input, the exact text or JSON that must come out.
+#   render:   dns + upstream resolvers -> orbit.conf, orbit.hosts, orbit.servers
+#   validate: dns -> dns.config_invalid or none (names, addresses, revision, pair)
+#   uplink:   resolver files of the Node -> the upstream resolvers (and whether the DHCP lease must be read next)
+#   queries:  dns -> the dig questions
+#   verify:   dns + the answers of dig (blocks, rendered like dig prints them by dig.j2) -> the errors of the end check
+# The expected texts are written here by hand, never produced by the template, so a change of the template shows as a failed case.
+- name: Render, validate, probe and check the private DNS against fixed data
+  hosts: localhost
+  gather_facts: false
+  # The patterns the phase and its templates share (grammar of names, addresses and file lines).
+  vars_files:
+    - "{{ playbook_dir }}/../../../../../ansible/vars/dns.yml"
+  vars:
+    templates: "{{ playbook_dir }}/../../../../../ansible/templates"
+    header: "# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.\n"
+    middle: "bind-dynamic\nno-resolv\nno-hosts\nlocal-ttl=30\n"
+    tail: "addn-hosts=/var/lib/orbit/dnsmasq/orbit.hosts\nservers-file=/var/lib/orbit/dnsmasq/orbit.servers\n"
+    # The valid parts that every case starts from: one revision and one listen address.
+    revision: &revision "1762540000000123"
+    listen: &listen [10.44.0.1]
+    empty: &empty {revision: *revision, listen: *listen, tlds: [], records: []}
+
+    # Lines that no valid render holds. Each must be refused by the grammar.
+    bad_lines:
+      hosts: ["10.44.0.2 Gateway.orbit", "10.44.0.2 a.test extra", "10.44.0.2", "10.44.0.2  a.test", "999.0.0.1 a.test", "10.44.0.2 a.test\n", "dhcp-range=10.0.0.2,10.0.0.9"]
+      servers: ["server=/a.test", "server=/a.test/10.0.0.1", "server=/*.a.test/10.0.0.1", "server=10.0.0.1", "server=/a.test/\n", "address=/a.test/10.0.0.1"]
+      conf: ["dhcp-range=10.0.0.2,10.0.0.9", "interface=eth0", "server=/a.test/10.0.0.1", "address=/test/10.44.0.7", "address=/.test/10.44.0.7 x", "conf-file=/etc/shadow", "addn-hosts=/tmp/a b", "listen-address=fd00::1", "log-facility=/etc/x", "no-resolv\n"]
+
+    render_cases:
+      # The reserved names: exact names outside any TLD. Each has the hosts line and the NODATA/forward pair.
+      - name: reserved names
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: reverb.orbit, address: 10.44.0.4, pair: true}
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: metrics.orbit, address: 10.44.0.2, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.2 gateway.orbit\n10.44.0.2 metrics.orbit\n10.44.0.4 reverb.orbit\n"
+        servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\nserver=/metrics.orbit/\nserver=/*.metrics.orbit/#\nserver=/reverb.orbit/\nserver=/*.reverb.orbit/#\n"
+      # A TLD answers every name under it with one wildcard line and is local: other types give NODATA.
+      - name: TLD only
+        dns:
+          revision: *revision
+          listen: *listen
+          records: []
+          tlds: [{name: test, address: 10.44.0.7}]
+        upstream: [192.0.2.53, 192.0.2.54]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\nserver=192.0.2.54\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}"
+        servers: "{{ header }}"
+      # A custom proxy name inside the TLD whose answer differs from the wildcard: the hosts line only, no pair.
+      - name: TLD and a custom proxy name inside it
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: x.test, address: 10.44.0.9, pair: false}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.9 x.test\n"
+        servers: "{{ header }}"
+      # An exact Route outside any TLD: its own name only; names below it keep the public resolvers.
+      - name: exact Route outside a TLD
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.3 app.example.com\n"
+        servers: "{{ header }}server=/app.example.com/\nserver=/*.app.example.com/#\n"
+      # Several TLDs and several listen addresses: sorted by name, one block each, in the order given for the listen addresses.
+      - name: several TLDs and listen addresses
+        dns:
+          revision: *revision
+          listen: [10.44.0.1, 10.45.0.1]
+          tlds:
+            - {name: test, address: 10.44.0.7}
+            - {name: prod, address: 10.44.0.8}
+            - {name: dev.local, address: 10.44.0.9}
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: x.test, address: 10.44.0.9, pair: false}
+            - {name: a.prod, address: 10.44.0.8, pair: false}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\nlisten-address=10.45.0.1\n{{ middle }}server=192.0.2.53\naddress=/.dev.local/10.44.0.9\nlocal=/dev.local/\naddress=/.prod/10.44.0.8\nlocal=/prod/\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.8 a.prod\n10.44.0.2 gateway.orbit\n10.44.0.9 x.test\n"
+        servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\n"
+      # Nothing to answer: still a valid file set, so a Node whose last name went is repaired like any other.
+      - name: empty records and no TLD
+        dns: *empty
+        upstream: [1.1.1.1, 8.8.8.8]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=1.1.1.1\nserver=8.8.8.8\n{{ tail }}"
+        hosts: "{{ header }}"
+        servers: "{{ header }}"
+      # The same render in another order is the same text: the compare of a rerun finds no change.
+      - name: record order does not matter
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: b.example.com, address: 10.44.0.6, pair: true}
+            - {name: a.example.com, address: 10.44.0.5, pair: true}
+            - {name: a.example.com, address: 10.44.0.4, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.4 a.example.com\n10.44.0.5 a.example.com\n10.44.0.6 b.example.com\n"
+        servers: "{{ header }}server=/a.example.com/\nserver=/*.a.example.com/#\nserver=/b.example.com/\nserver=/*.b.example.com/#\n"
+
+    # The refusals. Every case is the valid data with one thing wrong; `error` is what the phase fails with.
+    validate_cases:
+      - {name: valid, error: null, dns: {revision: *revision, listen: *listen, tlds: [{name: test, address: 10.44.0.7}], records: [{name: gateway.orbit, address: 10.44.0.2, pair: true}, {name: x.test, address: 10.44.0.9, pair: false}]}}
+      - {name: valid with nothing to answer, error: null, dns: *empty}
+      - {name: a name with a capital, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: Gateway.orbit, address: 10.44.0.2, pair: true}]}}
+      - {name: a name with an underscore, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: my_app.test, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a trailing newline, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "a.test\n", address: 10.44.0.2, pair: false}]}}
+      - {name: a name that would add a config line, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "a.test\nserver=203.0.113.9", address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a space, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test extra, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with an empty label, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a..test, address: 10.44.0.2, pair: false}]}}
+      - {name: a name with a trailing dot, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test., address: 10.44.0.2, pair: false}]}}
+      - {name: a wildcard name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "*.test", address: 10.44.0.2, pair: false}]}}
+      - {name: a label with a leading hyphen, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: -a.test, address: 10.44.0.2, pair: false}]}}
+      - {name: a label of 64 characters, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "{{ 'a' * 64 }}.test", address: 10.44.0.2, pair: false}]}}
+      - {name: a name of 255 characters, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: "{{ ('a' * 63 ~ '.') * 3 ~ 'a' * 61 ~ '.test' }}", address: 10.44.0.2, pair: false}]}}
+      - {name: a name that is a number, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: 5, address: 10.44.0.2, pair: false}]}}
+      - {name: a record without a name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{address: 10.44.0.2, pair: false}]}}
+      - {name: an address out of range, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 999.1.1.1, pair: false}]}}
+      - {name: an address with three parts, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0, pair: false}]}}
+      - {name: an address with a leading zero, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 010.44.0.1, pair: false}]}}
+      - {name: an address with a trailing newline, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: "10.44.0.1\n", pair: false}]}}
+      - {name: an IPv6 address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: "fd00::1", pair: false}]}}
+      - {name: an address with a prefix length, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1/24, pair: false}]}}
+      - {name: an address with more text, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1 extra, pair: false}]}}
+      - {name: a record without an address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, pair: false}]}}
+      - {name: a pair that is not a boolean, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1, pair: "true"}]}}
+      - {name: a record without a pair, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: [{name: a.test, address: 10.44.0.1}]}}
+      - {name: a TLD with a bad name, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [{name: TEST, address: 10.44.0.7}]}}
+      - {name: a TLD with a bad address, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [{name: test, address: 10.44.0.700}]}}
+      - {name: a TLD that is not a mapping, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, records: [], tlds: [test]}}
+      - {name: a listen address that is not IPv4, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: ["fd00::1"]}}
+      - {name: no listen address, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: []}}
+      - {name: a listen address that is a string, error: dns.config_invalid, dns: {revision: *revision, tlds: [], records: [], listen: 10.44.0.1}}
+      - {name: a revision of zero, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: "0"}}
+      - {name: a revision that is not digits, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: abc}}
+      - {name: a revision with a newline, error: dns.config_invalid, dns: {listen: *listen, tlds: [], records: [], revision: "17\n"}}
+      - {name: records that are a string, error: dns.config_invalid, dns: {revision: *revision, listen: *listen, tlds: [], records: none}}
+
+    # The resolver files of the Node. A stub (127.0.0.53, 127.0.0.54) never counts; neither does anything of the `orbit` interface.
+    route_head: "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+    uplink_cases:
+      - name: resolved lists two servers, a stub and an IPv6 address
+        resolved: "# This is /run/systemd/resolve/resolv.conf\nnameserver 127.0.0.53\nnameserver 192.0.2.53\nnameserver 2001:db8::53\nnameserver 192.0.2.54\nnameserver 192.0.2.53\nsearch internal\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [192.0.2.53, 192.0.2.54], source: resolved, interface: eth0, pending: false}
+      - name: only a stub, so the lease of the default-route interface is next
+        resolved: "nameserver 127.0.0.53\noptions edns0 trust-ad\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\neth0\t0000000A\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [], source: lease, interface: eth0, pending: true}
+      - name: a lease with a stub, an IPv6 address and a repeat
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: "# This is private data. Do not parse.\nADDRESS=10.0.0.5\nDNS=192.0.2.10 2001:db8::10 127.0.0.1 192.0.2.11 192.0.2.10\nDOMAINS=internal\n"
+        expect: {servers: [192.0.2.10, 192.0.2.11], source: lease, interface: eth0, pending: false}
+      - name: a lease without a usable server falls back
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: "ADDRESS=10.0.0.5\nDNS=127.0.0.1 0.0.0.0\n"
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: eth0, pending: false}
+      - name: no lease file falls back
+        resolved: "nameserver 127.0.0.53\n"
+        route: "{{ route_head }}eth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+        lease: ""
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: eth0, pending: false}
+      - name: the lowest metric wins and orbit and lo never do
+        resolved: ""
+        route: "{{ route_head }}orbit\t00000000\t0100000A\t0003\t0\t0\t0\t00000000\t0\t0\t0\nlo\t00000000\t00000000\t0003\t0\t0\t1\t00000000\t0\t0\t0\neth0\t00000000\t0100000A\t0003\t0\t0\t100\t00000000\t0\t0\t0\neth1\t00000000\t0200000A\t0003\t0\t0\t50\t00000000\t0\t0\t0\n"
+        lease: "DNS=192.0.2.77\n"
+        expect: {servers: [192.0.2.77], source: lease, interface: eth1, pending: false}
+      - name: no uplink at all falls back
+        resolved: ""
+        route: "{{ route_head }}orbit\t00000000\t0100000A\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"
+        lease: null
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: null, pending: false}
+      - name: a route file that is empty and no resolved file
+        resolved: ""
+        route: ""
+        lease: null
+        expect: {servers: [1.1.1.1, 8.8.8.8], source: fallback, interface: null, pending: false}
+
+    # The questions: A for every record and one name per TLD, AAAA for a pair, and a child of every pair.
+    query_cases:
+      - name: records, a TLD and a pair
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: [{name: test, address: 10.44.0.7}, {name: prod, address: 10.44.0.8}]
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: x.test, address: 10.44.0.9, pair: false}
+        records: [gateway.orbit, A, gateway.orbit, AAAA, x.test, A, orbit-check.test, A, orbit-check.prod, A]
+        children: [orbit-check.gateway.orbit, A]
+      - name: nothing to ask
+        dns: *empty
+        records: []
+        children: []
+
+    # The verdict on what dig printed. A block is one question: its status, its type and its answers.
+    verify_dns: &verify_dns
+      revision: *revision
+      listen: *listen
+      tlds: [{name: test, address: 10.44.0.7}]
+      records:
+        - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+        - {name: x.test, address: 10.44.0.9, pair: false}
+    good_blocks: &good_blocks
+      - {name: gateway.orbit, type: A, status: NOERROR, answers: [10.44.0.2]}
+      - {name: gateway.orbit, type: AAAA, status: NOERROR, answers: []}
+      - {name: x.test, type: A, status: NOERROR, answers: [10.44.0.9]}
+      - {name: orbit-check.test, type: A, status: NOERROR, answers: [10.44.0.7]}
+      - {name: orbit-check.gateway.orbit, type: A, status: NXDOMAIN, answers: []}
+    verify_cases:
+      - {name: every answer is as rendered, dns: *verify_dns, blocks: *good_blocks, errors: []}
+      - name: a child that the upstream never answered is no answer
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:4] }}"
+        errors: []
+      - name: a child answered by the upstream with another address
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:4] + [{'name': 'orbit-check.gateway.orbit', 'type': 'A', 'status': 'NOERROR', 'answers': ['198.51.100.7']}] }}"
+        errors: []
+      - name: the AAAA of a pair leaks an address
+        dns: *verify_dns
+        blocks: "{{ [good_blocks[0], {'name': 'gateway.orbit', 'type': 'AAAA', 'status': 'NOERROR', 'answers': ['2001:db8::2']}] + good_blocks[2:] }}"
+        errors: ["gateway.orbit AAAA: expected NOERROR without an answer, got NOERROR 2001:db8::2"]
+      - name: the AAAA of a pair is refused
+        dns: *verify_dns
+        blocks: "{{ [good_blocks[0], {'name': 'gateway.orbit', 'type': 'AAAA', 'status': 'REFUSED', 'answers': []}] + good_blocks[2:] }}"
+        errors: ["gateway.orbit AAAA: expected NOERROR without an answer, got REFUSED"]
+      - name: the A of a record is another address
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:2] + [{'name': 'x.test', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.7']}] + good_blocks[3:] }}"
+        errors: ["x.test A: expected 10.44.0.9, got NOERROR 10.44.0.7"]
+      - name: the A of a record is NXDOMAIN
+        dns: *verify_dns
+        blocks: "{{ [{'name': 'gateway.orbit', 'type': 'A', 'status': 'NXDOMAIN', 'answers': []}] + good_blocks[1:] }}"
+        errors: ["gateway.orbit A: expected 10.44.0.2, got NXDOMAIN"]
+      - name: the name of a TLD does not answer
+        dns: *verify_dns
+        blocks: "{{ good_blocks[:3] + good_blocks[4:] }}"
+        errors: ["orbit-check.test A: expected 10.44.0.7, got no answer"]
+      - name: dnsmasq is down, so nothing answered
+        dns: *verify_dns
+        blocks: []
+        errors:
+          - "gateway.orbit A: expected 10.44.0.2, got no answer"
+          - "gateway.orbit AAAA: expected NOERROR without an answer, got no answer"
+          - "x.test A: expected 10.44.0.9, got no answer"
+          - "orbit-check.test A: expected 10.44.0.7, got no answer"
+      - name: a name of another case does not count
+        dns: *verify_dns
+        blocks: "{{ [{'name': 'Gateway.Orbit', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.2']}] + good_blocks[1:] }}"
+        errors: []
+
+    # Real dig output (BIND 9.10.6 against dnsmasq 2.92), copied as it came, for the one parser that reads it.
+    real_dig: |
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 19159
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;gateway.orbit.			IN	A
+
+      ;; ANSWER SECTION:
+      gateway.orbit.		30	IN	A	10.44.0.2
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41401
+      ;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;gateway.orbit.			IN	AAAA
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 5645
+      ;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ; OPT=15: 00 0e ("..")
+      ;; QUESTION SECTION:
+      ;orbit-check.gateway.orbit.	IN	A
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 27991
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;x.test.				IN	A
+
+      ;; ANSWER SECTION:
+      x.test.			30	IN	A	10.44.0.9
+
+      ;; Got answer:
+      ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3333
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+      ;; OPT PSEUDOSECTION:
+      ; EDNS: version: 0, flags:; udp: 1232
+      ;; QUESTION SECTION:
+      ;orbit-check.test.		IN	A
+
+      ;; ANSWER SECTION:
+      orbit-check.test.	30	IN	A	10.44.0.7
+
+  tasks:
+    - name: Render the files
+      ansible.builtin.set_fact:
+        rendered: >-
+          {{ rendered | default({}) | combine({c.name: {
+          'conf': lookup('ansible.builtin.template', templates ~ '/dns-orbit.conf.j2'),
+          'hosts': lookup('ansible.builtin.template', templates ~ '/dns-orbit.hosts.j2'),
+          'servers': lookup('ansible.builtin.template', templates ~ '/dns-orbit.servers.j2')}}) }}
+      vars:
+        dns: "{{ c.dns }}"
+        dns_upstream: "{{ c.upstream }}"
+        dns_hosts_path: /var/lib/orbit/dnsmasq/orbit.hosts
+        dns_servers_path: /var/lib/orbit/dnsmasq/orbit.servers
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The files are the expected text
+      ansible.builtin.assert:
+        that:
+          - rendered[c.name].conf == c.conf
+          - rendered[c.name].hosts == c.hosts
+          - rendered[c.name].servers == c.servers
+        fail_msg: "{{ c.name }}: got {{ rendered[c.name] | to_json }}, expected {{ {'conf': c.conf, 'hosts': c.hosts, 'servers': c.servers} | to_json }}"
+        quiet: true
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    # The grammar the phase holds every line to before it installs: a valid render never breaks it, a stray line does.
+    - name: Every rendered line is a line of the grammar
+      ansible.builtin.assert:
+        that:
+          - rendered[c.name].conf.splitlines() | reject('match', dns_line_conf) | list == []
+          - rendered[c.name].hosts.splitlines() | reject('match', dns_line_hosts) | list == []
+          - rendered[c.name].servers.splitlines() | reject('match', dns_line_servers) | list == []
+        fail_msg: "{{ c.name }}: a line of {{ rendered[c.name] | to_json }} is outside the grammar"
+        quiet: true
+      loop: "{{ render_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The grammar refuses a stray line
+      ansible.builtin.assert:
+        that:
+          - bad_lines.hosts | reject('match', dns_line_hosts) | list == bad_lines.hosts
+          - bad_lines.servers | reject('match', dns_line_servers) | list == bad_lines.servers
+          - bad_lines.conf | reject('match', dns_line_conf) | list == bad_lines.conf
+        fail_msg: "a line that must be refused matched the grammar"
+        quiet: true
+
+    - name: Validate the data
+      ansible.builtin.set_fact:
+        validated: "{{ validated | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-validate.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+      loop: "{{ validate_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The data is accepted or refused with its code
+      ansible.builtin.assert:
+        that:
+          - validated[c.name].error == c.error
+        fail_msg: "{{ c.name }}: got {{ validated[c.name] | to_json }}, expected {{ c.error | to_json }}"
+        quiet: true
+      loop: "{{ validate_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Read the resolvers of the uplink
+      ansible.builtin.set_fact:
+        uplinks: "{{ uplinks | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-uplink.j2') | from_json}) }}"
+      vars:
+        uplink_resolved: "{{ c.resolved }}"
+        uplink_route: "{{ c.route }}"
+        uplink_lease: "{{ c.lease }}"
+      loop: "{{ uplink_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The resolvers are the expected ones
+      ansible.builtin.assert:
+        that:
+          - uplinks[c.name] == c.expect
+        fail_msg: "{{ c.name }}: got {{ uplinks[c.name] | to_json }}, expected {{ c.expect | to_json }}"
+        quiet: true
+      loop: "{{ uplink_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Ask the questions
+      ansible.builtin.set_fact:
+        questions: "{{ questions | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+        dns_mode: queries
+      loop: "{{ query_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The questions are the expected ones
+      ansible.builtin.assert:
+        that:
+          - questions[c.name].records == c.records
+          - questions[c.name].children == c.children
+        fail_msg: "{{ c.name }}: got {{ questions[c.name] | to_json }}, expected {{ {'records': c.records, 'children': c.children} | to_json }}"
+        quiet: true
+      loop: "{{ query_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    # dig prints each block as it prints any answer; dig.j2 is that format, so a case lists blocks, not text.
+    - name: Print the answers like dig
+      ansible.builtin.set_fact:
+        dig_texts: "{{ dig_texts | default({}) | combine({item.0.name: (dig_texts[item.0.name] | default('')) ~ lookup('ansible.builtin.template', playbook_dir ~ '/dig.j2')}) }}"
+      vars:
+        c_name: "{{ item.1.name }}"
+        c_type: "{{ item.1.type }}"
+        c_status: "{{ item.1.status }}"
+        c_answers: "{{ item.1.answers }}"
+      loop: "{{ verify_cases | subelements('blocks', skip_missing=true) }}"
+      loop_control: {label: "{{ item.0.name }}: {{ item.1.name }} {{ item.1.type }}"}
+    - name: Check the answers
+      ansible.builtin.set_fact:
+        verdicts: "{{ verdicts | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json}) }}"
+      vars:
+        dns: "{{ c.dns }}"
+        dns_mode: verify
+        dig_text: "{{ dig_texts[c.name] | default('') }}"
+      loop: "{{ verify_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The verdict is the expected one
+      ansible.builtin.assert:
+        that:
+          - verdicts[c.name].errors == c.errors
+        fail_msg: "{{ c.name }}: got {{ verdicts[c.name] | to_json }}, expected {{ c.errors | to_json }}"
+        quiet: true
+      loop: "{{ verify_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Check the answers of real dig output
+      ansible.builtin.set_fact:
+        real_verdict: "{{ lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json }}"
+      vars:
+        dns: "{{ verify_dns }}"
+        dns_mode: verify
+        dig_text: "{{ real_dig }}"
+    - name: Real dig output is read as dig prints it
+      ansible.builtin.assert:
+        that:
+          - real_verdict.errors == []
+        fail_msg: "real dig output: got {{ real_verdict | to_json }}, expected no error"
+        quiet: true

@@ -1,0 +1,117 @@
+---
+# One step of converge.yml.
+- name: "Before: the files and the dnsmasq process"
+  become: true
+  block:
+    - name: Read the files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ files }}"
+      register: before_files
+    - name: Read the process
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=MainPID, --value, dnsmasq]
+      register: before_pid
+      changed_when: false
+
+- name: "Run the phase: {{ step.name }}"
+  block:
+    - name: Add the stray config that makes dnsmasq answer wrongly
+      ansible.builtin.copy:
+        content: "# Proof only: an AAAA answer for a name that must have none.\nhost-record=gateway.orbit,{{ dns_address }},fd00::2\n"
+        dest: /etc/dnsmasq.d/zz-proof-leak.conf
+        mode: "0644"
+      become: true
+      when: step.leak | default(false)
+    - name: Write the intent
+      ansible.builtin.copy:
+        content: >-
+          {{ {'node': {'host': '127.0.0.1', 'user': 'orbit', 'port': 22, 'identity_file': '/nonexistent', 'host_keys': [placeholder_key]},
+          'dns': {'revision': step.revision, 'listen': [dns_address], 'tlds': step.tlds, 'records': step.records}} | to_json }}
+        dest: "{{ folder.path }}/intent.json"
+        mode: "0600"
+    - name: Clear the result of the step before
+      ansible.builtin.file:
+        path: "{{ folder.path }}/result.json"
+        state: absent
+    - name: Run the phase
+      ansible.builtin.command:
+        argv: [timeout, "180", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+        chdir: "{{ ansible_dir }}"
+      environment:
+        ORBIT_RUN: "{{ folder.path }}"
+        ANSIBLE_NOCOLOR: "1"
+        ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
+      register: phase
+      failed_when: false
+      changed_when: false
+    - name: Read the result
+      ansible.builtin.slurp:
+        src: "{{ folder.path }}/result.json"
+      register: result_file
+      failed_when: false
+  always:
+    - name: Remove the stray config
+      ansible.builtin.file:
+        path: /etc/dnsmasq.d/zz-proof-leak.conf
+        state: absent
+      become: true
+      when: step.leak | default(false)
+      # The next publication of the proof must not see it; the dnsmasq that already started with it is restarted by the next step.
+
+- name: "Assert the phase: {{ step.name }}"
+  vars:
+    result: "{{ (result_file.content | default('e30=') | b64decode | from_json) }}"
+    changed_hosts: "{{ phase.stdout | regex_findall('(?m)^node\\s+:\\s+ok=[0-9]+\\s+changed=([0-9]+)') }}"
+  block:
+    - name: The exit code is as expected
+      ansible.builtin.assert:
+        that: (phase.rc == 0) == (step.succeeds | default(true))
+        fail_msg: "{{ step.name }}: the phase exited {{ phase.rc }}. {{ phase.stdout_lines[-30:] | join('\n') }} {{ phase.stderr }}"
+        quiet: true
+    - name: The result is what the Gateway would read
+      ansible.builtin.assert:
+        that: result == step.result
+        fail_msg: "{{ step.name }}: result.json is {{ result | to_json }}, expected {{ step.result | to_json }}"
+        quiet: true
+    - name: The phase reports the number of changes the step expects
+      ansible.builtin.assert:
+        that: (changed_hosts | first | int) == step.changed
+        fail_msg: "{{ step.name }}: the phase changed {{ changed_hosts | first | default('?') }} tasks, expected {{ step.changed }}"
+        quiet: true
+      when: step.changed is defined
+
+- name: "After: the files and the dnsmasq process of {{ step.name }}"
+  become: true
+  block:
+    - name: Read the files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ files }}"
+      register: after_files
+    - name: Read the process
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=MainPID, --value, dnsmasq]
+      register: after_pid
+      changed_when: false
+    - name: A refusal and a failed check leave every file as it was
+      ansible.builtin.assert:
+        that: (after_files.results | map(attribute='stat') | map(attribute='checksum', default='none') | list) == (before_files.results | map(attribute='stat') | map(attribute='checksum', default='none') | list)
+        fail_msg: "{{ step.name }}: a file changed although the phase failed"
+        quiet: true
+      when: not (step.succeeds | default(true)) and step.files_kept | default(false)
+    - name: A reload keeps the dnsmasq process, a restart replaces it
+      ansible.builtin.assert:
+        that: (after_pid.stdout == before_pid.stdout) == (step.pid == 'same')
+        fail_msg: "{{ step.name }}: dnsmasq pid {{ before_pid.stdout }} -> {{ after_pid.stdout }}, expected it to be {{ step.pid }}"
+        quiet: true
+      when: step.pid is defined
+
+- name: "Ask dnsmasq on {{ dns_address }}: {{ step.name }}"
+  ansible.builtin.include_tasks: probe.yml
+  loop: "{{ step.queries | default([]) }}"
+  loop_control:
+    loop_var: query
+    label: "{{ query.name }} {{ query.type }}"

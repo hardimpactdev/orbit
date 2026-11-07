@@ -1,0 +1,112 @@
+id: 9022e70f-5f43-4a91-9c51-25662333e505
+name: dns-publish
+description: "dns.publish: the complete private DNS on the vpn Node as one stock dnsmasq, written by one Ansible phase (ADR 0248). Shared child of the Route, Node, Cluster and role kinds."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    # The publication entry the owning kind already builds (connection and pinned host keys of the VPN Node), and the render.
+    intent:
+      type: object
+      properties:
+        node_id: {type: integer, minimum: 1}
+        connection:
+          type: object
+          properties:
+            nodeHost: {type: string, minLength: 1}
+            nodeUser: {type: string, minLength: 1}
+            nodePort: {type: integer, minimum: 1}
+            nodeIdentityFile: {type: string, minLength: 1}
+          required: [nodeHost, nodeUser, nodePort, nodeIdentityFile]
+        host_keys: {type: array, minItems: 1, items: {type: string}}
+        dns:
+          type: object
+          properties:
+            revision: {type: string, pattern: '^[1-9][0-9]{0,19}$'}
+            listen: {type: array, minItems: 1, items: {type: string}}
+            tlds: {type: array, items: {type: object}}
+            records: {type: array, items: {type: object}}
+          required: [revision, listen, tlds, records]
+          additionalProperties: false
+      required: [node_id, connection, host_keys, dns]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: publish
+  labels: {role: swamp}
+  steps:
+    # Input: the render and the connection of the Node as a 0600 file in the run folder, and the shipped playbook with its templates.
+  - name: input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent:
+          node:
+            host: '${{ inputs.intent.connection.nodeHost }}'
+            user: '${{ inputs.intent.connection.nodeUser }}'
+            port: '${{ inputs.intent.connection.nodePort }}'
+            identity_file: '${{ inputs.intent.connection.nodeIdentityFile }}'
+            host_keys: '${{ inputs.intent.host_keys }}'
+          dns: '${{ inputs.intent.dns }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # The phase: take the Node's dnsmasq lock, skip a superseded revision, else validate, save the last good files, install, reload or
+    # restart dnsmasq, check the answers with dig, record the revision. It writes result.json whether it passes or not.
+    # Budget: the lock wait is at most 45 s and the lock is held at most 100 s; a publication takes a few seconds (measured in the rehearsal).
+  - name: 'Run the DNS phase'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: input, condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "dns-publish-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags publish "$ORBIT_ANSIBLE/dns-publish.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # The public result the owning kind reads: the phase's result.json, printed. It runs after a failed phase too, so a refusal keeps its code.
+  - name: 'Report the result'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Run the DNS phase', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "dns-publish-result-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/result.json"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
+    # The run folder goes whatever happened.
+  - name: cleanup
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Report the result', condition: {type: always}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "dns-publish-cleanup-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

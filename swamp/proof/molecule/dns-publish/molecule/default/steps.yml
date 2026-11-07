@@ -1,0 +1,128 @@
+---
+# The steps of converge.yml, as data. A step is one publication and what must be true after it.
+#   revision, tlds, records     the render (dns.* of the intent); the listen address is {{ dns_address }}
+#   succeeds, result            the exit code of the phase and the result.json it wrote (the Gateway's terminal result)
+#   changed                     the number of changes the phase reports for the Node (only where it is exact)
+#   pid                         `same` after a reload or a skip, `new` after a restart
+#   files_kept                  after a failure, orbit.conf, orbit.hosts, orbit.servers and orbit.revision are as they were
+#   leak                        a stray config makes dnsmasq answer an AAAA for gateway.orbit during the step
+#   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata
+tld_test: &tld_test {name: test, address: 10.99.99.7}
+tld_prod: &tld_prod {name: prod, address: 10.99.99.8}
+tld_dev: &tld_dev {name: dev, address: 10.99.99.14}
+rec_gateway: &rec_gateway {name: gateway.orbit, address: 10.99.99.2, pair: true}
+rec_x: &rec_x {name: x.test, address: 10.99.99.9, pair: false}
+rec_app: &rec_app {name: app.example.com, address: 10.99.99.3, pair: true}
+rec_x2: &rec_x2 {name: x2.test, address: 10.99.99.10, pair: false}
+rec_new: &rec_new {name: new.example.org, address: 10.99.99.11, pair: true}
+
+# The questions of ADR 0248, for the state after step 1.
+answers_base: &answers_base
+  - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+  - {name: gateway.orbit, type: AAAA, nodata: true}
+  - {name: x.gateway.orbit, type: A, not_data: [10.99.99.2], any_status: true}
+  - {name: x.test, type: A, data: [10.99.99.9]}
+  - {name: x.test, type: AAAA, nodata: true}
+  - {name: foo.test, type: A, data: [10.99.99.7]}
+  - {name: foo.test, type: AAAA, nodata: true}
+  - {name: app.example.com, type: A, data: [10.99.99.3]}
+  - {name: app.example.com, type: AAAA, nodata: true}
+  - {name: www.app.example.com, type: A, not_data: [10.99.99.3], any_status: true}
+
+steps:
+  # The old listener holds the address; the phase stops it, restarts dnsmasq onto the address, and retires the old setup.
+  - name: the cutover from the old listener
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    result: {revision: "1762540000000001", dnsmasq: restarted}
+    pid: new
+    queries: *answers_base
+
+  - name: the same revision again is superseded
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded}
+    changed: 0
+    pid: same
+    queries: *answers_base
+
+  - name: an older revision is superseded
+    revision: "1762540000000000"
+    tlds: [*tld_test]
+    records: [*rec_gateway]
+    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded}
+    changed: 0
+    pid: same
+    queries: *answers_base
+
+  # Only the revision file changes.
+  - name: a newer revision with the same data changes nothing but the revision
+    revision: "1762540000000002"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    result: {revision: "1762540000000002", dnsmasq: unchanged}
+    changed: 1
+    pid: same
+    queries: *answers_base
+
+  # hosts and servers change, orbit.conf does not: SIGHUP, so the process stays.
+  - name: new records reload dnsmasq without a restart
+    revision: "1762540000000003"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000003", dnsmasq: reloaded}
+    pid: same
+    queries:
+      - {name: x2.test, type: A, data: [10.99.99.10]}
+      - {name: x2.test, type: AAAA, nodata: true}
+      - {name: new.example.org, type: A, data: [10.99.99.11]}
+      - {name: new.example.org, type: AAAA, nodata: true}
+      - {name: child.new.example.org, type: A, not_data: [10.99.99.11], any_status: true}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+
+  # A TLD is read at start only: the process is replaced.
+  - name: a new TLD restarts dnsmasq
+    revision: "1762540000000004"
+    tlds: [*tld_test, *tld_prod]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000004", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.prod, type: A, data: [10.99.99.8]}
+      - {name: foo.prod, type: AAAA, nodata: true}
+      - {name: foo.test, type: A, data: [10.99.99.7]}
+
+  - name: invalid data is refused and installs nothing
+    revision: "1762540000000005"
+    tlds: [*tld_test, *tld_prod]
+    records: [*rec_gateway, {name: BAD.test, address: 10.99.99.12, pair: false}]
+    succeeds: false
+    result: {error_code: dns.config_invalid}
+    files_kept: true
+    pid: same
+    queries:
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+
+  # The stray config answers an AAAA for gateway.orbit once dnsmasq restarts onto the new TLD: the check fails, the phase puts back the last good files.
+  - name: a wrong answer fails the check and puts the last good files back
+    revision: "1762540000000006"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    leak: true
+    succeeds: false
+    result: {error_code: dns.check_failed}
+    files_kept: true
+
+  # The stray config is gone. The restore restarted dnsmasq on the last good orbit.conf, so the new one differs from what runs: restart.
+  - name: the next newer revision repairs the Node
+    revision: "1762540000000007"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    result: {revision: "1762540000000007", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.dev, type: A, data: [10.99.99.14]}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+      - {name: gateway.orbit, type: AAAA, nodata: true}

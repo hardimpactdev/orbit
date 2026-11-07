@@ -1,0 +1,51 @@
+{#-
+  The upstream resolvers of the Node's own uplink, which dnsmasq forwards to (docs/reference/private-dns.md#upstream-resolvers).
+  Pure: it reads the patterns of vars/dns.yml, `uplink_resolved` (/run/systemd/resolve/resolv.conf or ''), `uplink_route` (/proc/net/route or '') and
+  `uplink_lease` (the DHCP lease of the default-route interface, '' when it has none, none when it was not read yet).
+  Order: the IPv4 resolvers of systemd-resolved, else those of the DHCP lease, else 1.1.1.1 and 8.8.8.8. It skips loopback, `0.0.0.0`
+  and everything of the `orbit` interface, so dnsmasq never forwards back to itself. It prints one JSON object:
+  `{"servers": [...], "source": "resolved" | "lease" | "fallback", "interface": the default-route interface or null, "pending": bool}`.
+  `pending` is true when the lease is the next source and was not read yet: read `/sys/class/net/<interface>/ifindex`, then
+  `/run/systemd/netif/leases/<index>`, and ask again with the lease text.
+-#}
+{%- set address_pattern = '^' ~ dns_pattern_ipv4 ~ '\\Z' -%}
+{%- set interface_pattern = '^' ~ dns_pattern_interface ~ '\\Z' -%}
+{%- macro usable(value) -%}{{ 'true' if (value is match(address_pattern) and not value.startswith('127.') and value != '0.0.0.0') else 'false' }}{%- endmacro -%}
+{%- set ns = namespace(servers=[], interface=none, metric=none) -%}
+{%- for candidate in uplink_resolved | regex_findall('(?m)^nameserver[ \\t]+(\\S+)') -%}
+{%- if usable(candidate) == 'true' and candidate not in ns.servers -%}
+{%- set ns.servers = ns.servers + [candidate] -%}
+{%- endif -%}
+{%- endfor -%}
+{#- The default route with the lowest metric, never `lo` or `orbit`. -#}
+{%- for line in uplink_route.splitlines() -%}
+{%- set fields = line.split() -%}
+{%- if fields | length >= 7 and fields[1] == '00000000' and fields[0] not in ['lo', 'orbit'] and fields[0] is match(interface_pattern) and fields[6] is match('^[0-9]+\\Z') -%}
+{%- if ns.metric is none or (fields[6] | int) < ns.metric -%}
+{%- set ns.interface = fields[0] -%}
+{%- set ns.metric = fields[6] | int -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if ns.servers | length > 0 -%}
+{{ {'servers': ns.servers, 'source': 'resolved', 'interface': ns.interface, 'pending': false} | to_json }}
+{%- elif ns.interface is none -%}
+{{ {'servers': ['1.1.1.1', '8.8.8.8'], 'source': 'fallback', 'interface': none, 'pending': false} | to_json }}
+{%- elif uplink_lease is none -%}
+{{ {'servers': [], 'source': 'lease', 'interface': ns.interface, 'pending': true} | to_json }}
+{%- else -%}
+{%- for line in uplink_lease.splitlines() -%}
+{%- if line.startswith('DNS=') -%}
+{%- for candidate in line[4:].split() -%}
+{%- if usable(candidate) == 'true' and candidate not in ns.servers -%}
+{%- set ns.servers = ns.servers + [candidate] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if ns.servers | length > 0 -%}
+{{ {'servers': ns.servers, 'source': 'lease', 'interface': ns.interface, 'pending': false} | to_json }}
+{%- else -%}
+{{ {'servers': ['1.1.1.1', '8.8.8.8'], 'source': 'fallback', 'interface': ns.interface, 'pending': false} | to_json }}
+{%- endif -%}
+{%- endif -%}

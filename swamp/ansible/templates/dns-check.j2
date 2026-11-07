@@ -1,0 +1,65 @@
+{#-
+  The end check of the private DNS: the questions to ask the running dnsmasq, and the verdict on the answers.
+  Pure: it reads `dns` (tlds, records) and `dns_mode`, and prints one JSON object.
+  `dns_mode: queries` gives the dig argument lists (`name TYPE` pairs):
+    `records`: A for every record and for one name per TLD (`orbit-check.<tld>`), AAAA for every record with `pair`;
+    `children`: A for `orbit-check.<name>`, a child of every record with `pair`.
+  `dns_mode: verify` also reads `dig_text`, the output of `dig +noall +comments +question +answer` for those questions, and gives
+  `{"errors": [...]}`, empty when every answer is as the render says:
+    a record or a TLD name answers A with its address;
+    a `pair` record answers AAAA with NOERROR and no answer (NODATA);
+    a child of a `pair` record is never answered with the address of the record (dnsmasq forwards it; a reply that never came is no answer).
+-#}
+{%- macro shown(block) -%}{{ 'no answer' if block is none else (block.status ~ (' ' ~ (block.data | join(',')) if block.data | length > 0 else '')) }}{%- endmacro -%}
+{%- if dns_mode == 'queries' -%}
+{%- set ns = namespace(records=[], children=[]) -%}
+{%- for record in dns.records -%}
+{%- set ns.records = ns.records + [record.name, 'A'] -%}
+{%- if record.pair -%}
+{%- set ns.records = ns.records + [record.name, 'AAAA'] -%}
+{%- set ns.children = ns.children + ['orbit-check.' ~ record.name, 'A'] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for tld in dns.tlds -%}
+{%- set ns.records = ns.records + ['orbit-check.' ~ tld.name, 'A'] -%}
+{%- endfor -%}
+{{ {'records': ns.records, 'children': ns.children} | to_json }}
+{%- else -%}
+{%- set ns = namespace(index={}, errors=[]) -%}
+{#- One block per question: its status, and the A and AAAA data of its answer section. -#}
+{%- for block in dig_text.split(';; Got answer:')[1:] -%}
+{%- set status = block | regex_findall('status: ([A-Z]+)') -%}
+{%- set question = block | regex_findall('(?m)^;([^\\s;]+)[ \\t]+IN[ \\t]+(\\S+)[ \\t]*$') -%}
+{%- if status | length > 0 and question | length > 0 -%}
+{%- set key = (question[0][0] | lower).rstrip('.') ~ ' ' ~ question[0][1] -%}
+{%- set data = [] -%}
+{%- for row in block | regex_findall('(?m)^\\S+[ \\t]+[0-9]+[ \\t]+IN[ \\t]+(?:A|AAAA)[ \\t]+(\\S+)[ \\t]*$') -%}
+{%- set _ = data.append(row) -%}
+{%- endfor -%}
+{%- set _ = ns.index.update({key: {'status': status[0], 'data': data}}) -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for record in dns.records -%}
+{%- set a = ns.index.get(record.name ~ ' A') -%}
+{%- if a is none or a.status != 'NOERROR' or record.address not in a.data -%}
+{%- set ns.errors = ns.errors + [record.name ~ ' A: expected ' ~ record.address ~ ', got ' ~ shown(a)] -%}
+{%- endif -%}
+{%- if record.pair -%}
+{%- set aaaa = ns.index.get(record.name ~ ' AAAA') -%}
+{%- if aaaa is none or aaaa.status != 'NOERROR' or aaaa.data | length > 0 -%}
+{%- set ns.errors = ns.errors + [record.name ~ ' AAAA: expected NOERROR without an answer, got ' ~ shown(aaaa)] -%}
+{%- endif -%}
+{%- set child = ns.index.get('orbit-check.' ~ record.name ~ ' A') -%}
+{%- if child is not none and record.address in child.data -%}
+{%- set ns.errors = ns.errors + ['orbit-check.' ~ record.name ~ ' A: a child of the name was answered with ' ~ record.address] -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for tld in dns.tlds -%}
+{%- set probe = ns.index.get('orbit-check.' ~ tld.name ~ ' A') -%}
+{%- if probe is none or probe.status != 'NOERROR' or tld.address not in probe.data -%}
+{%- set ns.errors = ns.errors + ['orbit-check.' ~ tld.name ~ ' A: expected ' ~ tld.address ~ ', got ' ~ shown(probe)] -%}
+{%- endif -%}
+{%- endfor -%}
+{{ {'errors': ns.errors} | to_json }}
+{%- endif -%}

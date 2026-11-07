@@ -1,0 +1,16 @@
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: {{ c_status }}, id: 1
+;; flags: qr rd ra; QUERY: 1, ANSWER: {{ c_answers | length }}, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;{{ c_name }}.	IN	{{ c_type }}
+
+{% if c_answers | length > 0 %}
+;; ANSWER SECTION:
+{% for address in c_answers %}
+{{ c_name }}.	30	IN	{{ c_type }}	{{ address }}
+{% endfor %}
+
+{% endif %}

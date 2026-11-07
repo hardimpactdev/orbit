@@ -1,0 +1,8 @@
+{#-
+  orbit.hosts: one `ADDRESS NAME` line for every record, read by dnsmasq through addn-hosts (and again on SIGHUP).
+  Pure: it reads `dns` (records). Sorted by name, then address, so one state is one text.
+-#}
+# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.
+{% for record in dns.records | sort(attribute='address') | sort(attribute='name') %}
+{{ record.address }} {{ record.name }}
+{% endfor %}

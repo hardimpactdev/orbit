@@ -1,0 +1,27 @@
+# The templates of the private DNS phase (swamp/ansible/templates/dns-*.j2), proved without a fleet: fixed data and fixed dig text in, text out.
+# Same framework as the `default` scenario; it needs no Node, so it runs on any machine.
+#   cd swamp/proof/molecule/dns-publish && molecule test -s unit
+driver:
+  name: default
+  options:
+    managed: false
+
+platforms:
+  - name: localhost
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      interpreter_python: auto_silent
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+
+scenario:
+  test_sequence:
+    - converge

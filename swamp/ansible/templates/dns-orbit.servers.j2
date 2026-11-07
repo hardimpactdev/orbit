@@ -1,0 +1,11 @@
+{#-
+  orbit.servers: the NODATA/forward pair of every exact name, read by dnsmasq through servers-file (and again on SIGHUP).
+  `server=/NAME/` has no address: dnsmasq answers the name from its hosts only, so other types (AAAA) give NODATA and never leave for the uplink.
+  `server=/*.NAME/#` sends every name below it to the default upstream resolvers.
+  Pure: it reads `dns` (records). Only records with `pair` get the lines. Sorted by name.
+-#}
+# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.
+{% for name in dns.records | selectattr('pair') | map(attribute='name') | unique | sort %}
+server=/{{ name }}/
+server=/*.{{ name }}/#
+{% endfor %}

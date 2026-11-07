@@ -1,0 +1,21 @@
+---
+# One question to the running dnsmasq, and what it must answer: a status, the addresses it must give, and the addresses it must not.
+- name: "Ask {{ query.name }} {{ query.type }}"
+  ansible.builtin.command:
+    argv: [dig, "@{{ dns_address }}", -p, "{{ dns_port | default(53) }}", +noall, +comments, +answer, +tries=1, +time=3, "{{ query.name }}", "{{ query.type }}"]
+  register: dig_answer
+  changed_when: false
+  failed_when: false
+
+- name: "{{ query.name }} {{ query.type }} is answered as expected"
+  vars:
+    statuses: "{{ dig_answer.stdout | regex_findall('status: ([A-Z]+)') }}"
+    given: "{{ dig_answer.stdout | regex_findall('(?m)^\\S+\\s+[0-9]+\\s+IN\\s+(?:A|AAAA)\\s+(\\S+)') }}"
+  ansible.builtin.assert:
+    that:
+      - (query.any_status | default(false)) or (statuses | first | default('none')) == query.status | default('NOERROR')
+      - query.data | default([]) | difference(given) == []
+      - given | intersect(query.not_data | default([])) == []
+      - not (query.nodata | default(false)) or given == []
+    fail_msg: "{{ query.name }} {{ query.type }}: status {{ statuses | first | default('none') }}, answers {{ given | to_json }}, expected {{ query | to_json }}"
+    quiet: true

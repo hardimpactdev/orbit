@@ -15,6 +15,14 @@ additionalFiles:
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/ai-router-task-guard.yml
+  - ansible/dns-publish.yml
+  - ansible/vars/dns.yml
+  - ansible/templates/dns-validate.j2
+  - ansible/templates/dns-orbit.conf.j2
+  - ansible/templates/dns-orbit.hosts.j2
+  - ansible/templates/dns-orbit.servers.j2
+  - ansible/templates/dns-uplink.j2
+  - ansible/templates/dns-check.j2
   - ansible/tasks/address-node.yml
   - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml

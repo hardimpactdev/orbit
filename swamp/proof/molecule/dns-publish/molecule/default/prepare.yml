@@ -1,0 +1,68 @@
+---
+# The Node before the first publication: dnsmasq and dig installed, the VPN address on `lo`, and the old listener setup running as the
+# live vpn Node runs it today: orbit-private-dns.socket holding the address on port 53 (UDP and TCP), dnsmasq on 127.0.0.55 with
+# orbit-vpn.conf and orbit-records.conf, a stock snippet with bind-interfaces, and the catalog and release of the listener.
+- name: The Node before the cutover
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install dnsmasq and dig
+      ansible.builtin.apt:
+        name: [dnsmasq, bind9-dnsutils, procps]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        update_cache_retries: 5
+    - name: Stop the stock dnsmasq
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: stopped
+    - name: Read the addresses of lo
+      ansible.builtin.command:
+        argv: [ip, -4, -o, addr, show, dev, lo]
+      register: lo_addresses
+      changed_when: false
+    - name: Add the VPN address to lo
+      ansible.builtin.command:
+        argv: [ip, addr, add, "{{ dns_address }}/32", dev, lo]
+      when: dns_address ~ '/32' not in lo_addresses.stdout
+      changed_when: true
+
+    - name: Make the folders of the old listener
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/var/lib/orbit/private-dns/releases/proof, /var/lib/orbit/dnsmasq/disabled]
+    - name: Write the old listener's files
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - {dest: /var/lib/orbit/private-dns/catalog.json, content: "{}\n"}
+        - {dest: /var/lib/orbit/private-dns/releases/proof/serve.php, content: "<?php\n"}
+        - {dest: /etc/dnsmasq.d/orbit-vpn.conf, content: "# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\nno-resolv\nserver=1.1.1.1\n"}
+        - {dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\nhost-record=gateway.orbit,{{ dns_address }}\n"}
+        - {dest: /etc/dnsmasq.d/ubuntu-fan, content: "# The stock snippet of ubuntu-fan.\nbind-interfaces\n"}
+        - dest: /etc/systemd/system/orbit-private-dns.socket
+          content: "[Socket]\nListenDatagram={{ dns_address }}:53\nListenStream={{ dns_address }}:53\nFreeBind=yes\n[Install]\nWantedBy=sockets.target\n"
+        - dest: /etc/systemd/system/orbit-private-dns.service
+          content: "[Unit]\nAfter=orbit-private-dns.socket\n[Service]\nSockets=orbit-private-dns.socket\nExecStart=/usr/bin/sleep infinity\n"
+      loop_control:
+        label: "{{ item.dest }}"
+    - name: Start the old listener and its backend
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      loop: [orbit-private-dns.socket, dnsmasq]
+
+    - name: The old listener holds the address
+      ansible.builtin.command:
+        argv: [ss, -H, -ulpn, src, "{{ dns_address }}:53"]
+      register: legacy_owner
+      changed_when: false
+      failed_when: "'orbit-private-dns' not in legacy_owner.stdout and 'systemd' not in legacy_owner.stdout"
