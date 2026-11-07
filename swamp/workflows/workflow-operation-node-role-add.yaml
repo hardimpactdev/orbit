@@ -955,6 +955,7 @@ jobs:
   - {job: "readiness", condition: *settled}
   - {job: "swamp_runtime_job", condition: *settled}
   - {job: "swamp_workers_job", condition: *settled}
+  - {job: "swamp_worker_renewal_job", condition: *settled}
   - {job: "swamp_check_job", condition: *settled}
   - {job: "Check Swamp runtime_job", condition: *settled}
   - {job: "phase_51", condition: *settled}
