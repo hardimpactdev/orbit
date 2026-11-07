@@ -300,6 +300,94 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  pi:
+    name: Pi check, test and build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: apps/pi-server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: pi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          bun-version: 1.4.2
+      - name: Install and verify worker ACL prerequisites
+        if: steps.scope.outputs.selected == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y acl
+          sudo -n -u nobody true
+      - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.selected == 'true'
+      - run: bun run check
+        if: steps.scope.outputs.selected == 'true'
+      - run: bun run test
+        if: steps.scope.outputs.selected == 'true'
+      - run: bun run build
+        if: steps.scope.outputs.selected == 'true'
+
+  agent:
+    name: Rust agent check and test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: agent
+      - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          coverage: none
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          bun-version: 1.4.2
+      - name: Prepare stable Rust
+        if: steps.scope.outputs.selected == 'true'
+        id: rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.scope.outputs.selected == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/agent/target
+          key: agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}
+      - run: cargo check --locked --all-targets
+        if: steps.scope.outputs.selected == 'true'
+      - name: Test the agent and composed extension crates
+        if: steps.scope.outputs.selected == 'true'
+        run: scripts/check-crates test --locked
+
   changes:
     name: Select build inputs
     runs-on: ubuntu-26.04
@@ -414,7 +502,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, swamp, proof, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

@@ -30,6 +30,28 @@ class RequiredGateTest(unittest.TestCase):
         self.assertNotIn('  native-plan:', SOURCE)
         self.assertNotIn('  native-tests:', SOURCE)
 
+    def test_selected_component_failure_or_skip_blocks_required_gate(self):
+        import json
+        import os
+        import subprocess
+        import textwrap
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = caller.split('  required:\n', 1)[1]
+        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
+        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
+        for component in ('pi', 'agent'):
+            self.assertIn(component, jobs)
+            for selected, result, success in ((True, 'success', True), (True, 'failure', False),
+                                              (True, 'skipped', False), (False, 'skipped', True)):
+                needs = {job: {'result': 'success'} for job in jobs}
+                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release')}
+                selection[component] = selected
+                needs[component]['result'] = result
+                needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
+                done = subprocess.run(['python3', '-c', code], env={**os.environ, 'NEEDS': json.dumps(needs)},
+                                      capture_output=True, timeout=10)
+                self.assertEqual(done.returncode == 0, success, (component, selected, result, done.stderr))
+
     def test_units_use_one_pool_job_with_deno_parallelism(self):
         block = SOURCE.split('  tests:\n')[1]
         self.assertNotIn('  test-shards:', SOURCE)

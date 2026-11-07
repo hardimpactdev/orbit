@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 
 struct Fixture(PathBuf);
@@ -24,20 +24,20 @@ impl Drop for Fixture {
     }
 }
 fn context() -> Context {
+    // Replays belong to one operation identity, including its creation time. Reading the wall
+    // clock for every context makes a repeat conflict when the calls cross a second boundary.
+    static CREATED_AT: OnceLock<i64> = OnceLock::new();
     Context::new(
         Platform::Linux,
         std::time::Instant::now() + Duration::from_secs(3),
     )
     .with_effect_identity(
         "11111111-1111-4111-8111-111111111111".into(),
-        time::OffsetDateTime::now_utc().unix_timestamp(),
+        *CREATED_AT.get_or_init(|| time::OffsetDateTime::now_utc().unix_timestamp()),
     )
     .with_effect_masks(vec![])
-    .with_effect_identity(
-        "11111111-1111-4111-8111-111111111111".into(),
-        time::OffsetDateTime::now_utc().unix_timestamp(),
-    )
 }
+
 fn code(outcome: Outcome) -> String {
     match outcome {
         Outcome::Ok(_) => "ok".into(),
