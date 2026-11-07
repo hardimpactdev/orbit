@@ -84,6 +84,10 @@ sequenceDiagram
   %%> What it does:
   %%> - a plain Incus snapshot `base` of the three nested containers, with any converged state in it
   %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
+  SW->>VM: Check the workspace commit<br/>HEAD is the commit under proof
+  %%> Decided by the top orchestrator, for Nick's review (2026-11-07): before any case the run reads the HEAD of the workspace of its VM and asserts that it is the commit of the proof. Try 13's list run went on after the import of its bundle failed and proved a clone of main
+  %%> - a mismatch, or a workspace that prints no commit, fails the run with `proof.workspace_commit_mismatch`, with both commits in the result (`workspace`), and no case runs; the proof ends with the same code when no case ran in any command. A VM that cannot be read at all fails as `proof.run_failed`
+  %%> - it runs after the provision, so it is a second line; the gate of the provision is fixed in another lane. See the chart of the kind `proof.command`
   SW->>VM: Run the proof<br/>child flow · proof-fleet verify
   %%> What it does:
   %%> - each batch applies its declared start state; its cases run one after another with their own resources and no undo

@@ -141,6 +141,12 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
                 .($released !== '' ? 'released at '.$released.(is_int($by) ? ' (operation '.$by.')' : '') : 'destroyed after '.self::text($kept['keep_until'] ?? null)));
         }
 
+        // A run whose VM workspace was not at the commit under proof ran no case: both commits say what is wrong.
+        foreach (self::entries($result['workspace'] ?? null) as $workspace) {
+            $found = self::text($workspace['found'] ?? null);
+            $this->writeHumanMessage('Workspace of '.self::text($workspace['command'] ?? null).': expected '.self::text($workspace['expected'] ?? null).', found '.($found === '' ? 'no commit' : $found));
+        }
+
         foreach (['vm' => 'VM', 'receipt_url' => 'Receipt'] as $field => $label) {
             $value = $result[$field] ?? null;
 

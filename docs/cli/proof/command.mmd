@@ -22,6 +22,12 @@ sequenceDiagram
   SW->>VM: Pin the host key<br/>of the new VM
   %%> What it does:
   %%> - fills the host key that the provision observed into the SSH target of the cases
+  SW->>VM: Check the workspace commit<br/>git rev-parse HEAD · assert
+  %%> Decided by the top orchestrator, for Nick's review (2026-11-07):
+  %%> - before any case, the parent reads the HEAD of the workspace of the VM and asserts that it is the commit of the proof (`head` of the verify intent). Try 13's list run went on after the import of its bundle failed and proved a clone of main
+  %%> - on a mismatch, or when git prints no commit, the run fails with `proof.workspace_commit_mismatch` and the result names both commits (`workspace.expected`, `workspace.found`); no case runs and the proof VM is destroyed, or kept with `--keep-failed`. When the SSH read itself fails, the run fails as `proof.run_failed`
+  %%> - this is a second line: it runs after the provision, so a wrong checkout still costs the provision; the gate of the provision stops it earlier
+  %%> - the nested Nodes mount the same directory as a disk device, so one read covers them. See the stage 3 chart
   SW->>VM: Run the proof<br/>child · proof-fleet-verify
   %%> Inputs:
   %%> - the cases file of the command, the checkout path, the group and the pinned SSH target of the VM

@@ -188,6 +188,19 @@ describe('proof:run', function (): void {
 
         expect(Artisan::output())->toContain('Kept VM: tvm-853 of firewall:allow, group 3905, released at 2026-11-07T10:05:00Z (operation 12632)')->not->toContain('destroyed after');
     });
+    it('prints both commits when the workspace of a VM was not at the commit under proof', function (string $found, string $printed): void {
+        $failed = proof_run_operation('failed');
+        proof_run_gateway([[...$failed, 'error_code' => 'proof.workspace_commit_mismatch', 'result' => [...$failed['result'],
+            'workspace' => [['command' => 'firewall:list', 'expected' => str_repeat('a', 40), 'found' => $found]]]]]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--no-interaction' => true]);
+
+        expect(Artisan::output())->toContain('Workspace of firewall:list: expected '.str_repeat('a', 40).', found '.$printed);
+    })->with([
+        'another commit' => [str_repeat('b', 40), str_repeat('b', 40)],
+        'no commit' => ['', 'no commit'],
+    ]);
+
     it('sends the given idempotency key unchanged', function (): void {
         $mock = proof_run_gateway([proof_run_operation('passed')]);
 
