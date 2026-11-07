@@ -37,6 +37,8 @@ Setup can use other commands, but the case must invoke the command under test th
 
 Cases have no undo. Each uses its own resources. A case that changes shared state (firewall off, an injected failure, a held lock) gets its own batch.
 
+Keep each protocol's bound firewall identity and select the placement anchor for the same protocol. Batch cases can reuse fixture names and leave earlier rules behind, so a comment alone can select another case's rule. Probe a partial state before the action to prove the line that should stay already works.
+
 ## CI
 
 Run the whole affected proof, including commands that consume a changed shared workflow, extension or role: list them in `swamp/proof/selection.txt` ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
