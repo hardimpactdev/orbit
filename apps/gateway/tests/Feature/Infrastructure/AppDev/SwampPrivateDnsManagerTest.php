@@ -92,6 +92,21 @@ describe('SwampPrivateDnsManager', function (): void {
             ->toThrow(fn (RuntimeConvergenceException $exception): bool => $exception->errorCode === 'app-dev.dns_config_failed');
     })->with([OperationStatus::Failed, OperationStatus::Interrupted, OperationStatus::Cancelled]);
 
+    it('publishes to every vpn Node before it throws the failure of one', function (): void {
+        $started = swampEndsPublications([OperationStatus::Failed]);
+        vpnNodeForPublication('vpn-a', '10.44.0.1');
+        $second = vpnNodeForPublication('vpn-b', '10.44.0.8');
+
+        expect(fn () => app(SwampPrivateDnsManager::class)->converge())
+            ->toThrow(fn (RuntimeConvergenceException $exception): bool => $exception->errorCode === 'app-dev.dns_config_failed');
+
+        $operations = Operation::query()->where('kind', 'dns.publish')->orderBy('node_id')->get();
+
+        expect($started)->toHaveCount(2)
+            ->and($operations->pluck('status')->all())->toBe([OperationStatus::Failed, OperationStatus::Succeeded])
+            ->and($operations[1]->node_id)->toBe($second->id);
+    });
+
     it('fails when the publication has not ended within the timeout', function (): void {
         app()->instance(SwampDispatch::class, new class
         {
@@ -131,6 +146,36 @@ describe('SwampPrivateDnsManager', function (): void {
             ->and($started->getArrayCopy())->toBe([$operations[1]->id])
             ->and($operations[1]->status)->toBe(OperationStatus::Succeeded)
             ->and((int) $operations[1]->input['intent']['dns']['revision'])->toBeGreaterThan((int) $operations[0]->input['intent']['dns']['revision']);
+    });
+});
+
+describe('SwampPrivateDnsManager when the holder of the Node fails', function (): void {
+    it('renders and publishes again, and its own result decides', function (): void {
+        $node = vpnNodeForPublication();
+        app()->instance(SwampDispatch::class, new class
+        {
+            public function start(Operation $operation): void {}
+        });
+        $holder = app(AdmitPrivateDnsPublicationAction::class)->execute($node);
+        $polls = 0;
+        $listening = true;
+        // The holder ends failed while the second caller polls.
+        Operation::retrieved(function (Operation $operation) use ($holder, &$polls, &$listening): void {
+            if ($listening && $operation->id === $holder->id && ! $operation->status->terminal() && ++$polls === 2) {
+                app(OperationStore::class)->change(Operation::query()->findOrFail($holder->id), ['status' => OperationStatus::Failed, 'finished_at' => now(), 'lock_key' => null]);
+            }
+        });
+        $started = swampEndsPublications();
+
+        app(SwampPrivateDnsManager::class)->converge();
+        $listening = false;
+
+        $operations = Operation::query()->where('kind', 'dns.publish')->orderBy('id')->get();
+
+        expect($operations)->toHaveCount(2)
+            ->and($operations[0]->status)->toBe(OperationStatus::Failed)
+            ->and($started->getArrayCopy())->toBe([$operations[1]->id])
+            ->and($operations[1]->status)->toBe(OperationStatus::Succeeded);
     });
 });
 

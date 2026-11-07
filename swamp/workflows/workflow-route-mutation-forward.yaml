@@ -202,7 +202,8 @@ jobs:
   - name: forward_prepare_dns
     forEach:
       item: part
-      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}
+      # Only a prepared state that differs from the one before it (the same revision-free compare as the grace wait): an equal one is already written.
+      in: '${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null && (p.before.dns == null || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].listen != inputs.intent.route_mutations.artifacts.dns[p.before.dns].listen || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].tlds != inputs.intent.route_mutations.artifacts.dns[p.before.dns].tlds || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].records != inputs.intent.route_mutations.artifacts.dns[p.before.dns].records)) }}'
     guard: ${{ steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}

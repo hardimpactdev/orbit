@@ -27,10 +27,21 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
         private int $timeoutSeconds = 180,
     ) {}
 
+    /** Publishes to every vpn Node, then throws the first failure: one Node that fails must not leave the others stale. */
     public function converge(): void
     {
+        $failure = null;
+
         foreach (PrivateDnsPublicationNodes::query()->get() as $node) {
-            $this->publish($node);
+            try {
+                $this->publish($node);
+            } catch (RuntimeConvergenceException $exception) {
+                $failure ??= $exception;
+            }
+        }
+
+        if ($failure instanceof RuntimeConvergenceException) {
+            throw $failure;
         }
     }
 
@@ -46,8 +57,9 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
 
                 $busy = Operation::query()->where('lock_key', AdmitPrivateDnsPublicationAction::lockKey($node))->first();
 
+                // The publication that holds the Node may fail; this caller renders again anyway, and its own result decides.
                 if ($busy instanceof Operation) {
-                    $this->await($busy, $node);
+                    $this->await($busy, $node, mustSucceed: false);
                 }
 
                 continue;
@@ -61,7 +73,7 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
         throw $this->failed($node, 'The vpn Node stayed busy with other private DNS publications.');
     }
 
-    private function await(Operation $operation, Node $node): void
+    private function await(Operation $operation, Node $node, bool $mustSucceed = true): void
     {
         $deadline = microtime(true) + $this->timeoutSeconds;
 
@@ -79,7 +91,7 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
             usleep(500_000);
         }
 
-        if ($operation->status !== OperationStatus::Succeeded && $operation->kind === 'dns.publish') {
+        if ($mustSucceed && $operation->status !== OperationStatus::Succeeded) {
             throw $this->failed($node, "Could not converge Orbit private DNS records on node [{$node->name}].");
         }
     }

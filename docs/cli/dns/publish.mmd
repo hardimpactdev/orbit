@@ -24,8 +24,11 @@ sequenceDiagram
   %%> What it does:
   %%> - the owning kind (Route, Node, Cluster or role change) starts this step in its own run
   %%> Inputs:
-  %%> - the three files and the revision
+  %%> - the render (TLDs, records, listen address) and the revision
   %%> - the address and SSH host keys of the VPN Node
+  Note over SW: Write the intent
+  %%> What it does:
+  %%> - writes the render and the connection of the Node to a 0600 file in the run folder, and ships the playbook
   SW->>N: Run the DNS phase<br/>ansible-playbook dns-publish
   %%> How:
   %%> - one Ansible phase reads, changes and checks the Node in one run
@@ -74,12 +77,6 @@ sequenceDiagram
     N-->>SW: Phase result
     %%> Returns:
     %%> - the installed revision and whether dnsmasq reloaded, restarted or stayed
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result
-    %%> Result:
-    %%> - the owning kind continues with its next step
   else validation or check fails
     %% path: failed
     Note over N: Restore last good files
@@ -89,12 +86,30 @@ sequenceDiagram
     N--xSW: exit ≠ 0
     %%> When:
     %%> - dnsmasq refuses the files (`dns.config_invalid`), SSH fails, or an answer differs from the render (`dns.check_failed`)
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the owner failed
     %%> On the Node:
     %%> - the phase restores the last good files and reloads or restarts dnsmasq; a rerun renders and writes the whole state again
+  end
+  Note over SW: Report the result
+  %%> What it does:
+  %%> - prints the phase's `result.json` (`{revision, dnsmasq}`, or `{error_code}`), also after a failed phase
+  %%> - this is the terminal step the Gateway reads
+  Note over SW: Remove the run folder
+  %%> What it does:
+  %%> - deletes the intent and the shipped playbook, whatever happened
+  alt files installed and answers match
+    %% path: recorded
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the owning kind continues with its next step
+  else validation or check fails
+    %% path: refused
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and the `error_code` that Report the result printed
+    Note over GW: Mark the owner failed
     %%> Retry:
     %%> - run the owning command again after fixing the cause
   end

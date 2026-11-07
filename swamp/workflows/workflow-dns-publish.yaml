@@ -43,7 +43,7 @@ jobs:
   labels: {role: swamp}
   steps:
     # Input: the render and the connection of the Node as a 0600 file in the run folder, and the shipped playbook with its templates.
-  - name: input
+  - name: Write the intent
     labels: {role: swamp}
     writes: true
     task:
@@ -67,7 +67,7 @@ jobs:
   - name: 'Run the DNS phase'
     labels: {role: swamp}
     dependsOn:
-    - {step: input, condition: {type: succeeded}}
+    - {step: 'Write the intent', condition: {type: succeeded}}
     writes: true
     task:
       type: behavior
@@ -78,8 +78,8 @@ jobs:
         run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags publish "$ORBIT_ANSIBLE/dns-publish.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
-          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}'
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
           ANSIBLE_FORCE_COLOR: '0'
@@ -98,7 +98,7 @@ jobs:
         run: timeout 10 cat "$ORBIT_RUN/result.json"
         env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
     # The run folder goes whatever happened.
-  - name: cleanup
+  - name: Remove the run folder
     labels: {role: swamp}
     dependsOn:
     - {step: 'Report the result', condition: {type: always}}
