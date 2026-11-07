@@ -1733,6 +1733,7 @@ CTRL_DATA_OVERRIDES = {
     'TasksController@status': ('TasksStatusData', False),
     'TaskInsightsController@show': ('TaskInsightsData', False),
     'TaskSwampRunsController@show': ('TaskSwampRunsData', False),
+    'TaskEgressController@show': ('TaskGroupEgressData', True),
     'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
     'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
