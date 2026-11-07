@@ -51,6 +51,17 @@ it('hands the ready slots of the old pool to the destroy, and leaves group VMs a
         ->and(DB::table('task_vms')->where('id', $grouped)->value('state'))->toBe('parked');
 });
 
+it('drops the columns of the deleted provision and destroy paths, and runs again where they are gone', function (): void {
+    expect(Schema::hasColumn('task_vms', 'provider_bootstrap'))->toBeFalse()->and(Schema::hasColumn('task_vms', 'worker_stop_required'))->toBeFalse()
+        // What the UpCloud sweep, park, the slot pool and the package cache read stays.
+        ->and(Schema::hasColumns('task_vms', ['provider_id', 'image_fingerprint', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'agent_secret']))->toBeTrue()
+        ->and(Schema::hasTable('package_cache_snapshots'))->toBeTrue();
+
+    $migration = require database_path('migrations/2027_01_29_000000_drop_old_task_vm_columns.php');
+    $migration->up();
+    $migration->up();
+});
+
 it('unbinds groups whose workspace Instance a release deleted, and keeps every other binding', function (): void {
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark-tvm-1', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',

@@ -48,7 +48,6 @@ additionalFiles:
   - ansible/tasks/task-vm-fleet-operator.yml
   - ansible/tasks/task-vm-fleet-tokens.yml
   - ansible/tasks/task-vm-stamp.yml
-  - ansible/task-vm-runtime.yml
   - ansible/task-vm-fleet-wait.yml
   - ansible/shape-gate-requirements.txt
   - ansible/tasks/task-vm-ready.yml

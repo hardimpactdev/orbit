@@ -23,7 +23,7 @@ sequenceDiagram
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
-  %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
+  %%> - the runner finds the fleet by the guest names `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   %%> Decided by the orchestrator, for Nick's review (2026-11-07):
   %%> - the Gateway places the proof only on a host whose promoted image includes every change of the playbooks, pins and lock files up to the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet that lacks a change of what the image carries

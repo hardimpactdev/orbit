@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
@@ -19,8 +18,8 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\TaskVms\TaskVmWorker;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -80,7 +79,6 @@ final readonly class RemoveTaskWorkspaceAction
      */
     public function remove(Task $group): null
     {
-        app(TaskVmWorker::class)->stopGroup($group);
         $instance = $group->workspace()->first();
         if (! $instance instanceof Instance) {
             return null;
@@ -108,11 +106,17 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
      * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
-     * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the VM is deleted and the
-     * workspace records are forgotten offline. Swamp proves provider deletion and removes the Node through its owning child.
+     * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the release of the slot
+     * (`task_vm.slot_release`) deletes the VM, its seed clone and its hub peer. The release projection deletes the
+     * workspace Instance and the Node and unbinds the group, so this call only admits the release and then waits for it.
+     * A row without a slot number is not a task start's VM, and no release deletes it.
      */
     private function removeWithTaskVm(Instance $instance, TaskVm $vm): never
     {
+        if ($vm->slot_number === null) {
+            throw new ResourceOperationException('task_vm.release_unavailable', "Task VM [{$vm->name}] has no slot, so no release can delete it.", 409,
+                details: ['task_vm_id' => $vm->id]);
+        }
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
             app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
@@ -120,7 +124,11 @@ final readonly class RemoveTaskWorkspaceAction
         if ($vm->state === TaskVmState::Ready && $vm->group_id !== null && $vm->node_id !== null) {
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
-        app(DeleteTaskVmAction::class)->execute($vm);
+        if ($vm->state !== TaskVmState::Releasing) {
+            app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');
+        }
+
+        throw new TaskWorkspaceWaiting("The release of task VM [{$vm->name}] removes the workspace of Instance [{$instance->name}] when it ends.");
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */

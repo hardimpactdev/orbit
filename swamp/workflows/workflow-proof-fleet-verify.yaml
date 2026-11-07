@@ -87,7 +87,7 @@ jobs:
     guard: '${{ steps["Read the token age"].outputs.stdout.trim() == "" }}'
     task: {type: workflow, workflowIdOrName: task-nested-apply, inputs: {guest_node_id: '${{ inputs.intent.ssh_execution.target.node_id }}', ssh_execution: '${{ inputs.intent.ssh_execution }}', fleet: '${{ {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}, "network": "oe-nested"} }}', club: '${{ true }}', remint: '${{ true }}'}}
     dependsOn: [{step: 'Read the token age', condition: {type: succeeded}}]
-  # The fleet that `base` keeps must be ready, as in the provision (`task-nested-fleet`): the apply that the re-mint runs has just restarted the services.
+  # The fleet that `base` keeps must be ready: the apply that the re-mint runs has just restarted the services.
   - name: 'Check readiness'
     labels: {role: swamp}
     writes: true

@@ -151,7 +151,7 @@ def bridge_address(guest, family='inet'):
 
 
 def discover(guests=None, node_ids=None):
-    """Find the three nested guests by the names `task-nested-fleet` gives them: `nested-<role>`."""
+    """Find the three nested guests by the names the nested fleet gives them: `nested-<role>`."""
     guests = incus_guests() if guests is None else guests
     running = {guest['name']: guest for guest in guests if guest.get('status') == 'Running'}
     nodes = {}

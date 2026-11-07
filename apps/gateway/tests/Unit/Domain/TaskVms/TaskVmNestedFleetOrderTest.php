@@ -18,9 +18,8 @@ function dependencyNames(array $step): array
     return array_values(array_column($step['dependsOn'] ?? [], 'step'));
 }
 
-it('adds the checkout device only after the NICs, and removes it only after them, so two config writes of one container never meet', function (): void {
-    expect(dependencyNames(workflowSteps('workflow-task-nested-fleet', 'fleet')['Attach the checkout']))->toContain('Add the NICs')
-        ->and(dependencyNames(workflowSteps('workflow-operation-task-vm-ready-copies', 'copy')['Remove the checkout device']))->toContain('Remove the NIC');
+it('removes the checkout device of the ready copies only after the NIC, so two config writes of one container never meet', function (): void {
+    expect(dependencyNames(workflowSteps('workflow-operation-task-vm-ready-copies', 'copy')['Remove the checkout device']))->toContain('Remove the NIC');
 });
 
 it('runs a step that accepts a skipped step only when everything that step waited for is named too', function (string $workflow, string $job): void {
@@ -41,14 +40,5 @@ it('runs a step that accepts a skipped step only when everything that step waite
         }
     }
 })->with([
-    'nested fleet start' => ['workflow-task-nested-fleet', 'fleet'],
     'nested apply' => ['workflow-task-nested-apply', 'apply'],
 ]);
-
-it('reads the nested CA through incus exec, not through the file transport that dropped after the apply', function (): void {
-    $argv = workflowSteps('workflow-task-nested-fleet', 'fleet')['Pin the nested CA']['task']['inputs']['argv'];
-
-    expect(implode(' ', $argv))->toContain('incus exec "$0" -- cat /home/orbit/.orbit/ca/root.pem', 'BEGIN CERTIFICATE', 'mv "$1.tmp" "$1"')
-        ->and($argv)->not->toContain('pull')
-        ->and(array_slice($argv, -1))->toBe(['/home/orbit/.orbit/nested-ca.pem']);
-});

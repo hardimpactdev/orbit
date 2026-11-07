@@ -509,8 +509,6 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
     // Task VM teardown shares this boundary and retains its parent Operation kind.
     inputs.properties.kind.enum = [
         "node.remove",
-        "task_vm.destroy",
-        "task_vm.provision",
         "tasks.provision",
         "tasks.cancel",
         "tasks.maintenance_finish",

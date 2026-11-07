@@ -92,68 +92,6 @@ Deno.test("the start wait is bounded", async () => {
     );
 });
 
-const Old =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG";
-const New =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJBLJu/2IaglMhHEKUH6cwtP0rPJz+E9BUcJ/AVFJqx+";
-const Other =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOlS8xvUK3QXeFKFBC3whbWYKkjw4O9fuXv9AWPvUS0T";
-
-/** Task VMs reuse addresses: enrollment pins the observed key for its address, and destroy forgets it. */
-async function knownHosts(
-    workflow: string,
-    step: string,
-    before: string,
-    env: Record<string, string>,
-) {
-    const home = await Deno.makeTempDir();
-    try {
-        await Deno.mkdir(`${home}/.ssh`, { mode: 0o700 });
-        await Deno.writeTextFile(`${home}/.ssh/known_hosts`, before);
-        const result = await run([
-            "sh",
-            "-c",
-            trackedStep(workflow, step).task.inputs.run as string,
-        ], {
-            env: { ...Deno.env.toObject(), HOME: home, ...env },
-        });
-        assertEquals(result.code, 0, result.stderr);
-        return (await Deno.readTextFile(`${home}/.ssh/known_hosts`)).split("\n")
-            .filter(Boolean);
-    } finally {
-        await Deno.remove(home, { recursive: true });
-    }
-}
-
-Deno.test("enrollment replaces a stale guest key and keeps other hosts", async () => {
-    const lines = await knownHosts(
-        "task-vm-enrollment",
-        "Pin the guest host key",
-        `10.44.0.133 ${Old}\n10.44.0.2 ${Other}\n`,
-        {
-            ORBIT_ADDRESS: "10.44.0.133",
-            ORBIT_LINES: `10.44.0.133 ${New}`,
-        },
-    );
-    assert(lines.includes(`10.44.0.133 ${New}`));
-    assert(!lines.includes(`10.44.0.133 ${Old}`));
-    assert(lines.includes(`10.44.0.2 ${Other}`));
-});
-
-Deno.test("destroy forgets only the guest's address", async () => {
-    assertEquals(
-        await knownHosts(
-            "task-vm-destroy",
-            "Forget the guest host key",
-            `10.44.0.133 ${New}\n10.44.0.2 ${Other}\n`,
-            {
-                ORBIT_ADDRESS: "10.44.0.133",
-            },
-        ),
-        [`10.44.0.2 ${Other}`],
-    );
-});
-
 Deno.test("resume probes the captured Pi bind address with a header-file bearer", async () => {
     const seen: [string, string | null][] = [];
     const server = Deno.serve({
