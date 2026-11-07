@@ -10,7 +10,10 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** A succeeded run records the revision it installed or found superseded; a failed run records its error code. */
+/**
+ * The phase prints `{revision, dnsmasq}` (plus `skipped` when a newer publication already held the change) or `{error_code}` in its
+ * terminal step. The shared reader parses that stdout into `$data['result']` and takes the failed run's `error_code` from it.
+ */
 final readonly class DnsPublishProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
@@ -22,9 +25,9 @@ final readonly class DnsPublishProjection implements DirectOperationProjection
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        $dns = ValidatedData::object(ValidatedData::object($operation->input['intent'])['dns']);
+        $reported = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['revision', 'dnsmasq', 'skipped']));
         $result = match ($status) {
-            OperationStatus::Succeeded => ['revision' => $dns['revision']],
+            OperationStatus::Succeeded => $reported,
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };
