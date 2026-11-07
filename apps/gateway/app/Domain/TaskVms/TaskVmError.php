@@ -56,14 +56,6 @@ enum TaskVmError: string
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageSyncFailed = 'task_vm.image_sync_failed';
 
-    // UpCloud.
-    case UpCloudNotConfigured = 'task_vm.upcloud_not_configured';
-    case UpCloudTokenUnavailable = 'task_vm.upcloud_token_unavailable';
-    case UpCloudFailed = 'task_vm.upcloud_failed';
-    case UpCloudInvalid = 'task_vm.upcloud_invalid';
-    case UpCloudTimeout = 'task_vm.upcloud_timeout';
-    case UpCloudBudgetFull = 'task_vm.upcloud_budget_full';
-
     // The Gateway host's queue worker units.
     case WorkersFailed = 'task_vm.workers_failed';
 }

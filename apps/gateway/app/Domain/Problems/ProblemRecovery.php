@@ -30,7 +30,6 @@ use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
-use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -86,19 +85,6 @@ final readonly class ProblemRecovery
         }
         if ($resource === 'gateway') {
             return $this->gateway($attempt, $kind, $row);
-        }
-        if (str_starts_with($resource, 'upcloud:')) {
-            $build = UpCloudTaskVmImageBuild::query()->where('recipe_identity', substr($resource, 8))
-                ->where('id', '>=', (int) $attempt)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('template_uuid')->first();
-
-            if ($build instanceof UpCloudTaskVmImageBuild) {
-                return 'verified_template';
-            }
-            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->value('identity');
-
-            return is_string($desired) && $desired !== substr($resource, 8) && UpCloudTaskVmImageBuild::query()
-                ->where('id', '>', (int) $attempt)->where('recipe_identity', $desired)->where('state', TaskVmImageBuildState::Succeeded)->whereNotNull('template_uuid')->exists()
-                ? 'verified_recipe_supersession' : null;
         }
         $imageBuildId = RecipeMaintenanceAlerts::parseImageIncident($resource);
         if ($imageBuildId !== null) {

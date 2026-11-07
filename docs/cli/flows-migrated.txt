@@ -53,8 +53,6 @@ schedule.install_instance_definitions
 schedule.run
 task_vm.hub_converge
 task_vm.resume
-task_vm.sweep_host
-task_vm.upcloud_image_build
 tasks.check
 tasks.dependency_merge
 tasks.maintenance

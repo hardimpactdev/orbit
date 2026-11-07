@@ -3,6 +3,6 @@ name: "@nckrtl/task-vm-lifecycle"
 version: 2026.11.07.1
 visibility: private
 license: MIT
-description: Public lifecycle intent, UpCloud request shaping and provider result decoding; official SSH and 209 curl steps own effects.
+description: Public Incus lifecycle intent and result decoding; official SSH owns effects.
 behaviors:
   - operations/task-vm-lifecycle/metadata.ts

@@ -25,10 +25,10 @@ sequenceDiagram
   SW->>I: Snapshot the templates<br/>incus snapshot · keep previous
   %%> Why only now:
   %%> - a failed refresh leaves the last good snapshots in place; clones and task VMs keep using them
-  SW->>I: Publish the task VM image<br/>app-dev → hosts · UpCloud
+  SW->>I: Publish the task VM image<br/>app-dev → Incus hosts
   %%> Why:
   %%> - task VMs boot from the app-dev template; there is no separate image build
-  %%> - one template set lives on one Incus host; the other hosts and UpCloud get a copy of the image, a few minutes later
+  %%> - one template set lives on one Incus host; the other hosts get a copy of the image, a few minutes later
   alt refresh succeeds
     SW-->>GW: Run succeeded
     Note over GW: Record template release

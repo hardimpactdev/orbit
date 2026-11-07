@@ -1,8 +1,0 @@
-manifestVersion: 1
-name: "@nckrtl/task-vm-sweep-input"
-version: 2026.11.07.1
-visibility: private
-license: MIT
-description: Public UpCloud sweep ownership selection; inline UpCloud requests own cleanup, native asserts check it.
-behaviors:
-  - operations/task-vm-sweep/metadata.ts

@@ -8,7 +8,7 @@ Laravel 13 control plane for Orbit.
 - The Gateway admits requests, records intent and projects the terminal result. Swamp executes ([command development pipeline](../../docs/reference/command-development-pipeline.mdx)). Write no Gateway execution code.
 - Use Pest 5 with `describe()` and `it()`.
 - Use Pint for formatting and Larastan for static analysis.
-- Do not add queues other than the `tasks`, `problems`, `task-vms`, `builds`, `builds-optional`, and `operations` queues of the [Gateway queue](../../docs/reference/gateway-queue.md). Run a long API operation as an [operation](../../docs/reference/operations.md), not inside its request. Do not add a UI or Docker orchestration. Add no `orbit-agent` command: `apps/agent` is frozen and only observes. Existing `AgentCommandRunner` callers go away as their kind moves to Swamp ([Node agent](../../docs/reference/node-agent.md#commands)).
+- Do not add queues other than the `tasks`, `problems`, `task-vms`, `builds`, and `operations` queues of the [Gateway queue](../../docs/reference/gateway-queue.md). Run a long API operation as an [operation](../../docs/reference/operations.md), not inside its request. Do not add a UI or Docker orchestration. Add no `orbit-agent` command: `apps/agent` is frozen and only observes. Existing `AgentCommandRunner` callers go away as their kind moves to Swamp ([Node agent](../../docs/reference/node-agent.md#commands)).
 - Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
 ## Track tool intent, not host inventory

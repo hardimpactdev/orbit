@@ -1,8 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import {
     Action,
-    cloudRequest,
-    discoverProvider,
     observation,
     ProviderInput,
     ProviderReceipt,
@@ -17,17 +15,6 @@ export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
     version: "2026.11.02.2",
     resources: {
-        provider_input: {
-            schema: z.object({
-                intent: ProviderInput,
-                request: z.object({
-                    path: z.string(),
-                    data: z.string().nullable(),
-                }).nullable(),
-            }),
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
         input: {
             schema: z.object({
                 observe_argv: z.array(z.string()),
@@ -52,37 +39,6 @@ export const behavior = {
         },
     },
     methods: {
-        discover: {
-            description:
-                "Resolve the exact labelled UpCloud VM after an uncertain create",
-            arguments: z.object({
-                intent: ProviderInput,
-                stdout: z.string(),
-                action: Action,
-            }),
-            async execute(
-                args: {
-                    intent: unknown;
-                    stdout: string;
-                    action: z.infer<typeof Action>;
-                },
-                ctx: Context,
-            ) {
-                const intent = discoverProvider(args.intent, args.stdout);
-                return {
-                    dataHandles: [
-                        await ctx.writeResource(
-                            "provider_input",
-                            "provider_input",
-                            {
-                                intent,
-                                request: cloudRequest(intent, args.action),
-                            },
-                        ),
-                    ],
-                };
-            },
-        },
         read: {
             description: "Validate full public provider intent",
             arguments: Args,
@@ -94,7 +50,7 @@ export const behavior = {
                     "--",
                     "/usr/bin/incus",
                     "--project",
-                    intent.vm?.project ?? "default",
+                    intent.vm.project,
                 ];
                 const args = action === "delete"
                     ? ["delete", "--force", "--", intent.name]

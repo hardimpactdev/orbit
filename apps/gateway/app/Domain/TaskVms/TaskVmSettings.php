@@ -15,8 +15,7 @@ use InvalidArgumentException;
 /**
  * The validated `task_vms` config and Node-owned host intent. Resolve it from the container: validation runs once
  * per request or queued job. The defaults live in
- * `config/task_vms.php`; this class only validates, with Laravel's validator, and each host and the UpCloud overflow
- * validate their own entry ({@see TaskVmHost::fromConfig()}, {@see TaskVmUpCloud::fromConfig()}). The scheduler reads
+ * `config/task_vms.php`; this class only validates, with Laravel's validator, and each host validates its own entry ({@see TaskVmHost::fromConfig()}). The scheduler reads
  * the raw config leniently through {@see self::scheduled()}, so an invalid value never stops it.
  *
  * Every value is validated whenever it is set, also while task VMs are off, so an operator can
@@ -47,7 +46,6 @@ final readonly class TaskVmSettings
         public ?string $piArtifactSha256,
         public array $piModels,
         public int $parkAfterMinutes = 30,
-        public ?TaskVmUpCloud $upcloud = null,
         public array $mediumProjectIds = [],
         public array $largeProjectIds = [],
         public array $topologyPaths = [],
@@ -117,7 +115,6 @@ final readonly class TaskVmSettings
             piArtifactSha256: is_string($artifactSha256) ? $artifactSha256 : null,
             piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
             parkAfterMinutes: $valid->integer('park_after_minutes'),
-            upcloud: TaskVmUpCloud::fromConfig(is_array($config['upcloud'] ?? null) ? $config['upcloud'] : [], $enabled),
             mediumProjectIds: self::projectIds($config, 'medium_projects'),
             largeProjectIds: self::projectIds($config, 'large_projects'),
             topologyPaths: $topology,
@@ -164,7 +161,6 @@ final readonly class TaskVmSettings
 
         return new TaskVmSchedule(
             enabled: $enabled,
-            upcloudConfigured: filled(Config::get('task_vms.upcloud.token_file')),
         );
     }
 

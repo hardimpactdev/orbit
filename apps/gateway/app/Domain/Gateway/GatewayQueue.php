@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Gateway;
 
 /**
- * The queues of the Gateway queue connection. Horizon separates short jobs from builds; the build supervisor
- * checks required work before optional work. See docs/reference/gateway-queue.md.
+ * The queues of the Gateway queue connection. Horizon separates short jobs from builds. See docs/reference/gateway-queue.md.
  */
 enum GatewayQueue: string
 {
@@ -24,9 +23,6 @@ enum GatewayQueue: string
 
     /** Required base image jobs. */
     case Builds = 'builds';
-
-    /** Optional UpCloud image builds, after waiting required build jobs. */
-    case OptionalBuilds = 'builds-optional';
 
     /** Jobs that record a Swamp run in its Operation, one at a time (docs/reference/operations.md). */
     case Operations = 'operations';

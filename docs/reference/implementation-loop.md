@@ -179,7 +179,7 @@ Gateway test shards and the privileged, E2E, SDK, CLI, remote-program and web te
 
 During the Swamp migration, Orbit CI runs builds and static checks, plus the selected Pi and Rust tests. Gateway Pest and web unit tests stay out until the full pipeline runs end to end. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
-Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Feature development normally runs on Beast, with UpCloud for overflow.
+Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
 Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
 

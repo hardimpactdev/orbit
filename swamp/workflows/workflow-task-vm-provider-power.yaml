@@ -1,8 +1,6 @@
 id: 5343cf76-d595-4d65-a0db-c22ca1962b28
 name: task-vm-provider-power
-description: One provider power action and one postcondition; 209 official SSH for Incus, inline curl for UpCloud.
-vaults:
-- orbit-control-inputs
+description: One Incus power action and one postcondition over pinned SSH from 209.
 inputs:
   type: object
   properties:
@@ -16,22 +14,7 @@ inputs:
       type: string
     intent:
       type: object
-    execution_secrets:
-      type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^task-vm-upcloud-token$
-        required:
-        - vault
-        - key
-        additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
     action:
       type: string
       enum:
@@ -61,68 +44,25 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         action: ${{ inputs.action }}
-  - name: cloud-discover
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-cloud" }}'
-      methodName: execute
-      inputs:
-        run: |
-          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
-            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
-            --header 'Accept: application/json' 'https://api.upcloud.com/1.3/server?label=orbit-task-vm'
-        env:
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" }}
-  - name: discovery
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.provider != "upcloud" }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: '${{ "vm-discover" }}'
-      methodName: discover
-      inputs:
-        intent: ${{ inputs.intent }}
-        action: ${{ inputs.action }}
-        stdout: ${{ steps["cloud-discover"].outputs.stdout }}
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-    - step: cloud-discover
-      condition:
-        type: always
   - name: incus-before
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-provider-" + string(inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
+      behaviorName: '${{ ("vm-provider-" + inputs.intent.host_ssh_execution.target.host).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: '${{ ("vm-provider-" + string(inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
+        name: '${{ ("vm-provider-" + inputs.intent.host_ssh_execution.target.host).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider == "incus" ? inputs.intent.provider
-            == "incus" ? inputs.intent.host_ssh_execution.target.user : "orbit" : "orbit" : "orbit" }}'
-          port: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider == "incus" ? inputs.intent.provider
-            == "incus" ? inputs.intent.host_ssh_execution.target.port : 22 : 22 : 22 }}'
-          identityFile: '${{ inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.identity_file
-            : "/unused-upcloud" }}'
+          user: ${{ inputs.intent.host_ssh_execution.target.user }}
+          port: ${{ inputs.intent.host_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.host_ssh_execution.identity_file }}
         hosts:
         - name: target
-          address: '${{ inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host
-            : "127.0.0.1" }}'
+          address: ${{ inputs.intent.host_ssh_execution.target.host }}
           transport:
-            hostKeys: '${{ inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host_keys
-              : ["unused-upcloud"] }}'
+            hostKeys: ${{ inputs.intent.host_ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
         argv: ${{ steps.input.outputs.observe_argv }}
@@ -131,29 +71,6 @@ jobs:
     - step: input
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.provider != "incus" }}
-  - name: cloud-before
-    labels: {role: swamp}
-    task: &cloud_detail
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-cloud" }}'
-      methodName: execute
-      inputs:
-        run: |
-          # 404 is absence: curl prints the status on the last line and cloudRead decodes it.
-          curl --silent --show-error --proto =https --max-redirs 0 --max-time 60 \
-            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
-            --header 'Accept: application/json' --write-out '\n%{http_code}\n' \
-            "https://api.upcloud.com/1.3/server/$ORBIT_UUID"
-        env:
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
-          ORBIT_UUID: ${{ steps.discovery.outputs.intent.provider_id }}
-    dependsOn:
-    - step: discovery
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" || steps.discovery.outputs.intent.provider_id == null }}
   - name: before
     labels: {role: swamp}
     task:
@@ -162,11 +79,9 @@ jobs:
       behaviorName: '${{ "vm-lifecycle" }}'
       methodName: observe
       inputs:
-        intent: '${{ inputs.intent.provider == "upcloud" ? steps.discovery.outputs.intent : inputs.intent
-          }}'
+        intent: ${{ inputs.intent }}
         action: ${{ inputs.action }}
-        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-before"].outputs.stdout : steps.discovery.outputs.intent.provider_id
-          == null ? "" : steps["cloud-before"].outputs.stdout }}'
+        stdout: ${{ steps["incus-before"].outputs.stdout }}
     dependsOn:
     - step: input
       condition:
@@ -174,15 +89,12 @@ jobs:
     - step: incus-before
       condition:
         type: always
-    - step: cloud-before
-      condition:
-        type: always
   - name: incus-action
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-provider-" + string(inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
+      behaviorName: '${{ ("vm-provider-" + inputs.intent.host_ssh_execution.target.host).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -193,60 +105,14 @@ jobs:
     - step: before
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.provider != "incus" || !steps.before.outputs.change }}
-    allowFailure: true
-  - name: cloud-power
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-cloud" }}'
-      methodName: execute
-      inputs:
-        run: |
-          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
-            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
-            --request POST --header 'Content-Type: application/json' --data "$ORBIT_DATA" --output /dev/null \
-            "https://api.upcloud.com/1.3/$ORBIT_PATH"
-        env:
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
-          ORBIT_PATH: ${{ steps.discovery.outputs.request.path }}
-          ORBIT_DATA: ${{ steps.discovery.outputs.request.data }}
-    dependsOn:
-    - step: before
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change || inputs.action == "delete" }}
-    allowFailure: true
-  - name: cloud-delete
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-cloud" }}'
-      methodName: execute
-      inputs:
-        run: |
-          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
-            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
-            --request DELETE --output /dev/null "https://api.upcloud.com/1.3/$ORBIT_PATH"
-        env:
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
-          ORBIT_PATH: ${{ steps.discovery.outputs.request.path }}
-    dependsOn:
-    - step: before
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change || inputs.action != "delete" }}
+    guard: ${{ !steps.before.outputs.change }}
     allowFailure: true
   - name: incus-after
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("vm-provider-" + string(inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
+      behaviorName: '${{ ("vm-provider-" + inputs.intent.host_ssh_execution.target.host).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -255,35 +121,11 @@ jobs:
         argv: '${{ inputs.action == "start" ? ["timeout", "130", "/bin/sh", "-c", "/usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" wait \"$2\" agent --timeout 120 --interval 1 && exec /usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" list --format json -- \"$2\"", "sh", inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}'
         timeoutSec: 180
     queueTimeout: 10
-    guard: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
     - step: before
       condition:
         type: succeeded
     - step: incus-action
-      condition:
-        type: always
-    - step: cloud-power
-      condition:
-        type: always
-    - step: cloud-delete
-      condition:
-        type: always
-  - name: cloud-after
-    labels: {role: swamp}
-    task: *cloud_detail
-    guard: ${{ inputs.intent.provider != "upcloud" || steps.discovery.outputs.intent.provider_id == null }}
-    dependsOn:
-    - step: before
-      condition:
-        type: succeeded
-    - step: incus-action
-      condition:
-        type: always
-    - step: cloud-power
-      condition:
-        type: always
-    - step: cloud-delete
       condition:
         type: always
   - name: result
@@ -294,18 +136,13 @@ jobs:
       behaviorName: '${{ "vm-lifecycle" }}'
       methodName: result
       inputs:
-        intent: '${{ inputs.intent.provider == "upcloud" ? steps.discovery.outputs.intent : inputs.intent
-          }}'
+        intent: ${{ inputs.intent }}
         action: ${{ inputs.action }}
-        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-after"].outputs.stdout : steps.discovery.outputs.intent.provider_id
-          == null ? "" : steps["cloud-after"].outputs.stdout }}'
+        stdout: ${{ steps["incus-after"].outputs.stdout }}
     dependsOn:
     - step: before
       condition:
         type: succeeded
     - step: incus-after
-      condition:
-        type: always
-    - step: cloud-after
       condition:
         type: always

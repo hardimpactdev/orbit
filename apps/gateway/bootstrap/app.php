@@ -87,15 +87,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
-        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. Background maintenance, so every
-        // thirty minutes; Swamp runs one host sweep at a time. It also runs while only the
-        // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
+        // Release stale Incus task starts through task_vm.slot_release.
         GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
-            ->when(static function (): bool {
-                $taskVms = TaskVmSettings::scheduled();
-
-                return $taskVms->enabled || $taskVms->upcloudConfigured;
-            });
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->replace(ValidatePostSize::class, ValidateRequestBodySize::class);

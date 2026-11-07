@@ -53,7 +53,7 @@ final readonly class TaskVmReadyCopiesIntent
     public function capture(TaskVm $vm): array
     {
         $guest = $vm->node;
-        if ($vm->state !== TaskVmState::Ready || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null || ! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit'
+        if ($vm->state !== TaskVmState::Ready || $vm->host_node_id === null || ! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit'
             || $guest->status !== LifecycleStatus::Active || $guest->ssh_host_key === null) {
             throw new ResourceOperationException('task_vm.ready_copies_refused', 'Saving ready copies needs a ready Incus VM and its active guest identity with its recorded host key.', 409);
         }
@@ -75,7 +75,7 @@ final readonly class TaskVmReadyCopiesIntent
     {
         $guest = $vm->node;
         $club = config('swamp.proof_club_api_key');
-        if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null || ! is_string($club) || trim($club) === '') {
+        if (! $guest instanceof Node || $vm->host_node_id === null || ! is_string($club) || trim($club) === '') {
             throw new ResourceOperationException('task_vm.ready_copies_unavailable', 'Saving ready copies needs an Incus VM with its guest and the proof Swamp Club key.', 409);
         }
 

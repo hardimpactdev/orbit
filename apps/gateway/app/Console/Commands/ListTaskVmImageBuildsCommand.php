@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Models\TaskVmImageBuild;
-use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Console\Command;
 
 /** Reads recent build records without reaching a host or changing a build. */
@@ -20,13 +19,12 @@ final class ListTaskVmImageBuildsCommand extends Command
     protected $aliases = ['task-vms:list-image-builds'];
 
     #[\Override]
-    protected $description = 'List the 20 most recent Incus builds and UpCloud attempts with their results.';
+    protected $description = 'List the 20 most recent Incus builds with their results.';
 
     public function handle(): int
     {
         $builds = TaskVmImageBuild::query()->with('hostNode')->orderByDesc('created_at')->orderByDesc('id')->limit(20)->get();
-        $upcloud = UpCloudTaskVmImageBuild::query()->latest('id')->limit(20)->get();
-        if ($builds->isEmpty() && $upcloud->isEmpty()) {
+        if ($builds->isEmpty()) {
             $this->line('No task VM image builds.');
 
             return self::SUCCESS;
@@ -50,14 +48,6 @@ final class ListTaskVmImageBuildsCommand extends Command
                 $name = in_array($record['step'], [TaskVmImageBuildStep::Program->value, TaskVmImageBuildStep::Recipe->value], true) ? $record['step'].':'.$record['program'] : $record['step'];
                 $seconds = $record['seconds'] === null ? '-' : sprintf('%.1fs', $record['seconds']);
                 $this->line(sprintf('  %s | %s | error: %s', $name, $seconds, $record['error'] ?? '-'));
-            }
-        }
-
-        foreach ($upcloud as $attempt) {
-            $this->line("UpCloud build [{$attempt->id}] | {$attempt->recipe_identity} | {$attempt->status()}");
-            $this->line('  Started: '.$attempt->started_at->toIso8601String().' | finished: '.($attempt->finished_at?->toIso8601String() ?? '-').' | template: '.($attempt->template_uuid ?? '-'));
-            if ($attempt->failure !== null) {
-                $this->line('  Failure: '.json_encode($attempt->failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
             }
         }
 

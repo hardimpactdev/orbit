@@ -22,7 +22,7 @@ An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [o
 
 The Gateway also runs `orbit:auto-deploy` every minute without overlap for [automatic deployments](/reference/deployments#automatic-deployments). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
-While task VMs are enabled, the Gateway queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 30 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. No schedule builds the [UpCloud template](/reference/compute-drivers#refresh-the-upcloud-template): `task-vms:build-upcloud-image` does.
+While task VMs are enabled, the Gateway queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 30 minutes. It releases stale Incus starts through `task_vm.slot_release`.
 
 The Gateway also queues the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
 

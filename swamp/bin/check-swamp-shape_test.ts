@@ -682,10 +682,10 @@ Deno.test("phase script resolves the shipped metadata asset through the step env
             "extensions/behaviors/provider/assets.ts",
             `export const behavior = {
       type: "@example/provider", methods: {input: {execute(args, ctx) {
-        return {script: ctx.extensionFile("scripts/upcloud.py")};
+        return {script: ctx.extensionFile("scripts/provider.py")};
       }}}};`,
         ],
-        ["extensions/behaviors/provider/scripts/upcloud.py", externalPoll],
+        ["extensions/behaviors/provider/scripts/provider.py", externalPoll],
         [
             "workflows/phase.yaml",
             phaseWorkflow([

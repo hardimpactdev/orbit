@@ -66,7 +66,7 @@ A patch changes only the members it names. Other stored keys stay, and the API n
 
 ## Configure a task VM host
 
-Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
+Task VM placement uses Incus hosts only. The fleet uses Beast and Shark. Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
 `task-vms:converge VM` brings a ready task VM on such a host to the pins of the release. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
 

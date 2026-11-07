@@ -11,7 +11,7 @@ use Illuminate\Support\ValidatedInput;
 use InvalidArgumentException;
 
 /**
- * The validation that {@see TaskVmSettings}, {@see TaskVmHost::fromConfig()}, and {@see TaskVmUpCloud::fromConfig()}
+ * The validation that {@see TaskVmSettings}, {@see TaskVmHost::fromConfig()}
  * share. Each failure is a `task_vm.invalid_config` error that names the key and what it must be.
  */
 final class TaskVmConfig

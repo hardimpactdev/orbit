@@ -8,7 +8,7 @@ description: "Retired. The Incus recipe image build is gone; a host's base is th
 
 **Retired 2026-11-07.** The Incus recipe image build that this ADR describes is removed: no chain, no `task_vm.image_build` kind, no per-minute recipe reconcile and no image reaper. Each host keeps a base VM, and the snapshot that the [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) proves is the base of every task start. The text below stays as history.
 
-The Gateway builds the task VM base image with a chain of small queued jobs. One `task_vm_image_builds` row records its progress and failure. ADR 0207 replaced the image inputs, build phases, triggers, sync, and workspace plans; the [machine software reference](/reference/compute-drivers#machine-software-recipe) holds them. The UpCloud chain remains unfinished.
+The Gateway builds the task VM base image with a chain of small queued jobs. One `task_vm_image_builds` row records its progress and failure. ADR 0207 replaced the image inputs, build phases, triggers, sync, and workspace plans; the [machine software reference](/reference/compute-drivers#machine-software-recipe) holds them.
 
 ## Status
 
@@ -24,7 +24,6 @@ The task VM image build was one long job on the `builds` queue. Three problems r
 
 - **One long job is fragile.** A release during a build waits for it, because [Horizon](/reference/gateway-queue#releases) starts no new job on any queue until the build ends. A job past its timeout loses its work and relies on a `failed()` handler and a host lock with an expiry time. That lock can expire before the build ends.
 - **A failure is hard to place.** The log names a stage, but nothing records how far a build got.
-- **Two builders.** Incus and UpCloud each have their own builder class, and they already differ.
 
 ## Decision
 
@@ -47,10 +46,6 @@ The table `task_vm_image_builds` has one row for each build. It holds the host, 
 ### Enrollment trusts the image
 
 A task VM boots from a base image that the same Gateway code built. Its enrollment no longer runs the `app-dev` software programs and reads no manifest. It still applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
-
-### Next step
-
-Move the [UpCloud builder](/reference/compute-drivers#build-the-upcloud-template) into a queued chain. This unfinished step keeps ADR 0206 in progress.
 
 ## Rejected alternatives
 

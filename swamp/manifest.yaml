@@ -68,9 +68,7 @@ additionalFiles:
   - ansible/tasks/task-vm-nested-route.yml
   - ansible/tasks/task-vm-shape-gate.yml
   - ansible/tasks/task-vm-check.yml
-  - ansible/tasks/task-vm-clean.yml
   - ansible/tasks/swamp-start-cache.yml
-  - ansible/tasks/task-vm-template-check.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
   - ansible/build_vars.py

@@ -19,8 +19,7 @@ use Throwable;
 
 /**
  * One disposable VM that serves one task group as a normal `app-dev` Node. An `incus` row runs on
- * its host Node. An `upcloud` row has no host Node: `provider_id` is its server's UUID, and `ssh_host_key` the host
- * key staged by its native provider workflow.
+ * its Incus host Node.
  *
  * @property int $id
  * @property int|null $group_id
@@ -36,8 +35,6 @@ use Throwable;
  * @property string|null $publish_error_code
  * @property Carbon|null $publish_queued_at
  * @property Carbon|null $publish_started_at
- * @property string|null $provider_id
- * @property string|null $ssh_host_key
  * @property string $name
  * @property TaskVmState $state
  * @property string|null $address
@@ -70,7 +67,7 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
-        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
     ];
@@ -118,8 +115,8 @@ final class TaskVm extends Model
     }
 
     /**
-     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only where
-     * {@see TaskVmProviderKind::countsFailedVms()} or when a failed proof run kept it (`proof:run --keep-failed`): a kept VM holds the CPU and
+     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only when
+     * a failed proof run kept it (`proof:run --keep-failed`): a kept VM holds the CPU and
      * memory of its host whatever its state says, until its group is cancelled and it is destroyed.
      *
      * @param  Builder<self>  $query
@@ -128,8 +125,8 @@ final class TaskVm extends Model
     protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
-            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where(static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed)
-                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id'))));
+            ->where(static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed)
+                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id')));
     }
 
     /**
