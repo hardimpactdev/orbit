@@ -19,7 +19,7 @@ final readonly class NativeClusterRouterDnsSelectionReconciler implements Cluste
     public function expand(array $clusterOverrides): void
     {
         foreach ($clusterOverrides as $clusterId => $pending) {
-            Cluster::query()->findOrFail($clusterId)->holdDns($pending);
+            Cluster::query()->findOrFail($clusterId)->holdDns(Cluster::DnsHoldChange, $pending);
         }
 
         $this->dns->converge();
@@ -31,7 +31,7 @@ final readonly class NativeClusterRouterDnsSelectionReconciler implements Cluste
     public function prune(array $clusterIds): void
     {
         foreach (Cluster::query()->whereKey($clusterIds)->get() as $cluster) {
-            $cluster->releaseDns();
+            $cluster->releaseDns(Cluster::DnsHoldChange);
         }
 
         $this->dns->converge();

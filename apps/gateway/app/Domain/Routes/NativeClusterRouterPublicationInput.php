@@ -199,11 +199,11 @@ final readonly class NativeClusterRouterPublicationInput
             if ($override && $snapshot['dns'] !== null) {
                 // The Cluster holds the Router while the render reads the rows, then lets go: the run publishes it, and its stored transition answers after that.
                 $cluster = Cluster::query()->findOrFail($clusterId);
-                $cluster->holdDns(['router_node_id' => $routerId]);
+                $cluster->holdDns(Cluster::DnsHoldRouter, ['router_node_id' => $routerId]);
                 try {
                     $snapshot['dns'] = $this->publications->dns();
                 } finally {
-                    $cluster->releaseDns();
+                    $cluster->releaseDns(Cluster::DnsHoldRouter);
                 }
             }
 

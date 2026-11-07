@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * A Cluster change that publishes its private DNS before it commits stores the pending TLD, state or Router here first,
- * so every render, including a parallel one, reads the same stored state. The change clears it when it ends.
+ * so every render, including a parallel one, reads the same stored state. Each source of change keeps its own hold
+ * (`{source: {at, values}}`) and clears only that one when it ends.
  */
 return new class extends Migration
 {
@@ -16,14 +17,13 @@ return new class extends Migration
     {
         Schema::table('clusters', static function (Blueprint $table): void {
             $table->json('dns_pending')->nullable();
-            $table->timestamp('dns_pending_at')->nullable();
         });
     }
 
     public function down(): void
     {
         Schema::table('clusters', static function (Blueprint $table): void {
-            $table->dropColumn(['dns_pending', 'dns_pending_at']);
+            $table->dropColumn('dns_pending');
         });
     }
 };

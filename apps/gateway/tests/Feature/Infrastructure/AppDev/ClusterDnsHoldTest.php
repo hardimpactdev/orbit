@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\UpdateClusterAction;
+use App\Data\Clusters\UpdateClusterData;
 use App\Domain\AppDev\ClusterTldTargets;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Clusters\ActiveTldScopeGuard;
+use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -55,24 +59,58 @@ describe('Cluster DNS hold', function (): void {
     it('stores the pending TLD, state and Router, and releases them', function (): void {
         $cluster = holdCluster();
 
-        $cluster->holdDns(['tld' => 'dev', 'state' => ClusterState::Inactive, 'router_node_id' => null]);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'dev', 'state' => ClusterState::Inactive, 'router_node_id' => null]);
 
         expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'dev', 'state' => ClusterState::Inactive->value, 'router_node_id' => null]);
 
-        $cluster->releaseDns();
+        $cluster->releaseDns(Cluster::DnsHoldChange);
 
-        expect($cluster->refresh()->pendingDns())->toBe([])->and($cluster->dns_pending_at)->toBeNull();
+        expect($cluster->refresh()->pendingDns())->toBe([])->and($cluster->dns_pending)->toBeNull();
     });
 
     it('ignores a hold that nothing cleared for more than an hour', function (): void {
         $cluster = holdCluster();
-        $cluster->holdDns(['tld' => 'dev']);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'dev']);
 
         Carbon::setTestNow(now()->addMinutes(59));
         expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'dev']);
 
         Carbon::setTestNow(now()->addMinutes(2));
         expect($cluster->refresh()->pendingDns())->toBe([]);
+    });
+
+    it('keeps the holds of two sources apart and releases only the caller\'s own', function (): void {
+        $cluster = holdCluster();
+        $candidate = holdRouter(holdCluster('other'), 'sabre', '10.44.0.8');
+
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'dev', 'state' => ClusterState::Active]);
+        $cluster->holdDns(Cluster::DnsHoldRouter, ['router_node_id' => $candidate->id]);
+
+        expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'dev', 'state' => 'active', 'router_node_id' => $candidate->id]);
+
+        // The Router selection ends: the TLD and state of the change that is still running stay held.
+        $cluster->releaseDns(Cluster::DnsHoldRouter);
+
+        expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'dev', 'state' => 'active']);
+
+        $cluster->releaseDns(Cluster::DnsHoldChange);
+
+        expect($cluster->refresh()->pendingDns())->toBe([])->and($cluster->dns_pending)->toBeNull();
+    });
+
+    it('lets the newer hold win a key that two sources name, and expires each hold by itself', function (): void {
+        $cluster = holdCluster();
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'dev']);
+
+        Carbon::setTestNow(now()->addMinutes(30));
+        $cluster->holdDns(Cluster::DnsHoldRouter, ['tld' => 'next', 'router_node_id' => null]);
+
+        expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'next', 'router_node_id' => null]);
+
+        // The first hold is older than an hour now; the second is not.
+        Carbon::setTestNow(now()->addMinutes(40));
+
+        expect($cluster->refresh()->pendingDns())->toBe(['tld' => 'next', 'router_node_id' => null]);
     });
 });
 
@@ -89,13 +127,13 @@ describe('ClusterTldTargets', function (): void {
         $cluster = holdCluster('test');
         holdRouter($cluster, 'beast', '10.44.0.7');
 
-        $cluster->holdDns(['tld' => 'Dev.']);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'Dev.']);
         expect(new ClusterTldTargets()->all())->toBe(['dev' => '10.44.0.7']);
 
-        $cluster->holdDns(['state' => ClusterState::Inactive]);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['state' => ClusterState::Inactive]);
         expect(new ClusterTldTargets()->all())->toBe([]);
 
-        $cluster->holdDns(['tld' => null]);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => null]);
         expect(new ClusterTldTargets()->all())->toBe([]);
     });
 
@@ -104,17 +142,17 @@ describe('ClusterTldTargets', function (): void {
         holdRouter($cluster, 'beast', '10.44.0.7');
         $candidate = holdRouter(holdCluster('other'), 'sabre', '10.44.0.8');
 
-        $cluster->holdDns(['router_node_id' => $candidate->id]);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['router_node_id' => $candidate->id]);
         expect(new ClusterTldTargets()->all()['test'])->toBe('10.44.0.8');
 
-        $cluster->holdDns(['router_node_id' => null]);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['router_node_id' => null]);
         expect(new ClusterTldTargets()->all())->not->toHaveKey('test');
     });
 
     it('reads the stored rows again once a hold has expired', function (): void {
         $cluster = holdCluster('test');
         holdRouter($cluster, 'beast', '10.44.0.7');
-        $cluster->holdDns(['tld' => 'dev']);
+        $cluster->holdDns(Cluster::DnsHoldChange, ['tld' => 'dev']);
 
         Carbon::setTestNow(now()->addHours(2));
 
@@ -133,5 +171,30 @@ describe('NativeClusterRouterDnsSelectionReconciler', function (): void {
 
         expect($recording->seen->getArrayCopy())->toBe([['tld' => 'dev', 'state' => 'active'], []])
             ->and($cluster->refresh()->dns_pending)->toBeNull();
+    });
+});
+
+describe('UpdateClusterAction', function (): void {
+    it('releases its hold when the publication of the pending change fails', function (): void {
+        $cluster = holdCluster('test', ClusterState::Inactive);
+        $failing = new class implements PrivateDnsManager
+        {
+            public function converge(): void
+            {
+                throw new RuntimeException('the vpn Node refused the publication');
+            }
+        };
+        $update = new UpdateClusterAction(app(ActiveTldScopeGuard::class), new class implements ClusterRouterOperationLock
+        {
+            public function run(int $clusterId, Closure $operation): mixed
+            {
+                return $operation();
+            }
+        }, dnsSelection: new NativeClusterRouterDnsSelectionReconciler($failing));
+
+        expect(fn () => $update->execute($cluster, new UpdateClusterData(false, null, true, 'dev', false, null)))
+            ->toThrow(RuntimeException::class, 'the vpn Node refused the publication');
+
+        expect($cluster->refresh()->pendingDns())->toBe([])->and($cluster->dns_pending)->toBeNull()->and($cluster->tld)->toBe('test');
     });
 });
