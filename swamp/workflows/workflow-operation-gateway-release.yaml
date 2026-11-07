@@ -224,8 +224,8 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: name:target
-        timeoutSec: 180
-        argv: [/usr/bin/timeout, '150', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan task-vms:refresh-images --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
+        timeoutSec: 300
+        argv: [/usr/bin/timeout, '270', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan task-vms:refresh-images --commit="$2" --no-interaction', sh, '${{ inputs.intent.id }}', '${{ inputs.intent.sha }}']
     # Serve now holds the new commit's definitions, so the switch and handoff run from the release they install. The hand-over waits for the
     # admission above to end, however it ends: the switch restarts the services it runs on.
   - name: Hand over the release
