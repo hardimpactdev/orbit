@@ -27,14 +27,16 @@ took() { printf '%s s' "$(since "$1")"; }
 ensure_tools() {
     local started
     started=$(now)
-    mkdir -p "$tools"
+    mkdir -p "$tools/logs"
+    # Nothing outside the workspace and /tmp: the caches of pip, Ansible and Deno live here too.
+    export XDG_CACHE_HOME="$tools/cache" ANSIBLE_HOME="$tools/ansible" DENO_DIR="$tools/deno"
     if [ ! -x "$tools/venv/bin/molecule" ]; then
         python3 -m venv "$tools/venv"
         "$tools/venv/bin/pip" install -q --disable-pip-version-check ansible-core==2.20.11 netaddr==1.3.0 molecule==26.11.0
         echo "installed ansible and molecule in $(took "$started")"
     fi
     export PATH="$tools/venv/bin:$PATH" ANSIBLE_COLLECTIONS_PATH="$tools/collections"
-    if [ ! -d "$tools/collections/ansible_collections" ]; then
+    if [ ! -d "$tools/collections/ansible_collections/ansible/utils" ]; then
         cat >"$tools/requirements.yml" <<'EOF'
 collections:
   - {name: ansible.posix, version: 2.2.2}
@@ -80,11 +82,12 @@ hostkey() { awk '{ print $1 " " $2 }' "$tools/hostkey.pub"; }
 # play RUN PLAYBOOK TAG: prints the seconds, the recap of the Node and the slowest tasks; returns the exit status of ansible-playbook.
 play() {
     local run=$1 playbook=$2 tag=$3 started rc=0 log
-    log=$run/$tag.log
+    # The log is kept outside the run folder: the old withdrawal removes that folder when it ends.
+    log=$tools/logs/$(basename "$run")-$tag.log
     started=$(now)
     (cd swamp/ansible && ORBIT_RUN=$run ANSIBLE_CONFIG=$PWD/ansible.cfg ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks \
         ANSIBLE_NOCOLOR=1 ANSIBLE_DEPRECATION_WARNINGS=false \
-        ansible-playbook -i "$run/inventory.yml" --tags "$tag" "$playbook") >"$log" 2>&1 || rc=$?
+        ansible-playbook -i "$run/inventory.yml" -e ansible_user=root --tags "$tag" "$playbook") >"$log" 2>&1 || rc=$?
     PLAY_SECS=$(since "$started")
     echo "  $playbook --tags $tag: rc $rc, $PLAY_SECS s, $(grep -E '^node +:' "$log" | sed -E 's/ +/ /g')"
     grep -E -- ' -{5,} [0-9]+\.[0-9]+s$' "$log" | head -4 | sed -E 's/^/      /' | cut -c1-120
@@ -133,13 +136,21 @@ prep)
     echo "== nested app-dev"
     incus exec "$node" -- sh -c 'ls -ld /etc/caddy /etc/caddy/Caddyfile 2>&1; head -4 /etc/caddy/Caddyfile 2>&1; command -v caddy ufw python3 sudo; id caddy 2>&1; systemctl is-active caddy ufw 2>&1; ufw status | head -3' 2>&1 | head -24
     echo "address $(node_ip), id $(app_dev_id)"
+    echo "== deno cache"
+    started=$(now)
+    deno cache swamp/proof/spike/withdraw.ts 2>&1 | tail -2
+    echo "cached in $(took "$started")"
+    echo "== preflight: the incus connection with become, as the playbooks use it"
+    run=$(new_run route_node)
+    ansible -i "$run/inventory.yml" node -b -m ansible.builtin.command -a id -e ansible_user=root 2>&1 | tail -4 | cut -c1-200 || true
+    rm -rf "$run"
     ;;
 unit)
     started=$(now)
     ensure_tools
     for scenario in firewall-allow instance-destroy; do
         run=$(now)
-        (cd "swamp/proof/molecule/$scenario" && molecule test -s unit 2>&1 | grep -E "ok=|failed=|SCENARIO|unit  ")
+        (cd "swamp/proof/molecule/$scenario" && molecule test -s unit 2>&1 | grep -E "ok=|failed=|SCENARIO|unit  ") || echo "unit $scenario FAILED"
         echo "unit $scenario: $(took "$run")"
     done
     echo "total $(took "$started")"
@@ -197,8 +208,10 @@ fw-after)
         echo "rule $i (port $port): first run"
         play "$run" operation-firewall-direct.yml firewall || true
         echo "  result: $(cat "$run/result.json" 2>/dev/null)"
+        rows=$(incus exec "$node" -- ufw status numbered)
         echo "rule $i: second run, expect changed=0"
         play "$run" operation-firewall-direct.yml firewall || true
+        [ "$rows" = "$(incus exec "$node" -- ufw status numbered)" ] && echo "  ufw rows identical after the second run" || echo "  ufw rows DIFFER after the second run"
         echo "  result: $(cat "$run/result.json" 2>/dev/null)"
         rm -rf "$run"
     done
@@ -249,14 +262,17 @@ EOF
         rm -rf "$run"
     }
     put before.txt
+    restore() {
+        put orig.txt
+        incus exec "$node" -- systemctl reload caddy || true
+        echo "Caddyfile restored"
+    }
+    trap restore EXIT
     echo "state before: $(sites) sites"
     echo "== first withdrawal"
     withdraw
     echo "== second withdrawal, same states; the new form should change nothing"
     withdraw
-    put orig.txt
-    incus exec "$node" -- systemctl reload caddy || true
-    echo "Caddyfile restored"
     ;;
 *)
     echo "usage: shape-live env | apply REF | prep | unit | fw-before | fw-after | destroy-before | destroy-after" >&2
