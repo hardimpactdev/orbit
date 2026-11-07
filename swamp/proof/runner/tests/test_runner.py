@@ -47,6 +47,16 @@ class RunnerTest(unittest.TestCase):
         result, _ = self.execute()
         self.assertEqual((self.fleet.stalled, self.fleet.shim, self.fleet.background[0].running), (set(), set(), False), result)
 
+    def test_partial_application_has_working_tcp_and_blocked_udp_before_the_action(self):
+        run = runner.Run(self.fleet, self.spec, self.directory.name)
+
+        runner.run_steps(run, self.spec.case('partial-application').setup, 'setup', [], float('inf'))
+
+        port = int(run.names['port'])
+        self.assertEqual(self.fleet.connect('gateway', BRIDGE['app-dev'], port, 'tcp', 4), 0)
+        self.assertNotEqual(self.fleet.connect('gateway', BRIDGE['app-dev'], port, 'udp', 4), 0)
+        self.assertFalse(any(call and call[0] == 'firewall:allow' for call in self.fleet.cli_calls))
+
     def test_it_uses_the_address_the_kernel_route_gives(self):
         self.execute()
         allow = next(call for call in self.fleet.cli_calls if call[0] == 'firewall:allow')

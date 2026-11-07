@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
@@ -24,7 +25,9 @@ it('converges the Gateway runtime with the gateway role and retires the release 
     $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $role, ['gateway_dns' => null, 'runtime' => null], $operation)['intent'];
     $files = collect($runtime['files'])->keyBy('path');
 
-    expect($runtime['gateway'])->toBe(['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => 'orbit'])
+    expect($runtime['gateway'])->toBe(['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => 'orbit',
+        'environment' => GatewayReleaseLayout::fromConfig()->sharedPath().'/gateway.env',
+        'retired_settings' => ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN', 'ORBIT_TASK_VMS_UPCLOUD_DISK_GB']])
         ->and($files[GatewayRuntimeFiles::Pool]['content'])->toContain("[orbit-gateway]\n", "chdir = /home/orbit/orbit/apps/gateway\n", "env[ORBIT_HOME] = /home/orbit/.orbit\n")
         ->and($files['/etc/systemd/system/orbit-runtime-hibernator.service']['content'])->toContain("ExecStart=\"/usr/bin/php8.5\" \"/home/orbit/orbit/apps/gateway/artisan\" \"orbit:runtime-hibernator\"\n")
         ->and($files['/etc/systemd/journald.conf.d/orbit-retention.conf']['content'])->toContain("SystemMaxUse=256M\nSystemKeepFree=1024M\n")

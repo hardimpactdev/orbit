@@ -13,6 +13,7 @@ Check this page before you build on something. Each row is code that still runs,
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
 | The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a slot number | Every start's VM has a slot and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
+| `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | The project names in `TaskVmHostLeftovers::RetiredProjects` (`orbit-baselines`, `orbit-measure-nr`) and `ImageProjects` (`orbit-proto`) | Nothing: the refresh's `host-clean` phase removes them from every host | When no task VM host has them |
 | The Project 62 branch of `TaskProvisionIntent` (`proof-reaper` and `ProofReaper` were deleted on 2026-11-06) | Nothing: only the removed `bin/swamp-proof` made Project 62 groups. The `$size` the refresh passes to the same intent stays | When no Project 62 group is open |

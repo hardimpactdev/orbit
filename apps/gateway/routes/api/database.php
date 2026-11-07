@@ -51,9 +51,9 @@ Route::middleware([
     Route::get('database-servers/{database_server}', [DatabaseServersController::class, 'show'])
         ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
         ->name('database:server:show');
-    Route::post('database-servers/{database_server}/close', [DatabaseServersController::class, 'close'])
+    Route::patch('database-servers/{database_server}', [DatabaseServersController::class, 'update'])
         ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
-        ->name('database:server:close');
+        ->name('database:server:update');
     Route::delete('database-servers/{database_server}', [DatabaseServersController::class, 'destroy'])
         ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
         ->name('database:server:destroy');
