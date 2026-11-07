@@ -168,7 +168,10 @@
       changed_when: false
       failed_when: false
     - name: Stop with the journal of serve
-      ansible.builtin.fail: { msg: "The nested Swamp tokens were not renewed. serve: {{ fleet_serve_journal.stdout_lines | default([]) }}" }
+      ansible.builtin.fail:
+        msg: >-
+          The nested Swamp tokens were not renewed: {{ (ansible_failed_result.stdout | default(''))[-1500:] }}
+          {{ (ansible_failed_result.stderr | default(''))[-1500:] }} serve: {{ fleet_serve_journal.stdout_lines | default([]) }}
 - name: Migrate the nested Gateway
   ansible.builtin.command:
     argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --, php, artisan, migrate, --force]

@@ -170,7 +170,7 @@ jobs:
       type: assert
       expr: 'steps["Run the Ansible phases"].outputs.exitCode == 0'
       severity: high
-      message: '${{ "Ansible exited with " + string(steps["Run the Ansible phases"].outputs.exitCode) + ": " + (size(steps["Run the Ansible phases"].outputs.stderr) > 3500 ? steps["Run the Ansible phases"].outputs.stderr.substring(size(steps["Run the Ansible phases"].outputs.stderr) - 3500) : steps["Run the Ansible phases"].outputs.stderr) }}'
+      message: '${{ steps["Run the Ansible phases"].outputs.exitCode == 124 ? "Run the Ansible phases timed out after 3300s" : "Ansible exited with " + string(steps["Run the Ansible phases"].outputs.exitCode) + ": " + (size(steps["Run the Ansible phases"].outputs.stderr) > 3500 ? steps["Run the Ansible phases"].outputs.stderr.substring(size(steps["Run the Ansible phases"].outputs.stderr) - 3500) : steps["Run the Ansible phases"].outputs.stderr) }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
