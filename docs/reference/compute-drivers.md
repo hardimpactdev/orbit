@@ -483,7 +483,7 @@ Every new task workspace starts with an empty checkout on the VM's root disk at 
 
 The `@orbit/ci-caches` setup step imports the selected [CI cache ref](/reference/instance-setup#import-ci-main-caches). Packages download into private caches; a missing or invalid CI ref leaves checks cold. Neither miss queues a workspace image build. The fixed checkout path preserves cache paths across claims without sharing a writable checkout.
 
-A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design. Fresh task VMs reuse verified Composer archives to build `vendor/`, including `apps/cli/vendor`, without downloading those packages again.
+A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design.
 
 For private dependencies, the workspace step writes the Composer and npm configuration of the task account before the Project setup steps run. The configuration holds a GitHub App installation token with only `contents: read`, which reads the private packages in the repositories that the installation covers. The token is minted for these steps and expires after one hour.
 
@@ -1423,7 +1423,7 @@ Configure the Project like this:
 
 Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
 
-The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches seeded from the read-only host cache.
+The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches.
 
 ### Declare a topology
 
