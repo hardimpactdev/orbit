@@ -57,6 +57,14 @@
     - name: Remove the SSH host keys
       ansible.builtin.command: { argv: [find, /etc/ssh, -maxdepth, "1", -name, "ssh_host_*", -delete] }
       changed_when: true
+    # The nested Gateway holds the Club key open through its disk device; stopped, it lets the trim below free the key's blocks.
+    # The containers stay down at boot, and a claim starts them from `base`.
+    - name: Stop the nested containers
+      when: intent.fleet is defined
+      ansible.builtin.command: { argv: "{{ ['timeout', '120', 'incus', 'stop', '--timeout', '90'] + (intent.fleet.guests.values() | list) }}" }
+      register: clean_fleet_stop
+      changed_when: clean_fleet_stop.rc == 0
+      failed_when: clean_fleet_stop.rc != 0 and 'already stopped' not in clean_fleet_stop.stderr
     - name: Remove the Club key of the refresh
       ansible.builtin.file: { path: /etc/orbit/swamp-club-api-key, state: absent }
     # The published disk carries free blocks too; trimming them drops the bytes of removed files, such as the key above.

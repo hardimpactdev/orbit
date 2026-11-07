@@ -72,6 +72,12 @@
         - name: Wait for its guest agent
           ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', vm.name, 'agent'] }}" }
           changed_when: false
+        # An image with cloud-init on makes its host keys and its address in its first boot; with cloud-init off this returns at once.
+        - name: Wait for the first boot
+          ansible.builtin.command: { argv: "{{ ['timeout', '320'] + incus + ['exec', vm.name, '--', 'cloud-init', 'status', '--wait'] }}" }
+          register: refresh_cloud_init
+          changed_when: false
+          failed_when: refresh_cloud_init.rc not in [0, 2]
         # The nested Swamp renews its tokens with the proof Swamp Club key; the clean of the converge removes it before the publication.
         - name: Give the refresh VM the Club key
           no_log: true
