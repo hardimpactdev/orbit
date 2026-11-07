@@ -26,7 +26,7 @@ final readonly class AgentWatchListAction
 {
     public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes, private InstanceEnvironmentFiles $environments) {}
 
-    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>} */
+    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>, egress: array{network: string}|null} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -58,7 +58,25 @@ final readonly class AgentWatchListAction
             'applications' => $root === null ? [] : $this->applications(),
             'tools' => $this->tools->forNode($node),
             'environments' => $this->environments->forNode($node),
+            'egress' => $this->egress($node),
         ];
+    }
+
+    /**
+     * The bridge of a task VM host, whose logs the agent reads for the egress fact (docs/reference/task-vm-egress-log.md).
+     * Another Node gets null, and its agent reads nothing.
+     *
+     * @return array{network: string}|null
+     */
+    private function egress(Node $node): ?array
+    {
+        $task = data_get($node->settings, 'task_vms');
+        if (! is_array($task)) {
+            return null;
+        }
+        $network = $task['network'] ?? config('task_vms.incus.host_defaults.network');
+
+        return is_string($network) && preg_match('/\Aorbittask[a-z0-9]{1,6}\z/', $network) === 1 ? ['network' => $network] : null;
     }
 
     /**

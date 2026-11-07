@@ -179,6 +179,8 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);
         run_task_contract('tasks-comment-list/default', 'tasks:comment:list', ['group' => '1', 'subtask' => '1'], 0);
         run_task_contract('tasks-agents/default', 'tasks:agents', ['group' => '1'], 0);
+        run_task_contract('tasks-egress/default', 'tasks:egress', ['group' => '1'], 0);
+        run_task_contract('tasks-egress/empty', 'tasks:egress', ['group' => '1'], 0);
     });
 
     it('renders a live and an archived agent thread snapshot', function (): void {

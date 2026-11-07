@@ -1,0 +1,46 @@
+sequenceDiagram
+  %% Target design (agreed with Nick, 2026-11-07): log-only record of the outside hosts a task VM connects to, per VM and per task group. The agent observes on the host; the Gateway attributes and shows. Nothing is blocked. Step 2, an allowlist enforced by a proxy outside the VM, reads this record. The page: docs/reference/task-vm-egress-log.md.
+  %% status: draft
+  %% command: tasks:egress
+  %% kind: tasks.egress
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane A icon=server pill=observer tone=amber
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>host phase
+  participant A as Node agent<br/>orbit-agent
+  participant H as Task VM host<br/>bridge logs
+  SW->>H: Turn on the logs<br/>once per host · a part
+  %%> What it does:
+  %%> - one Ansible part of the host phase: DNS query logging on the bridge, an `nftables` log rule for new outbound flows, an rsyslog rule that splits them into a file, and a logrotate file
+  %%> - it adds no rule that drops or rewrites traffic
+  loop every 5 s, on change
+    A->>H: Read the new log lines<br/>DNS · flows · leases
+    %%> What it does:
+    %%> - names each VM by its MAC address; the host's Incus hosts file gives MAC to VM name, and nothing the VM says about itself is trusted
+    %%> - joins a flow with the name the same VM resolved for its address, and keeps one row for each destination, port and protocol
+    A->>GW: Report the egress fact<br/>one per VM · on change
+    %%> What it does:
+    %%> - sent within 15 s of a change; a fact holds at most 1,500 rows and stays under 1 MiB
+    %%> - the Gateway's watch list names the bridge; a Node without it reads nothing
+    Note over GW: Add rows to the group<br/>that holds the VM
+    %%> What it does:
+    %%> - finds the group by host Node and VM name, adds new rows to `task_group_egress` and merges addresses, sources and flags into known rows
+    %%> - a VM that no group holds adds nothing; a row first seen before the claim is left out
+    %%> - the group keeps its rows after its VM and Node are deleted
+  end
+  CLI->>GW: tasks:egress<br/>GET task-groups/{group}/egress
+  %%> Requirements:
+  %%> - the tasks extension is enabled and the caller has access to the Gateway
+  GW-->>CLI: 200 with the rows<br/>name, port, sources, flags
+  %%> Result:
+  %%> - one row for each destination, port and protocol: a name or an address, `tcp` or `udp`, the addresses seen, the sources `conn` and `dns`, the flags `dot`, `dns` and `doh`, the VM and the first-seen time
+  %%> - a name that nothing connected to has a null port and protocol
+  %%> - a group with no rows gets an empty list
+  alt the tasks extension is off
+    GW-->>CLI: 409 extension.disabled<br/>nothing is read
+  end

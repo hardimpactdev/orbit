@@ -39,6 +39,12 @@ enum NodeFactKind: string
     /** The Node's local accounts with their primary group, home and shell, read from `/etc/passwd` and `/etc/group`. */
     case Accounts = 'accounts';
 
+    /**
+     * The outside hosts one task VM connected to, named by the VM in `subject`, read by the host's agent from the bridge logs
+     * (docs/reference/task-vm-egress-log.md). The Gateway adds each row to the task group that held the VM.
+     */
+    case Egress = 'egress';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -130,6 +136,24 @@ enum NodeFactKind: string
                 'accounts.*.home' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'accounts.*.shell' => ['required', 'string', 'starts_with:/', 'max:4096'],
             ],
+            self::Egress => [
+                'network' => ['required', 'string', 'regex:/\Aorbittask[a-z0-9]{1,6}\z/'],
+                'mac' => ['required', 'string', 'regex:/\A(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\z/'],
+                'rows' => ['present', 'array', 'list', 'max:1500'],
+                'rows.*.destination' => ['required', 'string', 'max:253', 'regex:/\A[a-z0-9._-]+\z/'],
+                'rows.*.kind' => ['required', 'string', 'in:name,address'],
+                // A name that nothing connected to has no port and no protocol.
+                'rows.*.port' => ['present', 'nullable', 'integer', 'between:1,65535'],
+                'rows.*.protocol' => ['present', 'nullable', 'string', 'in:tcp,udp'],
+                'rows.*.addresses' => ['present', 'array', 'list', 'max:8'],
+                'rows.*.addresses.*' => ['required', 'ipv4'],
+                'rows.*.sources' => ['present', 'array', 'list', 'min:1', 'max:2'],
+                'rows.*.sources.*' => ['required', 'string', 'in:conn,dns'],
+                'rows.*.flags' => ['present', 'array', 'list', 'max:3'],
+                'rows.*.flags.*' => ['required', 'string', 'in:dot,dns,doh'],
+                'rows.*.first_seen' => ['required', 'date_format:Y-m-d\\TH:i:s\\Z'],
+                'overflow' => ['required', 'integer', 'min:0'],
+            ],
             self::Ufw => [
                 'installed' => ['required', 'boolean'],
                 'enabled' => ['required', 'boolean'],
@@ -171,6 +195,7 @@ enum NodeFactKind: string
             self::Checkout => ['required', 'string', 'starts_with:/', 'max:1024'],
             self::Packages => ['required', 'string', 'regex:/\\A[a-z][a-z0-9-]{0,31}\\z/'],
             self::EnvKeys => ['required', 'string', 'starts_with:/', 'ends_with:/.env', 'max:1024'],
+            self::Egress => ['required', 'string', 'regex:/\\A[a-z0-9][a-z0-9._-]{0,62}\\z/'],
             default => ['prohibited'],
         };
     }

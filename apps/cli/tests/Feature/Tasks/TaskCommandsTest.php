@@ -30,6 +30,7 @@ use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskEgressRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
@@ -88,6 +89,7 @@ describe('omitted and invalid input', function (): void {
         'show without group' => ['tasks:show', [], 'tasks.group_required'],
         'show with invalid group' => ['tasks:show', ['group' => 'abc'], 'tasks.group_invalid'],
         'agents without group' => ['tasks:agents', [], 'tasks.group_required'],
+        'egress without group' => ['tasks:egress', [], 'tasks.group_required'],
         'agent show without group' => ['tasks:agent:show', [], 'tasks.group_required'],
         'agent show without thread' => ['tasks:agent:show', ['group' => '1'], 'tasks.agent_thread_required'],
         'agent show with invalid thread' => ['tasks:agent:show', ['group' => '1', 'session' => 'x'], 'tasks.agent_thread_invalid'],
@@ -235,6 +237,20 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:list', ['--status' => 'waiting_for_review', '--json' => true]))->toBe(0);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
             && $request->query()->all() === ['status' => 'waiting_for_review']);
+    });
+
+    it('lists the outside hosts of a task group', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-egress/default'));
+
+        expect(Artisan::call('tasks:egress', ['group' => '1', '--json' => true]))->toBe(0);
+
+        $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect(array_column($json['hosts'], 'destination'))->toBe(['140.82.121.4', 'example.com', 'registry.npmjs.org'])
+            ->and($json['hosts'][1]['port'])->toBeNull()
+            ->and($json['hosts'][2]['sources'])->toBe(['conn', 'dns'])
+            ->and($json['hosts'][0])->not->toHaveKey('request_id');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskEgressRequest
+            && $request->resolveEndpoint() === '/api/v1/task-groups/1/egress');
     });
 
     it('filters the question list and renders an empty list', function (): void {

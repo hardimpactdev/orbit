@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\DependencyBatchMergeController;
 use App\Http\Controllers\Api\ProofRunsController;
+use App\Http\Controllers\Api\TaskEgressController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskInsightsController;
 use App\Http\Controllers\Api\TaskPullRequestController;
@@ -25,6 +26,8 @@ Route::middleware([
     Route::middleware(RequireEnabledExtension::class.':tasks')->group(function (): void {
         Route::get('task-groups/{group}/swamp-runs', [TaskSwampRunsController::class, 'show'])
             ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:swamp-runs');
+        Route::get('task-groups/{group}/egress', [TaskEgressController::class, 'show'])
+            ->whereNumber('group')->name('tasks:egress');
         Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
             ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
         Route::get('task-groups/{group}/agents/{session}', [AgentThreadsController::class, 'show'])
