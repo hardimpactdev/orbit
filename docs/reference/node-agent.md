@@ -156,7 +156,7 @@ A log that does not exist yet reads as empty, because rsyslog and dnsmasq create
 
 The agent keeps state per VM by MAC, so a reused VM name with a new MAC starts fresh. It tracks only the MACs that a host file names, and uses the leases only to find the MAC of an address. It drops the state of a MAC when its host file is gone. It tracks at most 64 VMs. With more host files, it keeps the 64 whose host files it saw appear last.
 
-A connection line names its VM by the source MAC in its `MAC=` field, which holds the 14 octets of the Ethernet header. Without a `MAC=` field, the agent finds the VM through the source address and the lease. A line with a `MAC=` field of another shape, or of a MAC that is no tracked VM, is dropped. So is a line without `IN=` of this bridge. A DNS line names its VM through the lease of its client address.
+A connection line names its VM by the source MAC in its `MACSRC=` field. Older kernels print one `MAC=` field with the 14 octets of the Ethernet header instead, and the agent takes the source MAC from octets 7 to 12 of it. `MACSRC=` wins when a line has both. Without either field, the agent finds the VM through the source address and the lease. A line whose MAC field is malformed, or names a MAC that is no tracked VM, is dropped. So is a line without `IN=` of this bridge. A DNS line names its VM through the lease of its client address.
 
 A connection to address A by a VM gives one row for each name that VM resolved to A in the last 30 minutes, or one row with the address when it resolved none. A name's answer time is its latest answer. A DNS answer gives a row with no port or protocol for its name. The agent leaves that row out of the fact once the VM connects to the name.
 
