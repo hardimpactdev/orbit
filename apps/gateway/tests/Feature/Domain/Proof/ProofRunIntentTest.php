@@ -509,7 +509,7 @@ function proofKeptRun(string $command = 'firewall:allow'): array
 describe('a proof that cannot be placed while failed runs keep their VMs', function (): void {
     it('releases the kept VMs and waits, visibly, for the room instead of failing', function (): void {
         proofWorldWithoutCapacity();
-        [$kept, $group] = proofKeptRun();
+        [$kept] = proofKeptRun();
         [$other] = proofKeptRun('firewall:list');
 
         $proof = proofAdmitted();
@@ -526,7 +526,7 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
 
     it('waits on while the VMs are on their way out, and asks for no second cancel', function (): void {
         proofWorldWithoutCapacity();
-        [$kept] = proofKeptRun();
+        proofKeptRun();
         $proof = proofAdmitted();
 
         app(ProofRunIntent::class)->admit($proof->id);
@@ -538,7 +538,7 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
 
     it('fails with the capacity code when the kept VMs are gone and the room is still short', function (): void {
         proofWorldWithoutCapacity();
-        [$kept, $group] = proofKeptRun();
+        [, $group] = proofKeptRun();
         $proof = proofAdmitted();
         $group->update(['status' => TaskGroupStatus::Cancelled]);
 
@@ -556,7 +556,7 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
         app(ProofRunIntent::class)->admit($proof->id);
 
         expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(ProofRunIntent::KeptWaitSeconds)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
+            ->and(ProofRunIntent::KeptWaitSeconds + ProofRunIntent::KeptRetrySeconds + 60)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
     });
 
     it('fails as before when no VM is kept', function (): void {
@@ -579,6 +579,50 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
         Queue::assertNotPushed(CancelProofGroup::class);
     });
 
+    it('leaves a proof that was cancelled while it waited cancelled, and releases nothing for it', function (): void {
+        Queue::fake();
+        proofWorldWithoutCapacity();
+        [$kept] = proofKeptRun();
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $proof->update(['status' => OperationStatus::Cancelled]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('does not hold the other kept VMs back when one of them cannot be released', function (): void {
+        proofWorldWithoutCapacity();
+        [$broken] = proofKeptRun();
+        [$fine] = proofKeptRun('firewall:list');
+        $armed = true;
+        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
+            if ($armed && $operation->id === $broken->id) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        try {
+            $proof = proofAdmitted();
+        } finally {
+            $armed = false;
+        }
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull();
+        Queue::assertPushed(CancelProofGroup::class, 1);
+    });
+
+    it('does not ask for a keep that is more than a day past its time', function (): void {
+        proofWorldWithoutCapacity();
+        [$old] = proofKeptRun();
+        $old->update(['result' => ['kept' => [...$old->result['kept'], 'keep_until' => now()->subDays(2)->utc()->format('Y-m-d\TH:i:s\Z')]]]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
     it('releases only the runs that kept a VM, never another running group of the same command', function (): void {
         proofWorldWithoutCapacity();
         [$kept] = proofKeptRun();

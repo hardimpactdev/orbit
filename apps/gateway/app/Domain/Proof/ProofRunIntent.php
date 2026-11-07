@@ -41,8 +41,8 @@ use Throwable;
  */
 final readonly class ProofRunIntent
 {
-    /** How long a proof that cannot be placed waits for kept VMs to be released: less than the 300 s after which the watch ends a proof with no runs. */
-    public const int KeptWaitSeconds = 240;
+    /** How long a proof that cannot be placed waits for kept VMs to be released: the last try then starts before 220 s and may wait 60 s for the admission lock, still under the 300 s after which the watch ends a proof with no runs. */
+    public const int KeptWaitSeconds = 200;
 
     public const int KeptRetrySeconds = 20;
 
@@ -129,7 +129,7 @@ final readonly class ProofRunIntent
                 }
 
                 // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs], 'current_step' => null]);
 
                 return $runs;
             }), ProofRunWatch::lockOwner($proof->id));
@@ -153,10 +153,14 @@ final readonly class ProofRunIntent
      */
     private function waitForKeptVms(Operation $proof, bool $reportOnly): bool
     {
-        if ($reportOnly || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds)) || app(ProofKeptVms::class)->releaseAll() === 0) {
+        if ($reportOnly || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds))) {
             return false;
         }
         try {
+            // A proof that was cancelled while the job ran is left alone, and nothing is released for it.
+            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() === 0) {
+                return false;
+            }
             $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::KeptWaitStep]));
             app(Dispatcher::class)->dispatch((new AdmitProofRun($proof->id))->delay(self::KeptRetrySeconds));
         } catch (Throwable $exception) {
