@@ -183,9 +183,6 @@
   no_log: true
   register: gateway_settings
   changed_when: gateway_settings.rc == 0
-# The Gateway serves the private DNS of its network as the hub. `control.dns` is the complete state the Gateway rendered (revision, listen, tlds, records).
-# TODO(lead, ADR 0248): the dns-publish phase has no task file to include yet, so nothing here writes dnsmasq. Include that file with `dns: "{{ control.dns }}"`
-# as soon as the phase factors it out, so the machine answers before the first managed peer publishes.
 # The hub of the Gateway's own private network. Swamp reaches every Node, this one too, by its WireGuard address, so the hub is up
 # before any role runs. The private key is made here and never leaves; only the public key is recorded.
 - name: Make the hub folders

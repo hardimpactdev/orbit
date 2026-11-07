@@ -9,6 +9,6 @@ return [
         'workflow' => 'dns-publish',
         'projection' => DnsPublishProjection::class,
         'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'dns', 'step' => 'Check the answers', 'native' => true],
+        'terminal_result' => ['job' => 'publish', 'step' => 'Report the result', 'native' => true],
     ],
 ];
