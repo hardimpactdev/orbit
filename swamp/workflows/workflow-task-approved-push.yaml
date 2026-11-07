@@ -184,7 +184,6 @@ jobs:
         type: succeeded
   - name: Revoke the token
     labels: {role: swamp}
-    writes: true
     task:
       type: behavior
       behaviorType: command/shell
