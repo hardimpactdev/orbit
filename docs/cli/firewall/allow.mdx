@@ -32,7 +32,7 @@ orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 
 Prompts and output follow the [CLI standard](/reference/cli-ux). See the firewall family's [rule identity and repeat behavior](/cli/firewall#rule-identity), [source ordering](/cli/firewall#order-on-the-node), and [safe change order](/cli/firewall#change-rules-without-an-exposure-window).
 
-An equal, well-placed line keeps its existing comment. If TCP is already correct, an allow for both protocols adds only UDP. A managed rule for a disjoint source network does not force the existing line to move.
+An equal, well-placed line keeps its existing comment. If TCP is already correct, an allow for both protocols adds only UDP. A managed rule for a disjoint source network does not force the existing line to move. Nor does an earlier managed allow, including one restricted to an interface and destination: it cannot change an allow's verdict. An overlapping deny still requires the allow to move above it.
 
 Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow succeeds with `Skipped — already applied (firewall.rule_exists)` when its ports lie inside one protected port or range Orbit already opens and its source is one that entry already admits. Orbit records a succeeded Operation without an operator rule or Node contact; this uses recorded intent, not a live UFW check. Another firewall change on the Node still prevents this skip (`operation.target_busy`). A range extending beyond that entry, or a source it does not admit, is a normal allow.
 

@@ -3,9 +3,10 @@
  * `@swamp/cfgmgmt/firewall` cannot insert a rule at a position (Lab #4334) or name a port range, so each change
  * runs as one `ufw` argv over `@swamp/ssh exec`, and this behavior only reads ufw's output.
  *
- * Lines match by tuple; the comment is only for people. UFW stops at the first match, so each line sits above
- * Orbit's own managed lines (comment `orbit:<name>`) and above every broader operator line, and below every
- * narrower one: one address, then a CIDR, then anywhere. Each family is placed on its own.
+ * Lines match by tuple; the comment is only for people. UFW stops at the first match, so new lines prefer
+ * positions above Orbit's managed lines (comment `orbit:<name>`) and broader operator lines, below narrower
+ * ones: one address, then a CIDR, then anywhere. Existing allows need not cross harmless managed allows.
+ * Each family is placed on its own.
  */
 import { z } from "npm:zod@4.4.3";
 
@@ -247,7 +248,14 @@ function ordered(rows: Row[], mine: Set<string>) {
                 !((position < index && below(other, row)) ||
                     (position > index && below(row, other)))
             ) return true;
-            // A placement preference requires a move only when both sources can match the same packet.
+            // Managed ALLOWs cannot change an existing ALLOW's verdict. This also holds for trust scoped
+            // to an interface/destination: the unrestricted operator rule overlaps it, but agrees with it.
+            // Do not call that scope disjoint: a similarly scoped DENY must still force a move.
+            if (
+                row.action === "allow" && other.action === "allow" &&
+                (managed(row) || managed(other))
+            ) return true;
+            // Otherwise a placement preference requires a move only when the sources overlap.
             const a = scope(row.source), b = scope(other.source);
             return !contains(a, b) && !contains(b, a);
         })
@@ -377,7 +385,7 @@ const Result = z.object({
 
 export const behavior = {
     type: "@nckrtl/firewall-plan",
-    version: "2026.11.07.2",
+    version: "2026.11.07.3",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

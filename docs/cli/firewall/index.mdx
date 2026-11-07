@@ -120,7 +120,7 @@ UFW stops at the first rule that matches, so Orbit sets the order of every opera
 - Orbit places new operator rules above its own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
 - A narrower rule sits above a broader one, allow or deny alike: one address above a CIDR above anywhere.
 
-An existing equal allow is not moved merely to sit above a source-disjoint managed rule; its comment is preserved. [`firewall:allow`](/cli/firewall/allow) describes how Orbit repairs a partially applied rule.
+An existing equal allow keeps its comment and position below managed allows or source-disjoint managed rules. An overlapping deny still requires a move. [`firewall:allow`](/cli/firewall/allow) describes how Orbit repairs a partially applied rule.
 
 Overlap at a different scope is the way to restrict a port. These pairs are admitted:
 

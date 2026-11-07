@@ -1,7 +1,8 @@
 /** The rule planner and check against the ufw double; no host firewall calls. */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { behavior, check, plan, Refusal } from "./plan.ts";
+import { behavior, check, inventory, plan, Refusal } from "./plan.ts";
 import { UfwDouble } from "./native_fixture.ts";
+import { partialApplication } from "./fixtures/try-10-partial-application.ts";
 
 type Changes = Record<string, unknown>;
 const intent = (ensure: string, changes: Changes) => ({
@@ -516,6 +517,134 @@ Deno.test("an equal TCP line below source-disjoint managed trust keeps its comme
     assertEquals(converge(ufw, request).commands, []);
 });
 
+Deno.test("try-10 partial application preserves the actual TCP row below scoped trust and inserts only UDP", () => {
+    const request = {
+        port: "47372",
+        protocol: "any",
+        source: "10.232.2.11",
+        comment: "orbit",
+    };
+    const before = inventory(partialApplication);
+    const existing = before.find((row) => row.comment === "proof:existing")!;
+    assertEquals(before[2], {
+        to: "10.45.0.2 on orbit",
+        action: "allow",
+        direction: "in",
+        source: "Anywhere",
+        comment: "orbit:wireguard-members",
+    });
+    assertEquals(before[5], existing);
+    const commands = plan(intent("present", request), partialApplication);
+    assertEquals(commands, [[
+        "timeout",
+        "60",
+        "/usr/sbin/ufw",
+        "insert",
+        "3",
+        "allow",
+        "in",
+        "proto",
+        "udp",
+        "from",
+        "10.232.2.11",
+        "to",
+        "any",
+        "port",
+        "47372",
+        "comment",
+        "orbit",
+    ]]);
+    const ufw = new UfwDouble(before);
+    const original = ufw.rows[5];
+    ufw.apply(commands[0]);
+    // Keep the actual row, its comment, and all original rows in their original relative order.
+    assert(ufw.rows[6] === original);
+    assertEquals(ufw.rows[6], existing);
+    assertEquals(ufw.rows.filter((_row, index) => index !== 2), before);
+    assertEquals(
+        check(intent("present", request), ufw.status(), commands.length),
+        {
+            backend: "active",
+        },
+    );
+    const after = structuredClone(ufw.rows);
+    const repeat = converge(ufw, request);
+    assertEquals(repeat.commands, []);
+    assertEquals(repeat.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
+    assertEquals(ufw.rows, after);
+});
+
+Deno.test("managed trust agreeing with an allow does not hide an intervening operator deny", () => {
+    const rows = inventory(partialApplication);
+    [rows[5], rows[6]] = [rows[6], rows[5]];
+    const ufw = new UfwDouble(rows);
+    const request = { port: "47372", source: "10.232.2.11" };
+    assertEquals(
+        refusal(() => check(intent("present", request), ufw.status())),
+        "firewall.verify_failed",
+    );
+    const applied = converge(ufw, request);
+    assertEquals(applied.commands.map((argv) => argv[3]), [
+        "--force",
+        "insert",
+    ]);
+    assertEquals(applied.result, { backend: "active" });
+    assertEquals(ufw.tuples("47372").slice(0, 2), [
+        ["47372/tcp", "allow", "10.232.2.11"],
+        ["47372/tcp", "deny", "Anywhere"],
+    ]);
+    assertEquals(converge(ufw, request).commands, []);
+});
+
+for (const to of ["Anywhere", "Anywhere on orbit", "10.45.0.2 on orbit"]) {
+    Deno.test(`an overlapping managed allow to ${to} leaves the unrestricted existing allow intact`, () => {
+        const rows = inventory(partialApplication);
+        rows[2].to = to;
+        const ufw = new UfwDouble(rows);
+        const applied = converge(ufw, { port: "47372", source: "10.232.2.11" });
+        assertEquals(applied.commands, []);
+        assertEquals(applied.result, {
+            backend: "active",
+            skipped: "firewall.rule_exists",
+        });
+        assertEquals(ufw.rows, rows);
+    });
+
+    Deno.test(`an overlapping managed deny to ${to} still moves the unrestricted existing allow`, () => {
+        const ufw = new UfwDouble([
+            {
+                to,
+                action: "deny",
+                source: "Anywhere",
+                comment: "orbit:restricted",
+            },
+            {
+                to: "47372/tcp",
+                action: "allow",
+                source: "10.232.2.11",
+                comment: "proof:existing",
+            },
+        ]);
+        const request = { port: "47372", source: "10.232.2.11" };
+        assertEquals(
+            refusal(() => check(intent("present", request), ufw.status())),
+            "firewall.verify_failed",
+        );
+        const applied = converge(ufw, request);
+        assertEquals(applied.commands.map((argv) => argv[3]), [
+            "--force",
+            "insert",
+        ]);
+        assertEquals(applied.result, { backend: "active" });
+        assertEquals(ufw.rows[0].to, "47372/tcp");
+        assertEquals(ufw.rows[1].to, to);
+        assertEquals(converge(ufw, request).commands, []);
+    });
+}
+
 Deno.test("a failed second allow keeps TCP and a retry adds only UDP for the same source", () => {
     const ufw = new UfwDouble();
     const request = intent("present", { protocol: "any" });
@@ -570,7 +699,15 @@ Deno.test("a partial apply is not rolled back and a repeat repairs only the miss
 });
 
 Deno.test("an interrupted move can leave the line absent and a repeat restores it", () => {
-    const ufw = new UfwDouble();
+    const ufw = new UfwDouble([
+        {
+            to: "443/tcp",
+            action: "deny",
+            source: "Anywhere",
+            comment: "proof:deny",
+        },
+        ...new UfwDouble().rows,
+    ]);
     const source = "10.44.0.9";
     ufw.rows.push({
         to: "443/tcp",
