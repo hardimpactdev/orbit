@@ -67,7 +67,7 @@
       failed_when: false
       changed_when: false
       until: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
-      retries: 30
+      retries: "{{ (70 / (poll_delay | int)) | round(0, 'ceil') | int }}"
       delay: "{{ poll_delay }}"
       when: inventory_hostname == 'doctor_check'
 

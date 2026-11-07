@@ -3,10 +3,12 @@
 # Run by `orbit tasks:script`, from the repository root of the task VM checkout. Delete it, or make it the runner, after the verdict.
 #
 #   scripts/molecule-verify-spike diagnose        what the VM has (no install, nothing changes)
-#   scripts/molecule-verify-spike test [BASE] [FORKS] [STAGE]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),
+#   scripts/molecule-verify-spike test [BASE] [FORKS] [STAGE] [SCENARIO]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),
 #                                                       FORKS the limit: cases, containers and probes that run at a time (default 1, serial);
 #                                                       STAGE 1 verify in parallel (shared reads, async probes, Doctor beside them), 2 adds the spread
-#                                                       over app-dev, app-prod and gateway, 3 adds the fast poll and the shared facts and prepare (default 1)
+#                                                       over app-dev, app-prod and gateway, 3 adds the fast poll and the shared facts and prepare (default 1);
+#                                                       SCENARIO is the batch (default `default`; also ufw-fault, udp, dual-stack, prompts);
+#                                                       PROOF_KEEP_LISTENERS=1 leaves the listeners of the run running (to test what a reused VM carries)
 #   scripts/molecule-verify-spike health           load, memory, listeners and UFW rows of each container
 #   scripts/molecule-verify-spike targets          what each container accepts: ufw, the proof-network row, one firewall:allow on its Node
 #   scripts/molecule-verify-spike log FROM [TO]   print lines FROM..TO of the last Molecule log (the result keeps only 16 KiB)
@@ -20,6 +22,7 @@ WORK=$ROOT/.molecule-spike
 VENV=$WORK/venv
 LOG=$WORK/molecule.log
 SCENARIO=$ROOT/swamp/proof/molecule/firewall-allow
+orbit() { env PATH=/usr/local/bin:/usr/bin:/bin HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit php "$ROOT/apps/cli/orbit" "$@" </dev/null; }
 mkdir -p "$WORK"
 # The venv and the log are untracked files of the checkout; keep the workspace clean for `changed` and for the next check.
 grep -qxF '.molecule-spike/' "$(git -C "$ROOT" rev-parse --git-path info/exclude)" 2>/dev/null || echo '.molecule-spike/' >>"$(git -C "$ROOT" rev-parse --git-path info/exclude)"
@@ -48,9 +51,9 @@ install() {
   if [ -x "$VENV/bin/molecule" ]; then say "install: venv present, skipped"; return 0; fi
   local start; start=$(now)
   if command -v uv >/dev/null; then
-    uv venv --quiet "$VENV" && VIRTUAL_ENV=$VENV uv pip install --quiet molecule==26.11.0 ansible==14.6.0
+    uv venv --quiet "$VENV" && VIRTUAL_ENV=$VENV uv pip install --quiet molecule==26.11.0 ansible==14.6.0 pexpect==4.9.0
   else
-    python3 -m venv "$VENV" && "$VENV/bin/pip" install --quiet molecule==26.11.0 ansible==14.6.0
+    python3 -m venv "$VENV" && "$VENV/bin/pip" install --quiet molecule==26.11.0 ansible==14.6.0 pexpect==4.9.0
   fi
   local rc=$?
   say "install: rc $rc in $(since "$start") s"
@@ -61,7 +64,7 @@ run_test() {
   export PATH=$VENV/bin:$PATH
   export PROOF_PORT_BASE=${1:-47100}
   export ANSIBLE_FORKS=${2:-1}
-  local stage=${3:-1}
+  local stage=${3:-1} scenario=${4:-default}
   export PROOF_SPREAD=0 PROOF_FAST=0
   [ "$stage" -ge 2 ] && export PROOF_SPREAD=1
   [ "$stage" -ge 3 ] && export PROOF_FAST=1
@@ -75,13 +78,13 @@ run_test() {
   say "== health before"; health
   stop_listeners
   cd "$SCENARIO" || return 1
-  molecule reset >/dev/null 2>&1   # Molecule skips `prepare` when its state says prepared: a rerun needs the listeners and denies again
+  molecule reset -s "$scenario" >/dev/null 2>&1   # Molecule skips `prepare` when its state says prepared: a rerun needs the listeners and denies again
   start=$(now)
-  molecule test >"$LOG" 2>&1
+  molecule test -s "$scenario" >"$LOG" 2>&1
   local rc=$?
   stop_listeners
   say "== health after (listeners stopped)"; health
-  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, forks $ANSIBLE_FORKS, stage $stage, log $(wc -l <"$LOG") lines)"
+  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, forks $ANSIBLE_FORKS, stage $stage, scenario $scenario, log $(wc -l <"$LOG") lines)"
   say "== time of each playbook (the total after each TASKS RECAP: facts, prepare, converge, verify)"
   grep -A1 '^TASKS RECAP' "$LOG" | grep -E '^[A-Z][a-z]+ [0-9]+' | sed -E 's/^.*\(([0-9:.]+)\) +([0-9:.]+) .*$/playbook total \2/'
   say "== tasks"
@@ -105,10 +108,10 @@ run_test() {
       else if (n ~ /Operation receipt/) c = "receipt waits"
       else if (n ~ /UFW table|firewall records|Operations (before|after)|Read the UFW|Read the firewall/) c = "reads"
       else if (n ~ /Doctor/) c = "doctor"
-      else if (n ~ /bridge address|source address|Node IDs|List the Nodes|Keep/) c = "facts"
-      else if (n ~ /evidence|clock/) c = "bookkeeping"
+      else if (n ~ /Keep what each probe saw|evidence|clock|Keep the|Each case lists|case.s table/) c = "bookkeeping"
+      else if (n ~ /bridge address|source address|Node IDs|List the Nodes|Keep it|Keep them/) c = "facts"
       s[c] += t; k[c]++ }
-    END { for (c in s) printf "%-26s %7.1f s in %d tasks\n", c, s[c], k[c] }' | sort -k2 -rn
+    END { for (c in s) printf "%7.1f s  %-26s in %d tasks\n", s[c], c, k[c] }' | sort -rn
   say "== doctor (apart from the cases)"
   grep -E '"msg": "doctor:' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-200
   say "== slowest tasks"
@@ -129,14 +132,15 @@ health() {
   local c
   for c in nested-app-dev nested-app-prod nested-gateway; do
     printf '%s: ' "$c"
-    incus exec "$c" -- sh -c 'printf "load %s, " "$(cut -d" " -f1-3 /proc/loadavg)"; printf "mem free %s MB of %s, " "$(awk "/MemAvailable/ {print int(\$2/1024)}" /proc/meminfo)" "$(awk "/MemTotal/ {print int(\$2/1024)}" /proc/meminfo)"; printf "http.server %s, ufw rows %s, ufw procs %s\n" "$(pgrep -fc "http.server")" "$(ufw status numbered | grep -c "^\[")" "$(pgrep -xc ufw)"' 2>&1 | head -1
+    incus exec "$c" -- sh -c 'printf "load %s, " "$(cut -d" " -f1-3 /proc/loadavg)"; printf "mem free %s MB of %s, " "$(awk "/MemAvailable/ {print int(\$2/1024)}" /proc/meminfo)" "$(awk "/MemTotal/ {print int(\$2/1024)}" /proc/meminfo)"; printf "http.server %s, ufw rows %s, ufw procs %s\n" "$(pgrep -fc "[h]ttp.server")" "$(ufw status numbered | grep -c "^\[")" "$(pgrep -xc ufw)"' 2>&1 | head -1
   done
 }
 
 # The listeners of a run stay after it. Stop them, so the next run on this VM starts as the first did.
 stop_listeners() {
+  [ "${PROOF_KEEP_LISTENERS:-0}" = 1 ] && return 0
   local c
-  for c in nested-app-dev nested-app-prod nested-gateway; do incus exec "$c" -- pkill -f "http.server" >/dev/null 2>&1; done
+  for c in nested-app-dev nested-app-prod nested-gateway; do incus exec "$c" -- pkill -f "http.server [0-9]+ --bind" >/dev/null 2>&1; done
   return 0
 }
 
@@ -164,7 +168,7 @@ case "${1:-test}" in
   targets) targets ;;
   health) health ;;
   diagnose) diagnose ;;
-  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" "${3:-}" "${4:-}" ;;
+  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
   log) sed -n "${2:-1},${3:-80}p" "$LOG" | cut -c1-260 ;;
-  *) say "usage: $0 diagnose | health | targets | test [PORT_BASE] [FORKS] [STAGE] | log FROM [TO]"; exit 2 ;;
+  *) say "usage: $0 diagnose | health | targets | test [PORT_BASE] [FORKS] [STAGE] [SCENARIO] | log FROM [TO]"; exit 2 ;;
 esac

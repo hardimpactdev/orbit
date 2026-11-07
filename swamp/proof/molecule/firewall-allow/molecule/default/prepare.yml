@@ -38,6 +38,13 @@
       changed_when: false
       when: my_cases | length > 0
 
+    - name: The proof-network allowance exists on this container
+      ansible.builtin.assert:
+        that: anchor.stdout | int > 0
+        fail_msg: "{{ inventory_hostname }} has no proof-network row in ufw: the test denies have no place to go"
+        quiet: true
+      when: my_cases | length > 0
+
     - name: Deny each test port above the proof-network allowance
       ansible.builtin.command:
         cmd: >-
