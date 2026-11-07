@@ -20,7 +20,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Fleet\AdmitFleetRollout;
-use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -140,15 +139,9 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::migrateOutput($data, $phase),
         ), $record);
         if ($code === null) {
-            // Stage 6: a release that went live refreshes the task images when it changed playbooks, pins or lock files.
+            // The task image refresh is not here: the run's own step admits it as soon as Swamp has loaded the commit.
             $id = GatewayReleaseCommit::id($sha);
-            DB::afterCommit(static function () use ($id, $previous): void {
-                try {
-                    GatewaySchedule::dispatch(new RefreshTaskVmImages($id, $previous));
-                } catch (Throwable $failure) {
-                    // The daily trigger asks again; a release is never held by it.
-                    Log::warning('The task image refresh after a release was not queued.', ['release' => $id, 'message' => $failure->getMessage()]);
-                }
+            DB::afterCommit(static function () use ($id): void {
                 try {
                     // Stage 8: the verified release is the fleet's desired state, so its footprint rollout follows.
                     GatewaySchedule::dispatch(new AdmitFleetRollout);

@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -20,6 +21,7 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -99,6 +101,33 @@ it('returns the open refresh of a host for a second admission, and none once it 
 
     $operation->update(['status' => OperationStatus::Succeeded]);
     expect(TaskVmImageRefreshIntent::open($host))->toBeNull();
+});
+
+it('queues the newest release commit behind the open refresh, and admits it when that refresh ends', function (): void {
+    Queue::fake();
+    $host = imageRefreshHost();
+    $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'fixture-refresh', 'native_progress' => ['run' => 'fixture-refresh']],
+        'input' => ['commit' => ImageRefreshCommit, 'recipe_identity' => 'recipe-9', 'task_vm_id' => 0, 'intent' => ['host' => ['node_id' => $host->id,
+            'project' => 'orbit-tasks', 'current' => null, 'snapshot' => 'r20261107131500', 'base' => ['vm' => 'beast-base', 'seed' => 'beast-base-seed']], 'converge' => []],
+            'execution_secrets' => []]]);
+    $intent = app(TaskVmImageRefreshIntent::class);
+    $same = ImageRefreshCommit;
+    $older = str_repeat('1', 40);
+    $newest = str_repeat('2', 40);
+
+    // The open refresh already runs for this commit: nothing waits. A newer commit waits, and the newest of two wins; the run's own state stays.
+    expect($intent->start($host, 'test', commit: $same)->id)->toBe($operation->id);
+    expect($operation->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next);
+    $intent->start($host, 'test', commit: $older);
+    $intent->start($host, 'test', commit: $newest);
+    expect($operation->refresh()->state)->toMatchArray([TaskVmImageRefreshIntent::Next => $newest, 'swamp_run_id' => 'fixture-refresh'])
+        ->and(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe(1);
+
+    app(TaskVmImageRefreshProjection::class)->apply($operation, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
+
+    Queue::assertPushed(RefreshTaskVmImages::class, static fn (RefreshTaskVmImages $job): bool => $job->hostId === $host->id && $job->commit === $newest);
 });
 
 it('promotes the proven snapshot of the base VM as the host\'s latest build and releases the slot that proved it; nothing for a failed run', function (): void {

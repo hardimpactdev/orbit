@@ -4,24 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmImageInputs;
 
-/** A release folder with one file at `$path`, as the digest reads it. */
-function inputsRoot(string $path, string $content): string
-{
-    $root = sys_get_temp_dir().'/orbit-inputs-'.bin2hex(random_bytes(4));
-    mkdir($root.'/'.dirname($path), 0700, true);
-    file_put_contents($root.'/'.$path, $content);
-
-    return $root;
-}
-
-it('answers the question of the digest for one path: the refresh trigger and the proof share one rule', function (string $path, bool $carried): void {
-    $inputs = new TaskVmImageInputs;
-    $one = inputsRoot($path, 'one');
-    $two = inputsRoot($path, 'two');
-
-    // A change of the file changes the digest exactly when the path is one the image carries.
-    expect($inputs->carries($path))->toBe($carried)->and($inputs->digest($one) !== $inputs->digest($two))->toBe($carried);
-    exec('rm -rf '.escapeshellarg($one).' '.escapeshellarg($two));
+it('says whether the image carries a path, the rule the proof asks the ready copies for', function (string $path, bool $carried): void {
+    expect((new TaskVmImageInputs)->carries($path))->toBe($carried);
 })->with([
     'a playbook' => ['swamp/ansible/tasks/task-vm-software.yml', true],
     'the folder of the ansible roles' => ['swamp/ansible/operation-node-add.yml', true],

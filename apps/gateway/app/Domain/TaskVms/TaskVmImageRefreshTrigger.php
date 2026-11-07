@@ -5,50 +5,56 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\TaskVms\StartTaskVmImageRefreshAction;
-use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Starts the refresh of the image and seed of every Linux task VM host (stage 6): after a release that went live and changed
- * what the image carries, and daily. Each host gets one admission, and a host with a refresh open returns that refresh, so
- * the two triggers and a retry never run twice on a host. A host that refuses (a build runs, no capacity) is skipped and
- * asked again by the next trigger; the other hosts are not held.
+ * Starts the refresh of the base of every Linux task VM host (stage 6): in every Gateway release, and daily. Each host gets one
+ * admission, and a host with a refresh open keeps it and queues the newest commit behind it, so the triggers and a retry never run
+ * twice on a host. A host that refuses (no capacity) is skipped and asked again by the next trigger; the other hosts are not held.
  */
 final readonly class TaskVmImageRefreshTrigger
 {
-    public function __construct(private TaskVmSettings $settings, private TaskVmImageInputs $inputs, private StartTaskVmImageRefreshAction $start) {}
+    public function __construct(private TaskVmSettings $settings, private StartTaskVmImageRefreshAction $start) {}
 
     /**
-     * The refresh after a release: only when the release changed playbooks, pins or lock files since the one it replaced.
+     * Every host, to `$commit` or to the release the Gateway runs.
      *
-     * @return array<string,string> host name => the Operation, or the refusal code, or `unchanged`
+     * @return array<string,string> host name => `operation:<id>` or the refusal code
      */
-    public function afterRelease(string $releaseId, string $previousId): array
-    {
-        $layout = GatewayReleaseLayout::fromConfig();
-        if (! $this->inputs->changed($layout->releasePath($previousId), $layout->releasePath($releaseId))) {
-            return ['*' => 'unchanged'];
-        }
-
-        return $this->admitAll('release');
-    }
-
-    /** @return array<string,string> host name => `operation:<id>` or the refusal code */
-    public function admitAll(string $reason): array
+    public function admitAll(string $reason, ?string $commit = null): array
     {
         $results = [];
         foreach ($this->hosts() as $host) {
-            try {
-                $results[$host->name] = 'operation:'.$this->start->execute($host, 'refresh-'.$reason)->id;
-            } catch (ResourceOperationException $refused) {
-                Log::warning('A task image refresh was not admitted.', ['node_id' => $host->id, 'reason' => $reason, 'error_code' => $refused->errorCode]);
-                $results[$host->name] = $refused->errorCode;
-            }
+            $results[$host->name] = $this->admit($host, $reason, $commit);
         }
 
         return $results;
+    }
+
+    /** One host, as a run that ended asks for the commit that was queued behind it. */
+    public function admitHost(int $hostId, string $reason, string $commit): string
+    {
+        foreach ($this->hosts() as $host) {
+            if ($host->id === $hostId) {
+                return $this->admit($host, $reason, $commit);
+            }
+        }
+
+        return 'task_vm.host_unavailable';
+    }
+
+    /** @return string `operation:<id>` or the refusal code */
+    private function admit(Node $host, string $reason, ?string $commit): string
+    {
+        try {
+            return 'operation:'.$this->start->execute($host, 'refresh-'.$reason, $commit)->id;
+        } catch (ResourceOperationException $refused) {
+            Log::warning('A task image refresh was not admitted.', ['node_id' => $host->id, 'reason' => $reason, 'error_code' => $refused->errorCode]);
+
+            return $refused->errorCode;
+        }
     }
 
     /** @return list<Node> the active Linux task VM hosts */

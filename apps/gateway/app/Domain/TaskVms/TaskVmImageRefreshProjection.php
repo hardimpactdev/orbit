@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Infrastructure\Swamp\NativeRunResult;
+use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -56,6 +58,12 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             }
             $data['result'] = $result;
             $data['error_code'] = $code;
+            // A release came while this run was open: its commit waits for the lock this end frees, and the newest one is the one asked for.
+            $next = ($operation->state ?? [])[TaskVmImageRefreshIntent::Next] ?? null;
+            if (is_string($next)) {
+                $host = $operation->target_id;
+                DB::afterCommit(static fn () => GatewaySchedule::dispatch(new RefreshTaskVmImages($host, $next)));
+            }
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
