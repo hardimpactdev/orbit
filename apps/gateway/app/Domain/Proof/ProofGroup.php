@@ -8,7 +8,6 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
 use App\Models\Task;
@@ -54,14 +53,14 @@ final readonly class ProofGroup
 
     /**
      * Cancels the task group that `$owner` targets through a keyed admission, so a retry never admits a second cancel. Only the Operation
-     * that owns the group may ask: its `proof.command`, or its image refresh. An Operation that targets anything else cancels nothing.
+     * that owns the group may ask: its `proof.command`. An Operation that targets anything else cancels nothing.
      * `$trigger` names who asks, in the Activity of the cancel.
      *
      * @throws ResourceOperationException when the group is busy for a moment, such as while a step still holds it; the job tries again
      */
     public function cancel(Operation $owner, string $trigger = self::Trigger): void
     {
-        if ($owner->target_type !== 'task_group' || ! in_array($owner->kind, [self::OwnerKind, TaskVmImageRefreshIntent::Kind], true)) {
+        if ($owner->target_type !== 'task_group' || $owner->kind !== self::OwnerKind) {
             return;
         }
         $group = Task::topLevel()->find($owner->target_id);

@@ -12,7 +12,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
-use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
@@ -54,10 +53,6 @@ final readonly class CancelOperationAction
                 }
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
             }
-        }
-        // A refresh owns a task group with a VM too. One cancelled before its run started has no terminal event to project, so the group is cancelled here.
-        if ($operation->kind === TaskVmImageRefreshIntent::Kind && $operation->status === OperationStatus::Cancelled) {
-            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id, 'image-refresh'));
         }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
             if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {

@@ -1,0 +1,37 @@
+---
+# The warm checkout of a task image (docs/cli/tasks/vm-image-refresh.mmd): main at the release commit, with `vendor/` and
+# `node_modules/` of every project, at the fixed path that a slot's workspace Instance names. A claim fetches its task branch onto it
+# and installs only where a lock file differs. The repository is read without a credential: the slots serve a public repository.
+- name: Make the folder of the checkout
+  ansible.builtin.file: { path: "{{ intent.checkout.path | dirname }}", state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0755" }
+- name: Look for the checkout
+  ansible.builtin.stat: { path: "{{ intent.checkout.path }}/.git" }
+  register: checkout_git
+- name: Clone the repository
+  when: not checkout_git.stat.exists
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command: { argv: [timeout, "600", git, clone, --no-checkout, "{{ intent.checkout.repository }}", "{{ intent.checkout.path }}"] }
+  changed_when: true
+- name: Fetch the release commit
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command: { argv: [timeout, "300", git, -C, "{{ intent.checkout.path }}", fetch, --quiet, origin, "+refs/heads/main:refs/remotes/origin/main", "{{ intent.checkout.commit }}"] }
+  changed_when: true
+# Ignored files stay: `vendor/`, `node_modules/` and the caches. A claim checks out its branch the same way.
+- name: Check out the release commit
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", checkout, --force, --detach, "{{ intent.checkout.commit }}"] }
+  changed_when: true
+- name: Install the Composer dependencies
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command:
+    argv: [timeout, "600", /usr/bin/composer, install, --no-interaction, --no-progress, "--working-dir={{ intent.checkout.path }}/{{ item }}"]
+  loop: "{{ intent.checkout.composer }}"
+  environment: { COMPOSER_HOME: "{{ orbit_home }}/.config/composer", HOME: "{{ orbit_home }}" }
+  changed_when: true
+- name: Install the JavaScript dependencies
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command:
+    argv: [timeout, "600", /usr/local/bin/bun, install, --frozen-lockfile, --cwd, "{{ intent.checkout.path }}/{{ item }}"]
+  loop: "{{ intent.checkout.bun }}"
+  environment: { HOME: "{{ orbit_home }}" }
+  changed_when: true

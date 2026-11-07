@@ -1,0 +1,196 @@
+---
+# The Incus work of a task VM host, one tagged part per Swamp phase (docs/cli/tasks/vm-image-refresh.mmd):
+# - `refresh-vm`: start the refresh VM from the host's current image, with a clone of the image's seed.
+# - `publish`: stop the refresh VM, publish it as the candidate image and its seed clone as the candidate's seed, then delete the VM.
+# - `promote`: move the alias to the candidate, keep the old image as `-previous`, and remove older images and seeds.
+# - `discard`: after a failed refresh, remove the refresh VM, its seed clone, and a candidate that was not promoted.
+# Every part is idempotent: a rerun finds its work done. The intent comes from the Gateway; this file names no host, image or VM.
+# The host is reached from the Swamp Node with its pinned host keys, never trusted on first use.
+- name: Reach the task VM host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Pin the host keys
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/known_hosts"
+        mode: "0600"
+        content: "{% for key in host.ssh.target.host_keys %}{{ host.ssh.target.host if host.ssh.target.port == 22 else '[' ~ host.ssh.target.host ~ ']:' ~ host.ssh.target.port }} {{ key }}\n{% endfor %}"
+    - name: Add the host
+      ansible.builtin.add_host:
+        name: task-vm-host
+        groups: [task_vm_host]
+        ansible_host: "{{ host.ssh.target.host }}"
+        ansible_user: "{{ host.ssh.target.user }}"
+        ansible_port: "{{ host.ssh.target.port }}"
+        ansible_ssh_private_key_file: "{{ host.ssh.identity_file }}"
+
+- name: Task VM host
+  hosts: task_vm_host
+  become: true
+  gather_facts: false
+  vars:
+    incus: [incus, --project, "{{ host.project }}"]
+    seed_of: "{{ host.seed_prefix }}"
+  tasks:
+    - name: Start the refresh VM
+      tags: [refresh-vm]
+      block:
+        - name: Remove a refresh VM that a failed run left
+          ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', '--', vm.name] }}" }
+          register: refresh_delete
+          changed_when: refresh_delete.rc == 0
+          failed_when: refresh_delete.rc != 0 and 'not found' not in refresh_delete.stderr
+        - name: Remove the seed clone that a failed run left
+          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, vm.seed_clone] }}" }
+          register: clone_delete
+          changed_when: clone_delete.rc == 0
+          failed_when: clone_delete.rc != 0 and 'not found' not in clone_delete.stderr
+        # Seed copies are serialised on the host: two copies of one ZFS dataset at once make the second fail.
+        - name: Clone the seed of the current image
+          ansible.builtin.command:
+            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ seed_of ~ host.current[:12], host.pool ~ '/' ~ vm.seed_clone] }}"
+          changed_when: true
+        - name: Create the refresh VM
+          ansible.builtin.command:
+            argv: "{{ incus + ['init', '--vm', '--config', 'limits.cpu=' ~ vm.cpus, '--config', 'limits.memory=' ~ vm.memory, '--device', 'root,size=' ~ vm.disk,
+                   '--device', 'eth0,network=' ~ host.network, '--', host.current, vm.name] }}"
+            stdin: "{{ vm.launch_config }}"
+          changed_when: true
+        # The disk name is the one the nested Incus database of the image knows its seed pool by.
+        - name: Attach the seed clone
+          ansible.builtin.command:
+            argv: "{{ incus + ['config', 'device', 'add', vm.name, 'topology-seed', 'disk', 'pool=' ~ host.pool, 'source=' ~ vm.seed_clone] }}"
+          changed_when: true
+        - name: Start the refresh VM
+          ansible.builtin.command: { argv: "{{ incus + ['start', '--', vm.name] }}" }
+          changed_when: true
+        - name: Wait for its guest agent
+          ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', vm.name, 'agent'] }}" }
+          changed_when: false
+
+    - name: Publish the image
+      tags: [publish]
+      block:
+        - name: Stop the refresh VM
+          ansible.builtin.command: { argv: "{{ incus + ['stop', '--timeout', '180', '--', vm.name] }}" }
+          register: refresh_stop
+          changed_when: refresh_stop.rc == 0
+          failed_when: refresh_stop.rc != 0 and 'already stopped' not in refresh_stop.stderr
+        - name: Remove a candidate that a failed run left
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'delete', '--', host.candidate_alias] }}" }
+          register: candidate_delete
+          changed_when: candidate_delete.rc == 0
+          failed_when: candidate_delete.rc != 0 and 'not found' not in candidate_delete.stderr
+        - name: Publish the refresh VM as the candidate
+          ansible.builtin.command: { argv: "{{ ['timeout', '1500'] + incus + ['publish', '--alias', host.candidate_alias, '--', vm.name] }}" }
+          changed_when: true
+        - name: Read the fingerprint of the candidate
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'list', '--format', 'json', '--', host.candidate_alias] }}" }
+          register: candidate_image
+          changed_when: false
+        - name: Name the candidate's seed
+          ansible.builtin.set_fact:
+            candidate_fingerprint: "{{ (candidate_image.stdout | from_json | first).fingerprint }}"
+        - name: Copy the seed clone as the candidate's seed
+          ansible.builtin.command:
+            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ vm.seed_clone, host.pool ~ '/' ~ seed_of ~ candidate_fingerprint[:12]] }}"
+          changed_when: true
+        # A copy is a ZFS clone of the source; promoting it ends the dependency, so refreshes form no chain of clones.
+        - name: Read the ZFS dataset of the pool
+          ansible.builtin.command: { argv: [incus, storage, get, "{{ host.pool }}", zfs.pool_name] }
+          register: pool_dataset
+          changed_when: false
+        - name: Detach the candidate's seed from the clone
+          ansible.builtin.command: { argv: [zfs, promote, "{{ pool_dataset.stdout | trim }}/custom/{{ host.project }}_{{ seed_of ~ candidate_fingerprint[:12] }}"] }
+          changed_when: true
+        - name: Delete the refresh VM
+          ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', '--', vm.name] }}" }
+          changed_when: true
+        - name: Delete the seed clone
+          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, vm.seed_clone] }}" }
+          changed_when: true
+        - name: Name the candidate
+          ansible.builtin.debug: { msg: "fingerprint={{ candidate_fingerprint }}" }
+
+    - name: Promote the candidate
+      tags: [promote]
+      block:
+        - name: Read the aliases
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'list', '--format', 'json'] }}" }
+          register: aliases_now
+          changed_when: false
+        - name: Work out the promotion
+          ansible.builtin.set_fact:
+            promote_current: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.alias) | map(attribute='target') | first | default('') }}"
+            promote_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.candidate_alias) | map(attribute='target') | first | default('') }}"
+        - name: Check the candidate exists
+          ansible.builtin.assert:
+            that: promote_candidate != '' or promote_current != ''
+            fail_msg: "The host has no candidate {{ host.candidate_alias }} to promote."
+            quiet: true
+        - name: Drop the previous alias
+          when: promote_candidate not in ['', promote_current]
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'delete', '--', host.previous_alias] }}" }
+          register: previous_delete
+          changed_when: previous_delete.rc == 0
+          failed_when: previous_delete.rc != 0 and 'not found' not in previous_delete.stderr
+        - name: Keep the current image as the previous one
+          when: promote_candidate not in ['', promote_current] and promote_current != ''
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'rename', '--', host.alias, host.previous_alias] }}" }
+          changed_when: true
+        - name: Point the alias at the candidate
+          when: promote_candidate not in ['', promote_current]
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'create', '--', host.alias, promote_candidate] }}" }
+          changed_when: true
+        - name: Drop the candidate alias
+          when: promote_candidate != ''
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'delete', '--', host.candidate_alias] }}" }
+          changed_when: true
+        - name: Read the aliases, images and seeds again
+          ansible.builtin.command: { argv: "{{ incus + item }}" }
+          loop: [[image, alias, list, --format, json], [image, list, --format, json], [storage, volume, list, "{{ host.pool }}", --format, json]]
+          register: kept_now
+          changed_when: false
+        - name: Work out what to keep
+          ansible.builtin.set_fact:
+            keep: "{{ kept_now.results[0].stdout | from_json | selectattr('name', 'in', [host.alias, host.previous_alias]) | map(attribute='target') | list }}"
+            ours: "{{ kept_now.results[0].stdout | from_json | selectattr('name', 'match', '^' ~ host.alias) | map(attribute='target') | list }}"
+        # Only the alias and `-previous` stay: older images of this host's line are rollback copies of nothing. A seed goes with
+        # its image, and only when no VM uses it.
+        - name: Remove the older images
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'delete', '--', item] }}" }
+          loop: "{{ kept_now.results[1].stdout | from_json | map(attribute='fingerprint') | select('in', ours) | reject('in', keep) | list }}"
+          changed_when: true
+        - name: Remove the older seeds
+          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, item] }}" }
+          loop: "{{ kept_now.results[2].stdout | from_json | selectattr('type', 'eq', 'custom') | selectattr('used_by', 'falsy')
+                    | map(attribute='name') | select('match', '^' ~ seed_of ~ '[0-9a-f]{12}(-.*)?$')
+                    | reject('in', keep | map('regex_search', '^.{12}') | map('regex_replace', '^', seed_of) | list) | list }}"
+          changed_when: true
+
+    - name: Discard the candidate
+      tags: [discard]
+      block:
+        - name: Remove the refresh VM and its seed clone
+          ansible.builtin.command: { argv: "{{ incus + item }}" }
+          loop: [[delete, --force, --, "{{ vm.name }}"], [storage, volume, delete, "{{ host.pool }}", "{{ vm.seed_clone }}"]]
+          register: discard_vm
+          changed_when: discard_vm.rc == 0
+          failed_when: discard_vm.rc != 0 and 'not found' not in discard_vm.stderr
+        - name: Read the aliases
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'list', '--format', 'json'] }}" }
+          register: aliases_now
+          changed_when: false
+        - name: Work out the candidate
+          ansible.builtin.set_fact:
+            discard_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.candidate_alias) | map(attribute='target') | first | default('') }}"
+            discard_keep: "{{ aliases_now.stdout | from_json | selectattr('name', 'in', [host.alias, host.previous_alias]) | map(attribute='target') | list }}"
+        - name: Remove the candidate and its seed when it was not promoted
+          when: discard_candidate != '' and discard_candidate not in discard_keep
+          ansible.builtin.command: { argv: "{{ incus + item }}" }
+          loop: [[image, delete, --, "{{ discard_candidate }}"], [storage, volume, delete, "{{ host.pool }}", "{{ seed_of ~ discard_candidate[:12] }}"]]
+          register: discard_image
+          changed_when: discard_image.rc == 0
+          failed_when: discard_image.rc != 0 and 'not found' not in discard_image.stderr

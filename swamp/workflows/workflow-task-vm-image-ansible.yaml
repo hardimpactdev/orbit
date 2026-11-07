@@ -1,18 +1,27 @@
 id: 502a67d6-4346-4af9-af8f-d076bc5afbb3
 name: task-vm-image-ansible
 description: Run phases of the task VM role playbook on one guest of an Incus host, reached from 209 through the host with the host keys recorded from the host.
-vaults: []
+vaults:
+- orbit-control-inputs
 queueTimeout: 60
 inputs:
   type: object
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.image_build]}
+    kind: {type: string, enum: [task_vm.image_build, task_vm.image_refresh]}
     intent: {type: object}
     guest: {type: string, minLength: 1}
     tags: {type: string, minLength: 1}
     with_pi: {type: boolean}
+    # The proof Swamp Club key, which a refresh places for the nested Gateway's Swamp; a vault name and key, never the value.
+    club:
+      type: object
+      properties:
+        vault: {type: string, enum: [orbit-control-inputs]}
+        key: {type: string, pattern: ^swamp-proof-club-api-key$}
+      required: [vault, key]
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, guest, tags, with_pi]
   additionalProperties: false
 jobs:
@@ -157,6 +166,7 @@ jobs:
           ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_CLUB_KEY: '${{ has(inputs.club) ? vault.get(inputs.club.vault, inputs.club.key) : "" }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:

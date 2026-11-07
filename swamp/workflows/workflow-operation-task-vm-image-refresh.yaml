@@ -1,7 +1,9 @@
 id: 17bf7d13-d591-4dc7-a735-5396d311994f
 name: operation-task-vm-image-refresh
 description: >-
-  Refresh the task image and the topology seed of one task VM host (stage 6 of the command development pipeline) in one run from full inputs on 209. A refresh VM starts from the current image and seed as any task VM does, converges to the release, saves the nested fleet as ready copies, and is cleaned and published as the new image. The new image and its seed are promoted under the host lock and the old ones stay as `-previous`. No step calls the Gateway; the Gateway cancels the group of the run afterwards, which destroys the refresh VM.
+  Refresh the task image of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: one VM from the current
+  image, one Ansible run that converges everything, then the image and its seed are published and promoted with `-previous` kept.
+  No step calls the Gateway.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -14,254 +16,78 @@ inputs:
     intent:
       type: object
       properties:
-        provision: {type: object}
-        refresh: {type: object}
-      required: [provision, refresh]
+        host: {type: object}
+        vm: {type: object}
+        converge: {type: object}
+      required: [host, vm, converge]
       additionalProperties: false
-    converge: {type: object}
     execution_secrets:
       type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*|swamp-proof-club-api-key)$
-        required:
-        - vault
-        - key
-        additionalProperties: false
+      properties:
+        club:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: ^swamp-proof-club-api-key$}
+          required: [vault, key]
+          additionalProperties: false
+      required: [club]
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: refresh
   labels: {role: swamp}
   steps:
-  # The provision converges the outer VM first (stage 2, `Converge once`), so this run has no converge step of its own.
-  - name: Create the VM
+  - name: Start the refresh VM
     labels: {role: swamp}
     writes: true
     task:
       type: workflow
-      workflowIdOrName: operation-task-provision
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: tasks.provision
-        run_id: ${{ run.id }}
-        intent: ${{ inputs.intent.provision }}
-        converge: ${{ inputs.converge }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-  # The guests' host keys are pinned only by the VM step; the ready copies intent carries `host_keys: null` until here.
-  - name: Pin the VM
-    labels: {role: swamp}
-    dependsOn: [{step: Create the VM, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: image-refresh-pin
-      methodName: pin
-      inputs:
-        receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
-        guest_node_id: '${{ inputs.intent.provision.guest_node_id }}'
-        intents: '${{ {"ready_copies": inputs.intent.refresh.ready_copies, "fleet_build": inputs.intent.refresh.fleet_build} }}'
-  # A seed without usable ready copies gives a VM without a nested fleet: the fleet is built here, from stock Ubuntu, and the save follows. A fleet that started from ready copies needs no build.
-  - name: 'Build the fleet'
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', tags: refresh-vm}
+  # The outer VM, the warm checkout and each container, then their `base` snapshots and the clean before the publication.
+  - name: Converge everything
     labels: {role: swamp}
     writes: true
-    guard: '${{ (has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep") || steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: operation-task-vm-fleet-build
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.intent.provision.guest_node_id }}
-        kind: task_vm.fleet_build
-        intent: '${{ steps["Pin the VM"].outputs.fleet_build }}'
-        execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
-  # A fleet that started from ready copies holds what the copies held: the nested Gateway converges each of its Nodes to the release of
-  # the checkout (agent, unit, CLI, roles, network) before they are saved, so the copies never lag behind a release. A fleet built here is
-  # already at it.
-  - name: 'Converge the nested Nodes'
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ (has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep") || !steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    task:
-      type: workflow
-      workflowIdOrName: task-nested-converge
-      inputs:
-        guest_node_id: ${{ inputs.intent.provision.guest_node_id }}
-        ssh_execution: '${{ steps["Pin the VM"].outputs.ready_copies.ssh_execution }}'
-  # Stops the nested containers and copies them into the seed disk as key-free ready copies, then boot-checks them. With `seed=keep` it is skipped: the seed disk stays as the refresh VM cloned it.
-  - name: 'Save the ready copies'
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep" }}'
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Converge the nested Nodes', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    task:
-      type: workflow
-      workflowIdOrName: operation-task-vm-ready-copies
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.intent.provision.guest_node_id }}
-        kind: task_vm.ready_copies
-        intent: '${{ steps["Pin the VM"].outputs.ready_copies }}'
-        execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
-  # The refresh VM yields only its seed disk: it is stopped, never published. The image comes from a clean builder.
-  # The VM stops, and the image, its seed and the promotion follow, only when every step before passed: a failed step makes the steps
-  # after it `skipped`, which the guards of `seed=keep` also give, so this step names each of them.
-  - name: 'Stop the refresh VM'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Create the VM', condition: {type: succeeded}}, {step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Converge the nested Nodes', condition: *done}, {step: 'Save the ready copies', condition: *done}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-stop-vm").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-stop-vm").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'stop', '${{ inputs.intent.refresh.vm.name }}', '--timeout', '180'], timeoutSec: 200}
-  - name: 'Build the image'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Stop the refresh VM', condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-image-builder
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: task_vm.image_build
-        intent: '${{ inputs.intent.refresh.candidate }}'
-  - name: 'Read the fingerprint'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Build the image', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-fingerprint").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-fingerprint").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'incus --project "$1" image info -- "$2" | sed -n ''s/^Fingerprint: //p''', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.names.candidate_alias }}'], timeoutSec: 60}
-  # The same smoke as the image build: a throwaway VM from the candidate, and the check phase of the task VM role on it.
-  - name: 'Smoke the candidate'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Read the fingerprint', condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-image-smoke
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: task_vm.image_build
-        intent: '${{ inputs.intent.refresh.candidate }}'
-  # The smoke VM is a clean clone of the candidate, so it can be enrolled as a new task VM is: with the bootstrap steps of the enrollment, then the converge of a provision. It is the guard against enrollment files left in an image.
-  - name: 'Enroll the check VM'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Smoke the candidate', condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-bootstrap
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: tasks.provision
-        intent: ${{ inputs.intent.provision }}
-        guest: {}
-        name: '${{ inputs.intent.refresh.candidate.smoke }}'
-  - name: 'Converge the check VM'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Enroll the check VM', condition: {type: succeeded}}]
+    dependsOn: [{step: Start the refresh VM, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-image-ansible
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-        kind: task_vm.image_build
-        intent: '${{ inputs.intent.refresh.candidate }}'
-        guest: '${{ inputs.intent.refresh.candidate.smoke }}'
-        tags: software,tools,check
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent.converge }}
+        guest: ${{ inputs.intent.vm.name }}
+        tags: software,tools,boot,checkout,fleet,check,clean
         with_pi: true
-  - name: 'Copy the seed'
+        club: ${{ inputs.execution_secrets.club }}
+  - name: Publish the image
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Converge the check VM', condition: {type: succeeded}}, {step: 'Stop the refresh VM', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-copy").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-copy").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock', 'incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'storage', 'volume', 'copy', '${{ inputs.intent.refresh.vm.pool + "/" + inputs.intent.refresh.vm.seed_volume }}', '${{ inputs.intent.refresh.vm.pool + "/" + inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12) }}'], timeoutSec: 700}
-  - name: 'Detach the seed'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Copy the seed', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-promote").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-seed-promote").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'zfs promote "$(incus storage get "$2" zfs.pool_name)/custom/${1}_$3"', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.vm.pool }}', '${{ inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12) }}'], timeoutSec: 300}
-  # The same promotion as the image build: the alias moves to the new image and the old image keeps `-previous`. The seed of the new image exists before the alias moves.
-  - name: 'Promote the image'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Detach the seed', condition: {type: succeeded}}]
+    dependsOn: [{step: Converge everything, condition: {type: succeeded}}]
     task:
       type: workflow
-      workflowIdOrName: task-vm-image-promote
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: task_vm.image_build
-        intent: '${{ inputs.intent.refresh.candidate }}'
-        fingerprint: '${{ steps["Read the fingerprint"].outputs.stdout.split("\n")[0] }}'
-- name: cleanup
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', tags: publish}
+  - name: Promote
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Publish the image, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', tags: promote, read_aliases: true}
+# A failed refresh leaves the host as it was: the refresh VM, its seed clone and a candidate that was not promoted go.
+- name: discard
   labels: {role: swamp}
-  dependsOn: [{job: refresh, condition: {type: completed}}]
+  dependsOn: [{job: refresh, condition: {type: failed}}]
   steps:
-  - name: 'Remove the check VM'
+  - name: Discard the candidate
     labels: {role: swamp}
     writes: true
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-check").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-check").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['incus', '--project', '${{ inputs.intent.refresh.vm.project }}', 'delete', '--force', '--', '${{ inputs.intent.refresh.candidate.smoke }}', '${{ inputs.intent.refresh.candidate.builder }}'], okExitCodes: any, timeoutSec: 120}
-  - name: 'Remove the leftovers'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Remove the check VM', condition: {type: completed}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-leftovers").split(".").join("-") }}'
-      methodName: exec
-      globalArgs: {name: '${{ ("image-refresh-" + string(inputs.intent.refresh.host_node_id) + "-cleanup-leftovers").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.refresh.host_ssh_execution.target.user }}', port: '${{ inputs.intent.refresh.host_ssh_execution.target.port }}', identityFile: '${{ inputs.intent.refresh.host_ssh_execution.identity_file }}'}, hosts: [{name: host, address: '${{ inputs.intent.refresh.host_ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.refresh.host_ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: 'name:host', sudo: true, argv: ['sh', '-c', 'project=$1 pool=$2 alias=$3 candidate=$4 seed=$5 fingerprint=$6; live=$(incus --project "$project" image info -- "$alias" | sed -n ''s/^Fingerprint: //p''); if [ -n "$fingerprint" ] && [ "$live" = "$fingerprint" ]; then exit 0; fi; incus --project "$project" image delete -- "$candidate" || true; [ -z "$seed" ] || incus --project "$project" storage volume delete "$pool" "$seed" || true', 'sh', '${{ inputs.intent.refresh.vm.project }}', '${{ inputs.intent.refresh.vm.pool }}', '${{ inputs.intent.refresh.names.alias }}', '${{ inputs.intent.refresh.names.candidate_alias }}', '${{ ("Read the fingerprint" in steps && "outputs" in steps["Read the fingerprint"]) ? (inputs.intent.refresh.names.seed_prefix + steps["Read the fingerprint"].outputs.stdout.split("\n")[0].substring(0, 12)) : "" }}', '${{ ("Read the fingerprint" in steps && "outputs" in steps["Read the fingerprint"]) ? (steps["Read the fingerprint"].outputs.stdout.split("\n")[0]) : "" }}'], timeoutSec: 300}
-- name: check
-  labels: {role: swamp}
-  dependsOn: [{job: refresh, condition: {type: succeeded}}, {job: cleanup, condition: {type: succeeded}}]
-  steps:
-  # The jobs before it passed: the smoke and the promotion are children of the refresh job. The fingerprint is a full one, and the check VM is gone.
-  - name: Check the refresh
-    labels: {role: swamp}
-    task:
-      type: assert
-      expr: 'steps["Read the fingerprint"].outputs.stdout.split("\n")[0].size() == 64 && steps["Remove the check VM"].outputs.exitCode == 0'
-      severity: high
-      message: The task image is not refreshed; the publication did not name a full fingerprint, or the check VM stays.
+      type: workflow
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', tags: discard}

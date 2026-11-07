@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmImageRefreshProjection;
+use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Project;
-use App\Models\Task;
-use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Process;
@@ -68,76 +64,66 @@ function imageRefreshRefusal(Closure $call): string
     throw new RuntimeException('The call was not refused.');
 }
 
-it('refuses a host that cannot refresh before it creates a group', function (): void {
+it('refuses a host that cannot refresh', function (): void {
     $host = imageRefreshHost();
     $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'plain', 'status' => 'active', 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']));
     $intent = app(TaskVmImageRefreshIntent::class);
 
-    expect(imageRefreshRefusal(fn () => $intent->start($other, 'test', null)))->toBe('task_vm.host_unavailable');
+    expect(imageRefreshRefusal(fn () => $intent->start($other, 'test')))->toBe('task_vm.host_unavailable');
 
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Running]);
-    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test', null)))->toBe('task_vm.image_build_running');
+    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test')))->toBe('task_vm.image_build_running');
     $build->delete();
 
     TaskVmImageBuild::query()->where('host_node_id', $host->id)->delete();
-    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test', null)))->toBe('task_vm.image_unavailable');
-    expect(Task::topLevel()->count())->toBe(0);
+    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test')))->toBe('task_vm.image_unavailable');
+    expect(Operation::query()->count())->toBe(0);
 });
 
-it('refuses a refresh when the Gateway release has no commit, before it creates a group', function (): void {
+it('refuses a refresh when the Gateway release has no commit', function (): void {
     $host = imageRefreshHost();
     unlink($this->base.'/orbit');
 
-    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', null)))->toBe('task_vm.image_refresh_unavailable');
-    expect(Task::topLevel()->count())->toBe(0);
+    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test')))->toBe('task_vm.image_refresh_unavailable');
+    expect(Operation::query()->count())->toBe(0);
 });
 
 it('returns the open refresh of a host for a second admission, and none once it ended', function (): void {
     $host = imageRefreshHost();
-    $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => ['refresh' => ['host_node_id' => $host->id]], 'triggered_by' => 'test']);
+    $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
 
     expect(TaskVmImageRefreshIntent::open($host)?->id)->toBe($operation->id);
-    expect(app(TaskVmImageRefreshIntent::class)->start($host, 'test', null)->id)->toBe($operation->id);
+    expect(app(TaskVmImageRefreshIntent::class)->start($host, 'test')->id)->toBe($operation->id);
     expect(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe(1);
 
     $operation->update(['status' => OperationStatus::Succeeded]);
     expect(TaskVmImageRefreshIntent::open($host))->toBeNull();
 });
 
-it('places the VM of a refresh in a large size that the admission sets, whatever the Project size lists say', function (): void {
+it('records the image the promotion names as the host\'s latest build, and nothing for a failed run', function (): void {
     $host = imageRefreshHost();
-    // The recipe of the release the layout names; the allocation records its identity on the VM.
-    $recipe = $this->base.'/orbit/apps/gateway/resources/machine-software';
-    mkdir($recipe, 0700, true);
-    copy(base_path('resources/machine-software/recipe.json'), $recipe.'/recipe.json');
-    // The refresh runs in the orbit Project (46), which a size list could make medium.
-    $project = Project::query()->forceCreate(['id' => 46, 'name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    config(['task_vms.medium_projects' => [$project->id], 'task_vms.large_projects' => []]);
-    app(TaskExtensionState::class)->enable();
-    config(['swamp.proof_club_api_key' => 'club-key']);
+    $new = str_repeat('e', 64);
+    $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'test', 'input' => ['commit' => ImageRefreshCommit, 'recipe_identity' => 'recipe-9',
+            'intent' => ['host' => ['node_id' => $host->id, 'project' => 'orbit-tasks', 'alias' => 'orbit-task-base', 'current' => ImageRefreshImage], 'vm' => [], 'converge' => []],
+            'execution_secrets' => []]]);
+    $promote = ['Read the aliases' => ['stdout' => json_encode([['name' => 'orbit-task-base-previous', 'target' => ImageRefreshImage], ['name' => 'orbit-task-base', 'target' => $new]])]];
+    $projection = app(TaskVmImageRefreshProjection::class);
 
-    // The admission allocates the VM, then asks for a model key, which this fixture does not configure and which rolls the transaction back; the size is read as the VM is created.
-    $sizes = [];
-    TaskVm::created(function (TaskVm $vm) use (&$sizes): void {
-        $sizes[] = $vm->size;
-    });
+    expect($projection->fingerprint($operation, ['promote' => $promote]))->toBe($new)
+        ->and(fn () => $projection->fingerprint($operation, ['promote' => ['Read the aliases' => ['stdout' => '[]']]]))->toThrow(ResourceOperationException::class);
 
-    try {
-        app(TaskVmImageRefreshIntent::class)->start($host, 'test', null);
-    } catch (TaskVmException) {
-        // The model key step, after the allocation.
-    }
+    $failed = $operation->replicate();
+    $failed->save();
+    $projection->apply($failed, ['status' => 'failed', 'result' => []]);
+    expect(app(TaskVmPromotedImage::class)->latest($host)?->image_fingerprint)->not->toBe($new);
 
-    expect($sizes)->toBe([TaskVmSize::Large]);
-});
-
-it('refuses a seed that is neither build nor keep, before it creates a group', function (): void {
-    $host = imageRefreshHost();
-
-    expect(imageRefreshRefusal(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', null, 'both')))->toBe('task_vm.seed_invalid');
-    expect(Task::topLevel()->count())->toBe(0);
+    $projection->apply($operation, ['status' => 'succeeded', 'result' => ['promote' => $promote]]);
+    $latest = app(TaskVmPromotedImage::class)->latest($host);
+    expect($latest?->image_fingerprint)->toBe($new)->and($latest?->recipe_identity)->toBe('recipe-9')
+        ->and($operation->refresh()->result)->toMatchArray(['refreshed' => true, 'image_fingerprint' => $new, 'previous_fingerprint' => ImageRefreshImage]);
 });
 
 it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {

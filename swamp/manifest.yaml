@@ -37,6 +37,10 @@ additionalFiles:
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
+  - ansible/task-vm-host.yml
+  - ansible/tasks/task-vm-boot.yml
+  - ansible/tasks/task-vm-checkout.yml
+  - ansible/tasks/task-vm-fleet.yml
   - ansible/task-vm-model-key.yml
   - ansible/task-vm-runtime.yml
   - ansible/task-vm-fleet-wait.yml

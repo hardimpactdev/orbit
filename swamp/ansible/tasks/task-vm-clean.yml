@@ -57,6 +57,10 @@
     - name: Remove the SSH host keys
       ansible.builtin.command: { argv: [find, /etc/ssh, -maxdepth, "1", -name, "ssh_host_*", -delete] }
       changed_when: true
+    - name: Remove the Club key of the refresh
+      ansible.builtin.file: { path: /etc/orbit/swamp-club-api-key, state: absent }
+    # An image of a refresh keeps the key of the Swamp control Node: it boots with cloud-init off (task-vm-boot.yml).
     - name: Empty the authorized keys
+      when: intent.boot is not defined
       ansible.builtin.command: { argv: [find, /root, /home, -maxdepth, "3", -path, "*/.ssh/authorized_keys", -type, f, -exec, truncate, -s, "0", "{}", "+"] }
       changed_when: true
