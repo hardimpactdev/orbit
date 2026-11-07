@@ -1,6 +1,6 @@
 id: 502a67d6-4346-4af9-af8f-d076bc5afbb3
 name: task-vm-image-ansible
-description: Run phases of the task VM role playbook on one guest of an Incus host, reached from 209 through the host with the host keys recorded from the host.
+description: Run phases of the task VM role playbook on the base VM of an Incus host, reached from 209 through the host with the address and host key read from the host.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.image_refresh, tasks.provision]}
+    kind: {type: string, const: task_vm.image_refresh}
     intent: {type: object}
     guest: {type: string, minLength: 1}
     tags: {type: string, minLength: 1}
@@ -22,8 +22,6 @@ jobs:
     # The guest's bridge address; Incus knows it, the Gateway cannot. A guest with Docker lists its docker0 address first, so the line of the NIC counts.
   - name: Read the guest address
     labels: {role: swamp}
-    # A task VM is reached over WireGuard with the address and host key of its admission; only the base VM is read from its host.
-    guard: ${{ has(inputs.intent.direct) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -47,7 +45,6 @@ jobs:
     # The host key the guest made at its first boot, read from the host that runs the guest.
   - name: Read the guest host key
     labels: {role: swamp}
-    guard: ${{ has(inputs.intent.direct) }}
     dependsOn:
     - {step: Read the guest address, condition: {type: succeeded}}
     task:
@@ -122,8 +119,7 @@ jobs:
     dependsOn:
     - {step: Write the intent, condition: {type: succeeded}}
     - {step: Check the Pi server, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read the guest address, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read the guest host key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Read the guest host key, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -138,8 +134,8 @@ jobs:
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
           ORBIT_TAGS: ${{ inputs.tags }}
           ORBIT_KIND: ${{ inputs.kind }}
-          ORBIT_TARGET_HOST: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}'
-          ORBIT_TARGET_KEY: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest host key"].outputs.stdout }}'
+          ORBIT_TARGET_HOST: '${{ steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}'
+          ORBIT_TARGET_KEY: '${{ steps["Read the guest host key"].outputs.stdout }}'
           ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'

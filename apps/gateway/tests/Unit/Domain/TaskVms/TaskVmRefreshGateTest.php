@@ -50,7 +50,11 @@ it('places the agent delivery of the checkout on the nested Gateway before its S
 });
 
 it('carries the error of a failed Ansible run to the Operation: the run keeps its output and an assert fails with its stderr', function (string $workflow, string $run, string $check): void {
-    $steps = collect(refreshJob($workflow, $workflow === 'workflow-task-vm-image-ansible' ? 'converge' : 'phase')['steps'])->keyBy('name');
+    $steps = collect(refreshJob($workflow, match ($workflow) {
+        'workflow-task-vm-image-ansible' => 'converge',
+        'workflow-task-vm-start' => 'start',
+        default => 'phase',
+    })['steps'])->keyBy('name');
 
     expect($steps[$run]['task']['inputs']['ignoreExitCode'])->toBeTrue()
         ->and($steps[$run]['task']['inputs']['env'])->toMatchArray(['ANSIBLE_DISPLAY_FAILED_STDERR' => 'true', 'ANSIBLE_STDOUT_CALLBACK' => 'community.general.timestamp'])
@@ -59,6 +63,7 @@ it('carries the error of a failed Ansible run to the Operation: the run keeps it
         ->and($steps[$check]['task']['message'])->toContain('steps["'.$run.'"].outputs.stderr');
 })->with([
     ['workflow-task-vm-image-ansible', 'Run the Ansible phases', 'Check the Ansible phases'],
+    ['workflow-task-vm-start', 'Run the Ansible phases', 'Check the Ansible phases'],
     ['workflow-task-vm-host-phase', 'Run the host phase', 'Check the host phase'],
 ]);
 
@@ -76,4 +81,19 @@ it('makes the base VM of a new host once, from the stock image and a blank seed,
         ->and($make['Create the blank seed volume']['ansible.builtin.command']['argv'])->toContain('base.seed_size', '--type')
         ->and($make['Create the base VM']['ansible.builtin.command']['argv'])->toContain('host.image', 'base.vm')
         ->and($make['Create the base VM']['ansible.builtin.command']['stdin'])->toBe('{{ base.launch_config }}');
+});
+
+it('starts a task VM and converges it in one Ansible run: the host part and the role come from one playbook, with the converge part of the intent for the inventory', function (): void {
+    $steps = collect(refreshJob('workflow-task-vm-start', 'start')['steps'])->keyBy('name');
+    $run = $steps['Run the Ansible phases']['task']['inputs'];
+    $plays = Yaml::parseFile(dirname(base_path(), 2).'/swamp/ansible/task-vm-start.yml');
+
+    expect(array_column($plays, 'ansible.builtin.import_playbook'))->toBe(['task-vm-host.yml', 'task-vm-role.yml'])
+        ->and(substr_count($run['run'], 'ansible-playbook'))->toBe(1)
+        ->and($run['run'])->toContain('build_vars.py')
+        ->and($run['env']['ORBIT_INTENT_KEY'])->toBe('converge')
+        ->and(explode(',', $run['env']['ORBIT_TAGS']))->toContain('start', 'software', 'check', 'branch')
+        // The old two-step start and the converge's own direct path are gone.
+        ->and(file_exists(dirname(base_path(), 2).'/swamp/workflows/workflow-task-vm-slot-start.yaml'))->toBeFalse()
+        ->and(file_get_contents(dirname(base_path(), 2).'/swamp/workflows/workflow-task-vm-image-ansible.yaml'))->not->toContain('intent.direct');
 });

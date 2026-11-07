@@ -3,7 +3,7 @@ name: operation-task-provision
 description: >-
   Start a task VM for a task group (docs/cli/tasks/provision.mmd) from full inputs on 209: a copy of the host's base snapshot with a clone
   of its seed, the identity the admission minted and the claim's Pi token and models file (the guard origin and the fixed model key), with
-  the hub peer added beside the boot; the converge of the release refresh, which is a no-op on a current base, and the new task branch;
+  the hub peer added beside the boot; the converge of the release refresh, which is a no-op on a current base, and the new task branch, in one Ansible run;
   then one ready check. No step calls the Gateway or the model router.
 queueTimeout: 30
 vaults:
@@ -43,16 +43,17 @@ jobs:
 - name: provision
   labels: {role: swamp}
   steps:
-  - name: Create and start the VM
+  # The host part starts the VM and the converge part reaches it over WireGuard once sshd answers: one Ansible run, one Swamp step.
+  - name: Start and converge
     labels: {role: swamp}
     writes: true
     task:
       type: workflow
-      workflowIdOrName: task-vm-slot-start
+      workflowIdOrName: task-vm-start
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
         execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
           "agent_secret": inputs.execution_secrets.agent_secret, "claim": inputs.execution_secrets.claim} }}'}
-  # The VM's peer on the WireGuard hub, while the VM boots.
+  # The VM's peer on the WireGuard hub, while the VM boots; the converge part waits for the connection.
   - name: Add the hub peer
     labels: {role: swamp}
     writes: true
@@ -61,26 +62,11 @@ jobs:
       workflowIdOrName: task-vm-hub-peer
       inputs: {hub: '${{ inputs.intent.hub_peer.hub }}', hub_ssh_execution: '${{ inputs.intent.hub_peer.hub_ssh_execution }}',
         public_key: '${{ inputs.intent.hub_peer.public_key }}', guest_node_id: '${{ inputs.intent.hub_peer.guest_node_id }}'}
-  - name: Converge and branch
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}]
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-image-ansible
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent.converge }}
-        guest: ${{ inputs.intent.slot.name }}
-        tags: software,tools,boot,checkout,fleet,check,branch
-        with_pi: ${{ inputs.intent.with_pi }}
   # One exec: the agent, the tunnel, Pi and the three containers. The tunnel is up once WireGuard has a handshake with the hub; the hub
   # answers no ping from a task VM, so a ping proves nothing. Keepalive makes the first handshake at once; the exec waits up to 20 s for it.
   - name: Read the readiness
     labels: {role: swamp}
-    dependsOn: [{step: Converge and branch, condition: {type: succeeded}}]
+    dependsOn: [{step: Start and converge, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -101,7 +87,7 @@ jobs:
   # What every later step does (sync, check, turn, script): ssh from a Swamp worker to the VM over WireGuard, with its pinned host key.
   - name: Reach the VM by WireGuard
     labels: {role: swamp}
-    dependsOn: [{step: Converge and branch, condition: {type: succeeded}}]
+    dependsOn: [{step: Start and converge, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

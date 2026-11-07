@@ -39,8 +39,10 @@ it('counts a task VM ready only once a Swamp worker reaches it over WireGuard wi
     $reach = $steps['Reach the VM by WireGuard']['task'];
 
     expect(array_column($steps['Check ready']['dependsOn'], 'step'))->toContain('Reach the VM by WireGuard')->not->toContain('Issue the model key')
-        // The converge waits for the VM and its hub peer. No model key is issued: the identity exec writes the fixed one.
-        ->and(array_column($steps['Converge and branch']['dependsOn'], 'step'))->toBe(['Create and start the VM', 'Add the hub peer'])
+        // The start and the converge are one step, and the hub peer runs beside it; readiness waits for both. No model key is issued: the identity exec writes the fixed one.
+        ->and($steps['Start and converge']['task']['workflowIdOrName'])->toBe('task-vm-start')
+        ->and($steps['Add the hub peer'])->not->toHaveKey('dependsOn')
+        ->and(array_column($steps['Read the readiness']['dependsOn'], 'step'))->toBe(['Start and converge', 'Add the hub peer'])
         ->and($reach['globalArgs']['hosts'][0]['address'])->toBe('${{ inputs.intent.guest_ssh.target.host }}')
         ->and($reach['globalArgs']['hosts'][0]['transport']['hostKeys'])->toBe('${{ inputs.intent.guest_ssh.target.host_keys }}')
         ->and($reach['inputs']['argv'])->toBe(['true']);

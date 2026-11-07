@@ -1,0 +1,8 @@
+---
+# A task start in one Ansible run (docs/cli/tasks/provision.mmd): the `start` part of the host playbook on the task VM host, then the
+# converge of the role on the new VM over WireGuard. The two playbooks keep their own plays and tags; a second run would only repeat the
+# start of Ansible and of its Swamp step. `build_vars.py` builds the inventory with the VM from the `converge` part of the intent.
+- name: Start the VM on its host
+  ansible.builtin.import_playbook: task-vm-host.yml
+- name: Converge the VM
+  ansible.builtin.import_playbook: task-vm-role.yml
