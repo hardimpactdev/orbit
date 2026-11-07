@@ -120,9 +120,6 @@ jobs:
           # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
           ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
           ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
-          # The time of each task, slowest first, at the end of the run.
-          ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
-          PROFILE_TASKS_TASK_OUTPUT_LIMIT: all
           ORBIT_SLOT_WIREGUARD_KEY: ${{ vault.get(inputs.execution_secrets.wireguard.vault, inputs.execution_secrets.wireguard.key) }}
           ORBIT_SLOT_SSH_HOST_KEY: ${{ vault.get(inputs.execution_secrets.ssh_host.vault, inputs.execution_secrets.ssh_host.key) }}
           ORBIT_SLOT_AGENT_SECRET: ${{ vault.get(inputs.execution_secrets.agent_secret.vault, inputs.execution_secrets.agent_secret.key) }}

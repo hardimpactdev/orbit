@@ -143,9 +143,6 @@ jobs:
           # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
           ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
           ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
-          # The time of each task, slowest first, at the end of the run.
-          ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
-          PROFILE_TASKS_TASK_OUTPUT_LIMIT: all
   - name: Check the Ansible phases
     labels: {role: swamp}
     dependsOn:
