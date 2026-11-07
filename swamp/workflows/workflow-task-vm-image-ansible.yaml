@@ -27,10 +27,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-read-" + inputs.guest).split(".").join("-") }}
       methodName: exec
       globalArgs: &host
-        name: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+        name: ${{ ("task-vm-guest-read-" + inputs.guest).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.jump.target.user }}
@@ -53,7 +53,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-read-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-read-" + inputs.guest).split(".").join("-") }}
       methodName: exec
       globalArgs: *host
       inputs:
@@ -71,7 +71,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ ("ansible-input-converge-" + inputs.guest).split(".").join("-") }}
       methodName: write
       inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
     # Pi is an internal artifact on the Gateway host; the software phase copies it to the guest when the guest copy differs from the pin. A guard that is true skips the step.
@@ -84,10 +84,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-image-pi-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-pi-" + inputs.guest).split(".").join("-") }}
       methodName: copy
       globalArgs:
-        name: ${{ "task-vm-image-pi-" + string(inputs.node_id) }}
+        name: ${{ ("task-vm-guest-pi-" + inputs.guest).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.pi.source.ssh.target.user }}
@@ -112,7 +112,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-pi-check-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-pi-check-" + inputs.guest).split(".").join("-") }}
       methodName: execute
       inputs:
         run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
@@ -128,7 +128,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-input-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-input-" + inputs.guest).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
@@ -149,7 +149,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-phases-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-phases-" + inputs.guest).split(".").join("-") }}
       methodName: execute
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
@@ -190,7 +190,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-image-cleanup-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-guest-cleanup-" + inputs.guest).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

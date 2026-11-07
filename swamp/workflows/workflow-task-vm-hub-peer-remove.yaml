@@ -22,10 +22,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+      behaviorName: ${{ ("wireguard-hub-unload-" + string(inputs.hub.hub_id) + "-" + string(inputs.guest_node_id)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+        name: ${{ ("wireguard-hub-unload-" + string(inputs.hub.hub_id) + "-" + string(inputs.guest_node_id)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.hub_ssh_execution.target.user }}

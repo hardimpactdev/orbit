@@ -24,7 +24,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ ("ansible-input-slot-" + inputs.intent.slot.name).split(".").join("-") }}
       methodName: write
       inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
   - name: Run the host phase
@@ -35,7 +35,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-slot-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-slot-vm-" + inputs.intent.slot.name).split(".").join("-") }}
       methodName: execute
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
@@ -71,7 +71,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-slot-cleanup-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("task-vm-slot-cleanup-vm-" + inputs.intent.slot.name).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

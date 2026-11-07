@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ ("ansible-input-model-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}
       methodName: write
       inputs:
         intent: ${{ inputs.intent }}
@@ -124,7 +124,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      behaviorName: ${{ ("task-vm-model-router-vm-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags anchor "$ORBIT_ANSIBLE/task-vm-model-key.yml"
@@ -145,7 +145,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      behaviorName: ${{ ("task-vm-model-router-vm-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags revoke "$ORBIT_ANSIBLE/task-vm-model-key.yml"
@@ -159,7 +159,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      behaviorName: ${{ ("task-vm-model-router-vm-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: |-
@@ -177,7 +177,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-model-router-" + string(inputs.intent.model_router_node_id) }}
+      behaviorName: ${{ ("task-vm-model-router-vm-" + string(inputs.intent.task_vm_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"
