@@ -125,7 +125,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 
 ## Affects
 
-- Components: apps/gateway, swamp, apps/docs
+- Components: apps/gateway, apps/docs
 - ADRs: replaces [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole, and the Cluster DNS member step of [0226](/decisions/0226-split-private-dns-on-managed-peers)
-- Detail: [Private DNS](/reference/private-dns), [Routes](/reference/routes), [Node provisioning](/reference/node-provisioning), and the chart `docs/cli/dns/publish.mmd`
+- Detail: [Private DNS](/reference/private-dns), [Routes](/reference/routes), [Node provisioning](/reference/node-provisioning), and the chart `docs/cli/dns/publish.mmd`. The change also touches `swamp/`: the `dns-publish` workflow, its Ansible phase and the parent workflows that call it.
 - Verify: Molecule on the phase, a rehearsal on a task VM fleet, and a name-by-name comparison of old and new answers on the live vpn Node
