@@ -65,6 +65,20 @@ jobs:
           ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
           ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
           ORBIT_CLUB_KEY: ${{ vault.get(inputs.execution_secrets.club.vault, inputs.execution_secrets.club.key) }}
+  # A part may record warnings in the run folder (the egress log does): a rescued failure keeps the phase green, so this makes it visible.
+  - name: Print the host phase warnings
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Run the host phase, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-host-warnings-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        ignoreExitCode: true
+        run: timeout 10 cat "$ORBIT_RUN/egress-warnings.txt" 2>/dev/null || true
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
   - name: Check the host phase
     labels: {role: swamp}
     dependsOn:
