@@ -120,6 +120,7 @@
               - "{{ dns_holder }}"
           async: 150
           poll: 0
+          register: dns_lock_job
           changed_when: false
         - name: Wait until the lock is held
           ansible.builtin.wait_for:
@@ -499,3 +500,10 @@
             argv: [rm, -f, --, "{{ dns_holder }}"]
           when: dns_holder is defined
           changed_when: false
+        - name: Remove the job file of the lock holder
+          ansible.builtin.async_status:
+            jid: "{{ dns_lock_job.ansible_job_id }}"
+            mode: cleanup
+          when: dns_lock_job is defined and dns_lock_job.ansible_job_id is defined
+          changed_when: false
+          failed_when: false
