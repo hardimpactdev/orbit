@@ -22,7 +22,7 @@ enum GatewayQueue: string
     /** Task VM provision to destroy, the pool refill, and the host sweep, one at a time and in order. */
     case TaskVms = 'task-vms';
 
-    /** Required base image jobs and trusted package cache fills. */
+    /** Required base image jobs. */
     case Builds = 'builds';
 
     /** Optional UpCloud image builds, after waiting required build jobs. */

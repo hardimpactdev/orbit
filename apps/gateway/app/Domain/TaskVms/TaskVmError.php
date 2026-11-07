@@ -56,13 +56,6 @@ enum TaskVmError: string
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageSyncFailed = 'task_vm.image_sync_failed';
 
-    // Shared package cache.
-    case PackageCacheLockInvalid = 'task_vm.package_cache_lock_invalid';
-    case PackageCacheInvalidLimit = 'task_vm.package_cache_invalid_limit';
-    case PackageCacheInvalidResult = 'task_vm.package_cache_invalid_result';
-    case PackageCacheMountInvalid = 'task_vm.package_cache_mount_invalid';
-    case PackageCacheFailed = 'task_vm.package_cache_failed';
-
     // UpCloud.
     case UpCloudNotConfigured = 'task_vm.upcloud_not_configured';
     case UpCloudTokenUnavailable = 'task_vm.upcloud_token_unavailable';

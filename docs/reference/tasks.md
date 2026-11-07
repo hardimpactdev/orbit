@@ -836,7 +836,7 @@ The first use is the model router guard on `services`, at `10.44.0.3:8318`. All 
 
 ## Task workspace
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the CI cache ref bound to the tested SHA.
 
 Before returning the workspace or activating its Route, Orbit inspects its source. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies.
 
