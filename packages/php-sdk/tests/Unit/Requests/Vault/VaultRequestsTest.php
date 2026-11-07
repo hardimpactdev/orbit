@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
-use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
 use Orbit\Sdk\Responses\Vault\VaultStatusResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -60,7 +60,7 @@ describe('vault requests', function (): void {
         'status' => [ShowVaultStatusRequest::class, Method::GET, '/api/v1/vault'],
         'setup' => [SetupVaultRequest::class, Method::PUT, '/api/v1/vault'],
         'sync' => [SyncVaultRequest::class, Method::POST, '/api/v1/vault/sync'],
-        'teardown' => [TeardownVaultRequest::class, Method::DELETE, '/api/v1/vault'],
+        'teardown' => [DestroyVaultRequest::class, Method::DELETE, '/api/v1/vault'],
     ]);
 
     it('sends the setup body and hides the secrets from debug output', function (): void {
@@ -88,8 +88,8 @@ describe('vault requests', function (): void {
     });
 
     it('sends keep_items on teardown, false by default', function (): void {
-        expect((new TeardownVaultRequest)->body()->all())->toBe(['keep_items' => false])
-            ->and((new TeardownVaultRequest(true))->body()->all())->toBe(['keep_items' => true]);
+        expect((new DestroyVaultRequest)->body()->all())->toBe(['keep_items' => false])
+            ->and((new DestroyVaultRequest(true))->body()->all())->toBe(['keep_items' => true]);
     });
 
     it('keeps status and sync bodyless', function (string $class): void {
@@ -109,7 +109,7 @@ describe('vault requests', function (): void {
     })->with([
         [ShowVaultStatusRequest::class, true],
         [SyncVaultRequest::class, true],
-        [TeardownVaultRequest::class, false],
+        [DestroyVaultRequest::class, false],
     ]);
 
     it('preserves a Gateway vault error', function (): void {

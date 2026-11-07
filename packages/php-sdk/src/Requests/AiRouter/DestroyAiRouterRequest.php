@@ -10,7 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
 
-final class TeardownAiRouterRequest extends GatewayRequest
+final class DestroyAiRouterRequest extends GatewayRequest
 {
     #[\Override]
     protected Method $method = Method::DELETE;
