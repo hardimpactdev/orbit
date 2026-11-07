@@ -25,3 +25,11 @@ it('has no kind of a command that has a cases file, because a change to the tabl
     // When a command whose kind is budgeted here gets a cases file, map this file to that command in swamp/proof/selection.txt.
     expect(array_values(array_intersect($commands, $kinds)))->toBe([]);
 });
+
+it('budgets a private DNS publication for five to ten minutes, above the phase timeout of its workflow', function (): void {
+    $workflow = file_get_contents(dirname(base_path(), 2).'/swamp/workflows/workflow-dns-publish.yaml');
+    preg_match('/run: timeout (\d+) \/opt\/orbit\/ansible\/venv\/bin\/ansible-playbook/', (string) $workflow, $phase);
+
+    expect(OperationBudgetTable::SecondsByKind['dns.publish'])->toBeGreaterThanOrEqual(300)->toBeLessThanOrEqual(600)
+        ->and(OperationBudgetTable::SecondsByKind['dns.publish'])->toBeGreaterThan((int) $phase[1]);
+});

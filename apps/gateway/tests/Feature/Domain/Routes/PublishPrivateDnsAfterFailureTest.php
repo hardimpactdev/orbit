@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\PrivateDnsManager;
+use App\Actions\AppDev\AdmitPrivateDnsPublicationAction;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeClusterRouterProjection;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\AppDev\PublishPrivateDns;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -64,20 +67,67 @@ describe('Private DNS after a failed run', function (): void {
         Queue::assertPushed(PublishPrivateDns::class, 1);
     });
 
-    it('renders and publishes again when the job runs', function (): void {
-        $dns = new class implements PrivateDnsManager
+    it('publishes after a failed Router unset as well', function (): void {
+        Queue::fake();
+        $operation = clusterRouterSetOperation('cluster.router_unset');
+
+        app(NativeClusterRouterProjection::class)->apply($operation, clusterRouterTerminal('failed'));
+
+        Queue::assertPushed(PublishPrivateDns::class, 1);
+    });
+});
+
+/** An active vpn Node that a publication entry can name. */
+function dnsJobVpnNode(string $name, string $address): Node
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit', 'wireguard_public_key' => $name.'-key',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $name.'-host-key', 'ssh_host_fingerprint' => 'SHA256:'.$name]));
+    $node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+
+    return $node;
+}
+
+describe('PublishPrivateDns job', function (): void {
+    beforeEach(function (): void {
+        Queue::fake();
+        SwampNodeFixture::ensure();
+        app()->instance(SwampDispatch::class, new class
         {
-            public int $converged = 0;
+            public function start(Operation $operation): void {}
+        });
+    });
 
-            public function converge(): void
-            {
-                $this->converged++;
-            }
-        };
-        app()->instance(PrivateDnsManager::class, $dns);
+    it('only admits a publication for each vpn Node and does not wait for its end', function (): void {
+        $first = dnsJobVpnNode('vpn-a', '10.44.0.1');
+        $second = dnsJobVpnNode('vpn-b', '10.44.0.8');
 
-        new PublishPrivateDns()->handle(app(PrivateDnsManager::class));
+        new PublishPrivateDns()->handle(app(AdmitPrivateDnsPublicationAction::class));
 
-        expect($dns->converged)->toBe(1);
+        $operations = Operation::query()->where('kind', 'dns.publish')->orderBy('node_id')->get();
+
+        expect($operations->pluck('node_id')->all())->toBe([$first->id, $second->id])
+            ->and($operations->pluck('status')->every(fn (OperationStatus $status): bool => ! $status->terminal()))->toBeTrue();
+        Queue::assertNotPushed(PublishPrivateDns::class);
+    });
+
+    it('comes back for a Node that is busy, and only for that Node', function (): void {
+        $busy = dnsJobVpnNode('vpn-a', '10.44.0.1');
+        $free = dnsJobVpnNode('vpn-b', '10.44.0.8');
+        app(AdmitPrivateDnsPublicationAction::class)->execute($busy);
+
+        new PublishPrivateDns()->handle(app(AdmitPrivateDnsPublicationAction::class));
+
+        expect(Operation::query()->where('kind', 'dns.publish')->where('node_id', $free->id)->count())->toBe(1);
+        Queue::assertPushed(PublishPrivateDns::class, fn (PublishPrivateDns $job): bool => $job->nodeIds === [$busy->id] && $job->attempt === 2);
+    });
+
+    it('stops after its attempts', function (): void {
+        $busy = dnsJobVpnNode('vpn-a', '10.44.0.1');
+        app(AdmitPrivateDnsPublicationAction::class)->execute($busy);
+
+        new PublishPrivateDns([$busy->id], PublishPrivateDns::MaximumAttempts)->handle(app(AdmitPrivateDnsPublicationAction::class));
+
+        Queue::assertNotPushed(PublishPrivateDns::class);
     });
 });

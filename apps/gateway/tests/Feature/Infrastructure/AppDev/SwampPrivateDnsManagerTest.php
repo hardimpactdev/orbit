@@ -13,6 +13,7 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
@@ -146,6 +147,17 @@ describe('SwampPrivateDnsManager', function (): void {
             ->and($started->getArrayCopy())->toBe([$operations[1]->id])
             ->and($operations[1]->status)->toBe(OperationStatus::Succeeded)
             ->and((int) $operations[1]->input['intent']['dns']['revision'])->toBeGreaterThan((int) $operations[0]->input['intent']['dns']['revision']);
+    });
+});
+
+describe('SwampPrivateDnsManager inside a transaction', function (): void {
+    it('refuses to publish: the start waits for the commit, so the wait would only time out', function (): void {
+        swampEndsPublications();
+        vpnNodeForPublication();
+
+        expect(fn () => DB::transaction(fn () => app(SwampPrivateDnsManager::class)->converge()))
+            ->toThrow(LogicException::class, 'inside a database transaction');
+        expect(Operation::query()->where('kind', 'dns.publish')->count())->toBe(0);
     });
 });
 

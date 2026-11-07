@@ -12,6 +12,7 @@ use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use LogicException;
 
 /**
  * For Gateway code that still needs private DNS live before it goes on: admits one `dns.publish` operation per vpn
@@ -22,6 +23,8 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
 {
     private const int Attempts = 3;
 
+    private const int PauseMicroseconds = 500_000;
+
     public function __construct(
         private AdmitPrivateDnsPublicationAction $admit,
         private int $timeoutSeconds = 180,
@@ -30,6 +33,11 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
     /** Publishes to every vpn Node, then throws the first failure: one Node that fails must not leave the others stale. */
     public function converge(): void
     {
+        // Admission inside an open transaction defers the start until it commits, so the wait below would only time out.
+        if (app('db.transactions')->callbackApplicableTransactions()->isNotEmpty()) {
+            throw new LogicException('Private DNS cannot be published and awaited inside a database transaction.');
+        }
+
         $failure = null;
 
         foreach (PrivateDnsPublicationNodes::query()->get() as $node) {
@@ -60,6 +68,9 @@ final readonly class SwampPrivateDnsManager implements PrivateDnsManager
                 // The publication that holds the Node may fail; this caller renders again anyway, and its own result decides.
                 if ($busy instanceof Operation) {
                     $this->await($busy, $node, mustSucceed: false);
+                } else {
+                    // The holder ended between the refusal and the read; look again after a moment, not at once.
+                    usleep(self::PauseMicroseconds);
                 }
 
                 continue;

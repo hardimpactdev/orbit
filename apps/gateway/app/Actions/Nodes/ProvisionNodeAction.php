@@ -50,6 +50,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class ProvisionNodeAction
@@ -749,7 +750,15 @@ final readonly class ProvisionNodeAction
     private function publishRouterAddress(Node $node): void
     {
         if ($node->roles()->where('role', RoleName::Router)->where('status', LifecycleStatus::Active)->exists()) {
-            ($this->dns ?? app(PrivateDnsManager::class))->converge();
+            // The Node is active already and its agent and settings follow, so a refused publication must not stop them: the next
+            // publication writes the whole state again.
+            try {
+                ($this->dns ?? app(PrivateDnsManager::class))->converge();
+            } catch (Throwable $exception) {
+                Log::warning('Private DNS was not republished after provisioning a Router; the next publication repairs it.', [
+                    'node_id' => $node->id, 'exception_type' => $exception::class,
+                ]);
+            }
         }
     }
 

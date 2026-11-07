@@ -47,6 +47,10 @@ final class OperationBudgetTable
         // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.verify' => 3000,
+        // No run yet. Basis: the phase takes its lock for at most 45 s and holds it for at most 100 s, and the Swamp step stops it at 300 s
+        // (swamp/workflows/workflow-dns-publish.yaml); the three small steps around it take seconds; x 1.5, rounded up to five minutes.
+        // Replace with the 14-day p95 after the first success.
+        'dns.publish' => 600,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.

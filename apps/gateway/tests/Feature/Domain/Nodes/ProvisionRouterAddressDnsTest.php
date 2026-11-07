@@ -10,6 +10,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Log;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -59,5 +60,21 @@ describe('Provisioning an existing Router', function (): void {
         publishAfterProvisioning(provisionedNode('shark', '10.44.0.9', LifecycleStatus::Provisioning), $converged);
 
         expect($converged)->toBe(0);
+    });
+
+    it('goes on when the publication fails: the Node is active and its agent and settings follow', function (): void {
+        app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
+        {
+            public function converge(): void
+            {
+                throw new RuntimeException('the vpn Node refused the publication');
+            }
+        });
+        Log::spy();
+
+        new ReflectionMethod(ProvisionNodeAction::class, 'publishRouterAddress')
+            ->invoke(app(ProvisionNodeAction::class), provisionedNode('beast', '10.44.0.7', LifecycleStatus::Active));
+
+        Log::shouldHaveReceived('warning')->once();
     });
 });
