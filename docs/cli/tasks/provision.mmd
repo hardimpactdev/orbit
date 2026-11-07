@@ -37,6 +37,7 @@ sequenceDiagram
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
+  %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
   alt the run passes
     SW-->>GW: Run succeeded<br/>ready
     Note over GW: Record the VM ready<br/>target about 30 s

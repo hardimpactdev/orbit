@@ -111,7 +111,8 @@ jobs:
         guest: ${{ inputs.intent.slot.name }}
         tags: software,tools,boot,checkout,fleet,check,branch
         with_pi: ${{ inputs.intent.with_pi }}
-  # One exec: the agent, the tunnel, Pi and the three containers.
+  # One exec: the agent, the tunnel, Pi and the three containers. The tunnel is up once WireGuard has a handshake with the hub; the hub
+  # answers no ping from a task VM, so a ping proves nothing. Keepalive makes the first handshake at once; the exec waits up to 20 s for it.
   - name: Read the readiness
     labels: {role: swamp}
     dependsOn: [{step: Converge and branch, condition: {type: succeeded}}]
@@ -129,9 +130,9 @@ jobs:
         sudo: true
         okExitCodes: any
         argv: [timeout, '60', incus, --project, '${{ inputs.intent.host.project }}', exec, '${{ inputs.intent.slot.name }}', --, sh, -c,
-          'systemctl is-active "$1" "$2" "$3"; ping -c 1 -W 5 "$4" > /dev/null && echo tunnel-up; incus list --format csv --columns ns', sh,
-          orbit-agent.service, wg-quick@orbit.service, '${{ inputs.intent.slot.pi_unit }}', '${{ inputs.intent.slot.hub_ip }}']
-        timeoutSec: 70
+          'systemctl is-active "$1" "$2" "$3"; for i in $(seq 20); do test "$(wg show orbit latest-handshakes | cut -f2 | sort -n | tail -n 1)" -gt 0 2>/dev/null && echo tunnel-up && break; sleep 1; done; incus list --format csv --columns ns', sh,
+          orbit-agent.service, wg-quick@orbit.service, '${{ inputs.intent.slot.pi_unit }}']
+        timeoutSec: 90
   - name: Check ready
     labels: {role: swamp}
     dependsOn: [{step: Read the readiness, condition: {type: succeeded}}]
