@@ -18,7 +18,7 @@ final readonly class NodeFirewallDesiredRules
         private NodeFirewallRuleCatalog $catalog,
         private MetricsFirewallExpectationProvider $metrics,
         /** @var iterable<ContributedNodeFirewallRules> */
-        #[Tag(ContributedNodeFirewallRules::class)] private iterable $contributions = [],
+        #[Tag(ContributedNodeFirewallRules::class)] private iterable $contributions,
     ) {}
 
     /**

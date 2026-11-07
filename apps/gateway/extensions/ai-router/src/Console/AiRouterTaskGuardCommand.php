@@ -10,14 +10,14 @@ use Orbit\Extensions\AiRouter\Actions\AdmitAiRouterTaskGuardAction;
 final class AiRouterTaskGuardCommand extends Command
 {
     #[\Override]
-    protected $signature = 'ai-router:task-guard';
+    protected $signature = 'ai-router:task-guard {--remove : Take the guard, its keys and its rules off the Node}';
 
     #[\Override]
-    protected $description = 'Apply the task VM guard of the model router: its Caddy, its key files and its two UFW rules.';
+    protected $description = 'Apply, or with --remove withdraw, the task VM guard of the model router: its Caddy, its keys and its two UFW rules.';
 
     public function handle(AdmitAiRouterTaskGuardAction $admit): int
     {
-        $this->line("Operation {$admit->execute('ai-router:task-guard')->id} running");
+        $this->line("Operation {$admit->execute((bool) $this->option('remove'), 'ai-router:task-guard')->id} running");
 
         return self::SUCCESS;
     }

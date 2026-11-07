@@ -14,8 +14,8 @@ final readonly class AiRouterDirectOperations implements DirectOperationContribu
             'workflow' => 'operation-ai-router-task-guard',
             'projection' => AiRouterTaskGuardProjection::class,
             'workflow_inputs' => true,
-            // The end check: from the swamp Node, a WireGuard member outside the task VM range, port 8318 does not answer.
-            'terminal_result' => ['job' => 'guard', 'step' => 'Check from outside the task VM range', 'native' => true],
+            // The phase ends with its checks: on the Node and from the swamp Node, a source outside the task VM range is refused.
+            'terminal_result' => ['job' => 'guard', 'step' => 'Apply the guard', 'native' => true],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^ai-router-(task|anchor)-key-node-[1-9][0-9]*$']],
         ]];
     }

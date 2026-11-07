@@ -831,7 +831,7 @@ So the real key never leaves its Node and the Gateway, and a leaked placeholder 
 
 The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
 
-The first use is the model router guard on `services`, at `10.44.0.3:8318`. All task VMs share one placeholder model key, which changes only on an incident. The guard passes only the inference routes Pi uses, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it.
+The first use is the model router guard on `services`, at `10.44.0.3:8318`. All task VMs share one placeholder model key, which changes only on an incident. The guard passes only a `POST` to the inference routes Pi uses, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it.
 
 ## Task workspace
 

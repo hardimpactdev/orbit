@@ -14,18 +14,19 @@ sequenceDiagram
   %%> What it does:
   %%> - renders the guard's Caddyfile and its two UFW rules from the task VM WireGuard range and the router's port
   %%> - pushes vault copies of the task key and the anchor key; the intent holds neither
+  %%> - `--remove` records the guard's removal instead: the same run takes it off the Node
   %%> Requirements:
   %%> - the ai-router extension is set up on its Node
   GW->>SW: Start run, full intent<br/>operation-ai-router-task-guard
   SW->>N: Apply the guard<br/>Ansible
   %%> What it does:
-  %%> - writes the two key files (0640, group caddy) and the Caddyfile into /etc/orbit/ai-router-guard, validated by `caddy validate`
-  %%> - runs its own Caddy, `orbit-ai-router-guard.service`, on 10.44.0.3:8318: no admin endpoint, no saved config
-  %%> - inserts the UFW pair above the WireGuard member trust: allow 8318 from the task VM range, deny it from every other member
-  %%> - from the Node itself, outside the range: the task key and the management API both get 403
+  %%> - writes the two keys as root-only files and the Caddyfile into /etc/orbit/ai-router-guard, validated by `caddy validate`
+  %%> - runs its own Caddy, `orbit-ai-router-guard.service`, on 10.44.0.3:8318: a dynamic user that loads the keys with `LoadCredential`, no admin endpoint, no saved config
+  %%> - places the UFW pair above the WireGuard member trust, re-placing a pair out of order: allow 8318 from the task VM range, deny it from every other member
+  %%> - from the Node itself, outside the range: the task key gets 403
   SW->>N: Prove the refusal<br/>from Node 209
   %%> What it does:
-  %%> - the swamp Node is a WireGuard member outside the task VM range; its connection to port 8318 must not open
+  %%> - the swamp Node is a WireGuard member outside the task VM range: the Node answers on SSH, and port 8318 does not
   alt the checks pass
     SW-->>GW: Run succeeded
     Note over GW: Record the origin<br/>http://10.44.0.3:8318

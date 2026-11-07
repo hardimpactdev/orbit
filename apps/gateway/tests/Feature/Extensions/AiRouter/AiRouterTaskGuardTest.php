@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -55,33 +56,34 @@ function guardRouter(): Node
 it('records the guard intent without a key: the Caddyfile, the UFW pair and vault copies of both keys', function (): void {
     $services = guardRouter();
 
-    $operation = app(AdmitAiRouterTaskGuardAction::class)->execute('test');
+    $operation = app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test');
     $intent = $operation->input['intent'];
     $secrets = app(AiRouterSecrets::class);
 
     expect($operation->kind)->toBe('ai_router.task_guard')->and($operation->node_id)->toBe($services->id)
-        ->and($intent['origin'])->toBe('http://10.44.0.3:8318')
+        ->and($intent['origin'])->toBe('http://10.44.0.3:8318')->and($intent['state'])->toBe('present')
         ->and($operation->input['execution_secrets'])->toBe([
             'task_key' => ['vault' => 'orbit-control-inputs', 'key' => 'ai-router-task-key-node-'.$services->id],
             'anchor_key' => ['vault' => 'orbit-control-inputs', 'key' => 'ai-router-anchor-key-node-'.$services->id],
         ])
-        // The intent holds neither key: Caddy reads both from files on the Node.
+        // The intent holds neither key: the unit loads both as systemd credentials on the Node.
         ->and(json_encode($operation->input))->not->toContain($secrets->task())->not->toContain($secrets->anchor('http://10.44.0.3:8317'))
         ->and($secrets->task())->toMatch('/\A[a-f0-9]{64}\z/')->not->toBe($secrets->anchor('http://10.44.0.3:8317'))
         ->and($intent['caddyfile'])
         ->toContain("bind 10.44.0.3\n")
         ->toContain("remote_ip 10.44.0.128/25\n")
         ->toContain("method POST\n")
-        ->toContain("path /v1/responses /v1/chat/completions /v1/messages\n")
-        ->toContain('header Authorization "Bearer {file./etc/orbit/ai-router-guard/task.key}"')
+        ->toContain('expression {http.request.orig_uri.path} in ["/v1/responses", "/v1/chat/completions", "/v1/messages"] && {http.request.orig_uri.query} == ""')
+        ->toContain('header Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/task.key}"')
         ->toContain("reverse_proxy 127.0.0.1:8317 {\n")
-        ->toContain('header_up Authorization "Bearer {file./etc/orbit/ai-router-guard/anchor.key}"')
+        ->toContain('header_up Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/anchor.key}"')
         ->toContain("respond 403\n")
-        // Deny first, then allow, each at the top: the allow ends above the deny.
-        ->and($intent['firewall'])->toBe([
+        // The trust first, then the deny and its allow, each at the top: the allow ends above the deny, both above the trust.
+        ->and($intent['firewall'])->toBe(['desired' => [
+            ['ufw', 'allow', 'in', 'on', 'orbit', 'to', '10.44.0.3', 'comment', 'orbit:wireguard-members'],
             ['ufw', 'insert', '1', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-deny'],
             ['ufw', 'insert', '1', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.128/25', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard'],
-        ]);
+        ], 'remove' => []]);
 });
 
 it('keeps one task key and one anchor key across admissions', function (): void {
@@ -92,17 +94,29 @@ it('keeps one task key and one anchor key across admissions', function (): void 
     expect([$secrets->task(), $secrets->anchor('http://10.44.0.3:8317')])->toBe($first);
 });
 
-it('lists the UFW pair in the desired firewall of the router Node only', function (): void {
+it('lists the UFW pair in the desired firewall of the router Node only, once a run applied the guard and until one removes it', function (): void {
     $services = guardRouter();
     $other = guardNode('beast', '10.44.0.7');
     $names = static fn (Node $node): array => array_column(app(ListManagedFirewallRulesAction::class)->execute($node), 'name');
+    $succeeded = static fn (Operation $operation): bool => $operation->forceFill(['status' => OperationStatus::Succeeded])->save();
 
+    expect($names($services))->not->toContain('orbit:ai-router-task-guard');
+    $succeeded(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'));
     expect($names($services))->toContain('orbit:ai-router-task-guard', 'orbit:ai-router-task-guard-deny')
         ->and($names($other))->not->toContain('orbit:ai-router-task-guard')
         ->and(collect(app(ListManagedFirewallRulesAction::class)->execute($services))->firstWhere('name', 'orbit:ai-router-task-guard'))
         ->toMatchArray(['action' => 'allow', 'source' => '10.44.0.128/25', 'destination' => '10.44.0.3', 'port' => '8318']);
+
+    $removal = app(AdmitAiRouterTaskGuardAction::class)->execute(remove: true, triggeredBy: 'test');
+    expect($removal->input['intent']['state'])->toBe('absent')
+        ->and($removal->input['intent']['firewall']['remove'])->toBe([
+            ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', '10.44.0.128/25', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard'],
+            ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.3', 'port', '8318', 'comment', 'orbit:ai-router-task-guard-deny'],
+        ]);
+    $succeeded($removal);
+    expect($names($services))->not->toContain('orbit:ai-router-task-guard');
 });
 
 it('refuses the guard while the ai-router is off', function (): void {
-    expect(fn () => app(AdmitAiRouterTaskGuardAction::class)->execute('test'))->toThrow(ResourceOperationException::class, 'disabled');
+    expect(fn () => app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'))->toThrow(ResourceOperationException::class, 'disabled');
 });

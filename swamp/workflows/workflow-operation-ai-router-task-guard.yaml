@@ -1,6 +1,6 @@
 id: 6e1f4b0a-3c7d-4a52-9b8e-2f5d7c1a9e43
 name: operation-ai-router-task-guard
-description: "ai_router.task_guard: the model router's task VM guard on its Node, applied by Ansible, then proved to refuse a WireGuard member outside the task VM range."
+description: "ai_router.task_guard: the model router's task VM guard on its Node, applied or removed by Ansible, then proved to refuse a WireGuard member outside the task VM range."
 vaults:
 - orbit-control-inputs
 queueTimeout: 60
@@ -14,11 +14,19 @@ inputs:
       type: object
       properties:
         ssh: {type: object}
+        state: {type: string, enum: [present, absent]}
         origin: {type: string, format: uri}
         directory: {type: string}
+        unit: {type: string}
         caddyfile: {type: string}
-        firewall: {type: array, minItems: 2, maxItems: 2}
-      required: [ssh, origin, directory, caddyfile, firewall]
+        firewall:
+          type: object
+          properties:
+            desired: {type: array, minItems: 1}
+            remove: {type: array}
+          required: [desired, remove]
+          additionalProperties: false
+      required: [ssh, state, origin, directory, unit, caddyfile, firewall]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -57,8 +65,8 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-    # Apply: the key files, the Caddyfile, the unit and the two UFW rules; the phase ends by proving that a request from the Node
-    # itself, a source outside the task VM range, gets 403 with the task key and on the management API.
+    # Apply, or remove: the key files, the Caddyfile, the unit and the two UFW rules. The phase ends with its checks: from the Node itself
+    # the task key gets 403, and from the swamp Node port 8318 does not answer while SSH does; both are sources outside the task VM range.
   - name: 'Apply the guard'
     labels: {role: swamp}
     dependsOn:
@@ -70,7 +78,7 @@ jobs:
       behaviorName: '${{ ("ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/ai-router-task-guard.yml"
+        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/ai-router-task-guard.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
           ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
@@ -78,25 +86,9 @@ jobs:
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_TAGS: '${{ inputs.intent.state == "absent" ? "remove" : "apply" }}'
           ORBIT_TASK_KEY: '${{ vault.get(inputs.execution_secrets.task_key.vault, inputs.execution_secrets.task_key.key) }}'
           ORBIT_ANCHOR_KEY: '${{ vault.get(inputs.execution_secrets.anchor_key.vault, inputs.execution_secrets.anchor_key.key) }}'
-    # End check: the swamp Node is a WireGuard member outside the task VM range, so UFW drops its connection to port 8318.
-  - name: 'Check from outside the task VM range'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Apply the guard', condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ ("ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
-      methodName: execute
-      inputs:
-        run: |-
-          code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 5 -X POST "$ORBIT_ORIGIN/v1/responses") && {
-            echo "ai_router.guard_open: port 8318 answered $code to a WireGuard member outside the task VM range" >&2; exit 1; }
-          echo '{"refused": true}'
-        env:
-          ORBIT_ORIGIN: '${{ inputs.intent.origin }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:

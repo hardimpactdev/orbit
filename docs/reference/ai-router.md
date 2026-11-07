@@ -206,22 +206,28 @@ The guard is its own Caddy on the router's Node, `orbit-ai-router-guard.service`
 
 | Request | Answer |
 | --- | --- |
-| From the task VM range, `POST` to `/v1/responses`, `/v1/chat/completions` or `/v1/messages`, with the task key | Passed to CLIProxyAPI on loopback, with the anchor key in place of the task key |
+| From the task VM range, a `POST` to exactly `/v1/responses`, `/v1/chat/completions` or `/v1/messages`, with no query and with the task key | Passed to CLIProxyAPI on loopback, with the anchor key in place of the task key and no `X-Api-Key` or `X-Goog-Api-Key` header |
 | Anything else, the management API included | 403 |
+
+The guard matches the path as the client sent it, so `/v1//responses` or a path with `..` does not pass.
 
 The Gateway keeps both keys as secret settings:
 
 - `ai_router.anchor.<sha256(origin)>` is the anchor key. It also keeps the router's key list from ever being empty.
 - `ai_router.task_vm_key` is the task key. CLIProxyAPI never holds it.
 
-The guard reads each key from a file in `/etc/orbit/ai-router-guard`. Two UFW rules sit above the WireGuard member trust. They admit port 8318 from the task VM range and deny it to every other member.
+On the Node, both keys are root-only files in `/etc/orbit/ai-router-guard`. The unit runs as a dynamic user and loads them with `LoadCredential`, so no other user reads them, the Node's own Caddy included.
 
-### Apply the guard
+Two UFW rules sit above the WireGuard member trust. They admit port 8318 from the task VM range and deny it to every other member. Task VMs cannot reach the router's own port: the hub's task VM filter lets them reach only the guard's address and port.
 
-Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a key changes. It admits `ai_router.task_guard`, which applies the guard with Ansible. The run ends with two proofs:
+### Apply or remove the guard
 
-- On the router's Node, a source outside the range gets 403, with the task key and on the management API.
-- From the swamp Node, port 8318 does not answer.
+Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a key changes. It admits `ai_router.task_guard`, which applies the guard with Ansible. The run ends with two checks, both from sources outside the range:
+
+- On the router's Node, the task key gets 403.
+- From the swamp Node, the router's Node answers on SSH and port 8318 does not answer.
+
+`php artisan ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown. `firewall:list --managed` lists the two rules while the last succeeded run applied the guard.
 
 Rotate the task key only on an incident. Delete the setting, run the command again, and start new task VMs.
 
