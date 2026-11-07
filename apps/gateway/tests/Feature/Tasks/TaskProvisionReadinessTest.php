@@ -32,3 +32,14 @@ it('counts the tunnel as up once WireGuard has a handshake with the hub, and not
         ->and(substr_count(provisionReadiness('1762526400'), "active\n"))->toBe(3)
         ->and(provisionReadiness('0'))->not->toContain('tunnel-up');
 });
+
+it('counts a task VM ready only once a Swamp worker reaches it over WireGuard with its pinned key, as every later step does', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-task-provision.yaml'));
+    $steps = collect($workflow['jobs'][0]['steps'])->keyBy('name');
+    $reach = $steps['Reach the VM by WireGuard']['task'];
+
+    expect(array_column($steps['Check ready']['dependsOn'], 'step'))->toContain('Reach the VM by WireGuard')
+        ->and($reach['globalArgs']['hosts'][0]['address'])->toBe('${{ inputs.intent.guest_ssh.target.host }}')
+        ->and($reach['globalArgs']['hosts'][0]['transport']['hostKeys'])->toBe('${{ inputs.intent.guest_ssh.target.host_keys }}')
+        ->and($reach['inputs']['argv'])->toBe(['true']);
+});
