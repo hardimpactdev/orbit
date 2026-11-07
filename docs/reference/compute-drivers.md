@@ -1060,7 +1060,9 @@ The proof task start needs one free slot of the host. The refresh VM of the old 
 
 ##### Build the nested fleet in the converge
 
-The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. It builds the fleet (`task-vm-fleet-build.yml`) only when a container of it is missing. That is a base VM that never held a fleet, or one whose first build stopped half way. A converge on a base VM with its fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
+The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join writes that stamp as its last task, after the build, and every promoted base has it.
+
+The phase builds the fleet (`task-vm-fleet-build.yml`) only when it is not complete. That is a base VM that never held a fleet, or one whose build stopped half way, also after all three containers existed. A converge on a complete fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
 
 The values come from the converge intent of the Gateway, `TaskVmConvergeInput`, which takes them from `TaskVmNestedFleet`:
 
@@ -1072,7 +1074,7 @@ The values come from the converge intent of the Gateway, `TaskVmConvergeInput`, 
 
 That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs the steps of the former `task_vm.fleet_build`, each as one Ansible task with its own `timeout`. First it makes the containers:
 
-1. It removes the containers of a half-made fleet, so a rerun builds the fleet whole.
+1. It removes the operator stamp and every container of a half-made fleet, so a build that stops leaves the fleet incomplete and the next one builds it whole.
 2. It makes a missing operator SSH key on the VM. It forgets an earlier Gateway host key.
 3. It creates the three system containers one at a time from `images:ubuntu/resolute/cloud`.
 4. Each container has nesting, a memory limit, a start with the VM, and the address and MAC of the layout.

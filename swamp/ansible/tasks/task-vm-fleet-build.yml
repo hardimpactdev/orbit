@@ -1,11 +1,15 @@
 ---
 # The nested fleet from stock Ubuntu (docs/cli/tasks/vm-image-refresh.mmd), part of the fleet phase: task-vm-fleet.yml imports it only when
-# a container of the fleet is missing, which is a base VM that never held a fleet, or one whose first build stopped half way. A converge
-# on a built fleet skips every task here. The nested network and the seed pool `topology-seed` come from the tools phase
-# (task-vm-incus.yml). A half-made fleet starts from nothing, so a rerun builds it whole. The nested Gateway is prepared by one local run
-# of the workflow `gateway-bootstrap` on this VM, the fleet's operator, and then does the rest through its own Orbit: its own Node and
-# roles, and the Nodes app-dev and app-prod. Every wait is one import of task-vm-nested-wait.yml. The checkout of this VM then becomes
-# the checkout of the Gateway and app-dev, and the build ends when Doctor of the nested Gateway is healthy.
+# the fleet is not complete (a container missing, or no operator stamp), which is a base VM that never held a fleet, or one whose build
+# stopped half way. A converge on a complete fleet skips every task here. The nested network and the seed pool `topology-seed` come from
+# the tools phase (task-vm-incus.yml). A half-made fleet starts from nothing, so a rerun builds it whole. The nested Gateway is prepared by
+# one local run of the workflow `gateway-bootstrap` on this VM, the fleet's operator, and then does the rest through its own Orbit: its own
+# Node and roles, and the Nodes app-dev and app-prod. Every wait is one import of task-vm-nested-wait.yml; their limits, 3,300 s with the
+# bootstrap's 1,500 s, fit the 5,400 s bound of a refresh converge. The checkout of this VM then becomes the checkout of the Gateway and
+# app-dev, and the build ends when Doctor of the nested Gateway is healthy.
+# The operator stamp marks a complete fleet; it goes first, so a build that stops leaves none and the next converge builds again.
+- name: Forget the operator join of the earlier fleet
+  ansible.builtin.file: { path: "{{ converge_stamps_dir }}/operator", state: absent }
 - name: Remove a half-made fleet
   when: fleet_guests.values() | select('in', fleet_present) | list | length > 0
   ansible.builtin.command: { argv: "{{ ['timeout', '180', 'incus', 'delete', '--force'] + (fleet_guests.values() | select('in', fleet_present) | list) }}" }
@@ -121,7 +125,7 @@
   failed_when: fleet_gateway_node.rc != 0 or '#' not in fleet_gateway_node.stdout
 - name: Wait for the Gateway Node
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_node.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 900 }
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_node.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 420 }
 - name: Admit the Gateway role
   ansible.builtin.command: { argv: "{{ fleet_artisan + ['orbit:role-add', 'gateway', 'gateway', '--converge'] }}" }
   register: fleet_gateway_role
@@ -129,7 +133,7 @@
   failed_when: fleet_gateway_role.rc != 0 or '#' not in fleet_gateway_role.stdout
 - name: Wait for the Gateway role
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 600 }
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 420 }
 - name: Admit the websocket role
   ansible.builtin.command: { argv: "{{ fleet_artisan + ['orbit:role-add', 'gateway', 'websocket'] }}" }
   register: fleet_websocket_role
@@ -137,7 +141,7 @@
   failed_when: fleet_websocket_role.rc != 0 or '#' not in fleet_websocket_role.stdout
 - name: Wait for the websocket role
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: operation, wait_operation: "{{ fleet_websocket_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 900 }
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_websocket_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 420 }
 # The Gateway reaches the Nodes with its own key, which they accept before they are added; their host keys are pinned by fingerprint.
 - name: Read the Gateway key
   ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, cat, /home/orbit/.orbit/ssh/id_ed25519.pub] }
@@ -164,7 +168,7 @@
   failed_when: fleet_app_dev.rc != 0 or '#' not in fleet_app_dev.stdout
 - name: Wait for app-dev
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_dev.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 1200 }
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_dev.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 720 }
 - name: Admit app-prod
   ansible.builtin.command:
     argv: "{{ fleet_artisan + ['orbit:node-add', 'app-prod', intent.fleet.layout['app-prod'].address, '--role=app-prod',
@@ -175,7 +179,7 @@
   failed_when: fleet_app_prod.rc != 0 or '#' not in fleet_app_prod.stdout
 - name: Wait for app-prod
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_prod.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 1200 }
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_prod.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 720 }
 # A proof starts from a fleet where only Orbit's own rules and the proof-network allowance exist: each container admits the nested subnet,
 # and a case places its test rules above that row.
 - name: Open the proof network
@@ -254,4 +258,4 @@
 # Every agent online, the Swamp workers enrolled, Doctor without a finding. The agents report a few minutes after they start.
 - name: Check the nested fleet
   ansible.builtin.import_tasks: task-vm-nested-wait.yml
-  vars: { wait_kind: doctor, wait_seconds: 900, wait_delay: 15 }
+  vars: { wait_kind: doctor, wait_seconds: 600, wait_delay: 15 }

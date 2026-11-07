@@ -1,19 +1,25 @@
 ---
 # The nested fleet of a task VM (docs/cli/tasks/vm-image-refresh.mmd): the Gateway with Swamp, app-dev and app-prod as Incus system
 # containers on the seed pool, with the checkout as their disk device, migrated and running, and the outer VM joined as operator. The
-# containers live in the seed and start with the VM. Each part checks its state first: the fleet is built from stock Ubuntu only when a
-# container of it is missing (task-vm-fleet-build.yml), and the operator, the tokens, the code and the migrations are applied only when
+# containers live in the seed and start with the VM. Each part checks its state first: the fleet is built from stock Ubuntu only when it is
+# not complete (task-vm-fleet-build.yml), and the operator, the tokens, the code and the migrations are applied only when
 # their digest changed, so a converge on a current base changes nothing and restarts nothing. The refresh retakes the `base` snapshots
 # when the fleet changed; a task start leaves them.
 - name: Read the nested containers
   ansible.builtin.command: { argv: [incus, list, --format, json] }
   register: fleet_list
   changed_when: false
+# A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join (task-vm-fleet-operator.yml)
+# writes that stamp as its last task, after a build that passed its Doctor wait, and a build removes it first. Every promoted base has it:
+# the stamp (#3131) is older than the base snapshot (#3130), and the first converge of each base joined the operator. A fleet with all its
+# containers but no stamp is one whose build stopped half way, and `fleet_new` then names all three: the build removes them and builds whole.
 - name: Work out the fleet
+  vars:
+    fleet_missing: "{{ intent.fleet.guests.values() | reject('in', fleet_list.stdout | from_json | map(attribute='name') | list) | list }}"
   ansible.builtin.set_fact:
     fleet_guests: "{{ intent.fleet.guests }}"
     fleet_present: "{{ fleet_list.stdout | from_json | map(attribute='name') | list }}"
-    fleet_new: "{{ intent.fleet.guests.values() | reject('in', fleet_list.stdout | from_json | map(attribute='name') | list) | list }}"
+    fleet_new: "{{ [] if 'operator' in converge_stamps and fleet_missing | length == 0 else intent.fleet.guests.values() | list }}"
 - name: Build the fleet from stock Ubuntu
   ansible.builtin.import_tasks: task-vm-fleet-build.yml
   when: fleet_new | length > 0
@@ -24,8 +30,6 @@
     # The services of the nested Gateway, in the order they start.
     fleet_gateway_services: [php8.5-fpm.service, caddy.service, orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service,
                              orbit-gateway-horizon.service, orbit-gateway-schedule.service, orbit-agent-view.service]
-    # The waits ask Doctor of the nested Gateway at its address in the fleet's network.
-    wait_hub: "{{ intent.fleet.operator.hub }}"
 - name: Read the nested containers again
   when: fleet_new | length > 0
   ansible.builtin.command: { argv: [incus, list, --format, json] }

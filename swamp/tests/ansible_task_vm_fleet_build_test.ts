@@ -95,13 +95,16 @@ const intent = {
 
 /**
  * Runs the Incus part of the tools phase and the fleet phase with `present` as the containers the VM holds, and `initialised` for an
- * Incus with its pools and network. Returns the logged calls (incus, swamp), the preseed, whether the play passed and its output.
+ * Incus with its pools and network. `joined` records the operator stamp, which a complete fleet has. Returns the logged calls (incus,
+ * swamp), the preseed, whether the operator stamp is still there, whether the play passed and its output.
  */
-function run(present: string[], initialised: boolean) {
+function run(present: string[], initialised: boolean, joined = false) {
   const folder = Deno.makeTempDirSync();
   const bin = `${folder}/bin`;
   Deno.mkdirSync(bin);
   Deno.mkdirSync(`${folder}/home/.ssh`, { recursive: true });
+  Deno.mkdirSync(`${folder}/stamps`);
+  if (joined) Deno.writeTextFileSync(`${folder}/stamps/operator`, "d");
   Deno.writeTextFileSync(`${folder}/containers`, present.join("\n"));
   const addresses = Object.fromEntries(
     Object.entries(guests).map((
@@ -161,6 +164,7 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
       orbit_home: `${folder}/home`,
       fleet_club_key: "/etc/orbit/swamp-club-api-key",
       converge_stamps_dir: `${folder}/stamps`,
+      converge_stamps: joined ? { operator: "d" } : {},
       converge_due: { operator: false, tokens: false },
       checkout_now: { code: "c", agent: "a", migrations: "m" },
       checkout_current: ["code", "agent", "migrations"],
@@ -202,10 +206,12 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
     line.trim()
   );
   const preseed = read("preseed");
+  const stamped = read("stamps/operator") !== "";
   Deno.removeSync(folder, { recursive: true });
   return {
     log,
     preseed,
+    stamped,
     passed: done.success,
     output: new TextDecoder().decode(done.stdout) +
       new TextDecoder().decode(done.stderr),
@@ -308,7 +314,7 @@ Deno.test({
   name: "a half-made fleet starts from nothing: its containers go first",
   ignore: !hasAnsible,
   fn() {
-    const { log, output } = run(["nested-gateway"], true);
+    const { log, output } = run(["nested-gateway"], true, true);
     const writes = log.filter((call) => !reads.test(call));
     assertEquals(writes[0], "incus delete --force nested-gateway", output);
     assert(find(log, "init images:ubuntu/resolute/cloud nested-gateway") > 0);
@@ -317,10 +323,47 @@ Deno.test({
 
 Deno.test({
   name:
+    "a fleet whose build stopped after its containers existed has no operator stamp: all three go and the build runs whole",
+  ignore: !hasAnsible,
+  fn() {
+    const { log, stamped, output } = run(Object.values(guests), true);
+    const writes = log.filter((call) => !reads.test(call));
+    assertEquals(
+      writes[0],
+      "incus delete --force nested-gateway nested-app-dev nested-app-prod",
+      output,
+    );
+    assert(find(log, "swamp workflow run gateway-bootstrap") > 0, output);
+    assertEquals(stamped, false);
+  },
+});
+
+Deno.test({
+  name:
+    "a build removes the operator stamp first, so a build that stops leaves the fleet incomplete",
+  ignore: !hasAnsible,
+  fn() {
+    // A complete fleet that lost a container: the stamp of its earlier join goes before anything else changes.
+    const { stamped, output } = run(
+      ["nested-gateway", "nested-app-dev"],
+      true,
+      true,
+    );
+    assertEquals(stamped, false, output);
+  },
+});
+
+Deno.test({
+  name:
     "a complete fleet creates nothing, restarts nothing and changes nothing",
   ignore: !hasAnsible,
   fn() {
-    const { log, preseed, passed, output } = run(Object.values(guests), true);
+    const { log, preseed, stamped, passed, output } = run(
+      Object.values(guests),
+      true,
+      true,
+    );
+    assertEquals(stamped, true);
     assert(passed, output);
     assertEquals(preseed, "");
     assertEquals(log, [

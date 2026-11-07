@@ -5,8 +5,5 @@
 - name: Wait for the nested fleet
   hosts: task_vm
   gather_facts: false
-  vars:
-    # The nested Gateway in the fleet's network.
-    wait_hub: 10.45.0.1
   tasks:
     - { name: Wait, ansible.builtin.import_tasks: tasks/task-vm-nested-wait.yml }

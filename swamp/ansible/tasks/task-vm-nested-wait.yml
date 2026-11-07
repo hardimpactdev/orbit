@@ -1,6 +1,6 @@
 ---
 # One wait for the nested fleet of a task VM, from the VM: the nested Gateway ends one of its Operations (`wait_kind: operation`,
-# `wait_operation`), or its Doctor at `wait_hub`, its address in the fleet's network, is healthy (`wait_kind: doctor`). The playbook
+# `wait_operation`), or its Doctor is healthy (`wait_kind: doctor`), at its address in the layout of the fleet. The playbook
 # task-vm-fleet-wait.yml runs it from Node 209 for the readiness of a fleet; the fleet build of the converge imports it for each of its
 # waits (task-vm-fleet-build.yml).
 # Each check is one `incus exec` into the nested Gateway, every `wait_delay` seconds (5 by default), with the tool's own `until` and
@@ -52,7 +52,7 @@
           - "100"
           - -X
           - POST
-          - "https://{{ wait_hub }}/api/v1/doctor"
+          - "https://{{ intent.fleet.layout.gateway.wireguard }}/api/v1/doctor"
           - -H
           - "Host: gateway.orbit"
           - -H

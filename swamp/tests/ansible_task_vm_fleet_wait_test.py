@@ -67,7 +67,7 @@ class TaskVmFleetWaitTest(unittest.TestCase):
             (folder / 'list.csv').write_text(listing)
             (folder / 'inventory.yml').write_text(json.dumps({'all': {'children': {'task_vm': {'hosts': {'vm': {
                 'ansible_connection': 'local', 'ansible_python_interpreter': sys.executable}}}}}}))
-            extra = {'intent': {'fleet': {'guests': GUESTS}}, 'wait_delay': 1, **variables}
+            extra = {'intent': {'fleet': {'guests': GUESTS, 'layout': {'gateway': {'wireguard': '10.45.0.1'}}}}, 'wait_delay': 1, **variables}
             result = subprocess.run([COMMAND, '-i', str(folder / 'inventory.yml'), '-e', json.dumps(extra), str(PLAYBOOK)], check=False,
                                     capture_output=True, text=True, timeout=120, env={
                                         **os.environ, 'PATH': f"{folder / 'bin'}:{os.environ['PATH']}", 'STUB_DIR': str(folder),
