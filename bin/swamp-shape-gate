@@ -11,6 +11,7 @@ before you push; commit first, because the checkers compare committed HEAD with 
 --cache DIR        Swamp runtime cache for the validation (default: ~/.cache/orbit-shape-runtime)
 --tools DIR        cache of the pinned tool venvs (default: /opt/orbit-shape-gate when the task image holds tools
                    for these pins, else ~/.cache/orbit-shape-gate)
+--workers N        maximum concurrent independent shape commands (default: up to four available CPUs)
 --strict           fail instead of skipping a step that needs a credential or a tool
 
 The linters are pinned in swamp/ansible/shape-gate-requirements.txt, the only place that names them.
@@ -18,6 +19,8 @@ The task VM role playbook builds them into /opt/orbit-shape-gate, so a task VM r
 Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN.
 Without them it is skipped and reported as skipped, not passed. `--only validate` then exits 78."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from itertools import groupby
 import fcntl
 import hashlib
 import os
@@ -58,8 +61,9 @@ DENO_UNIT_TESTS = (
 class Step:
     """One command of the gate. `needs` names what a missing prerequisite skips: credentials or a tool."""
 
-    def __init__(self, group, name, argv, needs=(), env=None):
+    def __init__(self, group, name, argv, needs=(), env=None, parallel=False):
         self.group, self.name, self.argv, self.needs, self.env = group, name, list(argv), needs, env or {}
+        self.parallel = parallel
 
 
 def plan(base, reports, cache, collections):
@@ -71,12 +75,12 @@ def plan(base, reports, cache, collections):
              env=ansible_env),
         Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/task-vm-role.yml',
                                        'ansible/task-vm-fleet-wait.yml', 'ansible/task-vm-host.yml',
-                                       'ansible/task-vm-runtime.yml'], env=ansible_env),
+                                       'ansible/task-vm-runtime.yml'], env=ansible_env, parallel=True),
     ]
-    steps += [Step('shape', test, ['python3', '-I', test]) for test in ANSIBLE_TESTS]
+    steps += [Step('shape', test, ['python3', '-I', test], parallel=True) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
-                                        *ANSIBLE_TESTS]))
-    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments]) for arguments in DENO_UNIT_TESTS]
+                                        *ANSIBLE_TESTS], parallel=True))
+    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], parallel=True) for arguments in DENO_UNIT_TESTS]
     steps += [
         Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
                                             'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),
@@ -95,7 +99,7 @@ def plan(base, reports, cache, collections):
 
 
 def git(*args):
-    return subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True)
+    return subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True, timeout=60)
 
 
 def resolve_base(base):
@@ -152,6 +156,48 @@ def skip_reason(step, environment):
     return None
 
 
+def run_step(step, environment, strict):
+    reason = skip_reason(step, environment)
+    if reason and not strict:
+        return (step, 'skipped', 0.0, reason), ''
+    started = time.monotonic()
+    # Each command owns its output and temporary fixtures. A parallel Deno command gets one worker,
+    # so nested test parallelism cannot multiply the shared command budget.
+    with tempfile.TemporaryDirectory(prefix='orbit-shape-step-') as scratch, tempfile.TemporaryFile(mode='w+t') as output:
+        scratch = str(Path(scratch).resolve())
+        env = {**environment, **step.env, 'TMPDIR': scratch, 'TEMP': scratch, 'TMP': scratch}
+        if step.parallel:
+            env.update(DENO_JOBS='1', ANSIBLE_FORKS='1', PYTHON_CPU_COUNT='1', RAYON_NUM_THREADS='1')
+        try:
+            code = subprocess.run(step.argv, cwd=SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT).returncode
+        except FileNotFoundError as error:
+            output.write(f'{error.filename or step.argv[0]}: required tool not found\n')
+            code = 127
+        output.seek(0)
+        return (step, 'passed' if code == 0 else 'FAILED', time.monotonic() - started, f'exit {code}'), output.read()
+
+
+def execute(steps, environment, strict, workers):
+    results = []
+    # Collections and tool setup finish before the independent group. Ratchets and validation stay serial.
+    for parallel, group in groupby(steps, key=lambda step: step.parallel):
+        group = list(group)
+        for step in group:
+            print(f'==> {step.name}', flush=True)
+        if parallel:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                completed = list(pool.map(lambda step: run_step(step, environment, strict), group))
+        else:
+            completed = [run_step(step, environment, strict) for step in group]
+        for result, output in completed:
+            step, outcome, _seconds, detail = result
+            print(f'==> {step.name}: {outcome}' + (f', {detail}' if outcome == 'skipped' else ''), flush=True)
+            if output:
+                print(output, end='' if output.endswith('\n') else '\n', flush=True)
+            results.append(result)
+    return results
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--base')
@@ -160,7 +206,10 @@ def main(argv=None):
     parser.add_argument('--cache', type=Path, default=Path.home() / '.cache/orbit-shape-runtime')
     parser.add_argument('--tools', type=Path)
     parser.add_argument('--strict', action='store_true')
+    parser.add_argument('--workers', type=int, default=min(4, os.cpu_count() or 1))
     args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error('--workers must be positive')
     # CI's umask; a looser one changes file modes that the Ansible artifact tests compare.
     os.umask(0o022)
     # The validation group needs neither the base nor the pinned linters, so its CI job can check out one commit.
@@ -173,21 +222,7 @@ def main(argv=None):
     collections = collections_path(args.tools)
     steps = [step for step in plan(base, args.reports, args.cache, collections) if args.only in (None, step.group)]
     print('Swamp shape gate' + (f' against {base[:12]}' if base else '') + f'; reports in {args.reports}', flush=True)
-    results = []
-    for step in steps:
-        reason = skip_reason(step, environment)
-        if reason and not args.strict:
-            results.append((step, 'skipped', 0.0, reason))
-            print(f'==> {step.name}: skipped, {reason}', flush=True)
-            continue
-        print(f'==> {step.name}', flush=True)
-        started = time.monotonic()
-        try:
-            code = subprocess.run(step.argv, cwd=SWAMP, env={**environment, **step.env}).returncode
-        except FileNotFoundError as error:
-            print(f'{error.filename or step.argv[0]}: required tool not found', file=sys.stderr, flush=True)
-            code = 127
-        results.append((step, 'passed' if code == 0 else 'FAILED', time.monotonic() - started, f'exit {code}'))
+    results = execute(steps, environment, args.strict, args.workers)
     print('\nSwamp shape gate summary', flush=True)
     for step, outcome, seconds, detail in results:
         print(f'  {outcome:<7} {step.name} ({seconds:.1f}s{"; " + detail if outcome != "passed" else ""})', flush=True)

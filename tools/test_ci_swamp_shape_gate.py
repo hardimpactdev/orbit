@@ -69,6 +69,52 @@ class PlanTest(unittest.TestCase):
         self.assertIsNone(gate['skip_reason'](validate, {'PATH': '', 'SWAMP_API_KEY': 'x', 'SWAMP_SIGNIN_TOKEN': 'y'}))
 
 
+class ParallelTest(unittest.TestCase):
+    def test_prerequisites_and_ratchets_stay_serial(self):
+        shape = steps('shape')
+        self.assertFalse(shape[0].parallel)
+        self.assertTrue(all(step.parallel for step in shape[1:-4]))
+        self.assertTrue(all(not step.parallel for step in shape[-4:]))
+        self.assertTrue(all(not step.parallel for step in steps('validate')))
+
+    def test_independent_steps_overlap_with_a_bounded_budget_and_isolated_outputs(self):
+        import threading
+        import sys
+        scope = gate['execute'].__globals__
+        barrier = threading.Barrier(2, timeout=10)
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+        environments = []
+
+        def run(argv, **options):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                environments.append(options['env'])
+            barrier.wait()
+            options['stdout'].write(argv[-1] + '\n')
+            with lock:
+                active -= 1
+            return subprocess.CompletedProcess(argv, 1 if argv[-1] == 'bad' else 0)
+
+        commands = [gate['Step']('shape', name, [sys.executable, name], parallel=True)
+                    for name in ('first', 'bad', 'third', 'fourth')]
+        with patch.object(scope['subprocess'], 'run', run), redirect_stdout(io.StringIO()) as output:
+            results = gate['execute'](commands, {'PATH': '/usr/bin'}, True, 2)
+        self.assertEqual(peak, 2)
+        self.assertEqual(len({env['TMPDIR'] for env in environments}), 4)
+        self.assertTrue(all(all(env[key] == '1' for key in ('DENO_JOBS', 'ANSIBLE_FORKS', 'PYTHON_CPU_COUNT', 'RAYON_NUM_THREADS')) for env in environments))
+        self.assertEqual([r[1] for r in results], ['passed', 'FAILED', 'passed', 'passed'])
+        for name in ('first', 'bad', 'third', 'fourth'):
+            self.assertIn(name + '\n', output.getvalue())
+
+    def test_an_invalid_worker_budget_fails(self):
+        with self.assertRaises(SystemExit):
+            gate['main'](['--workers', '0'])
+
+
 class BaseTest(unittest.TestCase):
     def test_a_given_base_is_used_and_an_empty_or_zero_base_means_the_previous_commit(self):
         self.assertEqual(gate['resolve_base'](BASE), BASE)
@@ -104,7 +150,7 @@ class ExitCodeTest(unittest.TestCase):
                 patch.dict(scope, {'tool_path': lambda tools: Path(scratch)}), \
                 patch.object(scope['subprocess'], 'run', run), redirect_stdout(io.StringIO()) as output:
             scope['os'].environ['PATH'] = '/usr/bin'
-            code = gate['main'](['--reports', scratch, '--tools', scratch, *argv])
+            code = gate['main'](['--reports', scratch, '--tools', scratch, '--workers', '1', *argv])
         return code, calls, output.getvalue()
 
     def test_a_failed_step_fails_the_run_and_the_other_steps_still_run(self):
