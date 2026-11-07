@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
 
-// The guest firewall denies incoming traffic by default, so provision and resume must allow Pi's port.
+// The guest firewall denies incoming traffic by default, so a resume must allow Pi's port.
 const PI_209 =
     "ufw allow in on orbit proto tcp from 10.44.0.15 to any port 3774 comment orbit:task-vm-pi-209";
 const PI_GATEWAY =
@@ -20,22 +20,15 @@ function chains(text: string): string[] {
     );
 }
 
-for (
-    const [name, expected] of [
-        ["workflow-task-vm-ssh-prepare", 2],
-        ["workflow-operation-task-vm-resume", 1],
-    ] as const
-) {
-    Deno.test(`${name} allows Pi from 209 and the Gateway before ufw is enabled`, async () => {
-        const found = chains(await workflow(name));
-        assertEquals(found.length, expected);
-        for (const chain of found) {
-            const enable = chain.indexOf("ufw --force enable");
-            assertEquals(chain.indexOf(PI_209) > -1, true);
-            assertEquals(chain.indexOf(PI_GATEWAY) > -1, true);
-            assertEquals(chain.indexOf(PI_209) < enable, true);
-            assertEquals(chain.indexOf(PI_GATEWAY) < enable, true);
-            assertEquals(chain.indexOf(SITE) > -1 && chain.indexOf(SITE) < enable, true);
-        }
-    });
-}
+Deno.test("workflow-operation-task-vm-resume allows Pi from 209 and the Gateway before ufw is enabled", async () => {
+    const found = chains(await workflow("workflow-operation-task-vm-resume"));
+    assertEquals(found.length, 1);
+    for (const chain of found) {
+        const enable = chain.indexOf("ufw --force enable");
+        assertEquals(chain.indexOf(PI_209) > -1, true);
+        assertEquals(chain.indexOf(PI_GATEWAY) > -1, true);
+        assertEquals(chain.indexOf(PI_209) < enable, true);
+        assertEquals(chain.indexOf(PI_GATEWAY) < enable, true);
+        assertEquals(chain.indexOf(SITE) > -1 && chain.indexOf(SITE) < enable, true);
+    }
+});

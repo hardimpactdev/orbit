@@ -57,7 +57,6 @@ final class OperationBudgetTable
         // No run yet. Basis: the three Ansible phases at their step bounds, software 1,800 s, tools 900 s and the check 300 s, plus the
         // short input steps and margin. A VM at its pins takes about a minute. Replace with the 14-day p95 after the first successes.
         'task_vm.converge' => 3300,
-        'task_vm.destroy' => 2700,
         // No native run yet. Basis: the legacy fill's one overall 1,700 s budget, plus margin for the run start and the
         // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
         'task_vm.fill_package_cache' => 2100,
@@ -110,9 +109,9 @@ final class OperationBudgetTable
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.
         'tasks.sync' => 360,
-        // Both ending kinds run the task-vm-destroy child after Route withdrawal and Project teardown. Their history
+        // Both ending kinds run the release of the task VM (task_vm.slot_release) after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
-        // Basis: task_vm.destroy 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
+        // Basis: the former VM destroy bound of 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
         // workspace Route withdrawal, whose only fixed wait is the 31 s DNS grace; the rest is margin. Replace with the 14-day p95 once
         // both kinds have successful runs with a VM.
         'tasks.cancel' => 3900,

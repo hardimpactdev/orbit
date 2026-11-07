@@ -27,10 +27,6 @@ enum TaskVmError: string
     case NotSettled = 'task_vm.not_settled';
     case ParkFailed = 'task_vm.park_failed';
     case AwaitingHostSweep = 'task_vm.awaiting_host_sweep';
-    case VmNotRunning = 'task_vm.vm_not_running';
-    case BootstrapFailed = 'task_vm.bootstrap_failed';
-    case BootstrapTimeout = 'task_vm.bootstrap_timeout';
-    case NotEnrolled = 'task_vm.not_enrolled';
     case ResumeTimeout = 'task_vm.resume_timeout';
     case InvalidUserData = 'task_vm.invalid_user_data';
     case InvalidGatewayKey = 'task_vm.invalid_gateway_key';
@@ -41,7 +37,6 @@ enum TaskVmError: string
     case HostKeyFailed = 'task_vm.host_key_failed';
 
     // The group's runtime on the VM.
-    case RuntimeFailed = 'task_vm.runtime_failed';
     case TopologyFailed = 'task_vm.topology_failed';
     case GitCredentialRefused = 'task_vm.git_credential_refused';
 

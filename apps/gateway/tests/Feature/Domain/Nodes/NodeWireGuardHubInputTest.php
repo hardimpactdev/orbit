@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmFleetBuildIntent;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -51,19 +50,4 @@ it('removes one Node from the hub by deleting its own file, and writes or keeps 
         ->and($intent['config'])->toBe(NodeWireGuardHubInput::config($hub));
     // A rewrite lists the other Node, which is the snapshot a concurrent removal must not carry.
     expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
-});
-
-it('writes the operator peer in the nested fleet start in the form the hub rendering uses', function (): void {
-    $hub = SwampNodeFixture::ensure();
-    $workflow = file_get_contents(base_path('../../swamp/workflows/workflow-task-nested-fleet.yaml'));
-
-    // The step "Write the operator peer" pushes `"<head>" + <the key> + "<tail>"` to the peer file of the operator.
-    preg_match('/stdin: \'\$\{\{ "(\[Peer\][^"]*)" \+ steps\["Make the operator key"\]\.outputs\.stdout\.split\("\\\\n"\)\[0\] \+ "([^"]*)" \}\}\'/', $workflow, $text);
-    preg_match('/"(\/etc\/wireguard\/[^"]*)" \+ steps\["Read the operator id"\]\.outputs\.stdout\.split\("\\\\n"\)\[0\] \+ "(\.conf)"/', $workflow, $path);
-
-    expect($text)->toHaveCount(3)->and($path)->toHaveCount(3);
-    $section = stripcslashes($text[1]).'@KEY@'.stripcslashes($text[2]);
-    expect($section)->toBe(NodeWireGuardHubInput::section('operator', '@KEY@', TaskVmFleetBuildIntent::OperatorAddress.'/32'))
-        ->and($path[1].'7'.$path[2])->toBe(NodeWireGuardHubInput::peerFile(7))
-        ->and(NodeWireGuardHubInput::config($hub))->toContain('for f in '.NodeWireGuardHubInput::PeerDirectory.'/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done');
 });

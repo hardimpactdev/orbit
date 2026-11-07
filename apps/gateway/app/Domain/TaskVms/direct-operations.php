@@ -3,27 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmConvergeProjection;
-use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmFleetBuildProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
-use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
-
-$provision = [
-    'workflow' => 'operation-task-vm-provision',
-    'projection' => TaskVmProvisionProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'provision', 'step' => 'result'],
-    'private_material' => [],
-    'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
-];
 
 // What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, and the claim with its Pi token and the Pi
 // models file that holds the fixed model key; and the proof Swamp Club key, which a refresh gives the base VM.
@@ -49,14 +37,7 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads the run's step statuses; the native assert is the end check.
     'terminal_result' => ['job' => 'check', 'step' => 'Check the guest is ready', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
-], 'task_vm.destroy' => [
-    'workflow' => 'operation-task-vm-destroy',
-    'projection' => TaskVmDestroyProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the run's step statuses and builds the cleanup receipt from the captured intent.
-    'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
-], 'task_vm.provision' => $provision, 'task_vm.slot_release' => [
+], 'task_vm.slot_release' => [
     // The delete takes no secret.
     'workflow' => 'operation-task-vm-slot-release', 'projection' => TaskVmSlotReleaseProjection::class, 'workflow_inputs' => true,
     'terminal_result' => ['job' => 'release', 'step' => 'Delete the VM', 'native' => true],

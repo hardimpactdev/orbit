@@ -12,7 +12,7 @@ final readonly class TaskVmEnrollmentOwner
 {
     public static function owned(Operation $operation): ?TaskVm
     {
-        if (! in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)) {
+        if ($operation->kind !== 'tasks.provision') {
             return null;
         }
         $id = $operation->input['task_vm_id'] ?? null;

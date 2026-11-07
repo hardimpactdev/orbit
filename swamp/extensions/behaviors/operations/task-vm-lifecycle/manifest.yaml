@@ -5,7 +5,4 @@ visibility: private
 license: MIT
 description: Public lifecycle intent, UpCloud request shaping and provider result decoding; official SSH and 209 curl steps own effects.
 behaviors:
-  - operations/task-vm-lifecycle/cloud_input.ts
   - operations/task-vm-lifecycle/metadata.ts
-  - operations/task-vm-lifecycle/enrollment.ts
-  - operations/task-vm-lifecycle/ssh_input.ts

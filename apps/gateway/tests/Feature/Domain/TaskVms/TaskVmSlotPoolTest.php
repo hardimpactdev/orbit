@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -13,6 +14,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -473,4 +475,41 @@ it('withdraws the recorded base for a rebuild, and refuses a rebuild while a ref
         'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
     expect(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', fromStock: true))
         ->toThrow(ResourceOperationException::class, 'rebuild after it ends');
+});
+
+it('has the removal of a group\'s workspace admit the release of its slot and wait for it, once', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace');
+    $releases = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->get();
+    expect($releases)->toHaveCount(1)->and($releases->sole()->triggered_by)->toBe('tasks-complete')
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+
+    // A second removal waits for that release and admits no other.
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group->refresh()))->toThrow(TaskWorkspaceWaiting::class)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->count())->toBe(1);
+});
+
+it('refuses the removal of a workspace on a task VM that has no slot, which no release can delete', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-610', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit']));
+    TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Large, 'name' => 'tvm-610', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.140']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(ResourceOperationException::class, 'has no slot')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });

@@ -29,7 +29,7 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function ownerId(Operation $operation): ?int
     {
-        if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
+        if ($operation->kind === 'tasks.provision') {
             return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'secret_hash');
         }
         if (in_array($operation->kind, ['node.role_add', 'node.role_converge'], true)) {

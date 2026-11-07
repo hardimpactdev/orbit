@@ -19,24 +19,9 @@ final readonly class TaskVmProviders implements TaskVmProvider
 
     public function observe(TaskVm $vm): ?VmObservation
     {
-        return $this->for($vm)->observe($vm);
-    }
-
-    public function sshHostFingerprint(TaskVm $vm): string
-    {
-        return $this->for($vm)->sshHostFingerprint($vm);
-    }
-
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        return $this->for($vm)->bootstrapReady($vm);
-    }
-
-    private function for(TaskVm $vm): TaskVmProvider
-    {
         return match ($vm->provider) {
-            TaskVmProviderKind::Incus => $this->incus,
-            TaskVmProviderKind::UpCloud => $this->upcloud,
+            TaskVmProviderKind::Incus => $this->incus->observe($vm),
+            TaskVmProviderKind::UpCloud => $this->upcloud->observe($vm),
         };
     }
 }

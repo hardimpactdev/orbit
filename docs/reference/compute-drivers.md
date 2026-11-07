@@ -8,7 +8,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-task-nested-converge,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -103,7 +103,7 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 
 The base list explicitly contains the app-dev tools. It does not inherit a role. One pinned distribution can supply several binaries, such as npm and npx, or Rust and Cargo. Every fetched input must have a recorded digest. Production Nodes receive only their role tools.
 
-The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each pin is the newest version in that authenticated snapshot, identical on both architectures.
+The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and the 21 Chromium libraries that `resources/machine-software/recipe.json` lists for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each pin is the newest version in that authenticated snapshot, identical on both architectures.
 
 The base also holds the nested Incus packages, so a task VM can run a nested topology without an install:
 
@@ -362,19 +362,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-Incus task VM provision and resume wait for `Running` after their single start request. The host reads only the admitted project and VM once per second, under a literal 120-second timeout over official SSH from 209. A failed read, missing or foreign VM, or unsupported terminal state fails without another start. This restores the legacy stopped-state grace before enrollment.
-
-After a new Incus VM starts, provision waits for its first IPv4 lease with the native `incus wait <vm> ipv4 --timeout 120 --interval 1`, then reads the VM once. A VM without a lease at the timeout fails the provider step; nothing is started again.
-
-Task VM enrollment runs bootstrap as SSH argv behind the Incus or guest prefix; no bootstrap script ships.
-
-The bootstrap steps are the child workflow `task-vm-bootstrap`. The enrollment calls it, and so does the image refresh on its check VM.
-
-The bootstrap creates the managed user, installs its authorized key and sudoers file from stdin, and checks the observer download with `sha256sum`. Verification then runs as that user: `sudo -n true` and the observer checksum. The observer identity is read with `sha256sum`, and an assert compares it with the recorded `observer_digest`. The sudoers step removes an earlier copy first, because `install` fails over an existing file; a retry on the same guest works. Task provision uses a 30-second default queue allowance; explicit step limits still apply.
-
 Swamp requests review parking through `tasks.park`. A parked row reports unknown power until the provider confirms stopped. A wake invalidates that confirmation. Gateway resource observation refreshes parked power in every group status and never starts or stops a VM.
-
-A `task_vm.destroy` Operation cannot be cancelled after its exact `provider-delete` child has succeeded with a proven deletion step. The Gateway returns `operation.cancel_refused` before changing cancellation flags or descendants. Destruction must finish or resume to remove the VM’s Node and workspace records. Before provider deletion succeeds, the Operation remains cancellable.
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which each host refreshes to the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
@@ -406,15 +394,11 @@ A template build cleans its server with the `clean` phase of the task VM role. T
 
 ### From claim to workspace
 
-A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.
+A task start (`tasks.provision`, [command](/cli/tasks/provision)) takes the lowest free slot of a host and mints the identity of the slot. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
 
-1. Placement records the VM's [size](#size-of-a-task-vm) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
-2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
-3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
-4. Native steps publish the network from Gateway-rendered files with no private key, and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
-5. The guest prepares Pi through the Process lower, with the guard origin and the fixed model key in `models.json`. Confirmed native success marks the VM ready.
-6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
-7. The claim starts the baseline check. Then the same claim projects the Route.
+1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
+2. The claim starts the baseline check. Then the same claim projects the Route.
+
 
 #### Start the baseline check before the Route
 
@@ -432,37 +416,7 @@ The setup steps of the check can change files while the Route grants Caddy acces
 
 A Route that fails at the claim logs `The task workspace Route failed after the baseline check started; Orbit tries again before the implementer starts.` Work that uses the Route waits for it: before the first implementer or the final review starts, Orbit tries the Route again. Each failure there counts as a communication failure. After the fifth, the subtask asks for assistance with `The task workspace Route could not be finished, so no agent started.` and the error. So no agent, reviewer, preview, or pull request ever uses a workspace whose Route failed. Cancelling the group removes the workspace with its pending Route.
 
-`AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
-
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. The base image already put `orbit` in `incus-admin`, so a nested topology needs no new login. Cloud-init does nothing else, because the base image already holds Incus, `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
-
-Provisioning and enrollment retain their synchronous jobs until the owning Node and Process child composition is installed. The Gateway also exposes bounded read views for the prepared Swamp workflows: power, address, image identity, cloud-init and runtime readiness. Enrollment allows ten minutes for boot, measured from launch.
-
-Enrollment continues when cloud-init reports `done` with no errors and the host reports the guest's bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
-
-Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
-
-Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. The workspace creation then logs `workspace-package-cache`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
-
-Pi preparation runs on 209 with pinned official SSH, and no script reaches the guest. Swamp copies the pinned Pi build from the Gateway to 209 and checks its SHA-256 there; a different build stops before the guest. One command on the guest checks the digest again and installs it as `/home/orbit/.local/bin/pi-server` (0755).
-
-Each file then arrives on stdin of one `install` command: the Orbit root, `models.json` and the token (0600, owned by the managed account), and the `pi-server` unit. The Gateway renders the whole `models.json` with the guard origin and the fixed model key as one vault value, `task-vm-pi-models-<id>`, because Swamp passes a secret only whole. One command reloads systemd and enables and restarts the unit; `systemctl is-active` and one `curl` to Pi's capabilities, with the bearer read on the guest, are the end checks.
-
-The Gateway makes the guest's agent secret when it admits the enrollment, as it does for `node:add`, and keeps only the SHA-256 of the 64 hex characters. The vault copy `agent-secret-node-<id>` arrives on stdin of one `install` command that writes `/etc/orbit/agent/secret` (0600, root) with no trailing newline. The `observer-identity` step hashes the file and the run stops with `agent.secret_mismatch` unless it equals the Gateway's value. The agent sends the secret and the Gateway compares its hash, so the file and the record must describe the same bytes.
-
-The guest firewall denies incoming traffic by default. The SSH preparation step allows TCP 22 from 209, and TCP 3774, Pi's port, from 209 (`orbit:task-vm-pi-209`) and from the Gateway (`orbit:task-vm-pi-gateway`), on the `orbit` interface, and TCP 443 for a routed workspace site (`orbit:task-vm-site`), before it enables ufw. The hub filter lets the Cluster Routers and 209 (`orbit:task-vm-control-web`, for the Route's TLS probe) reach that port. Resume writes the same rules again. Without them every turn fails at `session_create` with curl exit 28.
-
-The official cfgmgmt behaviors are not used here: they trust the worker's shared `known_hosts`, and task VMs reuse addresses. The Gateway creates the normal `pi-server` Process. Resume checks `agent.status` before requesting Pi capabilities.
-
-#### Skip what the image holds
-
-Task VM enrollment trusts the [base image](#the-base-vm-and-its-snapshot) that the same Gateway code built. It does not run the `app-dev` software programs: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It does not read or compare program fingerprints. Every other Node runs every program at enrollment.
-
-Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
-
 New claims [copy the base snapshot](#claims-copy-the-base-snapshot) of their host. The base includes both selectable PHP versions, now `8.5` and `8.4`, and Rust with Cargo, clippy, and rustfmt. The Instance's [PHP runtime check](/reference/php-runtime#development-runtime) verifies installed packages without repeating an installation.
-
-Enrollment uses the host as [SSH jump host](/reference/node-provisioning#enroll-through-a-jump-host) until WireGuard is up.
 
 Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
 
@@ -479,60 +433,17 @@ These reasons are waits: the group asks for no assistance. A `failed` task VM is
 
 The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address.
 
-### Destroy a task VM
+### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the cancel run pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task). A failed push keeps the workspace and VM. A parked VM cannot push, so cancel refuses until the work is published. A merged task is never pushed during cleanup.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run. Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, copies the agent transcripts to the Gateway, then admits the release and waits for it. A parked VM starts before preservation is attempted.
 
-A parked VM starts before preservation is attempted. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
+The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A failed push or a refused teardown keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
-1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
-2. It sets the row to `destroying` and deletes the VM and its volumes.
-3. It removes the workspace records offline, as for [a VM that died](#a-vm-that-dies-before-its-group-ends).
-4. It queues `DestroyTaskVm`, which removes the Node.
+A row without a slot number, such as a VM of the old pool, has no release; its removal is refused with `task_vm.release_unavailable` and an operator deletes the VM on its host. Rows the old pool left in `destroying` were recorded `destroyed`.
 
-A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A group's topology runs in its VM, so it goes with the VM, and removal runs no topology release.
+A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
 
-Explicit completion, cancellation and workspace removal queue `DestroyTaskVm`. Swamp owns retries and cleanup scheduling. `DestroyTaskVm` then runs these steps:
-
-1. It sets the row to `destroying`.
-2. It deletes the VM with `incus delete --force`, then the VM's [clone of the topology seed](#incus-provider). Each delete is one pinned `@swamp/ssh` `exec` argument list on the host.
-3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
-4. It reads the project's instances and the pool's custom volumes again. A native `assert` checks that neither lists the VM or its seed clone.
-5. It sets the row to `destroyed`.
-
-Incus keeps custom volumes after VM deletion, so the seed clone has its own delete. A VM or a volume that is gone counts as deleted. On UpCloud, the run reads the server, stops it, and deletes it with its storage instead of steps 2 and 4.
-
-Orbit deleted the VM itself, so the Node removal does not probe the Node's address first. It also runs no Metrics pass, because a task VM Node never hosts a Metrics exporter.
-
-The run prints no result. On success, the Gateway builds the cleanup receipt from the intent it captured at admission. A failed run projects `task_vm.destroy_failed`. Tasks cancel and a failed provision run the same `task-vm-destroy` child workflow.
-
-The removal of other Instances moves a checkout within one filesystem only. [Instance removal](/reference/instance-removal) refuses a checkout on a mounted volume with `cross-device:`.
-
-Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it.
-
-When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
-
-A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
-
-Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, because destroy needs the settings. Node removal refuses live task VMs and configured hosts. Clear the host setting after draining it. Removing a host also deletes its destroyed VM rows.
-
-#### A VM that dies before its group ends
-
-Workspace removal deletes a dead VM like a live one. Only the push of approved work and the Project's teardown steps need SSH to the VM. The run reads the VM's power first and skips teardown on a stopped VM. When a guest step fails, removal fails and the group asks for `removal_failure` assistance. An ownership refusal has the same kind. Runtime decisions use the open request and kind, not its reason text.
-
-When the group has ended, or is `settling` or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
-
-For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
-
-A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it. No sweep fails the row.
-
-A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and original VM failure once in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A failed deletion keeps that reason on retry; its delete error stays on the VM row. Removal never retries a lost head's push after destruction starts. A stopped VM without work to preserve is removed the same way:
-
-- It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
-- It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
-- It deletes the Instance's Process and Schedule records and the Instance row.
-
-Then it removes the Node and marks the row `destroyed`, as above. It clears the group's removal reason unless that reason records reviewed work that was lost. A removal journal that a normal removal left open is finished the same way. Unreviewed work is lost with the VM. A reviewed, unpublished head keeps a `ready` or `parked` VM while preservation runs. A `failed` VM is removed, and its assistance about the lost work stays visible.
+Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, because the release needs the settings. Node removal refuses live task VMs and configured hosts. Clear the host setting after draining it. Removing a host also deletes its destroyed VM rows.
 
 ### Place task VMs
 
@@ -685,7 +596,7 @@ From the VM, the Gateway takes only commit IDs and pack data. A commit ID must b
 
 The remaining Gateway source adapters refuse to send a command that carries a source Git credential to a task VM. Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
-A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
+A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Release a task VM](#release-a-task-vm).
 
 The guard knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
@@ -747,7 +658,7 @@ For each active configured Incus host, the job releases the task VMs that a fail
 
 While the UpCloud token file is set, the job records one `task_vm.sweep_host` Operation on the Gateway Node for the [UpCloud sweep](#sweep-upcloud). That Operation holds the lock of the Gateway Node and carries no Incus host input.
 
-A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
+A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
 The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds. A provider failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`.
 
@@ -774,7 +685,7 @@ A **stray volume** is an Incus custom volume in any project and pool of the host
 
 The audit lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Doctor reports every pool. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`.
 
-A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
+A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [release](#release-a-task-vm) of the group removes such a VM within minutes, so a stray record means that release is stuck.
 
 A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep job logs it while task VMs are enabled.
 
@@ -828,7 +739,7 @@ Admission captures live VM names and the highest allocated VM and build IDs befo
 
 Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
 
-The fixed `incus.vm` agent command runs on the Operation's host Node as its managed user. `IncusTaskVmProvider` exposes observations only. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
+`IncusTaskVmProvider` exposes observations only: the power of a VM. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`; no provider class creates, starts or deletes a VM.
 
 A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Every task VM's config on stdin sets `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait on every boot. A medium or large VM's key also turns on free page reporting for the balloon device `qemu_balloon`. Incus applies the key only when the VM starts, so the launch sets it.
 
@@ -1217,39 +1128,21 @@ The Gateway and app-dev guests then take their checkout from the outer VM, as th
 
 The end check waits until Doctor of the nested Gateway answers healthy for the whole fleet, not only for one Node, and passes when it has no finding on the shared checkout. The budget of the kind is 3,600 seconds. `task_vm.ready_copies` saves the copies afterwards.
 
-##### Start the nested fleet
+##### Apply and check the nested fleet
 
-A task that declares a topology gets its nested fleet from the ready copies of the seed. The step is skipped for a task without a topology. It is also skipped when the seed holds no three ready copies of the current format, and the result then says `nested_fleet: none`. The provision decides that once, in the step `Look for ready copies`, and the child has no guard of its own. Placement already keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies, so a skipped step is the exception.
-
-The save writes the format as the key `user.ready.format`, and the child lists only the copies that carry the current value, so copies from before a change to the steps that start or apply a fleet are not used.
-
-The step `Start the nested fleet` of `operation-task-provision` calls the child `task-nested-fleet`, which runs one command per step over official SSH to the task VM. It creates the network `oe-nested` from the subnet that the copies store and copies the three ready copies to `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Each Node gets its stored MAC and address back, and the three containers start.
-
-The Gateway and app-dev containers get the checkout of the task as the disk device `checkout` before they start. The task VM joins as operator: the key goes into the nested Gateway's `operator` Node record, and the peer goes into a file of the hub's peer folder `/etc/wireguard/orbit-peers.d`, in the form the hub rendering writes. The hub loads that folder at every start, so a restore of `base` keeps the peer.
-
-The provider step `observe-seed` lists the volumes of the pool and prints only the two it needs: the seed of the image and the seed clone of this VM. Swamp cuts step output at 4,096 bytes, and the whole list of a host with many seeds is longer.
-
-The step `Converge once` runs before it. A task with a topology carries the converge intent as the workflow input `converge`. It stays outside the provision intent, because the VM provider passes that whole in one argument. It has the nested subnet `10.232.2.0/24` and the bridge `oe-nested`.
-
-The step `Pin the converge` fills the guest host key that the VM step pinned, and `Converge once` runs the child `operation-task-vm-converge`. Its Incus phase recovers the topology seed pool with `incus admin recover` from the seed disk `scsi-0QEMU_QEMU_HARDDISK_incus_topology--seed`, so the three ready copies show in the VM.
-
-The recovery needs every instance in the pool to have its network and devices, and an old seed holds instances that name networks the VM lacks. The phase therefore deletes every instance of the seed disk except `node-template` and the three ready copies before it recovers; the disk is a clone that belongs to this VM. A blank disk gets the pool with `incus storage create`, which refuses to format a disk that holds a file system. Every command of the attach is bounded by `timeout`, well under the phase.
-
-The fleet child creates the network only when the converge has not, and then checks that the network has the subnet that the copies store.
-
-The step `Apply the checkout` of the fleet child calls the child `task-nested-apply`, which the restore of the `base` snapshot reuses. The containers start with the checkout already attached. At boot, the bind mount units of the copies put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout. systemd makes the mount point `.env` that the checkout lacks.
+The child `task-nested-apply` applies the checkout to the nested fleet, and the restore of the `base` snapshot reuses it. The containers start with the checkout already attached. At boot, the bind mount units of the copies put `.env`, `storage` and `bootstrap/cache` from each guest's own disk over the checkout.
 
 The child checks each of the three units on the Gateway and on app-dev and starts none. In a container no udev confirms the device behind the checkout's mount, so a start job would wait 90 s for it and fail. The child then runs the migrations of the checked-out code on the nested Gateway. It restarts the queue worker, the agent-view subscriber and the Swamp worker, and checks, one unit at a time, that they and the nested Swamp serve are active.
 
 The behavior name of `Check the services` carries the index of the unit, not its name. Swamp opens an SSH control socket under `/tmp/swamp-ssh/<behavior name>`, and a path over 108 bytes cannot be a Unix socket.
 
-The fleet child then calls the child `task-nested-ready`, which checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one plain snapshot `base` of the three nested containers.
+The child `task-nested-ready` checks readiness from the VM, over the operator's WireGuard address and the API of the nested Gateway. It first waits up to 120 seconds, with one Ansible task, until Doctor of the nested Gateway is healthy, because the agents read online only after their next heartbeats. All three Node agents must be online, the Gateway must know the operator with its key, and Doctor must be healthy. The child then takes one plain snapshot `base` of the three nested containers.
 
 The child `proof-fleet-restore` puts the fleet back to `base` for the proof. It restores the three nested containers with a limit of 45 seconds and no retry, which is a reboot, starts them, fails unless all three are `RUNNING`, and calls `task-nested-ready` and then `task-nested-apply`.
 
 The batch workflow calls it before every batch but the first. The case workflow calls it after a case that did not pass and is not the last of its batch, so the next case starts from a clean fleet. A restore that fails stops the rest of the batch.
 
-After the apply step, the fleet child gives the VM a CLI profile. The steps `Make the CLI home`, `Pin the nested CA` and `Add the CLI profile` read the root CA of the nested Gateway with `incus exec … cat` into `~/.orbit/nested-ca.pem` and run `gateway:add https://10.45.0.1 --name=nested --use --ca=…` with the candidate CLI of the checkout. The proof runner runs that same CLI (`php apps/cli/orbit`) and finds the nested Gateway through the profile. The apply child checks the Swamp services only when the VM has the proof Club key (input `club`), because the nested Swamp serve cannot start without it.
+After the apply step, the VM gets a CLI profile. The steps `Make the CLI home`, `Pin the nested CA` and `Add the CLI profile` read the root CA of the nested Gateway with `incus exec … cat` into `~/.orbit/nested-ca.pem` and run `gateway:add https://10.45.0.1 --name=nested --use --ca=…` with the candidate CLI of the checkout. The proof runner runs that same CLI (`php apps/cli/orbit`) and finds the nested Gateway through the profile. The apply child checks the Swamp services only when the VM has the proof Club key (input `club`), because the nested Swamp serve cannot start without it.
 
 The VM then joins as operator. It makes its own WireGuard key and writes the public key into the nested Gateway's `operator` record. It puts the key on the hub and brings up `wg-nested` as `10.45.0.10`. For a task that needs the proof Swamp Club key, the VM makes the folders `/home/orbit/.config/swamp` in the nested Gateway, owned by `orbit` with mode 0700, pushes the key into them and restarts its Swamp.
 
@@ -1367,7 +1260,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-`IncusTaskVmProvider` reads the host's output: the instance state, its one IPv4 address inside the bridge range, and the host key fingerprint. `TaskVmGuest` reads the guest's output the same way for every provider: the cloud-init status. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` reads the host's output: the instance state and its one IPv4 address inside the bridge range. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -1383,11 +1276,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
-| `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
-| `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
-| `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
-| `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
-| `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
+| `task_vm.release_unavailable` | 409 | A task workspace's VM has no slot, so no release can take it |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |
@@ -1471,15 +1360,9 @@ Before an UpCloud template is published, the `clean` phase of the task VM role a
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
-UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. The native provision step generates an ed25519 host key and stages the pair through the admitted `provider_bootstrap` private output before creating a server. The Gateway stores it encrypted on the owning Task VM and records its public pin. A retry reuses that pair; it cannot replace it or create a server before storage succeeds. Incus grants no reader or writer for this UpCloud-only field.
+No current kind creates an UpCloud task VM: the template build and the sweep remain, and `task-vm-provider-power` starts, stops, deletes and inspects a server.
 
-Swamp renders cloud-init from the staged pair and the admitted Gateway public key. No connection trusts a key on first use. Root login stays off. Swamp reads cloud-init over pinned SSH as `orbit` at the public address, and enrollment needs no jump Node.
-
-No UpCloud step ships a script. Each provider request in `task-vm-provider-upcloud` and `task-vm-provider-power` is one inline `curl` on Node209. The API token and the bootstrap private key reach curl only from its environment, through `--variable`; they are never in argv or expanded by the shell. TypeScript on Node209 (`task-vm-lifecycle`) selects the server, builds each request body, and checks each answer.
-
-Create lists the servers labelled `orbit-task-vm` and the plans, then posts one create body. The body is public intent with one curl expansion, `{{ORBIT_BOOTSTRAP_PRIVATE_KEY:json:json}}`. curl escapes the key twice, because cloud-init's user data is JSON inside a JSON string. The Gateway's vault copy `task-vm-provider-bootstrap-<id>` therefore holds the private key alone.
-
-The create answer is discarded. The label list finds the server again, also after a lost answer. A server that is still missing then fails with `task_vm.upcloud_failed`. One server detail read checks the UUID, title, hostname, labels and the single public IPv4 address. A stopped server gets one start request and one more detail read.
+No UpCloud step ships a script. Each provider request in `task-vm-provider-power` is one inline `curl` on Node209. The API token reaches curl only from its environment, through `--variable`; it is never in argv or expanded by the shell.
 
 A power action reads the label list and then the server detail. curl prints the HTTP status on the last line of the detail read. `404` is absence. Any other failed status fails with `task_vm.upcloud_failed`, so a provider error never supplies a missing-VM observation. A server with an unknown UUID that the label list does not show is absent without a detail read.
 

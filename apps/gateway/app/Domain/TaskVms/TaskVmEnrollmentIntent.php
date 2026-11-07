@@ -6,10 +6,8 @@ namespace App\Domain\TaskVms;
 
 use App\Actions\Processes\RecordProcessIntentAction;
 use App\Data\Processes\AddProcessData;
-use App\Domain\Nodes\AppDevRuntimeFootprint;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetType;
@@ -17,63 +15,19 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
-/** Shared intent capture for enrollment and its provisioning parent. No host effects or child Operations. */
+/** The Node, `app-dev` role and `pi-server` Process of a task start's VM, and the files of that Node. No host effects or child Operations. */
 final readonly class TaskVmEnrollmentIntent
 {
-    public function __construct(private TaskVmSettings $settings, private TaskVmModelRoute $route,
-        private NodeAgentSshExecutor $agents, private AgentDelivery $delivery,
-        private RecordProcessIntentAction $processes, private SystemdProcessRenderer $systemd,
-        private PiConnection $pi, private NodeBootstrapCommandFactory $bootstrap, private ProcessOperationAdmission $admissions) {}
-
-    /** @return array<string,mixed> */
-    public function capture(TaskVm $vm): array
-    {
-        return DB::transaction(function () use ($vm): array {
-            $vm->refresh();
-            if ($vm->state !== TaskVmState::Provisioning || ($vm->group === null ? $vm->slot_project_id === null : $vm->group->parent_id !== null)) {
-                throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group, or a slot.');
-            }
-            $this->route->assertReady();
-            if ($this->settings->piArtifactPath === null || $this->settings->piArtifactSha256 === null
-                || $this->settings->piModels === [] || $vm->pi_token === null) {
-                throw new TaskVmException('task_vm.invalid_config', 'Enrollment requires the pinned Pi artifact, models and group credentials.');
-            }
-            $node = $this->reserveNode($vm);
-            $pin = $this->delivery->pin($node);
-            $process = $this->recordPiProcess($node);
-            $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
-                ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
-
-            return [
-                'task_vm_id' => $vm->id, 'guest_node_id' => $node->id,
-                'execution_node_id' => $this->executionNode($vm)->id,
-                'provider' => $vm->provider->value, 'name' => $vm->name, 'user' => $node->user, 'pi_url' => $this->pi->baseUrl($node),
-                'agent_sha256' => $pin, 'agent' => $this->agents->configurationForRoot($node, null),
-                'agent_artifact_url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null,
-                'vm' => $vm->provider === TaskVmProviderKind::Incus
-                    ? ['project' => $this->settings->host((int) $vm->host_node_id)->project, 'name' => $vm->name] : null,
-                'bootstrap' => $this->bootstrap->input($node, 'orbit'),
-                'node' => ['node_id' => $node->id, 'name' => $node->name, 'user' => $node->user,
-                    'platform' => $node->platform, 'architecture' => $node->architecture, 'wireguard_ip' => $node->wireguard_ip,
-                    'cluster_id' => $node->cluster_id, 'ssh_jump_node_id' => $node->ssh_jump_node_id],
-                'runtime' => ['guest_node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $pin,
-                    'pi_sha256' => $this->settings->piArtifactSha256, 'origin' => $this->route->origin(), 'models' => $this->settings->piModels,
-                    // The VM records the app-dev role, so it gets the role's runtime folders: a served workspace site writes its hibernation log there.
-                    'app_dev' => ['directories' => AppDevRuntimeFootprint::directories(), 'files' => AppDevRuntimeFootprint::files()],
-                    'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
-            ];
-        });
-    }
+    public function __construct(private TaskVmSettings $settings, private NodeAgentSshExecutor $agents, private AgentDelivery $delivery,
+        private RecordProcessIntentAction $processes, private SystemdProcessRenderer $systemd, private PiConnection $pi) {}
 
     /**
      * The Node of a task start's VM, its `app-dev` role and its `pi-server` Process, made at admission and deleted at its release. Mints
@@ -132,18 +86,6 @@ final readonly class TaskVmEnrollmentIntent
         return $node;
     }
 
-    private function executionNode(TaskVm $vm): Node
-    {
-        $node = $vm->provider === TaskVmProviderKind::Incus ? $vm->hostNode
-            : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
-                ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->first();
-        if ($node === null || $node->status !== LifecycleStatus::Active) {
-            throw new TaskVmException('task_vm.host_unavailable', 'Enrollment requires its admitted active execution Node.');
-        }
-
-        return $node;
-    }
-
     private function recordPiProcess(Node $node): Process
     {
         $target = $this->processTarget($node);
@@ -161,19 +103,9 @@ final readonly class TaskVmEnrollmentIntent
         return $process;
     }
 
-    /** Render only desired content; enrollment does not require an already-active Node. */
+    /** Render only desired content; the Node is not active yet. */
     private function processTarget(Node $node): ProcessTarget
     {
         return new ProcessTarget(node: $node, user: 'orbit', checkoutPath: '/home/orbit');
-    }
-
-    /** @return array{runtime:string,content:string,environment:string} Private material for the shared Process lower action. */
-    public function installation(TaskVm $vm): array
-    {
-        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
-        $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
-
-        return ['runtime' => 'systemd', 'content' => $this->systemd->render($process, $this->processTarget($node)),
-            'environment' => $this->systemd->environmentContent($process, $this->processTarget($node))];
     }
 }

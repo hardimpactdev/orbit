@@ -28,10 +28,6 @@ Image admission installs the canonical209 public key. Image preparation enables 
 
 The image executor retains its existing boot, cleanup and progress behavior. This repair adds placed209 SSH enable/check steps; it does not claim the remaining image conversion defects are closed.
 
-## Incus provision and destruction
+## Start and release
 
-`task-vm-provision` receives the full public allocation/enrollment intent and vault descriptors, then creates the exact recorded Incus image, bootstraps the guest through the host, publishes its peer, prepares Pi with the guard origin and the fixed model key, and returns complete readiness. Its child-input SSH map is frozen before official SSH actions. The Gateway records209 access and the full host pin only from terminal success. UpCloud provision remains unavailable.
-
-`task-vm-destroy` observes the provider first, stops a running VM, deletes the provider VM, and runs the canonical `operation-node-remove` workflow as a child with the original root IDs and kind. A deleted-machine flag skips the reachability probe and all guest actions. Required external DNS, peer, hub, router and Metrics participants remain in the canonical capture. Node and Process records, VM destruction and credential clearing are projected only after complete native success. Failure retains credentials and the admitted cleanup intent; provider absence alone is insufficient.
-
-VMs with an owned workspace or Route remain refused until that resource's native parent removes it. Approved unpublished work also refuses destruction. UpCloud lifecycle work outside the accepted existing resume/park lower remains a follow-up; this cut adds no UpCloud create or destroy admission.
+A task start (`tasks.provision`) copies the base snapshot of the host and writes the identity of the slot; the release (`task_vm.slot_release`) deletes the VM, its seed clone and its identity volume. Both run as Ansible phases of `swamp/ansible/task-vm-host.yml`. Power changes of a parked VM run in `task-vm-provider-power`, and the UpCloud sweep and template build keep their own workflows. There is no provision, enrollment or destroy workflow.

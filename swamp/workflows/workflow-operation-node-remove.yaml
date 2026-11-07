@@ -17,7 +17,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, enum: [node.remove, task_vm.destroy, task_vm.provision, tasks.provision, tasks.cancel, tasks.maintenance_finish]}
+    kind: {type: string, enum: [node.remove, tasks.provision, tasks.cancel, tasks.maintenance_finish]}
     intent:
       type: object
     execution_secrets:

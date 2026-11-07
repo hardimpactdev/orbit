@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-task-workspace-teardown,workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation}.php"
 ---
@@ -155,7 +155,7 @@ Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host
 
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, image }`, naming the workspace Instance, guest Node, start commit and the image the VM got. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
-`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe. A `task_vm.provision` result carries the same `image`.
+`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe.
 
 #### Keep command output out of run history
 
@@ -1299,7 +1299,7 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
-Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
+Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown and saves the agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
 
 ### Direct lifecycle acknowledgement
 
@@ -1388,11 +1388,7 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
-A group that declares a topology also gets its nested fleet. Provision then calls the child `task-nested-fleet`, which starts the three ready copies of the seed in the VM and joins the VM to them as operator. A group without a topology skips the step. So does a group whose seed holds no ready copies; the result records `nested_fleet: none`. One step of provision, `Look for ready copies`, decides this, and the refresh of a task image builds the fleet in such a VM.
-
-Placement keeps a VM that needs the fleet (a large or medium VM) off a host whose seed holds no such copies: with no other host free, the admission answers `tasks.capacity_unavailable`.
-
-That VM is always large: the admission of the refresh passes the size to `TaskProvisionIntent`, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#start-the-nested-fleet) page has the steps.
+That VM is always large: the admission of the refresh passes the size to `TaskProvisionIntent`, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#apply-and-check-the-nested-fleet) page has the steps.
 
 ### An optional, generic extension
 

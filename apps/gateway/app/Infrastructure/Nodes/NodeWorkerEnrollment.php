@@ -50,7 +50,7 @@ final readonly class NodeWorkerEnrollment implements OperationSecretOutputStore,
 
     public function ownerId(Operation $operation): ?int
     {
-        if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
+        if ($operation->kind === 'tasks.provision') {
             return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'worker_credentials');
         }
 

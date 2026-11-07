@@ -83,9 +83,9 @@ final readonly class NodeWireGuardInput
         }
         if ($restoring) {
             $restore = $operation->input['_wireguard_restore'] ?? null;
-            if (! in_array($operation->kind, ['task_vm.destroy', 'node.add'], true)
+            if ($operation->kind !== 'node.add'
                 || ! is_array($snapshot) || ! is_array($restore)
-                || ($snapshot['excluded_node_id'] ?? null) !== ($operation->kind === 'node.add' ? null : ($snapshot['context_node_id'] ?? null))
+                || ($snapshot['excluded_node_id'] ?? null) !== null
                 || Arr::sortRecursive($restore) !== Arr::sortRecursive([...$snapshot, 'excluded_node_id' => null])
                 || Node::query()->whereKey($snapshot['context_node_id'] ?? null)->where('status', LifecycleStatus::Removing)->exists()) {
                 return null;
@@ -95,8 +95,7 @@ final readonly class NodeWireGuardInput
         if (! is_array($snapshot) || count($snapshot) !== 6 || ($snapshot['schema_version'] ?? null) !== 1
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
-            || ! in_array($operation->kind, ['node.add', 'task_vm.destroy',
-                'task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)
+            || ! in_array($operation->kind, ['node.add', 'tasks.provision'], true)
             || ! array_key_exists('excluded_node_id', $snapshot)
             || ($snapshot['excluded_node_id'] !== null && $snapshot['excluded_node_id'] !== $snapshot['context_node_id'])
             || ! is_string($snapshot['agent_sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $snapshot['agent_sha256']) !== 1) {
@@ -112,12 +111,10 @@ final readonly class NodeWireGuardInput
         $participants = $operation->input['participant_node_ids'] ?? [];
         $bindings = $operation->input['private_bindings'] ?? [];
         $binding = is_array($bindings) ? ($bindings['configuration'] ?? null) : null;
-        $taskVmKind = in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true);
+        $taskVmKind = $operation->kind === 'tasks.provision';
         $vm = $taskVmKind ? TaskVmEnrollmentOwner::owned($operation) : null;
-        $taskVmContext = $operation->kind === 'task_vm.destroy'
-            ? $operation->target_type === 'task_vm' && TaskVm::query()->whereKey($operation->target_id)->where('node_id', $snapshot['context_node_id'])->exists()
-            : $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;
-        $contextMatches = $taskVmKind || $operation->kind === 'task_vm.destroy'
+        $taskVmContext = $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;
+        $contextMatches = $taskVmKind
             ? $taskVmContext
             : $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
         $enrollment = $operation->input['_enrollment'] ?? [];
