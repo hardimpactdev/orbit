@@ -6,8 +6,8 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
-use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -16,8 +16,8 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
-use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 
@@ -227,6 +227,39 @@ describe('the keep of a failed run', function (): void {
         Queue::assertNotPushed(CancelProofGroup::class);
     });
 
+    it('stops asking a day after the time is up, and a run whose cancel cannot be admitted does not hold the others', function (): void {
+        Queue::fake();
+        $node = watchNode();
+        $proof = watchProof($node, 900);
+        [$old] = watchKept($proof, '2026-11-06T09:00:00Z');
+        [$broken] = watchKept($proof, '2026-11-07T09:00:00Z', command: 'firewall:deny');
+        [$fine] = watchKept($proof, '2026-11-07T09:30:00Z', command: 'firewall:list');
+        $armed = true;
+        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
+            if ($armed && $operation->id === $broken->id) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        try {
+            app(ProofRunWatch::class)->sweep();
+        } finally {
+            $armed = false;
+        }
+
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $fine->id);
+        expect($old->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+    });
+
+    it('says that a run keeps its VM only until the time is up', function (): void {
+        $proof = watchProof(watchNode(), 900);
+        [$open] = watchKept($proof, '2026-11-07T10:00:01Z');
+        [$over] = watchKept($proof, '2026-11-07T10:00:00Z', command: 'firewall:deny');
+        $plain = watchRun($proof, 'firewall:list', OperationStatus::Failed, 'proof.cases_failed');
+
+        expect(ProofRunWatch::keeps($open))->toBeTrue()->and(ProofRunWatch::keeps($over))->toBeFalse()->and(ProofRunWatch::keeps($plain))->toBeFalse();
+    });
     it('cancels only the group of the run that kept its VM, never one of another proof for the same commit and command', function (): void {
         Queue::fake();
         $node = watchNode();

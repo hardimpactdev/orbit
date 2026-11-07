@@ -50,6 +50,21 @@ it('cancels the group of each run of a proof that is cancelled', function (): vo
     Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
 });
 
+it('leaves the group of a run that kept its VM when the proof is cancelled, until the keep is up', function (): void {
+    Queue::fake();
+    $kept = proofRunning();
+    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $kept->node_id, 'node_id' => $kept->node_id,
+        'input' => ['commit' => str_repeat('a', 40), 'uncovered' => [], 'runs' => []], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+    $kept->update(['status' => OperationStatus::Failed, 'input' => [...$kept->input, 'proof_operation_id' => $proof->id],
+        'result' => ['kept' => ['vm' => 'tvm-600', 'group_id' => $kept->target_id, 'keep_until' => now()->addMinutes(30)->utc()->format('Y-m-d\TH:i:s\Z'), 'cancel_requested_at' => null]]]);
+    $other = Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $kept->target_id + 1, 'node_id' => $kept->node_id,
+        'input' => ['proof_operation_id' => $proof->id, 'commit' => str_repeat('a', 40), 'group_id' => $kept->target_id + 1], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+
+    app(CancelOperationAction::class)->execute($proof);
+
+    Queue::assertPushed(CancelProofGroup::class, 1);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $other->id);
+});
 it('cancels the group of a run that another proof admitted for the same commit only when that proof is cancelled', function (): void {
     Queue::fake();
     $other = proofRunning();

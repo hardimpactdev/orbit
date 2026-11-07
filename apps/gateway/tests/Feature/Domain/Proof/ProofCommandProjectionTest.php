@@ -215,6 +215,32 @@ describe('keep_failed', function (): void {
         Queue::assertNotPushed(CancelProofGroup::class);
     });
 
+    it('keeps the VM of a run that Swamp ended as succeeded, because the cases printed a failed verdict', function (): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        $ended = proofKeptEnd($vm, PROOF_FAILED);
+        $ended['status'] = 'succeeded';
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('proof.cases_failed')->and($projected->result['kept']['vm'])->toBe('tvm-600');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('keeps one VM of two and leaves the proof open until the other run has ended', function (): void {
+        Queue::fake();
+        [$proof, [[$first, , $firstVm], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+        $first->forceFill(['input' => [...$first->input, 'keep_failed' => true]])->save();
+
+        app(ProofCommandProjection::class)->apply($first, proofKeptEnd($firstVm, PROOF_FAILED));
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running);
+
+        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and(array_column($proof->result['kept'], 'command'))->toBe(['firewall:allow']);
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $second->id);
+    });
     it('cancels the group the normal way when the flag is off, and records nothing kept', function (): void {
         Queue::fake();
         [$proof, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
