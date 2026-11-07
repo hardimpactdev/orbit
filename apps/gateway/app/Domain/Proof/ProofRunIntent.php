@@ -43,12 +43,12 @@ use Throwable;
  */
 final readonly class ProofRunIntent
 {
-    /** How long a proof that cannot be placed waits for kept VMs to be released: the last try then starts before 220 s and may wait 60 s for the admission lock, still under the 300 s after which the watch ends a proof with no runs. */
-    public const int KeptWaitSeconds = 200;
+    /** How long a proof that cannot be placed waits for VMs to be released: the last try then starts before 220 s and may wait 60 s for the admission lock, still under the 300 s after which the watch ends a proof with no runs. */
+    public const int WaitSeconds = 200;
 
-    public const int KeptRetrySeconds = 20;
+    public const int RetrySeconds = 20;
 
-    public const string KeptWaitStep = 'Wait for kept VMs to be released';
+    public const string WaitStep = 'Wait for VMs to be released';
 
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
         private OperationIdempotency $idempotency, private OperationStore $store, private ProofGroup $groups) {}
@@ -138,7 +138,7 @@ final readonly class ProofRunIntent
                 return $runs;
             }), ProofRunWatch::lockOwner($proof->id)));
         } catch (Throwable $exception) {
-            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForKeptVms($proof, $reportOnly || ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForRoom($proof, $reportOnly || ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
                 return;
             }
             $this->fail($proof, $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
@@ -163,24 +163,25 @@ final readonly class ProofRunIntent
     }
 
     /**
-     * A proof that cannot be placed releases the VMs that failed runs kept (`--keep-failed`), and tries again in a few seconds. A report-only
-     * proof does not: it yields capacity, and the report-only job of every pull request would destroy the VM somebody is reading. Nor does a
-     * proof for which hosts exist but none has fresh enough copies: a freed slot would not help it.
+     * A proof that cannot be placed takes the room back from the VMs that yield to it, and tries again in a few seconds: the VMs that failed
+     * runs kept (`--keep-failed`), and the running report-only proofs, which are cancelled. A report-only proof does neither: it yields
+     * capacity, and the report-only job of every pull request would destroy the VM somebody is reading. Nor does a proof for which hosts
+     * exist but none has fresh enough copies: a freed slot would not help it.
      *
-     * @return bool whether the admission goes on: a kept VM is on its way out, the proof is young enough to wait, and the new try is queued
+     * @return bool whether the admission goes on: a VM is on its way out, the proof is young enough to wait, and the new try is queued
      */
-    private function waitForKeptVms(Operation $proof, bool $yields): bool
+    private function waitForRoom(Operation $proof, bool $yields): bool
     {
-        if ($yields || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds))) {
+        if ($yields || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
             return false;
         }
         try {
-            // A proof that was cancelled while the job ran is left alone, and nothing is released for it.
-            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() === 0) {
+            // A proof that was cancelled while the job ran is left alone, and nothing is released or cancelled for it.
+            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() + app(ProofReportOnlyProofs::class)->preempt($proof->id) === 0) {
                 return false;
             }
-            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::KeptWaitStep]));
-            app(Dispatcher::class)->dispatch((new AdmitProofRun($proof->id))->delay(self::KeptRetrySeconds));
+            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::WaitStep]));
+            app(Dispatcher::class)->dispatch((new AdmitProofRun($proof->id))->delay(self::RetrySeconds));
         } catch (Throwable $exception) {
             report($exception);
 

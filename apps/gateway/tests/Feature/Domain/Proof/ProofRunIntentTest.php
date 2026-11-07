@@ -16,6 +16,7 @@ use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
+use App\Domain\Proof\ProofReportOnlyProofs;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
@@ -638,14 +639,14 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
 
         $proof = proofAdmitted();
 
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::KeptWaitStep)
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
             ->and($kept->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()->and($other->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()
             ->and(Operation::query()->where('kind', 'proof.command')->where('input->proof_operation_id', $proof->id)->count())->toBe(0);
         Queue::assertPushed(CancelProofGroup::class, 2);
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id && $job->trigger === 'proof-run');
         // The first job and one that tries again in a few seconds.
         Queue::assertPushed(AdmitProofRun::class, 2);
-        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::KeptRetrySeconds);
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
     });
 
     it('waits on while the VMs are on their way out, and asks for no second cancel', function (): void {
@@ -675,12 +676,12 @@ describe('a proof that cannot be placed while failed runs keep their VMs', funct
         proofWorldWithoutCapacity();
         proofKeptRun();
         $proof = proofAdmitted();
-        $this->travel(ProofRunIntent::KeptWaitSeconds + 1)->seconds();
+        $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
 
         app(ProofRunIntent::class)->admit($proof->id);
 
         expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(ProofRunIntent::KeptWaitSeconds + ProofRunIntent::KeptRetrySeconds + 60)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
+            ->and(ProofRunIntent::WaitSeconds + ProofRunIntent::RetrySeconds + 60)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
     });
 
     it('fails as before when no VM is kept', function (): void {
@@ -792,5 +793,144 @@ describe('keep_failed', function (): void {
 
         expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => [], 'keep_failed' => true])
             ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => []]);
+    });
+});
+
+/**
+ * A proof of an earlier commit with one run on its group: the report-only job of a pull request, or a normal proof, while it runs.
+ *
+ * @return array{0: Operation, 1: Operation, 2: Task}
+ */
+function proofRunningElsewhere(bool $reportOnly = true, bool $withRun = true): array
+{
+    $node = Node::query()->firstOrFail();
+    $earlier = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Running,
+        'input' => ['commit' => str_repeat('b', 40), 'report_only' => $reportOnly, 'runs' => []], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
+    $group = Task::query()->create(['title' => 'Proof firewall:allow', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
+    $run = Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id, 'status' => OperationStatus::Running,
+        'input' => ['proof_operation_id' => $withRun ? $earlier->id : 0, 'group_id' => $group->id], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
+
+    return [$earlier, $run, $group];
+}
+
+describe('a proof that cannot be placed while report-only proofs run', function (): void {
+    it('cancels the report-only proofs, with their runs and groups, and waits, visibly, for the room', function (): void {
+        proofWorldWithoutCapacity();
+        [$reportOnly, $run] = proofRunningElsewhere();
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+            ->and($reportOnly->refresh()->status)->toBe(OperationStatus::Cancelled)->and($reportOnly->cancel_requested_at)->not->toBeNull();
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
+    });
+
+    it('waits on while their VMs are on their way out, and asks again for the keyed cancel of their group', function (): void {
+        proofWorldWithoutCapacity();
+        proofRunningElsewhere();
+        $proof = proofAdmitted();
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull();
+        // The first cancel, and the same keyed cancel asked again on the second try.
+        Queue::assertPushed(CancelProofGroup::class, 2);
+    });
+
+    it('fails with the capacity code when their groups are gone and the room is still short', function (): void {
+        proofWorldWithoutCapacity();
+        [, , $group] = proofRunningElsewhere();
+        $proof = proofAdmitted();
+        $group->update(['status' => TaskGroupStatus::Cancelled]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+    });
+
+    it('does not cancel a report-only proof for another report-only proof, which yields capacity', function (): void {
+        proofWorldWithoutCapacity();
+        [$reportOnly] = proofRunningElsewhere();
+
+        $proof = proofAdmitted(reportOnly: true);
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($reportOnly->refresh()->status)->toBe(OperationStatus::Running);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('cancels only report-only proofs: a normal proof that runs keeps its VMs', function (): void {
+        proofWorldWithoutCapacity();
+        [$normal] = proofRunningElsewhere(reportOnly: false);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($normal->refresh()->status)->toBe(OperationStatus::Running);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('leaves a report-only proof that has no runs yet to its admission', function (): void {
+        proofWorldWithoutCapacity();
+        [$admitting] = proofRunningElsewhere(withRun: false);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($admitting->refresh()->status)->toBe(OperationStatus::Running);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('does not hold the other report-only proofs back when one of them cannot be cancelled', function (): void {
+        proofWorldWithoutCapacity();
+        [$broken] = proofRunningElsewhere();
+        [$fine] = proofRunningElsewhere();
+        Operation::saving(static function (Operation $operation) use ($broken): void {
+            if ($operation->id === $broken->id && $operation->isDirty('status')) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->status)->toBe(OperationStatus::Cancelled);
+    });
+});
+
+describe('a proof that cannot be placed while a report-only proof is on its way out', function (): void {
+    it('counts a report-only proof that has ended but whose group is still there, and asks for its cancel again', function (): void {
+        proofWorldWithoutCapacity();
+        [$ended, $run] = proofRunningElsewhere();
+        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinute()]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('does not look at a report-only proof that ended long ago', function (): void {
+        proofWorldWithoutCapacity();
+        [$ended] = proofRunningElsewhere();
+        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinutes(ProofReportOnlyProofs::DrainMinutes + 1)]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('waits and tries again when the only report-only proof cannot be cancelled now', function (): void {
+        proofWorldWithoutCapacity();
+        [$broken] = proofRunningElsewhere();
+        Operation::saving(static function (Operation $operation) use ($broken): void {
+            if ($operation->id === $broken->id && $operation->isDirty('status')) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
     });
 });
