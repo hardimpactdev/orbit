@@ -137,7 +137,8 @@
         - name: Work out the promotion
           ansible.builtin.set_fact:
             promote_current: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.alias) | map(attribute='target') | first | default('') }}"
-            promote_previous: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.previous_alias) | map(attribute='target') | first | default('') }}"
+            promote_previous: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.previous_alias) | map(attribute='target')
+                                 | first | default('') }}"
             promote_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq',
                 host.candidate_alias) | map(attribute='target') | first | default('') }}"
         - name: Check the candidate exists
