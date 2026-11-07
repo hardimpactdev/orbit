@@ -8,7 +8,6 @@ use App\Console\Commands\BuildTaskVmFleetCommand;
 use App\Console\Commands\BuildUpCloudTaskVmImageCommand;
 use App\Console\Commands\ConvergeTaskVmCommand;
 use App\Console\Commands\ListTaskVmImageBuildsCommand;
-use App\Console\Commands\PackageCacheUsageCommand;
 use App\Console\Commands\PrepareTaskVmHostCommand;
 use App\Console\Commands\PrepareTaskVmHubCommand;
 use App\Console\Commands\RefreshTaskVmImageCommand;
@@ -42,7 +41,6 @@ final class TaskVmServiceProvider extends ServiceProvider
             BuildTaskVmFleetCommand::class,
             ConvergeTaskVmCommand::class,
             ListTaskVmImageBuildsCommand::class,
-            PackageCacheUsageCommand::class,
             PrepareTaskVmHostCommand::class,
             PrepareTaskVmHubCommand::class,
             RefreshTaskVmImageCommand::class,

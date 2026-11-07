@@ -40,7 +40,6 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^route-[a-f0-9]{16}-forward-route_material_[0-9]+$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-cache-fill-github-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-(wal|apply|check)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-create-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$", "actions": ["write", "read"]},

@@ -124,7 +124,7 @@ Development create captures these values for its run. Explicit setup captures th
 
 When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
-A task VM has no `default` Instance and no seed. Every new task workspace [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace), then runs the Project's setup steps. The read-only host package cache seeds private manager caches before setup; `@orbit/ci-caches` imports the SHA-bound cache ref. Running workspaces keep their existing checkout and disk.
+A task VM has no `default` Instance and no seed. Every new task workspace [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace), then runs the Project's setup steps. `@orbit/ci-caches` imports the SHA-bound cache ref. Running workspaces keep their existing checkout and disk.
 
 A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url). A routed task VM workspace gets that `.env` and its PHP packages before the baseline check, and its Route after the check started. Its setup steps must not need the Route. See [Start the baseline check before the Route](/reference/compute-drivers#start-the-baseline-check-before-the-route).
 
@@ -274,7 +274,7 @@ Cache availability does not gate setup or baseline checks. The code fetch remain
 | A quality cache's lock file, tool configuration, or PHP version differs | Skip that tool cache and log the reason |
 | Required import tooling is missing or writing a validated cache fails | Fail the named setup step; this is a broken setup, not a cache miss |
 
-An older ref is usable only for its explicitly selected baseline, never as a fallback for another SHA. A workspace created before CI publishes its baseline ref, or whose baseline ref a newer publication pruned, runs cold. A later source refresh followed by setup or a task baseline can import that same SHA's ref. [Ref retention](/reference/implementation-loop#cache-ref-retention) does not remove caches already imported into a running workspace. The [shared package cache](/reference/compute-drivers#shared-package-cache) accelerates dependency installs separately; workspaces always clone and run setup.
+An older ref is usable only for its explicitly selected baseline, never as a fallback for another SHA. A workspace created before CI publishes its baseline ref, or whose baseline ref a newer publication pruned, runs cold. A later source refresh followed by setup or a task baseline can import that same SHA's ref. [Ref retention](/reference/implementation-loop#cache-ref-retention) does not remove caches already imported into a running workspace. Workspaces always clone and run setup.
 
 ## Failure codes
 

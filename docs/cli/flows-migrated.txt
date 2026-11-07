@@ -51,7 +51,6 @@ route.target_set
 route.update
 schedule.install_instance_definitions
 schedule.run
-task_vm.fill_package_cache
 task_vm.hub_converge
 task_vm.resume
 task_vm.sweep_host

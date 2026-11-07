@@ -57,9 +57,6 @@ final class OperationBudgetTable
         // No run yet. Basis: the three Ansible phases at their step bounds, software 1,800 s, tools 900 s and the check 300 s, plus the
         // short input steps and margin. A VM at its pins takes about a minute. Replace with the 14-day p95 after the first successes.
         'task_vm.converge' => 3300,
-        // No native run yet. Basis: the legacy fill's one overall 1,700 s budget, plus margin for the run start and the
-        // native assert. Each batch is bounded on the host by `timeout 1530`. Replace with the 14-day p95 after the first success.
-        'task_vm.fill_package_cache' => 2100,
         // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
         // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
         'task_vm.ready_copies' => 3600,

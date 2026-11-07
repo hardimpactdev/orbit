@@ -118,7 +118,7 @@ The `test` script in each PHP project, and root `bin/test`, pass `--colors=never
 
 Test fixtures must work with the dependencies their CI job installs. For cross-project source fixtures, load the real source with the test project's dependency autoloader and include every adapter bootstrap file. Do not rely on another project's `vendor/` directory unless the job explicitly installs it.
 
-The Gateway's package-cache integration tests run real npm and Bun installs. Keep Node/npm and Bun available locally. CI supplies Bun 1.4.2 for the web build and generated contracts.
+CI supplies Bun 1.4.2 for the web build and generated contracts. Keep Bun available locally.
 
 Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 

@@ -6,7 +6,6 @@ use App\Domain\TaskVms\TaskVmConvergeProjection;
 use App\Domain\TaskVms\TaskVmFleetBuildProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
-use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
@@ -66,13 +65,6 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'end', 'step' => TaskVmReadyCopiesProjection::EndCheck, 'native' => true],
     // The proof Swamp Club key, which the scan looks for in the guests.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
-], 'task_vm.fill_package_cache' => [
-    'workflow' => 'operation-task-vm-cache-fill',
-    'projection' => TaskVmPackageCacheProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads each batch reply and the run's step statuses; the native assert is the end check.
-    'terminal_result' => ['job' => 'fill', 'step' => 'Check every archive', 'native' => true, 'captures' => TaskVmPackageCacheProjection::captures()],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-cache-fill-github-[1-9][0-9]*$']],
 ], 'task_vm.sweep_host' => [
     'workflow' => 'operation-task-vm-sweep',
     'projection' => TaskVmSweepProjection::class,

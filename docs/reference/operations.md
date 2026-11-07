@@ -121,8 +121,6 @@ Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each
 
 `task_vm.converge` has a provisional 3,300 seconds: the software phase at its 1,800-second bound, the tools phase at 900 and the check at 300, plus the short input steps. A VM at its pins takes about a minute. A 14-day p95 replaces it after the first successes.
 
-`task_vm.fill_package_cache` has a provisional 2,100 seconds: the legacy fill's single 1,700-second budget plus margin for the run start and the end check. Each batch is bounded on the host by `timeout 1530`. A first success replaces it with a p95.
-
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The reconciler caches each kind’s history budget for one pass.
 
 An unbound admission with attempts `0` has a separate 600-second budget, matching Swamp’s default `queueTimeout`, regardless of its kind’s execution budget. It runs from `started_at`, or `created_at` when no start was recorded. The reconciler includes these rows, even when cancellation was already requested.

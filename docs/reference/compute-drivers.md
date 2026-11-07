@@ -7,7 +7,7 @@ covers:
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
-  - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - swamp/{workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
@@ -340,7 +340,7 @@ A closed, versioned JSON document is reviewable without executing code. A conten
 
 One recipe identifies the software in task VM images. A changed recipe rebuilds the whole base from stock on each host. Partial builds and incremental images were rejected because previous image history would become another input. A fixed nightly rebuild without a versioned recipe would not identify the intended software or connect it to production.
 
-Trusted Gateway jobs build images and fill package caches. Agents have root inside task VMs, so letting them publish either shared result would allow one Project to affect another. The cache inventory records which Projects use each package for incident investigation.
+Trusted Gateway jobs build images. Agents have root inside task VMs, so letting them publish the shared result would allow one Project to affect another.
 
 Every workspace clones and runs Project setup. Per-Project snapshots would keep setup coupled to image builds, invalidation, and retention. Package and CI caches speed setup without a saved workspace. Fresh VMs also avoid capacity held by idle pre-enrolled guests and their refill lifecycle, at the cost of boot time.
 
@@ -350,7 +350,7 @@ PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into it
 
 A pin for each environment was rejected. CI, Nodes, and images would each keep a copy of the version and the extension list, and the copies drift. [Feature delivery](/reference/implementation-loop#one-php-build-in-ci) explains why CI does not use `setup-php`. [PHP runtimes](/reference/php-runtime#why-it-works-this-way) explains the Sury packages, the recipe's files instead of the Sury apt source, the one installer, and PCOV.
 
-The Gateway's package cache cannot hold the mirror. That cache lives on each task VM host and serves no other machine, and GitHub-hosted runners cannot reach the Gateway. A release in Orbit's repository serves Nodes, images, and every CI runner.
+The Gateway cannot hold the mirror: it serves no machine outside the fleet, and GitHub-hosted runners cannot reach it. A release in Orbit's repository serves Nodes, images, and every CI runner.
 
 Purging extra PHP packages on every Node could break a client site that uses an extension an operator installed. Convergence refuses instead. Only the container installer uses the `ci-runner` profile to purge, because each container runs only CI jobs. A host with that role can share other workloads and always refuses extras.
 
@@ -469,63 +469,19 @@ The sizes are caps, not reservations. Incus does not pin the vCPUs, and the gues
 
 A subtask whose topology needs a larger VM than its group got waits before its first turn, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
 
-### Shared package cache
-
-Task workspace cache preparation belongs inside the native Task parent. The Gateway refuses the unported synchronous cache path with `operation.kind_unavailable`; it does not call an agent action or create a child Operation.
-
-Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
-
-Swamp fills the host cache from Node 209 over official SSH with the host's recorded host key. Each step runs the pinned agent's `package-cache.host` as one argv, `timeout 1530 sudo -n -- orbit-agent command package-cache.host`. The agent validates archive identities, downloads approved HTTPS URLs with checked redirects, checks lockfile integrity, enforces the byte budget and atomically records verified files and the inventory. No script or TypeScript runs on the host, and the host needs no Swamp worker. Guest mounting and seeding require their native Task parent steps.
+### Image permissions and verification
 
 Image installer services use `UMask=0022`, matching recipe execution on Nodes. Tool directories and package state must remain readable by the guest. Rust and Cargo must also report their pinned versions. Guest wrappers use the compiled agent contract to identify mutations: smoke and recipe verification reads receive only their declared inputs; mutations retain keyed effect receipts. Builder, smoke and seed boot observations stay pending until their own agent installation child succeeds. Only then does the Gateway probe cloud-init; real probe failures remain errors.
 
-Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`. The cache-parent probe reads `/opt/orbit` as that user without writing to it.
+Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`.
 
-Cache failures carry a typed code, operation, path, and bounded, sanitized reason. Seed failures identify the artifact key, package, and version and retain the underlying I/O cause, including archive extraction errors. Checking the mount marker preserves access errors instead of treating them as a missing mount.
-
-Existing base snapshots and VMs retain their permissions. After a fix, refresh the host with `task-vms:refresh-image <host>`, then recreate affected VMs. Attaching the cache again does not repair an old VM.
-
-When the default branch moves in the Gateway Git mirror, Orbit compares the blob IDs of `composer.lock`, `package-lock.json`, `bun.lock`, and `pnpm-lock.yaml`, at the root and below `apps/` and `packages/`. A lock contributes only when the same directory contains a regular `composer.json` for Composer or `package.json` for JavaScript. This excludes standalone example and test fixture locks.
-
-An unchanged commit reuses its snapshot. Changed or removed lock blobs replace the Project's desired inventory, invalidate its recorded host inventory, and queue a fill on each configured host. A Project stays pending until every configured host has verified all its selected archives. Pending fills coalesce by host; workers drop duplicates that overlap a running fill. A fill clears pending only for the inventory it read. A lock change during a fill stays pending for the next mirror fetch, including at an unchanged commit.
-
-Cache initialization, read-only mounting and guest seeding compose as steps of their owning native Task workflow. The Gateway refuses `task_vm.prepare_package_cache`; workspace setup does not admit a separate cache Operation.
-
-The `builds` queue records one `task_vm.fill_package_cache` intent with the observed lockfile inventory. The intent holds at most 2 batches of 4,096 archives, so the requests and the replies fit the run's one terminal read; a larger inventory is refused with `task_vm.package_cache_invalid_result`.
-
-At the run start the Gateway mints a GitHub installation token with metadata read access when a Composer archive needs one. The vault holds only the request's `github_token` member, as `task-vm-cache-fill-github-<node>`: the token, or null. Serve redacts every vault value it reads with a pattern built from that value, so vault values stay small. The Gateway accepts a token of up to 1,024 letters, digits, `_`, `-` and `.`, which covers current installation tokens of several hundred characters.
-
-The workflow inputs hold each batch's public agent request up to that member, the batch numbers, the integrity conflicts, the host's SSH target and the vault key name. The step's stdin is the request, the vault member and the closing braces. The token never enters argv, environment variables, files, workflow inputs or run history.
-
-One native Swamp run, `operation-task-vm-cache-fill`, runs every step on a `role: swamp` worker. Its `Fill the package cache` step sends the batches to the host one at a time, because the agent holds one lock on the cache. Its `Check every archive` step is a native assert: it passes only when every batch reply is `ok`, no archive was refused and admission found no integrity conflict. The run has a 2,100-second budget, so an unclaimed or stuck run fails instead of hanging.
-
-The Gateway reads the run once at its end. It records the verified archives from every batch reply the run kept, even when the end check fails. A changed lockfile snapshot refuses stale inventory projection. A reply that names an archive outside its batch is refused.
-
-Each artifact failure is recorded in the Gateway log with its cache key and host ID. The fill continues with the remaining artifacts and records successful archives in the host inventory before failing the Operation. Each admission job makes one attempt; the next mirror fetch retries pending Projects. A queue outage leaves source fetching usable.
-
-Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. Seed extraction sets archive directory entries to mode `0755` so archive modes cannot prevent the guest from extracting or using their contents. Regular files use mode `0644`, or `0755` when any archive execute bit is set. An unreadable file mode uses `0644`. Directory permission changes refuse symlinks.
-
-The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
-
-Before workspace setup, Orbit copies the Project's missing shared cache files into the workspace's private manager caches. Task VM setup sets `COMPOSER_CACHE_DIR` to `$HOME/.cache/composer`, the same directory that receives the shared Composer archives, so a login shell uses the seeded cache. Metadata, locks, temporary files, and downloads on a miss stay private. The shared mount is always read-only; private copies use no hard links. A package added only on a task branch, an unsupported archive, or a fill not yet complete falls back to the manager's normal registry download.
-
-Run `php artisan task-vms:package-cache-usage <package> <version>` on the Gateway to list the Projects that use that package and version, with the verified archive hashes and host IDs. Usage covers cacheable public artifacts in current default-branch locks, including development packages. Removing a dependency immediately removes its current Project usage from the query; the next fill replaces its host inventory with the archives it verified, while its bytes remain cached. An artifact failure does not prevent other Projects from gaining verified inventory rows.
-
-The command returns one JSON object with `projects` (current Project IDs and names) and `cached` (verified Project, host, manager, and SHA-256 rows). An unknown package or version returns empty lists. A permanently bad artifact keeps its Project pending until its lock changes. Each failed fill raises an alert through the scheduled [problem collection](/reference/gateway-queue#scheduled-work).
-
-Private registries and credentialed URLs are out of scope. Trusted fills accept only public GitHub commit archives for Composer and the public npm registry for JavaScript. GitHub redirects may use its repository-ID archive endpoint or codeload, but must retain the locked commit. The Gateway validates JavaScript checksum encoding and digest length when reading locks. Workspaces can use their own private registry credentials with normal downloads. The fill never reads a Project's registry credentials.
-
-GitHub cache misses use a fresh GitHub App installation token with only `metadata: read` from a covered Project. The token travels through protected stdin and stays out of cache files, command arguments, and logs. The downloader sends it only to the allowed GitHub API and codeload archive hosts; npm receives no token.
-
-Lockfile checksums are verified when supplied; npm integrity is required. Composer archives without a checksum use HTTPS from the allowed commit archive service and record a SHA-256 digest on first fill. This is a transport trust limit, not a lockfile-supplied content guarantee. Each reuse checks the recorded digest. Suspect bytes move into a quarantine directory and are downloaded again; they are not seeded into new workspaces.
-
-Fills do not evict artifacts, including packages no current Project uses. The cache defaults to a 20 GiB byte budget per host and 512 MiB per archive. The operator can change the cache budget through `package_cache.max_bytes`. A full cache rejects new artifacts and leaves the fill pending; workspaces still download misses privately. Quarantine bytes count toward the budget. Retention and cleanup are operator work while fills are stopped; no automatic deletion can disrupt a running workspace. CI cache refs and previous image retention are separate policies.
+Existing base snapshots and VMs retain their permissions. After a fix, refresh the host with `task-vms:refresh-image <host>`, then recreate affected VMs.
 
 ### Clone and set up every workspace
 
 Every new task workspace starts with an empty checkout on the VM's root disk at `<apps directory>/<project slug>/workspace`. A step on Node 209 clones the Project repository with full history and sends it to the VM as a Git bundle, so the agent reads code and history offline. The clone credential is minted for that step when it runs and never reaches the VM ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). The workspace checks out its task branch, then the baseline check runs all [Project setup steps](/reference/instance-setup), every time. Each claim runs Project setup.
 
-After source resolution has observed the default-branch lockfiles, the Gateway attaches the [read-only package cache](#shared-package-cache) and seeds private manager caches. The `@orbit/ci-caches` setup step imports the selected [CI cache ref](/reference/instance-setup#import-ci-main-caches). Missing packages download into private caches; a missing or invalid CI ref leaves checks cold. Neither miss queues a workspace image build. The fixed checkout path preserves cache paths across claims without sharing a writable checkout.
+The `@orbit/ci-caches` setup step imports the selected [CI cache ref](/reference/instance-setup#import-ci-main-caches). Packages download into private caches; a missing or invalid CI ref leaves checks cold. Neither miss queues a workspace image build. The fixed checkout path preserves cache paths across claims without sharing a writable checkout.
 
 A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design. Fresh task VMs reuse verified Composer archives to build `vendor/`, including `apps/cli/vendor`, without downloading those packages again.
 
@@ -543,7 +499,7 @@ The provision result names what became of the token in `dependency_token`. `revo
 
 An `unrevoked` token does not fail the provision: the files are already gone from the VM, and failing would not shorten the hour. The result says why instead. A provision that runs no setup step writes, removes and revokes nothing, and reports `none`.
 
-If the App cannot supply a token, both files hold an empty configuration and setup continues without private access. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill.
+If the App cannot supply a token, both files hold an empty configuration and setup continues without private access.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 
@@ -715,7 +671,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The Gateway jobs `FillTaskVmPackageCache`, `SweepTaskVmHosts` and `RefreshTaskVmImages` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
+The Gateway jobs `SweepTaskVmHosts` and `RefreshTaskVmImages` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
 
 Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
@@ -727,7 +683,7 @@ Before the later lifecycle cutover, destruction must also gain a cancel guard af
 
 Every registered effect fixes its Node, command and input. The Gateway resolves declared secret references after authorization; tokens, private bootstrap keys and cloud-init credentials never reach Swamp or receipts. Reads remain Services-only Gateway APIs. Successful completion requires proven command or child receipts. Error codes use lowercase letters, digits, dots, underscores and hyphens.
 
-A parent yields its worker lease while its stamped child Operations run. Native effects carry the shared target receipt metadata, so recovery reads the original sanitized result before replay. Gateway projections accept only exact owning child proof; they never admit another Operation and wait for it. Package cache fills require list-result enforcement.
+A parent yields its worker lease while its stamped child Operations run. Native effects carry the shared target receipt metadata, so recovery reads the original sanitized result before replay. Gateway projections accept only exact owning child proof; they never admit another Operation and wait for it.
 
 The UpCloud template build verifies the firewall on its smoke server and promotes only its own unverified template. Older templates stay while pinned by allocations; pruning keeps the newest two verified templates.
 
@@ -972,7 +928,7 @@ The command takes these values from the host Node's typed `settings.task_vms`. S
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
-The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Host disks are limited to the [read-only package-cache directory](#shared-package-cache). Low-level VM config is allowed for memory reporting.
+The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
@@ -1250,7 +1206,7 @@ The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assert
 
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
-Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. Package-cache targeting follows the same setting, without making `app-dev` a host marker.
+Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. The `app-dev` role is not a host marker.
 
 To replace `ORBIT_TASK_VMS_INCUS_HOSTS`, [configure and verify Node settings](/reference/node-settings#migrate-the-environment-host-list) before removing the variable from `gateway.env`. The Gateway does not read the environment list.
 
@@ -1344,7 +1300,7 @@ An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row
 
 It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus.
 
-Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim records the verified template UUID for that identity. Template lookup runs before the admission transaction; admission rechecks the deployed identity and capacity. Provisioning clones the recorded UUID, including after a recipe change. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
+Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim records the verified template UUID for that identity. Template lookup runs before the admission transaction; admission rechecks the deployed identity and capacity. Provisioning clones the recorded UUID, including after a recipe change. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus.
 
 ### Place a VM at UpCloud
 
