@@ -7,14 +7,17 @@ use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
@@ -208,4 +211,15 @@ it('goes out at once from work that no HTTP request carries, such as a queue job
     app(OperationBroadcaster::class)->created($operation);
 
     expect(array_column($reverb->sent, 'type'))->toBe([RecordEventType::OperationCreated->value]);
+});
+
+it('sends the notice of an Activity that a fatal error ended at once, because the application never terminates then', function (): void {
+    $reverb = reverb_recorder();
+    app('request')->setRouteResolver(static fn (): Route => new Route('POST', 'x', []));
+    $activity = Activity::query()->create(['log_name' => 'commands', 'description' => 'firewall:allow', 'event' => 'command', 'properties' => [],
+        'request_id' => 'req-1', 'command' => 'firewall:allow', 'status' => 'running']);
+
+    ActivityShutdownFinalizer::arm($activity)->finalize();
+
+    expect(array_column($reverb->sent, 'type'))->toBe(['activity.updated']);
 });

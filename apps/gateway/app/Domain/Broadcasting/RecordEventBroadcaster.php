@@ -19,11 +19,34 @@ use Throwable;
  * `websocket` role assignment resolves a connection; otherwise this is a
  * no-op with no database access beyond the one lazy, memoized lookup.
  */
-final readonly class RecordEventBroadcaster
+final class RecordEventBroadcaster
 {
+    /** Depth of {@see immediately()} calls in progress. */
+    private static int $immediate = 0;
+
     public function __construct(
-        private RealtimeConnection $realtime,
+        private readonly RealtimeConnection $realtime,
     ) {}
+
+    /**
+     * Runs work whose events must go out at once, even inside a request: code that runs in a PHP shutdown
+     * function after a fatal error, where the application never terminates.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $work
+     * @return T
+     */
+    public static function immediately(Closure $work): mixed
+    {
+        self::$immediate++;
+
+        try {
+            return $work();
+        } finally {
+            self::$immediate--;
+        }
+    }
 
     /**
      * Sends the event to the serving Reverb and, during a `websocket` move, also to the old Node's Reverb,
@@ -43,7 +66,7 @@ final readonly class RecordEventBroadcaster
         DB::afterCommit(function () use ($type, $id, $data, $channel): void {
             $event = new RecordBroadcast($type, $id, $data, $channel);
 
-            if (request()->route() === null) {
+            if (self::$immediate > 0 || request()->route() === null) {
                 $this->deliver($event, $type, $id);
 
                 return;
