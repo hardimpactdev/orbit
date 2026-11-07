@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.07.10
+version: 2026.11.07.11
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
@@ -16,6 +16,7 @@ additionalFiles:
   - ansible/route-withdraw.yml
   - ansible/ai-router-task-guard.yml
   - ansible/tasks/address-node.yml
+  - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml
   - ansible/tasks/instance-create-setup-step.yml
   - ansible/operation-node-add.yml

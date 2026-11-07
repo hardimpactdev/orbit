@@ -1,10 +1,13 @@
 ---
 # The Incus work of a task VM host, one tagged part per Swamp phase. The host keeps one stopped base VM that never gets an identity;
 # its ZFS snapshot is the base a task start copies (docs/cli/tasks/vm-image-refresh.mmd):
-# - `base-start`: start the base VM; a host without one gets it once, from the stock Ubuntu VM image and an empty seed volume.
+# - `base-start`: start the base VM; a host without one gets it once, from the stock Ubuntu VM image and an empty seed volume. A rebuild
+#   (`--from-stock`) first deletes the base VM and its seed, with their snapshots, so the run builds the base from stock.
 # - `base-snapshot`: stop the base VM and snapshot it and its seed volume under the run's name.
 # - `base-prune`: keep the new snapshot and the recorded one, which becomes `-previous`; remove the others.
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
+# - `host-clean`: after a refresh, remove what no current path makes: in the task VM project every image but the stock one and the
+#   volumes and instances of retired prefixes; the retired projects whole; the images of the image projects.
 # A task start and a release (docs/cli/tasks/provision.mmd, docs/cli/tasks/cancel.mmd):
 # - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), put the identity the admission minted and the claim's keys
 #   on an identity volume of the VM, and start it. The base's orbit-identity unit applies them at boot. The containers start with the VM.
@@ -50,6 +53,16 @@
     - name: Start the base VM
       tags: [base-start]
       block:
+        # A task VM copied from an old snapshot keeps its own ZFS clone: Incus keeps what it depends on until it goes.
+        - name: Delete the base VM and its seed for a rebuild
+          when: host.rebuild | default(false)
+          ansible.builtin.command: { argv: "{{ incus + item }}" }
+          loop:
+            - [delete, --force, "{{ base.vm }}"]
+            - [storage, volume, delete, "{{ host.pool }}", "{{ base.seed }}"]
+          register: base_rebuild
+          changed_when: base_rebuild.rc == 0
+          failed_when: base_rebuild.rc != 0 and 'not found' not in base_rebuild.stderr
         - name: Read the base VM
           ansible.builtin.command: { argv: "{{ incus + ['list', '--format', 'json', '--', '^' ~ base.vm ~ '$'] }}" }
           register: base_read
@@ -177,6 +190,51 @@
             - [snapshot, restore, "{{ base.vm }}", "{{ host.current }}"]
             - [storage, volume, snapshot, restore, "{{ host.pool }}", "{{ base.seed }}", "{{ host.current }}"]
           changed_when: true
+
+- name: Task VM host leftovers
+  hosts: task_vm_host
+  become: true
+  gather_facts: false
+  tags: [host-clean]
+  vars:
+    clean: "{{ host.clean }}"
+    retired: "{{ '^(' ~ (clean.prefixes | map('regex_escape') | join('|')) ~ ')' }}"
+  tasks:
+    - name: Read the task VM project and the projects
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop:
+        - [incus, --project, "{{ host.project }}", image, list, --format, json]
+        - [incus, --project, "{{ host.project }}", list, --format, json]
+        - [incus, --project, "{{ host.project }}", storage, volume, list, "{{ host.pool }}", --format, json]
+        - [incus, project, list, --format, json]
+      register: clean_read
+      changed_when: false
+    # The stock source image is what a host without a base VM starts from; every other image of the project is from a retired build.
+    - name: Remove the images that are not the stock one
+      when: item.aliases | map(attribute='name') | intersect(clean.keep_images) | length == 0
+      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", image, delete, "{{ item.fingerprint }}"] }
+      loop: "{{ clean_read.results[0].stdout | from_json }}"
+      loop_control: { label: "{{ item.fingerprint[:12] }}" }
+      changed_when: true
+    - name: Remove the instances of retired prefixes
+      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", delete, --force, "{{ item }}"] }
+      loop: "{{ clean_read.results[1].stdout | from_json | map(attribute='name') | select('match', retired) | list }}"
+      changed_when: true
+    - name: Remove the volumes of retired prefixes
+      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", storage, volume, delete, "{{ host.pool }}", "{{ item }}"] }
+      loop: >-
+        {{ clean_read.results[2].stdout | from_json | selectattr('type', 'equalto', 'custom') | map(attribute='name')
+           | select('match', retired) | list }}
+      changed_when: true
+    - name: Empty and remove the retired projects, and empty the image projects of their images
+      ansible.builtin.include_tasks: tasks/incus-project-clean.yml
+      loop: >-
+        {{ ((clean.retired_projects | product([true]) | list) + (clean.image_projects | product([false]) | list))
+           | selectattr('0', 'in', clean_read.results[3].stdout | from_json | map(attribute='name') | list) | list }}
+      loop_control: { label: "{{ item[0] }}" }
+      vars:
+        clean_project: "{{ item[0] }}"
+        clean_whole: "{{ item[1] }}"
 
 - name: Task VM slot
   hosts: task_vm_host

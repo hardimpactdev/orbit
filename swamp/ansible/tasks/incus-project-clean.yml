@@ -1,0 +1,36 @@
+---
+# One Incus project of a task VM host loses what it holds: its images always; with `clean_whole`, also its instances, its custom volumes on
+# every pool, and then the project itself. A volume that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
+- name: Read the instances, images and pools
+  ansible.builtin.command: { argv: "{{ item }}" }
+  loop:
+    - [incus, --project, "{{ clean_project }}", list, --format, json]
+    - [incus, --project, "{{ clean_project }}", image, list, --format, json]
+    - [incus, storage, list, --format, json]
+  register: project_read
+  changed_when: false
+- name: Remove the instances
+  when: clean_whole
+  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", delete, --force, "{{ item }}"] }
+  loop: "{{ project_read.results[0].stdout | from_json | map(attribute='name') | list }}"
+  changed_when: true
+- name: Remove the images
+  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", image, delete, "{{ item }}"] }
+  loop: "{{ project_read.results[1].stdout | from_json | map(attribute='fingerprint') | list }}"
+  changed_when: true
+- name: Read the volumes
+  when: clean_whole
+  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", storage, volume, list, "{{ item }}", --format, json] }
+  loop: "{{ project_read.results[2].stdout | from_json | map(attribute='name') | list }}"
+  register: project_volumes
+  changed_when: false
+- name: Remove the custom volumes
+  when: clean_whole
+  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", storage, volume, delete, "{{ item.pool }}", "{{ item.name }}"] }
+  loop: "{{ project_volumes.results | map(attribute='stdout') | map('from_json') | flatten | selectattr('type', 'equalto', 'custom') | list }}"
+  loop_control: { label: "{{ item.pool }}/{{ item.name }}" }
+  changed_when: true
+- name: Remove the project
+  when: clean_whole
+  ansible.builtin.command: { argv: [incus, project, delete, "{{ clean_project }}"] }
+  changed_when: true

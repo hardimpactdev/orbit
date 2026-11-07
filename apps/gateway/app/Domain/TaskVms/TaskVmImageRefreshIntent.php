@@ -60,9 +60,14 @@ final readonly class TaskVmImageRefreshIntent
     /**
      * Admits the refresh of `$host` to `$commit`, or to the release the Gateway runs. A refresh that is open on the host stays; a different
      * `$commit` waits behind it, one pending commit per host, the newest wins, and the run that ends admits it (`TaskVmImageRefreshProjection`).
+     * With `$fromStock`, the run first deletes the base VM and its seed and builds the base from the stock image; it is refused while a
+     * refresh is open, which was admitted without that.
      */
-    public function start(Node $host, string $caller, ?string $request = null, ?string $commit = null): Operation
+    public function start(Node $host, string $caller, ?string $request = null, ?string $commit = null, bool $fromStock = false): Operation
     {
+        if ($fromStock && self::open($host) instanceof Operation) {
+            throw new ResourceOperationException('operation.target_busy', 'A refresh of this host is open; rebuild after it ends.', 409);
+        }
         if (($open = $this->openOrQueue($host, $commit)) instanceof Operation) {
             return $open;
         }
@@ -71,9 +76,21 @@ final readonly class TaskVmImageRefreshIntent
             return $this->openOrQueue($host, $commit) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
         }
         try {
-            // The proof's claim takes its identity in the admission transaction.
-            return $this->openOrQueue($host, $commit) ?? DB::transaction(fn (): Operation => $this->operations->execute(
-                self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit), $caller, $request, lockKey: OperationStore::lockKey('task_vm_host', $host->id)));
+            // The proof's claim takes its identity in the admission transaction. A rebuild checks again under the lock.
+            if ($fromStock && self::open($host) instanceof Operation) {
+                throw new ResourceOperationException('operation.target_busy', 'A refresh of this host is open; rebuild after it ends.', 409);
+            }
+
+            return $this->openOrQueue($host, $commit) ?? DB::transaction(function () use ($host, $caller, $request, $commit, $fromStock): Operation {
+                // The run deletes the base before it builds the new one, so the recorded base is withdrawn at once: starts on the host are
+                // refused until the run promotes the new base, and after a failure the next refresh builds the base as on a new host.
+                if ($fromStock) {
+                    $this->images->withdraw($host);
+                }
+
+                return $this->operations->execute(self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit, $fromStock), $caller, $request,
+                    lockKey: OperationStore::lockKey('task_vm_host', $host->id));
+            });
         } finally {
             $lock->release();
         }
@@ -106,10 +123,11 @@ final readonly class TaskVmImageRefreshIntent
      *
      * @return array<string,mixed>
      */
-    public function input(Node $host, ?string $commit = null): array
+    public function input(Node $host, ?string $commit = null, bool $fromStock = false): array
     {
         $location = $this->assertCanRefresh($host);
-        $base = $this->images->recorded($host, $location);
+        // A rebuild from stock has no base to roll back to or to keep: the run deletes it before it builds the new one.
+        $base = $fromStock ? null : $this->images->recorded($host, $location);
         $commit ??= $this->converge->releaseCommit();
         $club = config('swamp.proof_club_api_key');
         if (! is_string($club) || trim($club) === '') {
@@ -135,7 +153,8 @@ final readonly class TaskVmImageRefreshIntent
                 // The base VM holds the nested fleet, so it has the resources of a large task VM; a task start copies its snapshot. A host
                 // without a base VM gets it in the `base-start` phase, once, from the stock image and an empty seed volume.
                 'host' => ['node_id' => $host->id, 'ssh' => $jump, 'project' => $location->project, 'pool' => $location->pool, 'network' => $location->network,
-                    'image' => TaskVmHost::SourceImage, 'current' => $base['snapshot'] ?? null, 'snapshot' => $snapshot,
+                    'image' => TaskVmHost::SourceImage, 'current' => $base['snapshot'] ?? null, 'snapshot' => $snapshot, 'rebuild' => $fromStock,
+                    'clean' => TaskVmHostLeftovers::intent(),
                     'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'seed_size' => TaskVmVolumes::SeedSize,
                         'cpus' => $large->cpus, 'memory' => $large->memory, 'disk' => $location->disk,
                         'launch_config' => TaskVmLaunchConfig::for($identity['public_key']), 'club_key' => self::ClubKey]],

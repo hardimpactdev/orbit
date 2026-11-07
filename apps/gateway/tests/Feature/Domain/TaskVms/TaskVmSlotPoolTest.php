@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -421,4 +422,38 @@ it('refuses a task start while the ai-router has no guard', function (): void {
     $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
 
     expect(fn () => app(TaskVmSlotRuns::class)->claim($slot, 'task-1', str_repeat('a', 40)))->toThrow(ResourceOperationException::class, 'ai-router');
+});
+
+it('rebuilds the base from stock only when asked: the run deletes the base first, keeps no recorded snapshot, and cleans the host after', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld(dispatch: false);
+    $services = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:services', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'services-public-key']));
+    app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+    Operation::query()->forceCreate(['kind' => 'ai_router.task_guard', 'target_type' => 'node', 'target_id' => $services->id, 'node_id' => $services->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['intent' => ['state' => 'present']]]);
+    slotPoolSocket();
+    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
+    $commit = str_repeat('d', 40);
+    $home = sys_get_temp_dir().'/orbit-refresh-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($home.'/wireguard');
+    file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32))."\n");
+    File::ensureDirectoryExists($home.'/releases/'.substr($commit, 0, 12).'/apps/gateway');
+    file_put_contents($home.'/releases/'.substr($commit, 0, 12).'/REVISION', $commit."\n");
+    // The converge reads the machine recipe of the release.
+    symlink(base_path('resources'), $home.'/releases/'.substr($commit, 0, 12).'/apps/gateway/resources');
+    symlink('releases/'.substr($commit, 0, 12), $home.'/orbit');
+    config(['orbit.home' => $home, 'orbit.gateway_checkout' => $home.'/orbit/apps/gateway', 'swamp.proof_club_api_key' => 'club']);
+    try {
+        $refresh = app(TaskVmImageRefreshIntent::class)->input($host)['intent'];
+        $rebuild = app(TaskVmImageRefreshIntent::class)->input($host, fromStock: true)['intent'];
+    } finally {
+        File::deleteDirectory($home);
+    }
+
+    expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm'])
+        ->and($rebuild['host'])->toMatchArray(['rebuild' => true, 'current' => null])->and($rebuild['with_pi'])->toBeTrue()
+        ->and($refresh['host']['clean'])->toBe(['keep_images' => ['ubuntu-26.04-vm'], 'prefixes' => ['orbit-topology-seed-', 'orbit-baseline-'],
+            'retired_projects' => ['orbit-baselines', 'orbit-measure-nr'], 'image_projects' => ['orbit-proto']]);
 });

@@ -17,7 +17,7 @@ final class RefreshTaskVmImageCommand extends Command
     use ResolvesTaskVmHostNode;
 
     #[\Override]
-    protected $signature = 'task-vms:refresh-image {host : Task VM host Node ID or name}';
+    protected $signature = 'task-vms:refresh-image {host : Task VM host Node ID or name} {--from-stock : Delete the base VM first and build it from the stock image}';
 
     #[\Override]
     protected $description = 'Refresh the task image of one task VM host to the release the Gateway runs.';
@@ -25,7 +25,7 @@ final class RefreshTaskVmImageCommand extends Command
     public function handle(StartTaskVmImageRefreshAction $refresh): int
     {
         try {
-            $operation = $refresh->execute($this->activeNode($this->argument('host')), 'operator');
+            $operation = $refresh->execute($this->activeNode($this->argument('host')), 'operator', fromStock: (bool) $this->option('from-stock'));
         } catch (ResourceOperationException $exception) {
             $this->error($exception->errorCode.': '.$exception->getMessage());
 
