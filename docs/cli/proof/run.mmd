@@ -51,7 +51,7 @@ sequenceDiagram
   %%> - rule: when the admission of a proof is refused for capacity (`tasks.capacity_unavailable`) and an earlier proof still holds kept VMs (`--keep-failed`), the admission releases them first. It cancels the group of each kept run, the cancel every run gets with the trigger `proof-run`, and tries again every 20 s until 200 s after the start of the proof, with the step `Wait for VMs to be released`. With no kept VM left, or after 240 s, it fails as before
   %%> - a kept VM stays as long as capacity is not short, so a person who is reading it loses it only when a proof needs the room
   %%> - only a proof that does not yield (no `--report-only`) releases: the report-only job of every pull request meets a full host, and must not destroy the VM somebody is reading
-  %%> - all kept VMs go at once, not oldest first: a release takes about 70 s, and the admission has 300 s before the watch ends a proof that has no runs, and its last try may wait 60 s for the admission lock
+  %%> - all kept VMs go at once, not oldest first: a release takes about 70 s, and the admission has 300 s before the watch ends a proof that has no runs
   %%> - not chosen: release by pull request (the proof knows a commit, not its branch, and a later commit may belong to another pull request), and a release before every admission (it would end every keep at the next proof)
   %%> - the proof that was refused and the proof whose run kept the VM are different proofs; the result of the earlier one still lists the VM, with its time, after it was released
   %%> - only the kept runs release: a kept run is a `proof.command` that names its proof and records the VM it kept (`proof_operation_id`), as for the expiry of the keep

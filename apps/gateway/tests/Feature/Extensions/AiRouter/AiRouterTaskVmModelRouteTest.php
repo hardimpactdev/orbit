@@ -76,17 +76,17 @@ it('refuses the route while the ai-router is off', function (): void {
     $route = app(TaskVmModelRoute::class);
 
     expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'ai-router')
-        ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class)
-        ->and(fn () => $route->key())->toThrow(ResourceOperationException::class);
+        ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });
 
-it('redacts the Pi token and the fixed model key from a task VM transcript, and only the token while the route is off', function (): void {
+it('redacts the Pi token and the fixed model key from a task VM transcript, also while the ai-router is off', function (): void {
     $host = routeNode('beast', '10.44.0.7');
     $node = routeNode('beast-tvm-1', '10.44.0.131');
     $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Normal,
         'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.131', 'pi_token' => str_repeat('p', 64)]);
 
-    expect(app(PiConnection::class)->secrets($node))->toBe([$vm->pi_token]);
+    // A VM still holds the key after a teardown: the redaction never depends on the route being ready.
+    expect(app(PiConnection::class)->secrets($node))->toBe([$vm->pi_token, app(AiRouterSecrets::class)->task()]);
 
     routeWorld();
 

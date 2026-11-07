@@ -16,6 +16,6 @@ interface TaskVmModelRoute
     /** The guard origin that Pi on a task VM calls, such as `http://10.44.0.3:8318`. */
     public function origin(): string;
 
-    /** The fixed placeholder key; only the guard accepts it. */
+    /** The fixed placeholder key; only the guard accepts it. It is there even while the route is not ready, for redaction. */
     public function key(): string;
 }

@@ -30,10 +30,9 @@ final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
         return $this->guard->origin($this->node());
     }
 
+    /** The key needs no ready guard: Pi redaction reads it while VMs that hold it still run, the extension off or not. */
     public function key(): string
     {
-        $this->assertReady();
-
         return $this->secrets->task();
     }
 

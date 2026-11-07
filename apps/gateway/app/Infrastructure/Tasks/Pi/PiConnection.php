@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\Pi;
 
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Shared\StoredValue;
@@ -52,15 +51,6 @@ final readonly class PiConnection
     {
         $vm = TaskVm::forNode($node);
 
-        return array_values(array_filter([$vm->pi_token ?? '', $this->modelKey()], static fn (string $value): bool => $value !== ''));
-    }
-
-    private function modelKey(): string
-    {
-        try {
-            return $this->route->key();
-        } catch (ResourceOperationException) {
-            return '';
-        }
+        return array_values(array_filter([$vm->pi_token ?? '', $this->route->key()], static fn (string $value): bool => $value !== ''));
     }
 }
