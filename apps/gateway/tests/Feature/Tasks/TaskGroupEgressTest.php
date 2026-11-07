@@ -19,9 +19,11 @@ use App\Models\Task;
 use App\Models\TaskGroupEgress;
 use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
 
 uses(LazilyRefreshDatabase::class);
@@ -217,6 +219,10 @@ it('writes nothing for a report that adds nothing, and merges two rows with one 
             $queries++;
         }
     });
+    // SQLite starts a transaction with PDO::exec, which fires this event and not a query event.
+    Event::listen(TransactionBeginning::class, static function () use (&$queries): void {
+        $queries++;
+    });
 
     expect($record->execute($host, 'shark-tvm-1', $twice))->toBe(0)->and($queries)->toBe(0);
 });
@@ -235,4 +241,19 @@ it('lists a name without a port only until the VM connected to it', function ():
     expect(app(ShowTaskGroupEgressAction::class)->execute($group)->map(fn (TaskGroupEgress $row): string => $row->destination.':'.$row->port)->all())
         ->toBe(['github.com:0', 'registry.npmjs.org:443'])
         ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(3);
+});
+
+it('takes no write lock for a report of a group at its row limit', function (): void {
+    [$host, $group] = egress_world();
+    $now = now()->toDateTimeString();
+    TaskGroupEgress::query()->insert(array_map(static fn (int $i): array => [
+        'task_id' => $group->id, 'vm_name' => 'shark-tvm-1', 'destination' => "h{$i}.example", 'kind' => 'name', 'port' => 443, 'protocol' => 'tcp',
+        'addresses' => '[]', 'sources' => '["dns"]', 'flags' => '[]', 'first_seen_at' => $now,
+    ], range(1, RecordTaskGroupEgressAction::MaxRows)));
+    $transactions = 0;
+    Event::listen(TransactionBeginning::class, static function () use (&$transactions): void {
+        $transactions++;
+    });
+
+    expect(app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact()))->toBe(0)->and($transactions)->toBe(0);
 });

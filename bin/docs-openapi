@@ -2041,6 +2041,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             }}}}}
         responses['204'] = {'description': 'The Gateway stored the fact, or it was unchanged.'}
         responses['413'] = error_response('The request is larger than 1 MiB (`agent.fact_too_large`).')
+        responses['422'] = error_response('The data does not match the kind, or an `egress` fact came from a Node that is no task VM host or names another bridge than its own (`agent.fact_not_expected`).')
     elif route['name'] == 'agent:log-streams':
         source = {'type': 'object', 'properties': {
             'type': {'type': 'string', 'enum': ['laravel', 'journal', 'docker'], 'description': 'The source type.'},

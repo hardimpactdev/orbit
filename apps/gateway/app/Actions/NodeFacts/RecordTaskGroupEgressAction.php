@@ -50,13 +50,17 @@ final readonly class RecordTaskGroupEgressAction
         if (ValidatedData::integer($data['overflow'] ?? 0) > 0) {
             Log::warning('A task VM reported more egress rows than the agent keeps.', ['group' => $groupId, 'vm' => $vmName, 'overflow' => $data['overflow']]);
         }
-        if ($reported === [] || $this->changes($groupId, $reported, self::MaxRows) === []) {
+        $room = max(0, self::MaxRows - TaskGroupEgress::query()->where('task_id', $groupId)->count());
+        if ($room === 0) {
+            Log::warning('A task group is at its egress row limit.', ['group' => $groupId, 'limit' => self::MaxRows]);
+        }
+        if ($reported === [] || $this->changes($groupId, $reported, $room) === []) {
             return 0;
         }
 
         // A change takes the write lock once, and is worked out again inside it.
         return DB::transaction(function () use ($groupId, $vm, $reported): int {
-            $room = self::MaxRows - TaskGroupEgress::query()->where('task_id', $groupId)->count();
+            $room = max(0, self::MaxRows - TaskGroupEgress::query()->where('task_id', $groupId)->count());
             $written = 0;
             foreach ($this->changes($groupId, $reported, $room) as [$existing, $row]) {
                 if ($existing instanceof TaskGroupEgress) {
@@ -65,9 +69,6 @@ final readonly class RecordTaskGroupEgressAction
                     TaskGroupEgress::query()->create(['task_id' => $groupId, 'vm_name' => $vm->name, ...$row]);
                 }
                 $written++;
-            }
-            if ($room <= 0) {
-                Log::warning('A task group reached its egress row limit.', ['group' => $groupId, 'limit' => self::MaxRows]);
             }
 
             return $written;
