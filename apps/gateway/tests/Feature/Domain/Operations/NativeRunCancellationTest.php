@@ -24,6 +24,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -436,4 +437,12 @@ it('does not project, or read the history of, an Operation that does not use the
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)
         ->and($socket->frames)->toBe([]);
+});
+
+it('logs the Operation and the type of an exception that fails the projection job, and nothing else', function (): void {
+    Log::spy();
+
+    (new ProjectSwampOperation(7))->failed(new RuntimeException('text that may hold an input'));
+
+    Log::shouldHaveReceived('warning')->once()->with('The Operation projection job failed; the next reconcile pass settles it.', ['operation_id' => 7, 'exception_type' => RuntimeException::class]);
 });

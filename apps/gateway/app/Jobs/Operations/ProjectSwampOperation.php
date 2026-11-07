@@ -11,6 +11,8 @@ use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Projects the terminal result of one Operation as soon as the run observer sees its run end. It is not unique, so a pass of
@@ -48,5 +50,11 @@ final class ProjectSwampOperation implements ShouldQueue
                 $this->release(self::RetrySeconds);
             }
         }
+    }
+
+    /** Remote text can contain inputs: log identity and type only. The minute pass settles the Operation. */
+    public function failed(Throwable $exception): void
+    {
+        Log::warning('The Operation projection job failed; the next reconcile pass settles it.', ['operation_id' => $this->operationId, 'exception_type' => $exception::class]);
     }
 }
