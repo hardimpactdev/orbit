@@ -85,6 +85,12 @@ sequenceDiagram
   %%> - the parent run joins the verdict lines in its `Report` step; the Gateway reads that step once, when the run ends, and records the verdicts; no step calls back
   SW->>VM: Destroy the task VM<br/>child workflow · always
   %%> Runs after success or failure, so no proof VM is left behind.
+  %%> Decided by the top orchestrator, for Nick's review (2026-11-07), to read a fault that the destroy hides (the tunnel after a `base` restore, M5 tries 4 and 5):
+  %%> - `proof:run --keep-failed` (API and MCP: `keep_failed`) keeps the VM of a run that failed; without it nothing changes
+  %%> - the step is skipped, by its guard, when the flag is set, the VM was ready and the cases did not all pass; a run that passes, or whose VM never got ready, destroys it as before
+  %%> - the Gateway then does not cancel the group. It records the VM (name, group, keep-until time) on the run and on the result of the proof, and the proof ends as usual
+  %%> - only the groups of this proof run (`proof_operation_id`) are kept, and the VM keeps its slot, so capacity and the watchdogs count it
+  %%> - the keep lasts 60 minutes from the end of the run. The one-minute pass that watches proofs (`ReconcileSwampOperations`) cancels the group when the time is up, with the trigger `proof-run`, and again until the VM is gone. It needs nobody to come back
   %%> Built:
   %%> - the child `operation-task-cancel` with the input that the Gateway captured with the VM at admission; if it did not run or failed, the Gateway cancels the group the normal way, which destroys the VM
   %%> - the Gateway cancels the group of a run with the trigger `proof-run`; a group is cancelled only through the Operation that owns it (its `proof.command`, or its image refresh with the trigger `image-refresh`)

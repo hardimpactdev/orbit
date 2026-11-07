@@ -25,6 +25,7 @@ final class RunProofRequest extends GatewayRequest implements HasBody
         private readonly bool $all,
         private readonly bool $reportOnly,
         private readonly string $idempotencyKey,
+        private readonly bool $keepFailed = false,
     ) {
         if (preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D', $commit) !== 1) {
             throw new InvalidArgumentException('Name the commit by its full 40 or 64 character lowercase SHA.');
@@ -47,9 +48,9 @@ final class RunProofRequest extends GatewayRequest implements HasBody
         return ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{commit: string, all?: true, report_only?: true} */
+    /** @return array{commit: string, all?: true, report_only?: true, keep_failed?: true} */
     protected function defaultBody(): array
     {
-        return ['commit' => $this->commit, ...($this->all ? ['all' => true] : []), ...($this->reportOnly ? ['report_only' => true] : [])];
+        return ['commit' => $this->commit, ...($this->all ? ['all' => true] : []), ...($this->reportOnly ? ['report_only' => true] : []), ...($this->keepFailed ? ['keep_failed' => true] : [])];
     }
 }

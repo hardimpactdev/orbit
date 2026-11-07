@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
  * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. It ends a proof only when the request that admitted
  * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
  * `runs: []`. It also closes a proof whose runs have all ended, and frees the admission lock that the dead request held.
+ * It also ends the keep of a failed run (`proof:run --keep-failed`) when its 60 minutes are up, by cancelling the group of that run.
  * A run that waits for VM capacity does not exist: capacity is decided at admission (docs/cli/proof/run.mmd).
  */
 final readonly class ProofRunWatch
@@ -35,7 +36,13 @@ final readonly class ProofRunWatch
      */
     public const int DispatchSilenceSeconds = 300;
 
-    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement) {}
+    /** The format of the times in the record of a kept VM; it sorts as text. */
+    public const string Time = 'Y-m-d\TH:i:s\Z';
+
+    /** A cancel of an expired kept VM that has not ended is asked for again after this many minutes. */
+    public const int KeptRetryMinutes = 5;
+
+    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofGroup $groups) {}
 
     /** The owner of the admission lock while this proof is admitted, so the lock ends with the proof. */
     public static function lockOwner(int $proofId): string
@@ -47,16 +54,44 @@ final readonly class ProofRunWatch
     public function sweep(): int
     {
         $ended = 0;
-        $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
-            ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
-        foreach ($open as $id) {
-            // Reads first: a healthy proof takes the write lock for nothing on every pass.
-            if ($this->needsAction(ValidatedData::integer($id))) {
-                $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+        // The kept VMs expire on every pass, whatever the watch of the proofs does.
+        try {
+            $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+                ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
+            foreach ($open as $id) {
+                // Reads first: a healthy proof takes the write lock for nothing on every pass.
+                if ($this->needsAction(ValidatedData::integer($id))) {
+                    $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+                }
             }
+        } finally {
+            $this->expireKept();
         }
 
         return $ended;
+    }
+
+    /**
+     * Cancels the group of each kept VM (`proof:run --keep-failed`) when its time is up. The cancel is the one every run gets, with the trigger
+     * `proof-run`; it is asked for again every few minutes until the group and its VM are gone, so nobody has to come back.
+     */
+    private function expireKept(): void
+    {
+        $due = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereNotNull('result->kept')
+            ->where('result->kept->keep_until', '<=', now()->utc()->format(self::Time))->pluck('id');
+        foreach ($due as $id) {
+            DB::transaction(function () use ($id): void {
+                $run = Operation::query()->lockForUpdate()->find($id);
+                $kept = $run instanceof Operation && is_array($run->result['kept'] ?? null) ? $run->result['kept'] : null;
+                $asked = is_array($kept) ? ($kept['cancel_requested_at'] ?? null) : null;
+                if (! $run instanceof Operation || $kept === null || ! $this->groups->needsCancel($run)
+                    || (is_string($asked) && $asked > now()->utc()->subMinutes(self::KeptRetryMinutes)->format(self::Time))) {
+                    return;
+                }
+                $this->store->change($run, ['result' => [...ValidatedData::object($run->result), 'kept' => [...$kept, 'cancel_requested_at' => now()->utc()->format(self::Time)]]]);
+                DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
+            });
+        }
     }
 
     private function needsAction(int $id): bool
