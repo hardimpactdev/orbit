@@ -100,8 +100,10 @@
           register: candidate_delete
           changed_when: candidate_delete.rc == 0
           failed_when: candidate_delete.rc != 0 and 'not found' not in candidate_delete.stderr
+        # The image never leaves the host, so it is not compressed: compression took about 3 of the 7 minutes of a refresh (ops 12767, 12768).
         - name: Publish the refresh VM as the candidate
-          ansible.builtin.command: { argv: "{{ ['timeout', '1500'] + incus + ['publish', '--alias', host.candidate_alias, '--', vm.name] }}" }
+          ansible.builtin.command:
+            argv: "{{ ['timeout', '1500'] + incus + ['publish', '--compression', 'none', '--alias', host.candidate_alias, '--', vm.name] }}"
           changed_when: true
         - name: Read the fingerprint of the candidate
           ansible.builtin.command: { argv: "{{ incus + ['image', 'list', '--format', 'json', '--', host.candidate_alias] }}" }

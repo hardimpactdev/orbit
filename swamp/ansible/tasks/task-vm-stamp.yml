@@ -1,0 +1,8 @@
+---
+# Records that a phase converged: its digest, from task-vm-recipe.yml. The next converge skips the phase while the digest is the same.
+- name: Record what the phase converged to
+  ansible.builtin.command:
+    argv: [install, -D, -m, "0644", /dev/stdin, "{{ converge_stamps_dir }}/{{ stamp }}"]
+    stdin: "{{ converge_digests[stamp] }}"
+    stdin_add_newline: false
+  changed_when: true

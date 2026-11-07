@@ -45,3 +45,35 @@
   ansible.builtin.set_fact:
     # Not in the recipe: the snapshot date is their pin. The shape gate builds its venv with python3-venv, and its Swamp load test pipes through jq.
     snapshot_packages: [python3-venv, jq]
+# What the VM already converged to (docs/cli/tasks/vm-image-refresh.mmd). Each phase records the digest of its inputs and of the role's
+# code when it ends; a phase whose digest is unchanged is skipped, so a converge on a current image changes nothing and restarts nothing.
+- name: Read what the VM converged to
+  ansible.builtin.command: { argv: [grep, -rH, "", "{{ converge_stamps_dir }}"] }
+  register: converge_read
+  changed_when: false
+  failed_when: converge_read.rc not in [0, 2]
+- name: Work out what changed
+  vars:
+    code: >-
+      {{ query('ansible.builtin.file', *([playbook_dir ~ '/task-vm-role.yml'] + query('ansible.builtin.fileglob', playbook_dir ~ '/tasks/task-vm-*.yml')))
+      | join | hash('sha256') }}
+    tools_input: "{{ code ~ (recipe | to_json) ~ profile ~ (intent.fleet.network | default('')) }}"
+  ansible.builtin.set_fact:
+    converge_stamps: "{{ dict(converge_read.stdout_lines | map('regex_replace', '^.*/([^/:]+):.*$', '\\1')
+      | zip(converge_read.stdout_lines | map('regex_replace', '^[^:]*:', ''))) }}"
+    converge_digests:
+      software: "{{ (code ~ (recipe | to_json) ~ profile) | hash('sha256') }}"
+      tools: "{{ tools_input | hash('sha256') }}"
+      boot: "{{ (code ~ (intent.boot | default({}) | to_json)) | hash('sha256') }}"
+      check: "{{ (tools_input ~ 'check') | hash('sha256') }}"
+      operator: "{{ (code ~ (intent.fleet | default({}) | to_json)) | hash('sha256') }}"
+# A part is due when its recorded digest differs. The nested Swamp tokens last 30 days, so their renewal is due a week after the last one.
+- name: Work out which parts are due
+  ansible.builtin.set_fact:
+    converge_due: >-
+      {%- set out = {} -%}
+      {%- for name, digest in converge_digests.items() -%}
+      {%- set _ = out.update({name: converge_stamps[name] | default('') != digest}) -%}
+      {%- endfor -%}
+      {%- set _ = out.update({'tokens': (now(utc=true).strftime('%s') | int) - (converge_stamps.tokens | default(0) | int) > 7 * 86400}) -%}
+      {{ out }}

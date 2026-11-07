@@ -17,11 +17,7 @@
     - name: Mask the services of a first boot
       ansible.builtin.systemd: { name: "{{ item }}", masked: true }
       loop: [systemd-firstboot.service, apt-daily.timer, apt-daily-upgrade.timer, motd-news.timer, unattended-upgrades.service]
-    - name: Stop the services that make an identity
-      ansible.builtin.systemd: { name: "{{ item }}", state: stopped }
-      loop: [caddy.service, docker.service, docker.socket, containerd.service]
-      register: clean_stopped
-      failed_when: clean_stopped.failed and 'Could not find the requested service' not in (clean_stopped.msg | default(''))
+    # File removals only: a service writes its identity at its next start, which is the first boot of a VM from the image.
     - name: Remove the identities of the services
       ansible.builtin.file: { path: "{{ item }}", state: absent }
       loop:
@@ -58,7 +54,7 @@
       ansible.builtin.command: { argv: [find, /etc/ssh, -maxdepth, "1", -name, "ssh_host_*", -delete] }
       changed_when: true
     # The nested Gateway holds the Club key open through its disk device; stopped, it lets the trim below free the key's blocks.
-    # The containers stay down at boot, and a claim starts them from `base`.
+    # They start again with the next VM from the image.
     - name: Stop the nested containers
       when: intent.fleet is defined
       ansible.builtin.command: { argv: "{{ ['timeout', '120', 'incus', 'stop', '--timeout', '90'] + (intent.fleet.guests.values() | list) }}" }
