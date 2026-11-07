@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - stops the refresh VM, publishes it as the candidate image and snapshots its container disk as the candidate's seed; the refresh VM is deleted
   SW->>H: Re-enroll one slot<br/>proves the candidate
   %%> What it does:
-  %%> - rebuilds the first idle slot from the candidate with its fixed identity (`task_vm.slot_enroll`), takes its `clean` snapshot, then runs the claim's ready check
+  %%> - rebuilds the first idle slot from the candidate with its fixed identity (`task_vm.slot_enrol`), takes its `clean` snapshot, then runs the claim's ready check
   %%> Why: this replaces the smoke VM and the check VM; it proves exactly what a claim gets
   SW->>H: Promote<br/>keep -previous
   %%> What it does:

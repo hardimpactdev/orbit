@@ -35,7 +35,7 @@ sequenceDiagram
   %%> What it does:
   %%> - restores `base` and starts the Gateway with Swamp, app-dev and app-prod; 3.5 to 7 s each
   %%> - migrations run only when the branch adds new ones
-  %%> - the outer VM is the operator of the nested fleet; its WireGuard key and Node record are in the image
+  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only, is private to each VM's fleet and is baked with the fleet, so it is no part of the slot's identity
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides

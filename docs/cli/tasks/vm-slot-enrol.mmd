@@ -45,16 +45,18 @@ sequenceDiagram
   %%> - skipped when the peer file already matches; a claim or a release never touches the hub
   SW->>H: Rebuild the slot VM<br/>ansible phase · slot
   %%> What it does:
-  %%> - deletes the slot's VM and its seed clone when they exist
-  %%> - clones the seed of the host's promoted image (the candidate, for the refresh), and creates `shark-tvm-3` from that image with the seed clone, the identity volume, its fixed address and MAC
-  %%> - starts it; the image's identity unit installs the identity before sshd, WireGuard, the agent and Pi start
-  SW->>VM: Check ready<br/>one exec
+  %%> - deletes the slot's VM, its snapshots and its seed clone when they exist
+  %%> - clones the seed of the host's promoted image (the candidate, for the refresh), and creates `shark-tvm-3`, stopped, from that image with the seed clone, the identity volume, its fixed address and MAC
+  SW->>H: Take the clean snapshot<br/>VM and seed clone
   %%> What it does:
-  %%> - the same check as a claim: the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
-  SW->>H: Take the clean snapshot<br/>stop · VM and seed clone
+  %%> - snapshots the stopped VM and its seed clone as `clean`; a release rolls back to it, so every claim boots the same disk
+  SW->>VM: Check ready<br/>start · the claim's check
   %%> What it does:
-  %%> - stops the slot, then snapshots the VM and its seed clone as `clean`; a release rolls back to it
-  %%> - a stopped slot holds disk, not memory
+  %%> - starts the slot; the image's identity unit installs the identity before sshd, WireGuard, the agent and Pi start
+  %%> - then the same check as a claim: the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
+  SW->>H: Release the slot<br/>stop · roll back to clean
+  %%> What it does:
+  %%> - the steps of a release (docs/cli/tasks/vm-slot-release.mmd): the slot ends stopped at `clean`, and a stopped slot holds disk, not memory
   alt the run passes
     SW-->>GW: Run succeeded<br/>public key · image
     Note over GW: Record the slot free<br/>with its image

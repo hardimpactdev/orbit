@@ -20,12 +20,10 @@ The command development pipeline is the stages every command goes through during
 
 Each flow has its own trigger. The first three run for a task. The others keep a host ready.
 
-- **Provision and ready slots.** `tasks:provision` runs for every task group. A ready slot is a stopped task VM that Orbit enrolled ahead of time from the host's promoted image, with a clone of its seed. A claim starts it. Without a slot, the provision clones the image.
-- **Nested fleet start and `base`.** Every provision of a task with a topology starts the nested fleet from the host's ready copies. It then takes the plain snapshot `base` of the three containers.
+- **Claim.** `tasks:provision` runs for every task group. It claims a free slot, a stopped task VM that Orbit enrolled from the host's promoted image with its fixed identity, and starts it. The containers start from their `base` snapshot.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, daily, and when an operator runs `task-vms:refresh-image`. A code-only release needs none. A refresh updates the existing image and copies and builds nothing.
-- **Fleet build.** It runs only when a host has no usable ready copies: a new host, a new image or copy format, or a broken set.
-- **Ready copies save.** It is the last step of every refresh and of every fleet build.
+- **Release.** The end of a group stops its slot and rolls it back to `clean`.
+- **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, and daily. A code-only release needs none. It bakes the next image from the current one; idle slots then re-enrol from it.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 
 ## 1. Prep
@@ -96,7 +94,7 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 
 - Charts: the stage chart above and the per-host run [`task_vm.image_refresh`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd).
 - Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
-- Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml), [`swamp/workflows/workflow-task-vm-image-clean.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-task-vm-image-clean.yaml).
+- Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
 
 ## Change the development pipeline
 
