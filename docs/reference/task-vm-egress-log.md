@@ -50,12 +50,13 @@ One Ansible part, tagged `egress-log`, sets up all of it. Each piece uses a stoc
 1. **DNS log.** The part adds `log-queries=extra` and a log file at `/var/log/incus/dnsmasq.<network>.log` to `raw.dnsmasq` on the bridge. It keeps any line already there. Incus's AppArmor profile allows exactly that path.
 2. **Connection log.** The part loads an `nftables` table `orbit_egress` of the family `inet`. Its forward chain has the policy `accept`. One rule only logs.
 3. **What it logs.** The rule logs each new flow to an address outside the ACL's drop list. Each line has the prefix `orbit-egress ` and the source MAC.
-4. **Deduplication.** A dynamic set holds each distinct flow for ten minutes. The rule logs a flow once in that time. The set holds 262,144 flows.
-5. **File split.** An rsyslog rule moves those lines to `/var/log/orbit/task-egress.log`.
-6. **Rotation.** A logrotate file keeps seven days of both logs. The DNS log uses `copytruncate`.
-7. **Reopen.** rsyslog reopens its file after a rotation.
+4. **Deduplication.** A dynamic set holds each distinct flow for ten minutes. The rule logs a flow once in that time. It logs before it adds to the set.
+5. **A full set.** A full set of 262,144 flows repeats lines and loses none.
+6. **File split.** An rsyslog rule moves those lines to `/var/log/orbit/task-egress.log`.
+7. **Rotation.** A logrotate file keeps seven days of both logs. The DNS log uses `copytruncate`.
+8. **Reopen.** rsyslog reopens its file after a rotation.
 
-The agent runs as root without capabilities. It reads only files that it owns or that other users may read. The part therefore creates both logs world-readable: `/var/log/orbit` mode 0755, the rsyslog file mode 0644, and the DNS log pre-created as 0644 for the user `incus`.
+The agent runs as root without capabilities. It reads only files that it owns or that other users may read. The part therefore creates both logs world-readable: `/var/log/orbit` mode 0755, the rsyslog file mode 0644, and the DNS log pre-created with mode 0644. The leases file and the hosts files of the bridge are mode 0644 already, in a directory that others may traverse (checked on beast and shark).
 
 Changing `raw.dnsmasq` restarts the bridge's dnsmasq. Running VMs lose DNS for about a second. Run the part when no provision is running.
 
@@ -100,7 +101,7 @@ The fact holds no counters, so a quiet VM changes nothing. The agent never reads
 
 The Gateway keeps one claim for each VM: its name, group, start and end. It adds each row to the group that held the VM, in the table `task_group_egress`. A row is unique per group, destination, port and protocol. A later report adds addresses, sources and flags to the row. It never removes a row.
 
-Every task start makes a new VM with a new MAC, so the agent starts a new set for each group. The Gateway also leaves out a row that the agent first saw before the group claimed the VM.
+Every task start copies the base snapshot with `incus copy`, which gives the copy a new MAC. The agent therefore starts a new set for each group. A group claims its VM before the copy exists, so a row that the agent first saw before the claim belongs to an earlier VM and the Gateway leaves it out.
 
 The group keeps its rows after its VM and Node are deleted. The group's kind, feature work or proof, comes from the group record. Proofs run nested containers through the VM, so their traffic lands in the same group.
 
@@ -127,11 +128,13 @@ Each blind spot shows in the data, or the table says why it does not matter.
 | Two names on one address | One row for each name that the VM resolved to it |
 | A long-lived flow | One row: only the first packet is logged |
 | The agent restarts | The agent resumes at the end of each log. A flow that started during the gap is lost, and a flow with no name stays an address |
-| A VM spoofs another VM's address | The nft line carries the real source MAC, so the row names the right VM |
+| Log rotation | `copytruncate` keeps the file. The agent resets its offset when the size drops below it, and lines written between the copy and the truncate are lost |
+| A VM spoofs another VM's IP address | The connection rows name the right VM, because the nft line carries the real source MAC. DNS rows follow the lease and can name the wrong VM |
+| A VM sets another VM's MAC | Both sources name the wrong VM |
 
 A shared address, such as a CDN, can give a connection row to every name the VM resolved to it. Each of those names is one that the VM itself asked for, so step 2 can treat them as allowlist candidates.
 
-A task agent is not hostile in step 1. Step 2 adds `ipv4.address` and `security.ipv4_filtering` on the NIC before it enforces anything.
+A task agent is not hostile in step 1. Step 2 adds `ipv4.address`, `security.ipv4_filtering` and `security.mac_filtering` on the NIC before it enforces anything.
 
 ## Not in this step
 
