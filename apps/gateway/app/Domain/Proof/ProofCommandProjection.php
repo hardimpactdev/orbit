@@ -52,10 +52,21 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'],
                 'cancel' => ['node_id' => ValidatedData::integer($cancel['node_id']), ...TaskVmProviderWorkflowInput::envelope($cancel)]],
             'execution_secrets' => $provision['execution_secrets'],
-            ...($input['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [],
+            ...self::keepFlag($input),
         ];
     }
 
+    /**
+     * The input of the workflow that tells its destroy step to stay out of the way of a failed run (`proof:run --keep-failed`). It is
+     * present only when the proof was started with the flag; the workflow declares it as an optional boolean.
+     *
+     * @param  array<string,mixed>  $input  the input of the run
+     * @return array{keep_failed?: true}
+     */
+    public static function keepFlag(array $input): array
+    {
+        return ($input['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [];
+    }
     /** A run the Gateway timed out may leave its VM; the group is cancelled the normal way. */
     public function timedOut(Operation $operation): void
     {

@@ -14,7 +14,7 @@ import fleet as fleet_module
 import runner
 import spec
 import steps
-from fakes import BRIDGE, FakeFleet
+from fakes import BRIDGE, FakeFleet, completed
 
 PROOF = Path(__file__).resolve().parents[2]
 CASES = Path(__file__).resolve().parent / 'fixtures' / 'allow.cases.yaml'
@@ -191,15 +191,74 @@ class CommandTest(unittest.TestCase):
 
 
 class FleetCliTest(unittest.TestCase):
-    def test_the_cli_as_a_node_runs_the_orbit_of_that_node_as_its_managed_user_and_the_default_runs_the_candidate(self):
+    def test_the_default_caller_runs_the_candidate_cli_of_the_checkout_on_the_outer_vm(self):
         found = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 3, 'bridge': '10.0.0.3'}})
         done = Mock(returncode=0, stdout='{}', stderr='')
         with patch.object(fleet_module.subprocess, 'run', return_value=done) as run:
-            found.cli(['firewall:list'], node='app-prod')
             found.cli(['firewall:list'])
-        as_node, default = (call.args[0] for call in run.call_args_list)
-        self.assertEqual(as_node, ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--', 'orbit', 'firewall:list', '--json'])
-        self.assertEqual(default[:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
+        self.assertEqual(run.call_args_list[0].args[0][:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
+
+
+class NodeCliTest(unittest.TestCase):
+    """The real Fleet runs the tested CLI on a Node: Nothing installs an `orbit` binary on a nested Node, so a bare `orbit` ended in exit 127."""
+
+    def setUp(self):
+        self.fleet = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 212, 'bridge': '10.0.0.3'}})
+        self.calls = []
+
+    def script(self, mounted=True, profile=True, failing=None):
+        """A `subprocess.run` that answers the incus calls of one Node and records their words."""
+        def run(argv, **kwargs):
+            self.calls.append(list(argv))
+            text = ' '.join(argv)
+            if failing and failing in text:
+                return completed(1, '', 'it failed')
+            if argv[:4] == ['incus', 'config', 'device', 'get']:
+                return completed(0 if mounted else 1, str(fleet_module.CHECKOUT) + '\n' if mounted else '')
+            if argv[-3:-1] == ['-q', '"nested"']:   # the check of the profile: grep in config.json
+                return completed(0 if profile else 1)
+            return completed(0, '{"nodes": []}')
+        return run
+
+    def last(self):
+        return self.calls[-1]
+
+    def test_runs_the_checkout_cli_as_the_managed_user_of_the_node_and_never_a_bare_orbit(self):
+        with patch.object(fleet_module.subprocess, 'run', self.script()):
+            result = self.fleet.cli(['firewall:list', '--node=211'], node='app-prod')
+        self.assertEqual(self.last(), ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--',
+                                        'php', '/home/orbit/orbit/apps/cli/orbit', 'firewall:list', '--node=211', '--json'])
+        self.assertEqual(result['rc'], 0)
+        self.assertNotIn('orbit', [call[call.index('--') + 1] for call in self.calls if '--' in call])
+
+    def test_a_node_that_is_ready_gets_no_mount_and_no_profile(self):
+        with patch.object(fleet_module.subprocess, 'run', self.script()):
+            self.fleet.cli(['firewall:list'], node='app-prod')
+        words = [' '.join(call) for call in self.calls]
+        self.assertFalse(any('device add' in line or 'file push' in line or 'gateway:add' in line for line in words))
+
+    def test_a_fresh_node_gets_the_checkout_the_nested_ca_and_a_profile_before_the_call(self):
+        with patch.object(fleet_module.subprocess, 'run', self.script(mounted=False, profile=False)):
+            self.fleet.cli(['firewall:list'], node='app-prod')
+        words = [' '.join(call) for call in self.calls]
+        mount = next(number for number, line in enumerate(words) if 'device add nested-app-prod checkout disk' in line)
+        push = next(number for number, line in enumerate(words) if 'file push /home/orbit/.orbit/nested-ca.pem nested-app-prod/home/orbit/.orbit/nested-ca.pem' in line)
+        profile = next(number for number, line in enumerate(words) if 'gateway:add 10.45.0.1 --name=nested --use --accept-ca-change --ca=/home/orbit/.orbit/nested-ca.pem' in line)
+        self.assertLess(mount, push)
+        self.assertLess(push, profile)
+        self.assertLess(profile, len(words) - 1)
+        self.assertIn(f'source={fleet_module.CHECKOUT}', self.calls[mount])
+        self.assertIn('path=/home/orbit/orbit', self.calls[mount])
+
+    def test_a_step_that_fails_is_named_and_not_an_exit_status(self):
+        for what, options in (('cannot mount the tested checkout', {'mounted': False, 'failing': 'device add'}),
+                              ('cannot give the nested CA', {'profile': False, 'failing': 'file push'}),
+                              ('cannot add the profile nested', {'profile': False, 'failing': 'gateway:add'})):
+            with self.subTest(what), patch.object(fleet_module.subprocess, 'run', self.script(**options)):
+                with self.assertRaises(fleet_module.FleetError) as caught:
+                    self.fleet.cli(['firewall:list'], node='app-prod')
+            self.assertIn(what, str(caught.exception))
+            self.assertIn('app-prod', str(caught.exception))
 
 
 class FleetDiscoveryTest(unittest.TestCase):

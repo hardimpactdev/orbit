@@ -22,6 +22,7 @@ use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -84,6 +85,31 @@ describe('the inputs of one run', function (): void {
     });
 });
 
+describe('the keep_failed input of one run', function (): void {
+    it('goes to the workflow only for a proof that was started with it', function (array $input, array $expected): void {
+        expect(ProofCommandProjection::keepFlag($input))->toBe($expected);
+    })->with([
+        'asked for' => [['keep_failed' => true], ['keep_failed' => true]],
+        'not mentioned' => [[], []],
+        'false' => [['keep_failed' => false], []],
+        'a string is not a yes' => [['keep_failed' => 'true'], []],
+    ]);
+
+    it('is an input the workflow declares, and its destroy step is guarded on it and on the steps that the Gateway reads', function (): void {
+        $workflow = Yaml::parseFile(dirname(base_path(), 2).'/swamp/workflows/workflow-operation-proof-run.yaml');
+        $steps = collect($workflow['jobs'])->flatMap(static fn (array $job): array => $job['steps'])->keyBy('name');
+        $destroy = $steps['Destroy the VM'];
+
+        // The workflow takes exactly what the Gateway sends: a flag it does not declare would be refused at the start.
+        expect($workflow['inputs']['properties']['keep_failed'])->toBe(['type' => 'boolean'])
+            ->and(array_keys(ProofCommandProjection::keepFlag(['keep_failed' => true])))->each->toBeIn(array_keys($workflow['inputs']['properties']))
+            // Swamp skips a step whose guard is true, so the guard names the flag and the two steps whose outcome keeps the VM.
+            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Pin the VM"]', 'steps[?"Prove the command"]')
+            // The destroy step is still one of the steps that the projection reads, and the report waits for it whether it ran or was skipped.
+            ->and($destroy['dependsOn'])->toContain(['step' => 'Prove the command', 'condition' => ['type' => 'always']])
+            ->and(collect($steps['Report']['dependsOn'])->firstWhere('step', 'Destroy the VM')['condition'])->toBe(['type' => 'always']);
+    });
+});
 describe('the record of one run', function (): void {
     it('fails the run, with one unrun row, when the VM never became ready, and cancels the group the normal way', function (): void {
         Queue::fake();

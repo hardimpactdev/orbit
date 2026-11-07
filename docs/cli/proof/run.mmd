@@ -87,7 +87,7 @@ sequenceDiagram
   %%> Runs after success or failure, so no proof VM is left behind.
   %%> Decided by the top orchestrator, for Nick's review (2026-11-07), so that a person can read a fault that the destroy would hide:
   %%> - `proof:run --keep-failed` (API and MCP: `keep_failed`) keeps the VM of a run that failed; without it nothing changes
-  %%> - the step is skipped, by its guard, when the flag is set, the VM was ready and the cases did not all pass; a run that passes, or whose VM never got ready, destroys it as before
+  %%> - the step is skipped by its guard (Swamp skips a step whose guard is true) when the flag is set, the VM was ready and the cases did not all pass; a run that passes, or whose VM never got ready, destroys it as before
   %%> - the Gateway then does not cancel the group. It records the VM (name, group, keep-until time) on the run and on the result of the proof, and the proof ends as usual
   %%> - only the groups of this proof run (`proof_operation_id`) are kept, and the VM keeps its slot, so capacity and the watchdogs count it
   %%> - the keep lasts 60 minutes from the end of the run. The one-minute pass that watches proofs (`ReconcileSwampOperations`) cancels the group when the time is up, with the trigger `proof-run`, and asks again every 5 minutes. It needs nobody to come back

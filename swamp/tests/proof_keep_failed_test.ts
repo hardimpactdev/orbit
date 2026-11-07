@@ -5,46 +5,62 @@ import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 type Step = { name: string; guard?: string };
 type Workflow = { inputs: { properties: Record<string, unknown> }; jobs: { steps: Step[] }[] };
 
-const workflow = parse(await Deno.readTextFile(new URL("../workflows/workflow-operation-proof-run.yaml", import.meta.url))) as Workflow;
-const destroy = workflow.jobs.flatMap((job) => job.steps).find((step) => step.name === "Destroy the VM")!;
+const read = async (name: string) => parse(await Deno.readTextFile(new URL(`../workflows/${name}`, import.meta.url))) as Workflow;
+const step = (workflow: Workflow, name: string) => workflow.jobs.flatMap((job) => job.steps).find((candidate) => candidate.name === name)!;
+
 // The guard as Swamp evaluates it: the expression inside `${{ }}`, with optional chaining on.
-const guard = destroy.guard!.trim().replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "");
 const environment = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true });
+const expression = (guard: string) => guard.trim().replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "");
+
+/**
+ * Whether the step is SKIPPED. Swamp skips a step when its guard is truthy ("a truthy result skips the step with reason guarded";
+ * a falsy one runs it). The first version of the destroy guard read the other way round and destroyed the VM it meant to keep (M5 try 8).
+ */
+function skipped(guard: string, context: Record<string, unknown>): boolean {
+    return environment.evaluate(expression(guard), context) === true;
+}
+
+const proof = await read("workflow-operation-proof-run.yaml");
+const destroy = step(proof, "Destroy the VM").guard!;
 
 const passed = '{"id": "main", "verdict": "passed", "secs": 9.5}';
 const failed = '{"id": "deny", "verdict": "failed", "cause": "assertion", "secs": 4, "failed": ["ufw"]}';
-
-/** Whether the destroy step runs (true) or is skipped so that the VM stays (false). */
-function runs(inputs: Record<string, unknown>, steps: Record<string, unknown>): boolean {
-    return environment.evaluate(guard, { inputs, steps }) as boolean;
-}
-
 const pinned = { status: "succeeded" };
 const proved = (report: string, status = "succeeded") => ({ status, outputs: { report: { stdout: report } } });
+/** Whether the destroy step is skipped, so that the VM stays. */
+const keeps = (inputs: Record<string, unknown>, steps: Record<string, unknown>) => skipped(destroy, { inputs, steps });
+
+Deno.test("anchor: a guard that is true skips the step, as a guard of the repository already relies on", async () => {
+    // The restore of `base` is skipped for a proof in CI, whose intent has no `restore_first`: that guard is true there.
+    const restore = step(await read("workflow-proof-fleet-verify.yaml"), "Restore the base snapshot").guard!;
+    assert(skipped(restore, { inputs: { intent: {} } }), "no restore_first: the restore is skipped");
+    assert(!skipped(restore, { inputs: { intent: { restore_first: true } } }), "restore_first: the restore runs");
+});
 
 Deno.test("the proof run takes keep_failed as an optional boolean", () => {
-    assert(JSON.stringify(workflow.inputs.properties.keep_failed) === '{"type":"boolean"}');
+    assert(JSON.stringify(proof.inputs.properties.keep_failed) === '{"type":"boolean"}');
 });
 
-Deno.test("without keep_failed the VM is always destroyed", () => {
-    assert(runs({}, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
-    assert(runs({ keep_failed: false }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
+Deno.test("without keep_failed the destroy step runs, whatever the cases did", () => {
+    assert(!keeps({}, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
+    assert(!keeps({ keep_failed: false }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
+    assert(!keeps({}, { "Pin the VM": pinned, "Prove the command": proved(passed) }));
 });
 
-Deno.test("with keep_failed a run whose cases did not all pass keeps its VM", () => {
-    assert(!runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${failed}`) }));
-    assert(!runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
+Deno.test("with keep_failed a run whose cases did not all pass skips the destroy step, so its VM stays", () => {
+    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${failed}`) }));
+    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
 });
 
-Deno.test("with keep_failed a run that printed no verdict, or whose verify step failed, keeps its VM", () => {
-    assert(!runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved("") }));
-    assert(!runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": { status: "failed" } }));
-    assert(!runs({ keep_failed: true }, { "Pin the VM": pinned }));
+Deno.test("with keep_failed a run that printed no verdict, or whose verify step failed, skips the destroy step", () => {
+    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved("") }));
+    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned }));
 });
 
 Deno.test("with keep_failed a run that passes, or whose VM never got ready, still destroys the VM", () => {
-    assert(runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(passed) }));
-    assert(runs({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${passed}`) }));
-    assert(runs({ keep_failed: true }, { "Create the VM": { status: "failed" } }));
-    assert(runs({ keep_failed: true }, { "Create the VM": { status: "succeeded" }, "Pin the VM": { status: "failed" } }));
+    assert(!keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(passed) }));
+    assert(!keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${passed}`) }));
+    assert(!keeps({ keep_failed: true }, { "Create the VM": { status: "failed" } }));
+    assert(!keeps({ keep_failed: true }, { "Create the VM": { status: "succeeded" }, "Pin the VM": { status: "failed" } }));
 });

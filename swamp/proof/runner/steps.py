@@ -10,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 
+import fleet as fleet_module
 import spec
 
 # The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
@@ -260,6 +261,8 @@ def cli(run, args):
         except terminal.TerminalError as error:  # the command did not prompt as the case expects: a finding, not a broken runner
             failures.append(f'{label}: {error}')
             continue
+        except fleet_module.FleetError as error:  # the tested CLI could not be made ready on the Node: the fleet, not the command
+            raise Infra(str(error)) from error
         failures.extend(check_result(run, label, form, forms, result, expect))
     if before is not None and (created := operation_ids(run) - before):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
