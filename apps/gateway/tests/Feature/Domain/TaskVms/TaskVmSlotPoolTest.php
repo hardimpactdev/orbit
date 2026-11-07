@@ -276,8 +276,8 @@ it('has the sweep leave a host alone while its refresh is open, and go on past a
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
-    // A row without its keys has no hub peer to remove, so its intent cannot be built.
-    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'wireguard_private_key' => null]);
+    // A row without its Node has no hub peer to remove, so its intent cannot be built.
+    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
     $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
     slotPoolSweepWorld();
     $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -525,19 +525,23 @@ it('has the removal of a group\'s workspace admit the release of its slot and wa
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->count())->toBe(1);
 });
 
-it('refuses the removal of a workspace on a task VM that has no slot, which no release can delete', function (): void {
+it('releases a VM of the old pool by its name: its topology seed goes, and the hub peer by the Node\'s public key', function (): void {
     [$host, $project] = slotPoolHost();
     slotPoolSweepWorld();
     $group = slotPoolGroup($project);
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-610', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit']));
-    TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => 'tvm-610', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.140']);
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit', 'wireguard_public_key' => str_repeat('o', 43).'=']));
+    // As tvm-610: no slot number and no private key on the Gateway.
+    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Medium, 'name' => 'tvm-610', 'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
         'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
     $group->taskable()->associate($instance);
     $group->fill(['status' => TaskGroupStatus::Settling])->save();
 
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(ResourceOperationException::class, 'has no slot')
-        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace');
+    $intent = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $vm->id)->sole()->input['intent'];
+    expect($intent['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($intent['hub_peer']['public_key'])->toBe(str_repeat('o', 43).'=')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
 });

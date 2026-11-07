@@ -436,7 +436,7 @@ An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on t
 
 The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A failed push or a refused teardown keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
-A row without a slot number, such as a VM of the old pool, has no release; its removal is refused with `task_vm.release_unavailable` and an operator deletes the VM on its host. Rows the old pool left in `destroying` were recorded `destroyed`.
+A VM of the old pool has no slot number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. Rows the old pool left in `destroying` were recorded `destroyed`.
 
 A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
 
@@ -1261,7 +1261,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
-| `task_vm.release_unavailable` | 409 | A task workspace's VM has no slot, so no release can take it |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |

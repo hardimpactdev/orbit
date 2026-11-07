@@ -90,7 +90,15 @@ final readonly class TaskVmSlotRuns
      */
     public function release(TaskVm $slot): array
     {
-        return ['intent' => [...$this->target($slot), 'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
+        // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host.
+        return ['intent' => ['host' => $this->host($slot), 'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot)],
+            'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
+    }
+
+    /** A start's seed clone is `<name>-seed`; a VM of the old pool, which has no slot number, has `<name>-topology-seed`. */
+    public static function seedClone(TaskVm $vm): string
+    {
+        return $vm->name.($vm->slot_number === null ? '-topology-seed' : '-seed');
     }
 
     /** The vault key of the claim's Pi token, which each turn of the group reads. */
@@ -112,17 +120,24 @@ final readonly class TaskVmSlotRuns
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
 
+    /** @return array{node_id:int,ssh:array<string,mixed>,project:string,pool:string} */
+    private function host(TaskVm $slot): array
+    {
+        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
+        $location = $this->settings->host($host->id);
+
+        return ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool];
+    }
+
     /** @return array{host:array<string,mixed>,slot:array<string,mixed>} the host and the VM, as every slot step names them */
     private function target(TaskVm $slot): array
     {
-        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
         $node = $slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409);
-        $location = $this->settings->host($host->id);
         $pi = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
         return [
-            'host' => ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool],
-            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
+            'host' => $this->host($slot),
+            'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot), 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
                 'pi_unit' => $this->systemd->unitName($pi)],
         ];
     }

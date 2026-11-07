@@ -78,7 +78,8 @@ final readonly class TaskVmIdentity
 
         return ['hub' => NodeWireGuardHubInput::joining($hub, $guest->id, $guest->name, ValidatedData::string($vm->wireguard_ip)),
             'hub_ssh_execution' => $this->ssh->forNode($hub),
-            'public_key' => TaskVmSlotIdentity::wireguardPublicKey(ValidatedData::string($vm->wireguard_private_key)), 'guest_node_id' => $guest->id];
+            // The Node keeps the public key of every task VM, one a start minted or one of the old pool, whose private key stayed in the guest.
+            'public_key' => ValidatedData::string($guest->wireguard_public_key), 'guest_node_id' => $guest->id];
     }
 
     /** The WireGuard hub: the Node with the `vpn` role. */

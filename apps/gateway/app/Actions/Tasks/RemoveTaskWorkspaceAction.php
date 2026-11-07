@@ -107,14 +107,10 @@ final readonly class RemoveTaskWorkspaceAction
      * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the release of the slot
      * (`task_vm.slot_release`) deletes the VM, its seed clone and its hub peer. The release projection deletes the
      * workspace Instance and the Node and unbinds the group, so this call only admits the release and then waits for it.
-     * A row without a slot number is not a task start's VM, and no release deletes it.
+     * A VM of the old pool, which has no slot number, goes the same way, by its name.
      */
     private function removeWithTaskVm(Instance $instance, TaskVm $vm): never
     {
-        if ($vm->slot_number === null) {
-            throw new ResourceOperationException('task_vm.release_unavailable', "Task VM [{$vm->name}] has no slot, so no release can delete it.", 409,
-                details: ['task_vm_id' => $vm->id]);
-        }
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
             app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
