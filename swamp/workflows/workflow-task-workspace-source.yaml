@@ -30,6 +30,10 @@ inputs:
   - run_id
   - vm
   type: object
+# A step of the checkout (the control folder, the clone credential, the clone, the bundle, the copy, the import, the origin, the task branch, the identity,
+# the Route's access rows, the inspection) ends the provision when it fails: it is not `allowFailure`, so the run fails with the message of the step, stderr
+# included, and no later step of the provision starts. The steps that stay `allowFailure` (profile, dependency files, Project setup, the copy of its output,
+# the proof club, the cleanups) report in the receipt; `Accept the source` of operation-task-provision ends the provision on that receipt.
 jobs:
 - name: source
   steps:
@@ -45,7 +49,6 @@ jobs:
         intent: ${{ inputs.intent }}
         vm: ${{ inputs.vm }}
     # Every failure lands in the receipt; this workspace run itself always ends with it.
-    allowFailure: true
   - name: prepare
     labels: {role: swamp}
     task:
@@ -74,7 +77,6 @@ jobs:
     - step: prepare
       condition:
         type: succeeded
-    allowFailure: true
   - name: control
     labels: {role: swamp}
     task:
@@ -94,7 +96,6 @@ jobs:
     - step: prepare
       condition:
         type: succeeded
-    allowFailure: true
   # The credential is minted here, minutes before the clone, because the VM step before it can wait for capacity for longer than an installation token lives.
   # It exists only in the vault and in the environment of the clone: the VM gets a bundle, never a credential.
   - name: mint_clone
@@ -110,7 +111,6 @@ jobs:
     - step: control
       condition:
         type: succeeded
-    allowFailure: true
   - name: clone
     labels: {role: swamp}
     task:
@@ -140,7 +140,6 @@ jobs:
     - step: mint_clone
       condition:
         type: succeeded
-    allowFailure: true
   - name: bundle
     labels: {role: swamp}
     task:
@@ -161,7 +160,6 @@ jobs:
     - step: clone
       condition:
         type: succeeded
-    allowFailure: true
   - name: prepare_remote
     labels: {role: swamp}
     task:
@@ -195,7 +193,6 @@ jobs:
     - step: directory
       condition:
         type: succeeded
-    allowFailure: true
   - name: copy_bundle
     labels: {role: swamp}
     task:
@@ -229,7 +226,6 @@ jobs:
     - step: prepare_remote
       condition:
         type: succeeded
-    allowFailure: true
   - name: import
     labels: {role: swamp}
     task:
@@ -265,7 +261,6 @@ jobs:
     - step: copy_bundle
       condition:
         type: succeeded
-    allowFailure: true
   - name: origin
     labels: {role: swamp}
     task:
@@ -300,7 +295,6 @@ jobs:
     - step: import
       condition:
         type: succeeded
-    allowFailure: true
   - name: branch
     labels: {role: swamp}
     task:
@@ -335,7 +329,6 @@ jobs:
     - step: origin
       condition:
         type: succeeded
-    allowFailure: true
   - name: identity
     labels: {role: swamp}
     task:
@@ -370,7 +363,6 @@ jobs:
     - step: branch
       condition:
         type: succeeded
-    allowFailure: true
   # The Route's Caddy access on the guest, one row at a time, after the fetch and before the setup steps write into the tree: what they
   # create inherits the default entries, as in instance:create's checkout phase. The Route then skips these rows for the guest.
   # The rows run beside identity, inspect, composer and profile, which only read the tree; the dependency writes wait for them, so the
@@ -407,7 +399,6 @@ jobs:
       in: '${{ has(inputs.intent.workspace.access) ? inputs.intent.workspace.access : [] }}'
     concurrency: 1
     guard: ${{ self._index > 0 && (!("access-"+string(self._index-1) in steps) || steps["access-"+string(self._index-1)].status != "succeeded") }}
-    allowFailure: true
   - name: inspect
     labels: {role: swamp}
     task:
@@ -445,7 +436,6 @@ jobs:
     - step: identity
       condition:
         type: succeeded
-    allowFailure: true
   - name: composer
     labels: {role: swamp}
     task:
@@ -480,7 +470,6 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.workspace.skip_profile || !steps.inspect.outputs.stdout.contains("composer.json|regular")
       }}
-    allowFailure: true
   - name: profile
     labels: {role: swamp}
     task:

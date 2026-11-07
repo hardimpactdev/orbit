@@ -65,6 +65,14 @@ sequenceDiagram
   %%> - the clone credential never reaches the VM, and the VM holds no other, outside the setup token files above: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
+  Note over SW: Accept the source<br/>fails on an error_code
+  %%> What it does:
+  %%> - fails the run when the receipt of the workspace step carries an error code, before the converge, the nested fleet, the Route and the Processes start
+  %%> Why:
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): in try 13 (proof 12699, group 3920) the import failed on tvm-866, the provision went on into the fleet start, and only the last step failed the run; a workspace left on main could have run the proof on main
+  %%> - the steps of the checkout (control folder, clone credential, clone, bundle, copy, import, origin, task branch, identity, Route access rows, inspection) are no longer `allowFailure`: the run fails at the first of them with the message of the step, stderr included, and no later step of the provision starts
+  %%> - the profile, the dependency files, the Project setup and the cleanups still report in the receipt, which this step reads
+  %%> - before, every step of the workspace job was `allowFailure`, so the step `Set up the workspace` always ended as succeeded and nothing after it checked the receipt until `Accept the workspace`
   opt the task declares a topology
     Note over SW: Pin the converge<br/>guest host key
     %%> Why:
