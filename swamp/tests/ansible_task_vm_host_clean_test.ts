@@ -67,6 +67,11 @@ const listings: Record<string, unknown> = {
     { name: "nr-seed-new", type: "custom" },
     { name: "nr-builder", type: "virtual-machine" },
   ],
+  // A retired project keeps the profile its instances used; Incus refuses to delete the project while it exists.
+  "--project orbit-baselines profile list --format json": [
+    { name: "default" },
+    { name: "baseline" },
+  ],
   "--project orbit-proto list --format json": [],
   "--project orbit-proto image list --format json": [{
     fingerprint: "c1c2cf4051fb",
@@ -184,6 +189,7 @@ Deno.test({
       "--project orbit-baselines delete --force orbit-baseline-gateway",
       "--project orbit-baselines image delete faf0e887aa8d",
       "--project orbit-baselines storage volume delete orbit-tasks orbit-baseline-verify-seed",
+      "--project orbit-baselines profile delete baseline",
       "project delete orbit-baselines",
       "--project orbit-measure-nr delete --force nr-builder",
       "--project orbit-measure-nr delete --force nr-task",

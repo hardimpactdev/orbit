@@ -1,6 +1,6 @@
 ---
 # One Incus project of a task VM host, `clean_entry.name`, loses its images; with `clean_entry.whole` also its instances, its custom
-# volumes on every pool, and then the project itself. Images and volumes go only when the project keeps its own: a project that shares
+# volumes on every pool, its own profiles, and then the project itself. Images and volumes go only when the project keeps its own: a project that shares
 # them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves the next project its turn.
 # A volume or image that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
 - name: Empty the project
@@ -47,6 +47,17 @@
       ansible.builtin.command: { argv: [incus, --project, "{{ project }}", storage, volume, delete, "{{ item.0 }}", "{{ item.1 }}"] }
       loop: "{{ project_custom }}"
       loop_control: { label: "{{ item.0 }}/{{ item.1 }}" }
+      changed_when: true
+    # A project with a profile of its own cannot be deleted: Incus keeps only `default` in an empty project.
+    - name: Read the profiles
+      when: whole
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", profile, list, --format, json] }
+      register: project_profiles
+      changed_when: false
+    - name: Remove the profiles
+      when: whole
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", profile, delete, "{{ item }}"] }
+      loop: "{{ project_profiles.stdout | from_json | map(attribute='name') | reject('equalto', 'default') | list }}"
       changed_when: true
     - name: Remove the project
       when: whole
