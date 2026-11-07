@@ -19,6 +19,7 @@ inputs:
       - task_vm.provision
       - tasks.provision
       - task_vm.enroll
+      - task_vm.image_refresh
       - task_vm.prepare_runtime
     intent:
       type: object

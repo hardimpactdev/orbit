@@ -10,7 +10,6 @@ use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPrepResults;
 use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmState;
@@ -47,11 +46,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         $provision = $this->provision->input(self::provisionView($operation));
         $cancel = ValidatedData::object($input['cancel']);
 
-        // A proof needs the nested fleet, so its provision always has the converge intent that the workflow takes as an input of its own.
-        $converge = $provision['converge'] ?? throw new ResourceOperationException('tasks.provision_refused', 'A proof requires a task VM with a nested topology.', 422);
-
         return [
-            'converge' => $converge,
             'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'],
                 'cancel' => ['node_id' => ValidatedData::integer($cancel['node_id']), ...TaskVmProviderWorkflowInput::envelope($cancel)]],
             'execution_secrets' => $provision['execution_secrets'],
@@ -90,13 +85,13 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             $input = ValidatedData::object($operation->input);
             $status = ValidatedData::string($data['status']);
 
-            // The VM and the workspace of the group, from the same receipt provision records. A run that never got a VM ready records the failure.
-            $receipt = TaskPrepResults::receipt($native['provision'] ?? null);
-            if ($status === 'succeeded' && $receipt === null) {
-                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no ready VM.', 422);
+            // The slot and the workspace of the group, as a claim records them. The run releases the slot itself, always.
+            $claimed = is_array($native['provision'] ?? null);
+            if ($status === 'succeeded' && ! $claimed) {
+                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed slot.', 422);
             }
-            $this->provision->record(self::provisionView($operation), ['status' => $receipt !== null ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
-                'error_code' => $receipt !== null ? null : 'tasks.provision_failed'], $receipt ?? ['failed_step' => 'provision'], static fn (): Operation => $operation);
+            $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
+                $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
 
             $report = $native['steps'] ?? null;
             $report = is_array($report) && is_array($report['Report'] ?? null) && is_string($report['Report']['stdout'] ?? null) ? $report['Report']['stdout'] : '';
@@ -114,7 +109,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
             // The run's own destroy step ends the group. A failed run that kept its VM (`keep_failed`) leaves the group open for 60 minutes; any other end leaves the VM to the normal cancel.
             $kept = null;
-            if (NativeRunResult::stepStatus($native, 'Destroy the VM') === 'succeeded') {
+            if (NativeRunResult::stepStatus($native, 'Release the slot') === 'succeeded') {
                 $group = Task::topLevel()->lockForUpdate()->find(ValidatedData::integer($input['group_id']));
                 if ($group instanceof Task && $group->status !== TaskGroupStatus::Cancelled) {
                     $this->ending->settle($group, ValidatedData::object($input['cancel']), 'tasks.cancel');
@@ -146,7 +141,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     private function kept(Operation $run, array $input, array $native, array $data): ?array
     {
         if (($input['keep_failed'] ?? false) !== true || ($data['status'] ?? null) !== 'failed'
-            || NativeRunResult::stepStatus($native, 'Destroy the VM') !== 'skipped') {
+            || NativeRunResult::stepStatus($native, 'Release the slot') !== 'skipped') {
             return null;
         }
         $groupId = ValidatedData::integer($input['group_id']);

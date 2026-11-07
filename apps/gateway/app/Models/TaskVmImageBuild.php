@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $recipe_identity
  * @property string|null $recipe_json
  * @property int|null $recipe_generation
- * @property array<string, array{project: string, alias: string, fingerprint: string, type: string}> $images
+ * @property array<string, array<string, string>> $images an image build: {project, alias, fingerprint, type: virtual-machine}; a refresh: {project, type: snapshot, vm, seed, snapshot}
  * @property Carbon|null $promoted_at
  * @property int $attempt
  * @property string|null $source_alias

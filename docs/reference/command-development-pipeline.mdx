@@ -20,10 +20,10 @@ The command development pipeline is the stages every command goes through during
 
 Each flow has its own trigger. The first three run for a task. The others keep a host ready.
 
-- **Claim.** `tasks:provision` runs for every task group. It claims a free slot, a stopped task VM that Orbit enrolled from the host's promoted image with its fixed identity, and starts it. The containers start from their `base` snapshot.
+- **Task start.** `tasks:provision` runs for every task group. It claims a free slot identity, copies the host's base VM snapshot with that identity and the claim's new keys, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Release.** The end of a group stops its slot and rolls it back to `clean`.
-- **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, and daily. A code-only release needs none. It bakes the next image from the current one; idle slots then re-enrol from it.
+- **Release.** The end of a group deletes its VM and seed clone and revokes the claim's model key. The identity stays.
+- **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, and daily. A code-only release needs none. It converges the host's base VM, snapshots it and proves the snapshot with one task start.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 
 ## 1. Prep
@@ -41,7 +41,7 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 ## 2. Development environment
 
-**Being rebuilt to the target (Nick, 2026-11-07).** A task VM is a fixed slot, `<node>-tvm-<n>`: a permanent Node whose identity is written once, at enrol. `tasks:provision` claims a free slot and only starts it. The host's image holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, a warm checkout of main with its dependencies, and a nested topology of three Incus system containers (a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node), migrated and running, with a `base` snapshot each. A claim starts the slot, fetches the task branch, starts the containers from `base` and checks that they are ready, in under 30 seconds. The end of the group stops the slot and rolls it back to its `clean` snapshot. An agent, or Nick, develops a command here, and the proof cases run here too.
+**Being rebuilt to the target (Nick, 2026-11-07).** A slot is only a fixed identity, `<node>-tvm-<n>`: a permanent Node with its WireGuard key and hub peer, SSH host key and agent secret, kept by the Gateway. `tasks:provision` claims a free identity and mints the claim's Pi token and model key, copies the host's base VM snapshot and its seed (ZFS clones), writes the identity and the keys, runs the same converge as the release refresh and starts the task branch, then checks once that it is ready. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, a warm checkout of main with its dependencies, and a nested topology of three Incus system containers (a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node) that start with the VM, with a `base` snapshot each for the proof. The end of the group deletes the VM. An agent, or Nick, develops a command here, and the proof cases run here too.
 
 The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so the author's changes reach them at once. A restore of `base` is a reboot of the containers.
 

@@ -75,6 +75,7 @@
       tags: [boot]
       when: converge_due.boot
     - { name: Checkout, ansible.builtin.import_tasks: tasks/task-vm-checkout.yml, tags: [checkout] }
+    - { name: Branch, ansible.builtin.import_tasks: tasks/task-vm-branch.yml, tags: [branch] }
     - { name: Fleet, ansible.builtin.import_tasks: tasks/task-vm-fleet.yml, tags: [fleet] }
     - name: Check
       ansible.builtin.import_tasks: tasks/task-vm-check.yml
@@ -86,12 +87,7 @@
       tags: [check]
       when: converge_due.check
 
-# The nested fleet is ready when Doctor of the nested Gateway is healthy; the wait gives up after its delays (task-vm-fleet-wait.yml).
-- name: Wait for the nested fleet
-  ansible.builtin.import_playbook: task-vm-fleet-wait.yml
-  vars: { wait_kind: doctor, wait_seconds: 300 }
-  tags: [fleet]
-
+# The converge waits for no nested service: readiness belongs to a task start (docs/cli/tasks/provision.mmd).
 - name: Task VM image
   hosts: task_vm
   become: true

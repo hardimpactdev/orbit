@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design (Nick 2026-11-07): a release stops the slot and rolls it back to its `clean` snapshot. The identity stays. There are no record deletes, no DNS withdrawal, no Metrics membership and no hub peer removal. Enrol: docs/cli/tasks/vm-slot-enrol.mmd; claim: docs/cli/tasks/provision.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): the release of a task VM as its own run, for a task start that failed or a group that ended without a cancel run. The same steps end a cancel (docs/cli/tasks/cancel.mmd). The identity stays.
   %% status: draft
-  %% command: none · the end of a task group
+  %% command: none · the end of a task start that failed
   %% kind: task_vm.slot_release
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,29 +10,18 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
-  Note over GW: Release the slot<br/>the group ends
-  %%> Started by:
-  %%> - `tasks:cancel` and `tasks:complete`, as the last child of their run, after approved work is pushed
-  %%> - a failed claim
-  %%> Result:
-  %%> - the intent holds the slot name and its seed clone name
+  Note over GW: Admit the release<br/>the identity is releasing
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
-  SW->>H: Stop the slot<br/>incus stop --force
+  SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - stops `shark-tvm-3`; a stopped slot counts as done
-  SW->>H: Roll back to clean<br/>VM and seed clone
-  %%> What it does:
-  %%> - restores the `clean` snapshot of the VM and of its seed clone; the task's checkout, containers and files are gone
-  %%> Not included:
-  %%> - the Node, the WireGuard peer, the identity volume, the agent secret, the Pi token and the model key stay as they are
+  %%> - `incus delete --force` and the seed clone; a rerun finds them gone
+  %%> - beside it, the claim's model key is revoked at the model router; the Pi token goes with the VM
+  %%> - no Node, DNS, Metrics or hub peer change
   alt the run passes
-    SW-->>GW: Run succeeded<br/>slot clean
-    Note over GW: Record the slot free
-    %%> Result:
-    %%> - the group lets go of the slot; the slot is `free`
-    %%> - when the slot's image is not the host's promoted image, the Gateway admits its re-enrol (docs/cli/tasks/vm-slot-enrol.mmd)
+    SW-->>GW: Run succeeded<br/>identity free
+    Note over GW: Free the identity<br/>forget the claim's keys
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the slot is `failed` and no claim takes it; a new release or a re-enrol repairs it
+    %%> - the identity is `failed`; while it holds a model key the slot rule releases it again, then it enrols it again
   end

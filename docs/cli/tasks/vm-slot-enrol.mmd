@@ -1,71 +1,32 @@
 sequenceDiagram
-  %% Target design (Nick 2026-11-07): task VMs are fixed, reused slots named <node>-tvm-<slot>. Each slot is a permanent Orbit Node whose identity is written once, here. A claim (docs/cli/tasks/provision.mmd) only starts it; a release (docs/cli/tasks/vm-slot-release.mmd) rolls it back to `clean`. Decided by the orchestrator from that end state: the identity lives on a small volume per slot on the host, so a slot keeps it when it is rebuilt from a new image.
+  %% Target design (agreed with Nick, 2026-11-07): a slot is only a fixed identity that the Gateway keeps, `shark-tvm-3`: its Node record, WireGuard key and hub peer, SSH host key and agent secret. No slot VM waits; each task start makes a VM from the host's image and writes this identity onto it (docs/cli/tasks/provision.mmd), and a release deletes that VM (docs/cli/tasks/cancel.mmd).
   %% status: draft
-  %% command: none · enrol or re-enrol one slot
+  %% command: none · enrol one slot identity
   %% kind: task_vm.slot_enrol
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane H icon=server pill=target tone=amber
   %% lane HUB icon=server pill=target tone=purple
-  %% lane VM icon=server pill=slot tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
-  participant VM as Slot<br/>shark-tvm-3
-  Note over GW: Record the slot<br/>once per slot number
+  Note over GW: Make the identity<br/>once per slot number
   %%> Started by:
-  %%> - the `slots` count of a task VM host (`node:update`): one enrol per missing slot, one at a time
-  %%> - the image refresh: it re-enrols the first idle slot from the candidate, then each other idle slot after the promotion, one at a time
-  %%> - a release, when the slot's image is no longer the host's promoted image
-  %%> Requirements:
-  %%> - an active task VM host, and no group holds the slot
-  %%> Result on the first enrol only:
-  %%> - the Node `shark-tvm-3` with its `app-dev` role, WireGuard address, agent secret, the `pi-server` Process with its Pi token, and the workspace Instance at the fixed checkout path
-  %%> - the agent secret and the Pi token go to the vault; the run inputs hold only their key names
-  %%> A re-enrol writes no record: the slot keeps all of them
+  %%> - the `slots` count of a task VM host (`node:update`): one enrol per missing identity, one at a time
+  %%> - an identity whose enrol failed; one that still holds a model key after a failed release is released first
+  %%> Result:
+  %%> - the Node `shark-tvm-3` with its `app-dev` role, its WireGuard address and its `pi-server` Process
+  %%> - the identity's WireGuard key, SSH host key and agent secret, made by the Gateway and kept encrypted on the slot's row
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-enrol
-  SW->>SW: Issue the model key<br/>workflow · task-vm-model-issue
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> What it does:
-  %%> - makes the slot's model key and registers it with the model router; the key stays in the run and goes only into the identity volume
-  %%> Guard:
-  %%> - skipped when the slot has its model key; a key is revoked only when the slot is retired
-  SW->>H: Write the identity<br/>ansible phase · identity
-  %%> What it does:
-  %%> - creates the volume `shark-tvm-3-identity` once
-  %%> - makes the WireGuard key pair and the SSH host keys in the volume, and writes the agent secret, the Pi token, the model key, the hostname and the WireGuard address
-  %%> - prints only the WireGuard public key and the host key fingerprint
-  %%> Fixed:
-  %%> - a key or secret that exists is never made again, so every rebuild keeps the slot's identity; a private key never leaves the host
-  SW->>HUB: Add the hub peer<br/>peer file · once
-  %%> What it does:
-  %%> - writes the slot's peer file from the public key above and reloads the hub
-  %%> Guard:
-  %%> - skipped when the peer file already matches; a claim or a release never touches the hub
-  SW->>H: Rebuild the slot VM<br/>ansible phase · slot
-  %%> What it does:
-  %%> - deletes the slot's VM, its snapshots and its seed clone when they exist
-  %%> - clones the seed of the host's promoted image (the candidate, for the refresh), and creates `shark-tvm-3`, stopped, from that image with the seed clone, the identity volume, its fixed address and MAC
-  SW->>H: Take the clean snapshot<br/>VM and seed clone
-  %%> What it does:
-  %%> - snapshots the stopped VM and its seed clone as `clean`; a release rolls back to it, so every claim boots the same disk
-  SW->>VM: Check ready<br/>start · the claim's check
-  %%> What it does:
-  %%> - starts the slot; the image's identity unit installs the identity before sshd, WireGuard, the agent and Pi start
-  %%> - then the same check as a claim: the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
-  SW->>H: Release the slot<br/>stop · roll back to clean
-  %%> What it does:
-  %%> - the steps of a release (docs/cli/tasks/vm-slot-release.mmd): the slot ends stopped at `clean`, and a stopped slot holds disk, not memory
+  %%> - writes the identity's peer file from its fixed public key and loads it; a rerun writes the same file
+  %%> - a task start or a release never touches the hub
   alt the run passes
-    SW-->>GW: Run succeeded<br/>public key · image
-    Note over GW: Record the slot free<br/>with its image
-    %%> Result:
-    %%> - records the WireGuard public key and host key on the first enrol, and the image fingerprint on every enrol
-    %%> - the slot is `free`
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the identity free<br/>Node active
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the slot is `failed` and no claim takes it; the identity volume and the hub peer stay
-    %%> - running the enrol again is safe: it keeps the keys and rebuilds the VM
+    %%> - the identity is `failed` and no task start takes it; the slot rule enrols it again
   end

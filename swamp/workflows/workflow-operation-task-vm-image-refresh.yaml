@@ -1,9 +1,9 @@
 id: 17bf7d13-d591-4dc7-a735-5396d311994f
 name: operation-task-vm-image-refresh
 description: >-
-  Refresh the task image of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: one VM from the current
-  image, one Ansible run that converges everything, then the image and its seed are published and promoted with `-previous` kept.
-  No step calls the Gateway.
+  Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: start the host's stopped base VM,
+  converge it as a task start would, stop it and snapshot it and its seed, prove the snapshot with one task start, and keep the newest two
+  snapshots. The Gateway records the new snapshot. No step calls the Gateway.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -17,9 +17,10 @@ inputs:
       type: object
       properties:
         host: {type: object}
-        vm: {type: object}
         converge: {type: object}
-      required: [host, vm, converge]
+        # The task start that proves the candidate with a free slot identity, and its release: their intents and vault key names.
+        prove: {type: object}
+      required: [host, converge, prove]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -39,18 +40,19 @@ jobs:
 - name: refresh
   labels: {role: swamp}
   steps:
-  - name: Start the refresh VM
+  - name: Start the base VM
     labels: {role: swamp}
     writes: true
     task:
       type: workflow
       workflowIdOrName: task-vm-host-phase
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets }}', tags: refresh-vm}
-  # The outer VM, the warm checkout and each container, then their `base` snapshots and the clean before the publication.
-  - name: Converge everything
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: base-start}
+  # The same converge as a task start, with no wait for the nested Gateway and no identity wipe: the base VM never gets an identity.
+  - name: Converge
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Start the refresh VM, condition: {type: succeeded}}]
+    dependsOn: [{step: Start the base VM, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-image-ansible
@@ -59,34 +61,46 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent.converge }}
-        guest: ${{ inputs.intent.vm.name }}
-        tags: software,tools,boot,checkout,fleet,check,clean
+        guest: ${{ inputs.intent.host.base.vm }}
+        tags: software,tools,boot,checkout,fleet,check
         with_pi: true
-  - name: Publish the image
+  - name: Stop and snapshot
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Converge everything, condition: {type: succeeded}}]
+    dependsOn: [{step: Converge, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-host-phase
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets }}', tags: publish}
-  - name: Promote
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: base-snapshot}
+  # Steps 2 to 4 of a task start from the new snapshot, with a free slot identity, then its release.
+  - name: Prove the candidate
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Publish the image, condition: {type: succeeded}}]
+    dependsOn: [{step: Stop and snapshot, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-candidate-proof
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', prove: '${{ inputs.intent.prove }}'}
+  - name: Prune old snapshots
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Prove the candidate, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-host-phase
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets }}', tags: promote, read_aliases: true}
-# A failed refresh leaves the host as it was: the refresh VM, its seed clone and a candidate that was not promoted go.
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: base-prune}
+# A failed refresh leaves the host as it was: the base VM is stopped and rolled back to the recorded snapshot, and the run's snapshot goes.
 - name: discard
   labels: {role: swamp}
   dependsOn: [{job: refresh, condition: {type: failed}}]
   steps:
-  - name: Discard the candidate
+  - name: Roll the base VM back
     labels: {role: swamp}
     writes: true
     task:
       type: workflow
       workflowIdOrName: task-vm-host-phase
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets }}', tags: discard}
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: base-discard}

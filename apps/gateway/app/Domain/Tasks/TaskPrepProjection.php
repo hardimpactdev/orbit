@@ -10,8 +10,10 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -24,7 +26,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
 {
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
-        'Create the VM' => 'tasks.provision_failed', 'Pin the VM' => 'tasks.provision_failed',
+        'Claim a slot' => 'tasks.provision_failed',
         'Check the draft' => 'tasks.prep_not_committed',
         'Plan the cases 0' => 'tasks.prep_plan_failed', 'Plan the cases 1' => 'tasks.prep_plan_failed', 'Plan the cases 2' => 'tasks.prep_plan_failed', 'Settle fix 1' => 'tasks.prep_not_committed', 'Settle fix 2' => 'tasks.prep_not_committed',
         'Review has no findings' => 'tasks.prep_review_unresolved',
@@ -40,7 +42,9 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
 
         return [
             'intent' => ['provision' => $provision['intent'], 'draft' => $intent['draft'], 'fix' => $intent['fix'], 'reviews' => $intent['reviews'], 'publish' => $intent['publish'], 'plan' => $intent['plan']],
-            'execution_secrets' => $provision['execution_secrets'],
+            // The claim's Pi token, which every turn of the prep reads.
+            'execution_secrets' => [...ValidatedData::object($provision['execution_secrets']), 'pi_token' => ['vault' => 'orbit-control-inputs',
+                'key' => TaskVmSlotRuns::piTokenKey(TaskVm::query()->findOrFail(ValidatedData::integer(ValidatedData::object($intent['provision'])['task_vm_id'])))]],
             'publish_secrets' => $intent['publish_secrets'],
         ];
     }
@@ -60,14 +64,14 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             $first = true;
             $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
-            $receipt = TaskPrepResults::receipt($native['provision'] ?? null);
-            if ($status === 'succeeded' && $receipt === null) {
-                throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no ready VM.', 422);
+            $claimed = is_array($native['provision'] ?? null);
+            if ($status === 'succeeded' && ! $claimed) {
+                throw new ResourceOperationException('operation.invalid_result', 'The prep run reports no claimed slot.', 422);
             }
 
-            // The VM and the workspace of the group, from the same receipt provision records. A run that never got a VM ready records the failure.
-            $this->provision->record(self::provisionView($operation), ['status' => $receipt !== null ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
-                'error_code' => $receipt !== null ? null : ($code ?? 'tasks.provision_failed')], $receipt ?? ['failed_step' => 'provision'], static fn (): Operation => $operation);
+            // The slot and the workspace of the group, as a claim records them. A run whose claim failed releases its slot.
+            $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
+                $claimed ? null : ($code ?? 'tasks.provision_failed'), static fn (): Operation => $operation);
 
             $intent = ValidatedData::object($operation->input);
             $threads = self::threads($intent);

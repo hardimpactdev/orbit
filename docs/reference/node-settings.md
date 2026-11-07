@@ -110,7 +110,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-With `slots`, the host keeps `count` fixed slots of `size` for the Project `project_id`, named `<node>-tvm-1` to `<node>-tvm-<count>`. Each slot is a permanent Node with an identity written once at enrol. A claim starts a free slot; the end of its group stops it and rolls it back to `clean`. A stopped slot takes no `max_vms` capacity.
+With `slots`, the host keeps `count` slot identities of `size` for the Project `project_id`, named `<node>-tvm-1` to `<node>-tvm-<count>`. Each is a permanent Node with keys the Gateway makes once at enrol. A task start copies the host's base VM snapshot with a free identity; the end of its group deletes that VM. An identity without a VM takes no `max_vms` capacity.
 
 Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 

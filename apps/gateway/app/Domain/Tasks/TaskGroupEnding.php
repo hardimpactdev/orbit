@@ -4,41 +4,33 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Routes\NativeRouteRemovalCompletion;
-use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmDestroyProjection;
-use App\Models\Instance;
+use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /**
- * The records of a task group after its VM is gone, from the cleanup input that admission captured. The cancel of a group and the
- * end of a proof run both settle through it, inside the transaction that holds the locked group.
+ * The records of a task group after its slot is released (docs/cli/tasks/vm-slot-release.mmd), from the input that admission captured.
+ * The cancel of a group and the end of a proof run both settle through it, inside the transaction that holds the locked group.
  */
 final readonly class TaskGroupEnding
 {
-    /** Forgets the workspace and the VM, and cancels the group with its open subtasks.
+    /**
+     * Frees the slot, unbinds its workspace and cancels the group with its open subtasks. Nothing is deleted: the slot keeps its Node and
+     * its workspace Instance for the next claim.
+     *
      * @param  array<string,mixed>  $captured
      */
     public function settle(Task $group, array $captured, string $kind): void
     {
-        if ($group->taskable_id !== null) {
-            $instance = Instance::query()->where('task_workspace_owner_id', $group->id)->where('project_id', $group->project_id)
-                ->lockForUpdate()->findOrFail($group->taskable_id);
-            $vm = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($captured['task_vm_id']));
-            if ($instance->node_id !== $vm->node_id || $vm->group_id !== $group->id) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup no longer owns its workspace VM.', 422);
-            }
-            foreach (RouteExecutionProof::objects($captured['workspace_routes'] ?? []) as $route) {
-                app(NativeRouteRemovalCompletion::class)->apply(['routes' => [['route_id' => ValidatedData::integer($route['route_id']), 'domain' => ValidatedData::string($route['domain']), 'replacement_of' => null]]]);
-            }
-            $instance->delete();
-        }
         if (($captured['task_vm_id'] ?? null) !== null) {
-            $vm = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($captured['task_vm_id']));
-            app(TaskVmDestroyProjection::class)->record($vm, $captured);
+            $slot = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($captured['task_vm_id']));
+            if ($slot->group_id !== null && $slot->group_id !== $group->id) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup no longer owns its slot.', 422);
+            }
+            app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
         }
         $group->taskable()->dissociate();
         $group->fill(['status' => $kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled,
@@ -47,13 +39,16 @@ final readonly class TaskGroupEnding
             ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
     }
 
-    /** Incomplete cleanup keeps the group and workspace for another cancel; only its captured VM cleanup fails.
+    /** A release that did not pass keeps the group for another cancel; its slot is failed, so no claim takes it.
      * @param  array<string,mixed>  $captured
      */
     public function failed(array $captured, ?string $errorCode): void
     {
         if (($captured['task_vm_id'] ?? null) !== null) {
-            app(TaskVmDestroyProjection::class)->failed(TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($captured['task_vm_id'])), $captured, $errorCode);
+            $slot = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($captured['task_vm_id']));
+            if ($slot instanceof TaskVm) {
+                $slot->update(['state' => TaskVmState::Failed, 'error_code' => $errorCode ?? 'task_vm.slot_release_failed']);
+            }
         }
     }
 }

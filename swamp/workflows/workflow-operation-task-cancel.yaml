@@ -1,6 +1,6 @@
 id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
 name: operation-task-cancel
-description: End one task group on 209; push approved work, withdraw the Route, tear down, destroy the VM, and check it is gone.
+description: End one task group on 209 (docs/cli/tasks/cancel.mmd); push approved work, then release its task VM, whose VM and seed clone are deleted while the slot identity stays.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -17,22 +17,7 @@ inputs:
     run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
-    execution_secrets:
-      type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
-        required:
-        - vault
-        - key
-        additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required:
   - operation_id
   - node_id
@@ -40,10 +25,10 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
+queueTimeout: 60
 jobs:
 - name: cancel
   labels: {role: swamp}
-  # A step that never ran reads as skipped, so each step names every earlier step it needs.
   steps:
   - name: Push approved work
     labels: {role: swamp}
@@ -55,155 +40,32 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
         intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
         execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
-  - name: Hold the Route Nodes
+  # The VM and its seed clone are deleted, and the claim's model key is revoked. The slot identity keeps its Node and hub peer.
+  # A push that failed keeps the work on the slot: the release waits for a push that passed or did not run.
+  - name: Release the slot
     labels: {role: swamp}
-    queueTimeout: 30
     writes: true
-    guard: '${{ size(inputs.intent.workspace_routes) == 0 || has(inputs.run_id) }}'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-hold-acquire" }}
-      methodName: execute
-      inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
-        env:
-          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
-          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
+    guard: ${{ inputs.intent.release == null }}
     dependsOn:
     - step: Push approved work
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: Withdraw the Route
-    labels: {role: swamp}
-    guard: ${{ size(inputs.intent.workspace_routes) == 0 }}
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     task:
       type: workflow
-      workflowIdOrName: route-mutation-withdraw
+      workflowIdOrName: operation-task-vm-slot-release
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: '${{ size(inputs.intent.workspace_routes) == 0 ? {} : inputs.intent.workspace_routes[0] }}'
-        execution_secrets: {}
-        parent_run_id: ${{ run.id }}
-    dependsOn:
-    - step: Push approved work
-      condition: &done
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: Hold the Route Nodes
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: Release the Route Nodes
+        kind: tasks.cancel
+        intent: '${{ inputs.intent.release == null ? {} : inputs.intent.release.intent }}'
+        execution_secrets: '${{ inputs.intent.release == null || !has(inputs.intent.release.intent.model) ? {} : inputs.intent.release.execution_secrets }}'
+- name: check
+  labels: {role: swamp}
+  dependsOn: [{job: cancel, condition: {type: completed}}]
+  steps:
+  - name: Check the end
     labels: {role: swamp}
-    queueTimeout: 30
-    writes: true
-    guard: '${{ !("Hold the Route Nodes" in steps) }}'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-hold-release" }}
-      methodName: execute
-      inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
-        env:
-          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
-          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
-    dependsOn:
-    - step: Withdraw the Route
-      condition:
-        type: always
-    - step: Hold the Route Nodes
-      condition:
-        type: always
-  - name: Run teardown steps
-    labels: {role: swamp}
-    # Teardown steps are admitted only while the VM is ready; a parked or stopped VM has none.
-    guard: '${{ size(inputs.intent.teardown) == 0 || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-workspace-teardown
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-    dependsOn:
-    - step: Push approved work
-      condition: *done
-    - step: Withdraw the Route
-      condition: *done
-    - step: Hold the Route Nodes
-      condition: *done
-  - name: Destroy the task VM
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.task_vm_id == null || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-destroy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-    dependsOn:
-    - step: Push approved work
-      condition: *done
-    - step: Withdraw the Route
-      condition: *done
-    - step: Run teardown steps
-      condition: *done
-    - step: Hold the Route Nodes
-      condition: *done
-  - name: Check the VM is gone
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-cancel-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          python3 - <<'PYTHON'
-          import json
-          import os
-          import sys
-
-          vm = json.loads(os.environ["VM"])
-          gone = vm.get("destroyed") is True and vm.get("cleanup_complete") is True if os.environ["TASK_VM"] == "true" else True
-          if os.environ["WITHDRAWN"] != "true" or not gone:
-              sys.exit("The Route or the task VM is still there.")
-          print(json.dumps({"group_id": int(os.environ["GROUP"]), "instance_id": json.loads(os.environ["INSTANCE"]), "cleanup_complete": True, "vm": vm}))
-          PYTHON
-        env:
-          GROUP: ${{ string(inputs.intent.group_id) }}
-          INSTANCE: '${{ inputs.intent.instance_id == null ? "null" : string(inputs.intent.instance_id) }}'
-          WITHDRAWN: '${{ string(size(inputs.intent.workspace_routes) == 0 || steps["Withdraw the Route"].outputs.result.ready) }}'
-          TASK_VM: ${{ string(inputs.intent.task_vm_id != null) }}
-          # The destroy child prints no result: its success proves the VM gone, and the Gateway builds the receipt from the captured intent.
-          # A destroy step its guard skipped has no entry in `steps`, so the guard's own test comes before the step is read.
-          VM: '${{ inputs.intent.task_vm_id == null || (size(inputs.intent.workspace_routes) > 0 && !steps["Withdraw the Route"].outputs.result.ready) || steps["Destroy the task VM"].status != "succeeded" ? "{}" : "{\"destroyed\": true, \"cleanup_complete\": true}" }}'
-    dependsOn:
-    - step: Push approved work
-      condition: *done
-    - step: Withdraw the Route
-      condition: *done
-    - step: Run teardown steps
-      condition: *done
-    - step: Destroy the task VM
-      condition: *done
-queueTimeout: 60
+    task: {type: assert, expr: '(inputs.intent.push == null || steps["Push approved work"].status == "succeeded") && (inputs.intent.release == null || steps["Release the slot"].status == "succeeded")',
+      severity: high, message: The approved work was not pushed, or the task VM was not released.}

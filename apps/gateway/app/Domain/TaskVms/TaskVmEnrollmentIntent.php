@@ -92,6 +92,38 @@ final readonly class TaskVmEnrollmentIntent
         });
     }
 
+    /**
+     * The Node of an enrolling slot identity, its `app-dev` role and its `pi-server` Process, made once and kept. Mints nothing: the
+     * slot's keys come from {@see TaskVmSlotIdentity}, and each task start mints its own Pi token and model key.
+     */
+    public function slotNode(TaskVm $vm): Node
+    {
+        return DB::transaction(function () use ($vm): Node {
+            $vm->refresh();
+            if ($vm->state !== TaskVmState::Provisioning || $vm->slot_project_id === null) {
+                throw new TaskVmException('task_vm.enrollment_invalid', 'A slot enrol requires the enrolling slot.');
+            }
+            $node = $this->reserveNode($vm);
+            $this->delivery->pin($node);
+            $this->recordPiProcess($node);
+
+            return $node;
+        });
+    }
+
+    /**
+     * The files of an enrolled slot's Node that a task start writes: the agent configuration and the `pi-server` unit.
+     *
+     * @return array{agent:array<string,mixed>,unit_name:string,unit_path:string,unit:string}
+     */
+    public function slotFiles(Node $node): array
+    {
+        $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
+
+        return ['agent' => $this->agents->configurationForRoot($node, null), 'unit_name' => $this->systemd->unitName($process),
+            'unit_path' => $this->systemd->unitPath($process), 'unit' => $this->systemd->render($process, $this->processTarget($node))];
+    }
+
     private function reserveNode(TaskVm $vm): Node
     {
         $node = $vm->node_id === null ? null : Node::query()->find($vm->node_id);

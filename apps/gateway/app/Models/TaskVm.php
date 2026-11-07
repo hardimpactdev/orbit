@@ -53,6 +53,10 @@ use Throwable;
  * @property string $wireguard_ip
  * @property string|null $pi_token
  * @property string|null $model_key
+ * @property int|null $slot_number the number of a slot, `<host>-tvm-<number>`; fixed for the life of the slot
+ * @property string|null $wireguard_private_key a slot's fixed WireGuard key (docs/cli/tasks/vm-slot-enrol.mmd)
+ * @property string|null $ssh_host_private_key a slot's fixed SSH host key, an OpenSSH Ed25519 file
+ * @property string|null $agent_secret a slot's fixed agent secret
  * @property bool $worker_stop_required
  * @property string|null $ai_router_origin
  * @property Carbon|null $claimed_at
@@ -86,12 +90,12 @@ final class TaskVm extends Model
         'group_id', 'slot_project_id', 'slot_digest', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
-        'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at',
+        'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $hidden = ['pi_token', 'model_key', 'provider_bootstrap'];
+    protected $hidden = ['pi_token', 'model_key', 'provider_bootstrap', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret'];
 
     /** @var array<string, mixed> */
     #[\Override]
@@ -113,6 +117,10 @@ final class TaskVm extends Model
             'publish_started_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
+            'wireguard_private_key' => 'encrypted',
+            'ssh_host_private_key' => 'encrypted',
+            'agent_secret' => 'encrypted',
+            'slot_number' => 'integer',
             'provider_bootstrap' => 'encrypted:array',
             'worker_stop_required' => 'boolean',
             'slot_project_id' => 'integer',

@@ -1,7 +1,7 @@
 ---
-# How a VM from a refreshed task image boots (docs/cli/tasks/vm-image-refresh.mmd). Every task start boots a new VM from the image,
-# so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd makes
-# its host keys only when none exist. A task start writes the host key of its slot identity before the first boot
+# How the base VM and every task VM copied from it boot (docs/cli/tasks/vm-image-refresh.mmd). A task start boots a copy of the base
+# snapshot, so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd
+# makes its host keys only when none exist. A task start then writes the host key of its slot identity and restarts sshd
 # (docs/cli/tasks/provision.mmd).
 - name: Turn cloud-init off
   ansible.builtin.copy: { dest: /etc/cloud/cloud-init.disabled, content: "", mode: "0644" }
@@ -28,3 +28,10 @@
       ExecStartPre=/usr/sbin/sshd -t
 - name: Read the units again
   ansible.builtin.systemd: { daemon_reload: true }
+# The agent a task VM runs; a task start writes its unit and secret (docs/cli/tasks/provision.mmd).
+- name: Install the agent
+  ansible.builtin.get_url:
+    url: "{{ intent.boot.agent.url }}"
+    checksum: "sha256:{{ intent.boot.agent.sha256 }}"
+    dest: /usr/local/bin/orbit-agent
+    mode: "0755"

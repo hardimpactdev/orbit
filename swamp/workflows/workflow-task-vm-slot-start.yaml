@@ -1,0 +1,98 @@
+id: 7582f7cf-144e-43f8-a76b-dc6ab9a601b0
+name: task-vm-slot-start
+description: >-
+  Start a task VM with a slot's identity (docs/cli/tasks/provision.mmd, step "Create and start the VM"): the `start` part of the slot play
+  of the task VM host playbook (swamp/ansible/task-vm-host.yml), with the identity and the claim's Pi token and model file from the vault.
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tasks.provision, task_vm.image_refresh]}
+    intent: {type: object}
+    # The slot's identity and the claim's Pi token and model file, as vault names and keys, never the values.
+    execution_secrets:
+      type: object
+      properties:
+        wireguard: &secret
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^(task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*|task-vm-pi-claim-[1-9][0-9]*)$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_host: *secret
+        agent_secret: *secret
+        claim: *secret
+      required: [wireguard, ssh_host, agent_secret, claim]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: phase
+  labels: {role: swamp}
+  steps:
+  - name: Write the intent
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+  - name: Run the host phase
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
+        ignoreExitCode: true
+        run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" -e "run_dir=$ORBIT_RUN" --tags start "$ORBIT_ANSIBLE/task-vm-host.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
+          ORBIT_SLOT_WIREGUARD_KEY: ${{ vault.get(inputs.execution_secrets.wireguard.vault, inputs.execution_secrets.wireguard.key) }}
+          ORBIT_SLOT_SSH_HOST_KEY: ${{ vault.get(inputs.execution_secrets.ssh_host.vault, inputs.execution_secrets.ssh_host.key) }}
+          ORBIT_SLOT_AGENT_SECRET: ${{ vault.get(inputs.execution_secrets.agent_secret.vault, inputs.execution_secrets.agent_secret.key) }}
+          ORBIT_CLAIM: ${{ vault.get(inputs.execution_secrets.claim.vault, inputs.execution_secrets.claim.key) }}
+  - name: Check the host phase
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Run the host phase, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: 'steps["Run the host phase"].outputs.exitCode == 0'
+      severity: high
+      message: '${{ steps["Run the host phase"].outputs.exitCode == 124 ? "Run the host phase timed out after 600s" : "Ansible exited with " + string(steps["Run the host phase"].outputs.exitCode) + ": " + (size(steps["Run the host phase"].outputs.stderr) > 3500 ? steps["Run the host phase"].outputs.stderr.substring(size(steps["Run the host phase"].outputs.stderr) - 3500) : steps["Run the host phase"].outputs.stderr) }}'
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: phase, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-vm-slot-start-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

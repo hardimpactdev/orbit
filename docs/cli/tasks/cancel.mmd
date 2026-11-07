@@ -1,94 +1,23 @@
 sequenceDiagram
-  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, Nick 2026-11-06: the push step mints its token when it runs, and a task VM never holds a GitHub credential. Nick 2026-11-07: the task VM is a fixed slot; the end of a group releases it (docs/cli/tasks/vm-slot-release.mmd), with no record deletes, no Route or DNS withdrawal and no hub peer removal.
+  %% Target design (agreed with Nick, 2026-11-07): a task VM is disposable; its slot identity stays with the Gateway.
   %% status: draft
   %% command: tasks:cancel
   %% kind: tasks.cancel
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=slot tone=purple
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  %% lane H icon=server pill=target tone=amber
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant VM as Slot<br/>shark-tvm-3
-  CLI->>GW: tasks:cancel 42
-  %%> Command:
-  %%> - `orbit tasks:cancel 42 --yes`
-  %%> - syntax: `[group] [--yes] [--json]`
-  %%> Input:
-  %%> - the task group id; omitting it uses the standard selector
-  %%> Confirmation:
-  %%> - without `--yes`, the CLI first asks to cancel group 42 and release its slot; the default is No
-  %%> Also:
-  %%> - `tasks:complete 42` admits the same ending when its pull request merged or closed; the group then ends `completed`
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool `tasks-cancel` send the same request
-  Note over GW: Validate, record the end<br/>task #5141 · group 42 ending
-  %%> Requirements:
-  %%> - your Node has Gateway access, and the Tasks extension is on
-  %%> - group 42 is not `completed`, and not `settling` with a pull request (complete it instead)
-  %%> - no other ending task holds `task_group:42`
+  participant H as Task VM host<br/>Incus over ssh
+  Note over GW: Admit the release<br/>revoke the claim's keys
   %%> Result:
-  %%> - task #5141 recorded with the full intent: the slot `shark-tvm-3`, its host and the last approved commit
-  %%> - a group with no workspace ends `cancelled` at once, with no run (R1)
-  GW->>SW: Cancel the group run<br/>native cancel · task #5140
+  %%> - the Pi token and model key of the claim are revoked; approved work is pushed first, as today
+  GW->>SW: Start run, full intent<br/>operation-tasks-cancel
+  SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - cancels the group's root task; Swamp cancels its running Pi turn or check and tears down their SSH sessions
-  %%> Busy:
-  %%> - the Gateway waits briefly for the terminal event within the budget; a run that does not end returns `operation.target_busy`, and nothing changes
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): this request changes nothing itself, but a provision run it cancelled stays cancelled; when that provision ends, the Gateway admits this ending itself, unless one was admitted since, so the slot it was claiming is released (docs/cli/tasks/provision.mmd)
-  GW->>SW: Start run, full intent<br/>operation-task-cancel
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the slot, its host and the checkout path; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task #5141
-  %%> What you get:
-  %%> - the task number and a compact input summary; the full execution plan stays in the Gateway
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  opt approved work not on origin
-    SW->>VM: Push approved work<br/>git bundle · task-42 · no force
-    %%> What it does:
-    %%> - exports the approved commit as a Git bundle and pushes it from 209, so you can open a pull request from `task-42`
-    %%> - admission names the vault key of the push token; the push step asks the Gateway for the token (`operation:direct:github-token`) right before the push, and the VM never holds it
-    %%> - uncommitted changes are never pushed
-    %%> If it fails:
-    %%> - the run stops before any removal, so the work stays on the slot
-    %%> Guard:
-    %%> - runs only while the slot runs
-  end
-  SW->>SW: Release the slot<br/>workflow · task-vm-slot-release
-  %%> What it does:
-  %%> - stops the slot and rolls it back to its `clean` snapshot (docs/cli/tasks/vm-slot-release.mmd)
-  %%> - the slot keeps its Node, WireGuard peer, identity, Pi token and model key; nothing is deleted or withdrawn
-  %%> Not included:
-  %%> - no Project teardown and no Route withdrawal: the claim ran no setup steps and published no Route, and the rollback removes the task's files
-  alt every step passes
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result<br/>group 42 cancelled · slot free
-    %%> Result:
-    %%> - group 42 and its open subtasks are `cancelled`; comments, threads and transcripts stay as history
-    %%> - the slot is `free`; its Node and workspace Instance stay
-    %%> - task #5141 succeeds
-  else a step fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Keep the records<br/>group asks for help · rerun cancel
-    %%> Result:
-    %%> - task #5141 fails; group 42 keeps its status and its slot, and asks for `removal_failure` assistance
-    %%> Retry:
-    %%> - run `tasks:cancel 42` again after fixing the cause; it is a new task, and done steps find nothing left to do
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5141
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
-  end
+  %%> - one host exec: `incus delete --force` and the seed clone; a few seconds
+  %%> - no Node, DNS, Metrics or hub peer change: the identity stays
+  %%> - beside it, the claim's model key is revoked at the model router; the Pi token goes with the VM
+  SW-->>GW: Run succeeded<br/>identity free
+  Note over GW: Free the slot identity<br/>target under 10 s

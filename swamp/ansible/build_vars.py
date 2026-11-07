@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.image_refresh', 'task_vm.upcloud_image_build', 'task_vm.runtime', 'task_vm.fleet_build', 'task_vm.nested_ready')
+TASK_VM_KINDS = ('task_vm.converge', 'task_vm.image_build', 'task_vm.image_refresh', 'tasks.provision', 'task_vm.upcloud_image_build', 'task_vm.runtime', 'task_vm.fleet_build', 'task_vm.nested_ready')
 SSH_EXECUTION_KINDS = ('task_vm.runtime', 'task_vm.fleet_build', 'task_vm.nested_ready')
 
 

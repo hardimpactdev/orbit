@@ -7,17 +7,12 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Domain\GitHub\GitHubRepository;
-use App\Domain\Instances\InstanceState;
-use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmDestroyIntent;
-use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
+use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -32,7 +27,7 @@ use Illuminate\Support\Str;
 final readonly class TaskCancelIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $keys,
-        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskVmDestroyIntent $destroy) {}
+        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskVmSlotRuns $slots) {}
 
     public function finishMaintenance(Task $group): Operation
     {
@@ -93,6 +88,9 @@ final readonly class TaskCancelIntent
     }
 
     /**
+     * The push of approved work, when there is some, and the release of the group's slot. Nothing else ends: the claim ran no setup and
+     * published no Route, and the delete of the task VM removes the task's files.
+     *
      * @param  array{remote:string,copy:array{vault:string,key:string}}|null  $token
      * @return array<string,mixed>
      */
@@ -101,41 +99,24 @@ final readonly class TaskCancelIntent
         $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
         self::eligible($group, $kind);
         $workspace = $group->taskable;
-        $vm = TaskVm::forGroup($group);
-        if ($workspace !== null && (! $workspace instanceof Instance || ! $vm instanceof TaskVm
-            || $workspace->task_workspace_owner_id !== $group->id || $workspace->project_id !== $group->project_id
-            || $workspace->node_id !== $vm->node_id)) {
-            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned TaskVM workspace.', 409);
+        $slot = TaskVm::forGroup($group);
+        if ($workspace !== null && (! $workspace instanceof Instance || ! $slot instanceof TaskVm
+            || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
+            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned slot workspace.', 409);
         }
         $commit = $kind === 'tasks.cancel' ? TaskFinalReview::unpublishedRemovalCommit($group) : null;
         if ($commit !== null && ! is_array($token)) {
             throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
         }
-        $capture = $workspace instanceof Instance ? $this->destroy->captureForWorkspace($vm, $workspace, $commit)
-            : ($vm instanceof TaskVm && $vm->state !== TaskVmState::Destroyed ? $this->destroy->capture($vm) : []);
-        $steps = $workspace instanceof Instance && $vm->state === TaskVmState::Ready
-            && ! in_array($workspace->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true) ? app(ProjectLifecycleStepStore::class)->ordered($group->project, LifecyclePhase::Teardown) : [];
-        $values = $workspace instanceof Instance ? app(LogRedactor::class)->valuesFor($workspace) : [];
-        $teardown = array_map(static function ($step) use ($values): array {
-            if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
-                throw new ResourceOperationException('tasks.cancel_refused', 'Teardown commands must contain no credential values.', 422);
-            }
-
-            return ['input_json' => json_encode($step->toArray(), JSON_THROW_ON_ERROR), 'timeout_seconds' => $step->timeoutSeconds];
-        }, $steps);
-
         $push = $commit === null || ! $workspace instanceof Instance ? null : [
             'commit' => $commit, 'checkout_path' => $workspace->checkout_path, 'remote' => $token['remote'],
             'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
         ];
+        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? $this->slots->release($slot) : null;
 
-        return [
-            'workspace_routes' => [], 'task_vm_id' => null, ...$capture, 'group_id' => $group->id, 'project_id' => $group->project_id,
-            'instance_id' => $workspace?->id, 'checkout_path' => $workspace?->checkout_path,
-            'ssh_execution' => $teardown !== [] && $workspace instanceof Instance ? app(SwampSshExecutionInput::class)->forNode($workspace->node) : null,
-            'teardown' => $teardown, 'push' => $push,
-        ];
+        return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
+            ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'push' => $push, 'release' => $release];
     }
 
     public static function eligible(Task $group, string $kind = 'tasks.cancel'): void
@@ -190,12 +171,7 @@ final readonly class TaskCancelIntent
             throw new ResourceOperationException('operation.execution_forbidden', 'Cancellation no longer owns its admitted group workspace.', 422);
         }
 
-        if (($operation->input['task_vm_id'] ?? null) !== null) {
-            $workspace = $group->taskable_id === null ? null : Instance::query()->findOrFail($group->taskable_id);
-            $vm = TaskVm::query()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
-            $this->destroy->ownedForWorkspace($vm, $workspace, $operation->input, $operation->id);
-        }
-
-        return TaskVmProviderWorkflowInput::envelope($operation->input);
+        return ['intent' => ['group_id' => $group->id, 'push' => $operation->input['push'] ?? null, 'release' => $operation->input['release'] ?? null],
+            'execution_secrets' => (object) []];
     }
 }

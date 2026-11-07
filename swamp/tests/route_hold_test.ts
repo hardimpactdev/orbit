@@ -12,10 +12,8 @@ type Workflow = { jobs: { steps: Step[] }[] };
 
 const workflows = new URL("../workflows/", import.meta.url);
 
-/** The parents that hold the Route-serving Nodes for their Route-publish step only, with the name of each window. */
+/** A task claim and its release publish no Route. The parents that hold the Route-serving Nodes for their Route-publish step only, with the name of each window. */
 const windows: Record<string, { hold: string; route: string; release: string }[]> = {
-    "task-provision": [{ hold: "Hold the Route Nodes", route: "Route the workspace", release: "Release the Route Nodes" }],
-    "task-cancel": [{ hold: "Hold the Route Nodes", route: "Withdraw the Route", release: "Release the Route Nodes" }],
     "instance-register": [{ hold: "Hold the Route Nodes", route: "Create the Route", release: "Release the Route Nodes" }],
     "cluster-router": [
         { hold: "Hold the Route Nodes", route: "Install certs, publish", release: "Release the Route Nodes" },
@@ -60,7 +58,7 @@ Deno.test("every Route-publish step is wrapped in the same hold and release call
 });
 
 Deno.test("the hold command asks again while the Gateway answers busy, and sends only the run", async () => {
-    const all = await steps("task-provision");
+    const all = await steps("instance-register");
     const hold = String(all.find((step) => step.name === "Hold the Route Nodes")!.task?.inputs?.run);
     const release = String(all.find((step) => step.name === "Release the Route Nodes")!.task?.inputs?.run);
     // curl retries a 423 only with --retry-all-errors, and fails the step when the Gateway never grants the hold.
@@ -72,31 +70,6 @@ Deno.test("the hold command asks again while the Gateway answers busy, and sends
     const env = all.find((step) => step.name === "Hold the Route Nodes")!.task?.inputs?.env ?? {};
     assertEquals(Object.keys(env).sort(), ["ORBIT_HOLD_REQUEST", "ORBIT_HOLD_URL"]);
     assert(String(env.ORBIT_HOLD_REQUEST).includes("run.id"), "the call carries the run ID");
-});
-
-Deno.test("a failed provision hold is reported as a failed Route, and its Processes do not start", async () => {
-    const all = await steps("task-provision");
-    const processes = all.find((step) => step.name === "Create, start Processes");
-    assert(parents(processes!).includes("Hold the Route Nodes"), "Processes must wait for the hold");
-    const check = all.find((step) => step.name === "Check the workspace")!;
-    assert(String(check.task?.inputs?.run).includes('ORBIT_HOLD'), "the receipt must read a failed hold");
-    assert(parents(check).includes("Hold the Route Nodes") && parents(check).includes("Release the Route Nodes"));
-});
-
-Deno.test("a failed cancel hold stops the end before any removal", async () => {
-    const all = await steps("task-cancel");
-    for (const name of ["Run teardown steps", "Destroy the task VM"]) {
-        assert(parents(all.find((step) => step.name === name)!).includes("Hold the Route Nodes"), `${name} must wait for the hold`);
-    }
-});
-
-Deno.test("only a run the Gateway started holds: a child of prep, a proof or an image refresh is left alone", async () => {
-    const provision = (await steps("task-provision")).find((step) => step.name === "Hold the Route Nodes")!;
-    const cancel = (await steps("task-cancel")).find((step) => step.name === "Hold the Route Nodes")!;
-    assert(String(provision.guard).includes("has(inputs.run_id)"), "a provision that was given a run_id is a child");
-    assert(String(cancel.guard).includes("has(inputs.run_id)"), "a cancel that was given a run_id is a child");
-    const proof = await Deno.readTextFile(new URL("workflow-operation-proof-run.yaml", workflows));
-    assert(/workflowIdOrName: operation-task-cancel[\s\S]*?run_id: \$\{\{ run\.id \}\}/.test(proof), "the proof run passes its root run to the cancel it starts");
 });
 
 Deno.test("a busy retire hold or a failed release does not revert a Router that was switched, and the retire hold follows the first release", async () => {

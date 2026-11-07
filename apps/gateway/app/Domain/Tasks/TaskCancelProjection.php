@@ -15,7 +15,7 @@ use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** Complete cleanup alone may forget workspace records and settle cancellation. */
+/** A cancel that pushed approved work and released the slot settles the group; anything less keeps it for another cancel. */
 final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationTimeout
 {
     public function input(Operation $operation): array
@@ -42,12 +42,8 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 }
                 app(TaskCancelIntent::class)->input($operation);
             }
-            $result = ValidatedData::object($data['result'] ?? []);
+            $result = ['group_id' => $group->id, 'instance_id' => $operation->input['instance_id'] ?? null, 'released' => $data['status'] === 'succeeded'];
             if ($data['status'] === 'succeeded') {
-                if (($result['group_id'] ?? null) !== $group->id || ($result['instance_id'] ?? null) !== ($operation->input['instance_id'] ?? null)
-                    || ($result['cleanup_complete'] ?? null) !== true) {
-                    throw new ResourceOperationException('operation.invalid_result', 'Cancellation requires its exact complete cleanup receipt.', 422);
-                }
                 app(TaskGroupEnding::class)->settle($group, $operation->input, $operation->kind);
                 // A VM that a failed proof run kept (--keep-failed) is released now: the kept list says so.
                 app(ProofKeptVms::class)->released($operation, $group->id);

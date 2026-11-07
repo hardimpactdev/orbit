@@ -13,16 +13,18 @@ function refreshJob(string $workflow, string $job): array
     return collect($jobs)->firstWhere('name', $job);
 }
 
-it('runs the steps of the chart in order, each only after the one before passed, and discards the candidate after a failure', function (): void {
+it('runs the steps of the chart in order, each only after the one before passed, and rolls the base VM back after a failure', function (): void {
     $steps = refreshJob('workflow-operation-task-vm-image-refresh', 'refresh')['steps'];
 
-    expect(array_column($steps, 'name'))->toBe(['Start the refresh VM', 'Converge everything', 'Publish the image', 'Promote']);
-    foreach (array_slice($steps, 1) as $at => $step) {
-        expect($step['dependsOn'])->toBe([['step' => $steps[$at]['name'], 'condition' => ['type' => 'succeeded']]]);
-    }
+    expect(array_column($steps, 'name'))->toBe(['Start the base VM', 'Converge', 'Stop and snapshot', 'Prove the candidate', 'Prune old snapshots']);
+    $after = static fn (string $step): array => ['step' => $step, 'condition' => ['type' => 'succeeded']];
+    expect($steps[1]['dependsOn'])->toBe([$after('Start the base VM')])
+        ->and($steps[2]['dependsOn'])->toBe([$after('Converge')])
+        ->and($steps[3]['dependsOn'])->toBe([$after('Stop and snapshot')])
+        ->and($steps[4]['dependsOn'])->toBe([$after('Prove the candidate')]);
     expect(refreshJob('workflow-operation-task-vm-image-refresh', 'discard'))
         ->toMatchArray(['dependsOn' => [['job' => 'refresh', 'condition' => ['type' => 'failed']]]])
-        ->and(refreshJob('workflow-operation-task-vm-image-refresh', 'discard')['steps'][0]['task']['inputs']['tags'])->toBe('discard');
+        ->and(refreshJob('workflow-operation-task-vm-image-refresh', 'discard')['steps'][0]['task']['inputs']['tags'])->toBe('base-discard');
 });
 
 it('places the agent delivery of the checkout on the nested Gateway before its Swamp tokens are renewed and its code migrates', function (): void {

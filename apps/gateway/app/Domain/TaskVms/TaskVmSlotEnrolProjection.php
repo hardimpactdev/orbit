@@ -4,52 +4,76 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Actions\TaskVms\FailTaskVmAction;
+use App\Actions\Nodes\RecordNodeSshHostKeyAction;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Ssh\HostKey;
 use App\Jobs\TaskVms\RefillTaskVmSlots;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Projects the end of one slot enrol (docs/cli/tasks/vm-slots.mmd): the provision records the enrolled VM as for any task
- * VM, then the stopped VM becomes a ready slot (`parked`, no group). A failed, interrupted or cancelled enrol leaves the row
- * `failed`; the refill rule that runs after it destroys the VM.
+ * Projects the end of one slot enrol (docs/cli/tasks/vm-slot-enrol.mmd). An identity whose hub peer is in place is `parked`, free for a
+ * task start: its Node is active with the keys the Gateway made for it. One that did not pass is `failed`, so no task start takes it; the
+ * rule that runs after every enrol enrols it again.
  */
 final readonly class TaskVmSlotEnrolProjection implements DirectOperationProjection
 {
-    public function __construct(private TaskVmProvisionIntent $intent, private TaskVmProvisionProjection $provision, private FailTaskVmAction $fail) {}
+    /** The end check: the identity's peer is on the hub. */
+    public const string EndCheck = 'Add the hub peer';
 
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {
-        $input = $this->intent->input($operation);
-        $intent = ValidatedData::object($input['intent']);
-        // The VM provider puts the whole intent into one argument, so the converge intent travels as an input of its own.
-        $converge = ValidatedData::object($intent['converge'] ?? []);
-        unset($intent['converge']);
+        $input = ValidatedData::object($operation->input);
 
-        return [...$input, 'intent' => $intent, 'converge' => $converge];
+        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => (object) []];
     }
 
     /** @param array<string,mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
-            $projected = $this->provision->apply($operation, $data);
-            $vm = TaskVm::query()->findOrFail($operation->target_id);
-            if (($data['status'] ?? null) === 'succeeded') {
-                TaskVm::query()->whereKey($vm->id)->whereNull('group_id')->where('state', TaskVmState::Ready)
-                    ->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
-            } elseif (in_array($data['status'] ?? null, ['interrupted', 'cancelled'], true)) {
-                // The provision projection fails only a failed run; an enrol that ended otherwise must not hold the pool.
-                $this->fail->execute($vm, [TaskVmState::Provisioning], ValidatedData::nullableString($data['error_code'] ?? null) ?? 'task_vm.slot_enrol_'.$data['status'],
-                    'The slot enrol did not finish.', 'The slot enrol did not finish.');
+            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if ($operation->status->terminal()) {
+                return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
-            RefillTaskVmSlots::dispatchFor($vm->host_node_id);
+            $slot = TaskVm::query()->lockForUpdate()->findOrFail($operation->target_id);
+            $passed = ($data['status'] ?? null) === 'succeeded';
+            $this->record($slot, $passed, $passed ? null : (ValidatedData::nullableString($data['error_code'] ?? null) ?? 'task_vm.slot_enrol_failed'));
+            $result = ['slot' => $slot->name, 'enrolled' => $passed];
+            $data['result'] = $result;
+            DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor((int) $slot->host_node_id));
 
-            return $projected;
+            return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** The identity after its enrol: free, or failed. */
+    public function record(TaskVm $slot, bool $passed, ?string $errorCode): void
+    {
+        if (! $passed) {
+            $slot->update(['state' => TaskVmState::Failed, 'error_code' => $errorCode, 'error_message' => 'The slot enrol did not pass.']);
+
+            return;
+        }
+        $node = Node::query()->findOrFail($slot->node_id);
+        $sshHost = ValidatedData::string($slot->ssh_host_private_key);
+        [$type, $key] = explode(' ', TaskVmSlotIdentity::sshPublicKey($sshHost), 2);
+        app(RecordNodeSshHostKeyAction::class)->execute($node, (string) $slot->wireguard_ip, new HostKey($type, $key, TaskVmSlotIdentity::sshFingerprint($sshHost)));
+        $node->forceFill(['agent_secret_hash' => hash('sha256', ValidatedData::string($slot->agent_secret)),
+            'wireguard_public_key' => TaskVmSlotIdentity::wireguardPublicKey(ValidatedData::string($slot->wireguard_private_key)),
+            'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null])->save();
+        $node->roles()->where('role', RoleName::AppDev)->update(['status' => LifecycleStatus::Active]);
+        Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')
+            ->where('desired_state', DesiredProcessState::Running)->update(['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
+        $slot->update(['state' => TaskVmState::Parked, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
     }
 }

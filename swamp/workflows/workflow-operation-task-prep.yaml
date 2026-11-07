@@ -30,20 +30,61 @@ inputs:
       additionalProperties: false
     execution_secrets:
       type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
-        required:
-        - vault
-        - key
-        additionalProperties: false
+      # The slot's identity, which the start writes onto the new VM; the claim's model key, registered while the
+      # VM starts; and the claim's Pi token and model file.
+      properties:
+        wireguard: &secret
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^(task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_host: *secret
+        agent_secret: *secret
+        model:
+          type: object
+          properties:
+            model_key:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+            model_router_management:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+            model_router_anchor:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+          required: [model_key, model_router_management, model_router_anchor]
+          additionalProperties: false
+        claim:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-claim-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        # The claim's Pi token, which every turn of the prep reads.
+        pi_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [wireguard, ssh_host, agent_secret, model, claim, pi_token]
+      additionalProperties: false
     publish_secrets:
       type: object
       properties:
@@ -75,7 +116,7 @@ jobs:
 - name: prep
   labels: {role: swamp}
   steps:
-  - name: Create the VM
+  - name: Claim a slot
     labels: {role: swamp}
     task:
       type: workflow
@@ -84,32 +125,13 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: tasks.provision
-        run_id: ${{ run.id }}
         intent: ${{ inputs.intent.provision }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-  - name: Pin the VM
-    labels: {role: swamp}
-    dependsOn:
-    - step: Create the VM
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ ("task-prep-pin-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: pin
-      inputs:
-        receipt: '${{ steps["Create the VM"].outputs["Check the workspace"].stdout }}'
-        guest_node_id: '${{ inputs.intent.draft.node_id }}'
-        intents:
-          draft: '${{ inputs.intent.draft }}'
-          fix: '${{ inputs.intent.fix }}'
-          reviews: '${{ inputs.intent.reviews }}'
-          publish: '${{ inputs.intent.publish }}'
+        execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
+          "agent_secret": inputs.execution_secrets.agent_secret, "model": inputs.execution_secrets.model, "claim": inputs.execution_secrets.claim} }}'
   - name: Draft the spec
     labels: {role: swamp}
     dependsOn:
-    - step: Pin the VM
+    - step: Claim a slot
       condition:
         type: succeeded
     task:
@@ -120,7 +142,7 @@ jobs:
         node_id: '${{ inputs.intent.draft.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-draft" }}'
-        intent: '${{ steps["Pin the VM"].outputs.draft }}'
+        intent: '${{ inputs.intent.draft }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
   - name: Read the draft
     labels: {role: swamp}
@@ -157,14 +179,14 @@ jobs:
         name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
         transport:
           kind: ssh
-          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
-          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
-          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+          user: ${{ inputs.intent.draft.ssh_execution.target.user }}
+          port: ${{ inputs.intent.draft.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.draft.ssh_execution.identity_file }}
         hosts:
         - name: target
-          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          address: ${{ inputs.intent.draft.ssh_execution.target.host }}
           transport:
-            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+            hostKeys: ${{ inputs.intent.draft.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
         # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
@@ -185,7 +207,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[0].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-1" }}'
-        intent: '${{ steps["Pin the VM"].outputs.reviews[0] }}'
+        intent: '${{ inputs.intent.reviews[0] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Read the draft"].outputs.head }}'
   - name: Settle review 1
@@ -227,7 +249,7 @@ jobs:
         node_id: '${{ inputs.intent.fix.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-1" }}'
-        intent: '${{ steps["Pin the VM"].outputs.fix }}'
+        intent: '${{ inputs.intent.fix }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         prompt_append: '${{ steps["Settle review 1"].outputs.findings }}'
   - name: Settle fix 1
@@ -264,14 +286,14 @@ jobs:
         name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
         transport:
           kind: ssh
-          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
-          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
-          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+          user: ${{ inputs.intent.draft.ssh_execution.target.user }}
+          port: ${{ inputs.intent.draft.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.draft.ssh_execution.identity_file }}
         hosts:
         - name: target
-          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          address: ${{ inputs.intent.draft.ssh_execution.target.host }}
           transport:
-            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+            hostKeys: ${{ inputs.intent.draft.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
         # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
@@ -297,7 +319,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[1].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-2" }}'
-        intent: '${{ steps["Pin the VM"].outputs.reviews[1] }}'
+        intent: '${{ inputs.intent.reviews[1] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 1"].outputs.head }}'
         prompt_append: '${{ "Findings of the previous review, which the author has since tried to fix. Check each one and report only what is still wrong or new:\n" + steps["Settle review 1"].outputs.findings }}'
@@ -340,7 +362,7 @@ jobs:
         node_id: '${{ inputs.intent.fix.node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-fix-2" }}'
-        intent: '${{ steps["Pin the VM"].outputs.fix }}'
+        intent: '${{ inputs.intent.fix }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         prompt_append: '${{ steps["Settle review 2"].outputs.findings }}'
   - name: Settle fix 2
@@ -377,14 +399,14 @@ jobs:
         name: '${{ "task-prep-plan-" + string(inputs.intent.draft.node_id) }}'
         transport:
           kind: ssh
-          user: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.user }}
-          port: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.port }}
-          identityFile: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.identity_file }}
+          user: ${{ inputs.intent.draft.ssh_execution.target.user }}
+          port: ${{ inputs.intent.draft.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.draft.ssh_execution.identity_file }}
         hosts:
         - name: target
-          address: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host }}
+          address: ${{ inputs.intent.draft.ssh_execution.target.host }}
           transport:
-            hostKeys: ${{ steps["Pin the VM"].outputs.draft.ssh_execution.target.host_keys }}
+            hostKeys: ${{ inputs.intent.draft.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
         # The runner prints a refusal on stderr and exits 3; 0 and 3 are both answers, anything else fails the run.
@@ -410,7 +432,7 @@ jobs:
         node_id: '${{ inputs.intent.reviews[2].node_id }}'
         kind: tasks.turn
         turn_key: '${{ "prep-" + string(inputs.operation_id) + "-review-3" }}'
-        intent: '${{ steps["Pin the VM"].outputs.reviews[2] }}'
+        intent: '${{ inputs.intent.reviews[2] }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ steps["Settle fix 2"].outputs.head }}'
         prompt_append: '${{ "Findings of the previous review, which the author has since tried to fix. Check each one and report only what is still wrong or new:\n" + steps["Settle review 2"].outputs.findings }}'
@@ -474,6 +496,6 @@ jobs:
           object_format: '${{ size(steps["Settle review 3"].outputs.head) == 64 ? "sha256" : "sha1" }}'
           pull_head: ${{ inputs.intent.publish.pull_head }}
           pull_request: ${{ inputs.intent.publish.pull_request }}
-          ssh_execution: ${{ steps["Pin the VM"].outputs.publish.ssh_execution }}
+          ssh_execution: ${{ inputs.intent.publish.ssh_execution }}
         run_id: ${{ run.id }}
         execution_secrets: '${{ {"github_token": inputs.publish_secrets.github_token, "git_authorization": inputs.publish_secrets.git_authorization} }}'

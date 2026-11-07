@@ -12,7 +12,6 @@ use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofFreshHosts;
 use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSeedFloor;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Cluster;
@@ -29,10 +28,12 @@ const FRESH_OLD = 'a000000000000000000000000000000000000003';
 /** A host whose latest refresh saved copies of the current format, built from `$commit` (null: the refresh recorded none). */
 function freshHost(string $name, ?string $commit, int $build = 1): Node
 {
+    static $next = 20;
+    $address = '10.44.0.'.$next++;
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.'.random_int(20, 200), 'wireguard_ip' => '10.44.0.'.random_int(20, 200), 'user' => 'orbit']));
-    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
-        'input' => ['refresh' => ['host_node_id' => $host->id, ...($commit === null ? [] : ['commit' => $commit]), 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
+        'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
+        'input' => $commit === null ? [] : ['commit' => $commit],
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build], 'triggered_by' => 'test']);
 
     return $host;
@@ -218,15 +219,13 @@ it('restores the floor of the outer admission when a nested one ends, also after
     });
 });
 
-it('reads the release commit that the latest refresh saved, not an older refresh', function (): void {
+it('reads the release commit of the latest refresh that promoted an image, not an older one or a failed one', function (): void {
     $beast = freshHost('beast', FRESH_OLD);
-    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 2, 'node_id' => $beast->id, 'status' => OperationStatus::Succeeded,
-        'input' => ['refresh' => ['host_node_id' => $beast->id, 'commit' => FRESH_NEW, 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
-        'result' => ['refreshed' => true, 'host_node_id' => $beast->id, 'build_id' => 1], 'triggered_by' => 'test']);
-    // A later refresh that kept the seed (seed=keep) saved no copies and does not count.
-    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 3, 'node_id' => $beast->id, 'status' => OperationStatus::Succeeded,
-        'input' => ['refresh' => ['host_node_id' => $beast->id, 'commit' => FRESH_BASE, 'seed' => 'keep', 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
-        'result' => ['refreshed' => true, 'host_node_id' => $beast->id, 'build_id' => 1], 'triggered_by' => 'test']);
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $beast->id, 'node_id' => $beast->id, 'status' => OperationStatus::Succeeded,
+        'input' => ['commit' => FRESH_NEW], 'result' => ['refreshed' => true, 'host_node_id' => $beast->id, 'build_id' => 1], 'triggered_by' => 'test']);
+    // A later refresh that failed promoted nothing and does not count.
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $beast->id, 'node_id' => $beast->id, 'status' => OperationStatus::Failed,
+        'input' => ['commit' => FRESH_BASE], 'result' => ['error_code' => 'task_vm.image_refresh_failed'], 'triggered_by' => 'test']);
 
     expect(app(TaskVmFleetSeed::class)->commit($beast->id))->toBe(FRESH_NEW);
 });

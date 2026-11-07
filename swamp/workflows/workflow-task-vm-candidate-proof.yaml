@@ -1,0 +1,46 @@
+id: 4c2e9a71-6b3d-4f58-8e1a-0d7f5b9c3e26
+name: task-vm-candidate-proof
+description: >-
+  Prove a refreshed task image (docs/cli/tasks/vm-image-refresh.mmd, step "Prove the candidate"): steps 2 to 4 of a task start from the
+  candidate with a free slot identity, then the release of that VM, whatever the start did.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    # `start` and `release`, each with its intent and the vault key names of its secrets.
+    prove: {type: object}
+  required: [operation_id, node_id, prove]
+  additionalProperties: false
+jobs:
+- name: prove
+  labels: {role: swamp}
+  steps:
+  - name: Start a task VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: task_vm.image_refresh,
+        intent: '${{ inputs.prove.start.intent }}', execution_secrets: '${{ inputs.prove.start.execution_secrets }}'}
+  - name: Release it
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Start a task VM, condition: {type: completed}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-vm-slot-release
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: task_vm.image_refresh,
+        intent: '${{ inputs.prove.release.intent }}', execution_secrets: '${{ inputs.prove.release.execution_secrets }}'}
+- name: check
+  labels: {role: swamp}
+  dependsOn: [{job: prove, condition: {type: completed}}]
+  steps:
+  - name: Check the candidate
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Start a task VM"].status == "succeeded" && steps["Release it"].status == "succeeded"', severity: high,
+      message: The task start from the candidate did not pass, or its VM was not released.}
