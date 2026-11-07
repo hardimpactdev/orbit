@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseAutomationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** Clears a pause of automatic Gateway releases after the operator decided what to do. */
+/** Public command: gateway:auto-release:resume. Clears a pause of automatic Gateway releases after the operator decided what to do. */
 final class ResumeGatewayReleaseAutomationRequest extends GatewayRequest
 {
     #[\Override]

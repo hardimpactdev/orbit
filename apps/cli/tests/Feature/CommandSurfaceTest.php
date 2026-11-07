@@ -93,10 +93,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'firewall:list',
         'firewall:remove',
         'gateway:add',
-        'gateway:release:auto:disable',
-        'gateway:release:auto:enable',
-        'gateway:release:auto:resume',
-        'gateway:release:auto:status',
+        'gateway:auto-release:disable',
+        'gateway:auto-release:enable',
+        'gateway:auto-release:resume',
+        'gateway:auto-release:status',
         'gateway:release:deploy',
         'gateway:release:list',
         'gateway:release:rollback',
@@ -677,10 +677,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'firewall:list' => [[], ['node' => null, 'managed' => false, 'live' => false, 'json' => false]],
         'firewall:remove' => [['port'], ['node' => null, 'from' => null, 'protocol' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'accept-ca-change' => false, 'use' => false, 'json' => false]],
-        'gateway:release:auto:disable' => [[], ['json' => false]],
-        'gateway:release:auto:enable' => [[], ['json' => false]],
-        'gateway:release:auto:resume' => [[], ['json' => false]],
-        'gateway:release:auto:status' => [[], ['json' => false]],
+        'gateway:auto-release:disable' => [[], ['json' => false]],
+        'gateway:auto-release:enable' => [[], ['json' => false]],
+        'gateway:auto-release:resume' => [[], ['json' => false]],
+        'gateway:auto-release:status' => [[], ['json' => false]],
         'gateway:release:deploy' => [['commit'], ['json' => false]],
         'gateway:release:list' => [[], ['json' => false]],
         'gateway:release:rollback' => [['release'], ['yes' => false, 'json' => false]],
@@ -1213,10 +1213,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_invalid',
             'message' => 'Gateway URL must use HTTPS.',
         ],
-        'gateway:release:auto:disable' => [[], ...$profileMissing],
-        'gateway:release:auto:enable' => [[], ...$profileMissing],
-        'gateway:release:auto:resume' => [[], ...$profileMissing],
-        'gateway:release:auto:status' => [[], ...$profileMissing],
+        'gateway:auto-release:disable' => [[], ...$profileMissing],
+        'gateway:auto-release:enable' => [[], ...$profileMissing],
+        'gateway:auto-release:resume' => [[], ...$profileMissing],
+        'gateway:auto-release:status' => [[], ...$profileMissing],
         'gateway:release:deploy' => [['commit' => 'abcdef1234567890abcdef1234567890abcdef12'], ...$profileMissing],
         'gateway:release:list' => [[], ...$profileMissing],
         'gateway:release:rollback' => [['release' => 'abcdef123456', '--yes' => true], ...$profileMissing],
@@ -1545,4 +1545,13 @@ it('does not register removed Instance path proxy commands', function (string $o
 
 it('keeps trusted automatic starts on API and MCP while CLI deploys remain manual', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKey('instance:deploy:automatic');
+});
+
+it('registers only the new automatic release family', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    foreach (['status', 'enable', 'disable', 'resume'] as $action) {
+        expect($commands)->toHaveKey('gateway:auto-release:'.$action)
+            ->not->toHaveKey('gateway:release:auto:'.$action);
+    }
 });
