@@ -51,7 +51,7 @@ jobs:
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-apply-" + string(inputs.guest_node_id) + "-migrate").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '120', 'incus', 'exec', '${{ inputs.fleet.guests.gateway }}', '--user', '1000', '--cwd', '/home/orbit/orbit/apps/gateway', '--', 'php', 'artisan', 'migrate', '--force'], timeoutSec: 130}}
-    dependsOn: [{step: 'Re-mint the Swamp tokens', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Place the agent delivery', condition: {type: succeeded}}, {step: 'Re-mint the Swamp tokens', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # The queue worker, the scheduler and the agent-view subscriber load their code once; they run the checked-out code after this.
   - name: 'Restart the services'
     labels: {role: swamp}
