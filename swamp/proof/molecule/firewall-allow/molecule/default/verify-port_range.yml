@@ -22,6 +22,9 @@
       ansible.builtin.assert:
         that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first, outside_before == outside_after]
         quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
   rescue:
     - name: "{{ inventory_hostname }}: record the failed check"
       ansible.builtin.set_fact:

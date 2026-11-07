@@ -6,6 +6,9 @@
       ansible.builtin.assert:
         that: [ops_before == ops_after, ufw_before == ufw_after, records_before == records_after]
         quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
   rescue:
     - name: "{{ inventory_hostname }}: record the failed check"
       ansible.builtin.set_fact:

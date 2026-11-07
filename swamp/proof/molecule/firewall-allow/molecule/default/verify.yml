@@ -34,7 +34,7 @@
     - name: Verdict of each case (command seconds, case seconds in converge, the window of its CLI call, asks while the Node was busy)
       ansible.builtin.debug:
         msg: >-
-          {{ item }}: {{ ('failed | ' ~ (hostvars[item].failures | default(hostvars[item].verify_failures | default('')))) if (hostvars[item].failures is defined or hostvars[item].verify_failures is defined) else 'passed' }}
+          {{ item }}: {{ ('failed | ' ~ (hostvars[item].failures | default(hostvars[item].verify_failures | default('the checks did not end')))) if (hostvars[item].failures is defined or hostvars[item].verify_failures is defined or not (hostvars[item].verified | default(false))) else 'passed' }}
           (command {{ hostvars[item].cmd_secs }} s, case {{ hostvars[item].case_secs }} s, casewin {{ hostvars[item].case_start | float | round(2) }} {{ hostvars[item].case_end | float | round(2) }}, cli {{ hostvars[item].cli_start | float | round(1) }} {{ hostvars[item].cli_end | float | round(1) }}, busy {{ hostvars[item].busy_retries }})
       loop: "{{ all_cases }}"
 
@@ -42,7 +42,7 @@
       ansible.builtin.set_fact:
         failed_cases: "{{ failed_cases | default([]) + [item] }}"
       loop: "{{ all_cases }}"
-      when: hostvars[item].failures is defined or hostvars[item].verify_failures is defined
+      when: hostvars[item].failures is defined or hostvars[item].verify_failures is defined or not (hostvars[item].verified | default(false))
 
     - name: Fail when a case failed
       ansible.builtin.assert:

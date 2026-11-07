@@ -44,9 +44,10 @@ traced() {
   out=$(orbit "$@" --json 2>/dev/null); rc=$?
   t1=$(now)
   sleep 0.3; kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null
-  say "== $label: rc $rc, $(since "$t0") s on the wall"
+  say "== $label: rc $rc, $(secs "$t0" "$t1") s on the wall"
   id=$(printf '%s' "$out" | jq -r '(.data // .) | (.id // .operation.id // empty)' 2>/dev/null)
   if [ -z "$id" ]; then say "no operation id in the answer: $(printf '%s' "$out" | head -c 200)"; rm -f "$mark"; return; fi
+  [ "$id" = "$next" ] || say "the watcher followed op $next, not op $id: the stages below are not valid"
   local steps first_start last_end seen_first seen_end
   steps=$(orbit operation:show "$id" --json 2>/dev/null)
   printf '%s' "$steps" | jq -r '

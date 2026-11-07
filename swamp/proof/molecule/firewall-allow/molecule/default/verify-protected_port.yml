@@ -15,6 +15,9 @@
       ansible.builtin.assert:
         that: [own_before == own_after, rec_before == rec_after]
         quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
   rescue:
     - name: "{{ inventory_hostname }}: record the failed check"
       ansible.builtin.set_fact:

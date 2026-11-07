@@ -44,6 +44,9 @@
           ==
           (ufw_after.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.port | string) | list)
         quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
   rescue:
     - name: "{{ inventory_hostname }}: record the failed check"
       ansible.builtin.set_fact:
