@@ -8,10 +8,10 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\GatewayReleases\ShowGatewayReleaseAutomationRequest;
 
-final class StatusGatewayReleaseAutomationCommand extends GatewayReleaseAutomationCommand
+final class StatusGatewayAutoReleaseCommand extends GatewayReleaseAutomationCommand
 {
     #[\Override]
-    protected $signature = 'gateway:release:auto:status
+    protected $signature = 'gateway:auto-release:status
         {--json : Return machine-readable JSON}';
 
     #[\Override]
