@@ -37,6 +37,9 @@ sequenceDiagram
   %%> - the converge of the release refresh: a no-op on a current image; it catches up a small delta when main moved since the last release
   %%> - then the new task branch on the warm checkout, at the group's start commit
   %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only and is baked with the fleet, so it is no part of the VM's identity
+  SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
+  %%> What it does:
+  %%> - the path every later step takes: ssh from a Swamp worker to the VM's WireGuard address
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides

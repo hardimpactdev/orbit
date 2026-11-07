@@ -64,6 +64,8 @@ final readonly class TaskVmSlotRuns
                 'model' => $model['intent'],
                 // The VM's peer on the WireGuard hub, added while the VM boots.
                 'hub_peer' => $this->identity->hubPeer($slot),
+                // How every later step reaches the VM: ssh from a Swamp worker over WireGuard, with its pinned host key. Readiness proves it.
+                'guest_ssh' => $this->ssh->forNode($slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409)),
                 'converge' => $converge['converge'],
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
                 'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],

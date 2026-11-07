@@ -129,9 +129,26 @@ jobs:
           'systemctl is-active "$1" "$2" "$3"; for i in $(seq 20); do test "$(wg show orbit latest-handshakes | cut -f2 | sort -n | tail -n 1)" -gt 0 2>/dev/null && echo tunnel-up && break; sleep 1; done; incus list --format csv --columns ns', sh,
           orbit-agent.service, wg-quick@orbit.service, '${{ inputs.intent.slot.pi_unit }}']
         timeoutSec: 90
-  - name: Check ready
+  # What every later step does (sync, check, turn, script): ssh from a Swamp worker to the VM over WireGuard, with its pinned host key.
+  - name: Reach the VM by WireGuard
     labels: {role: swamp}
     dependsOn: [{step: Read the readiness, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-reach-" + string(inputs.intent.guest_ssh.target.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-vm-reach-" + string(inputs.intent.guest_ssh.target.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.guest_ssh.target.user }}', port: '${{ inputs.intent.guest_ssh.target.port }}', identityFile: '${{ inputs.intent.guest_ssh.identity_file }}'}
+        hosts: [{name: vm, address: '${{ inputs.intent.guest_ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.guest_ssh.target.host_keys }}'}}]
+      inputs:
+        hosts: name:vm
+        argv: ['true']
+        timeoutSec: 30
+  - name: Check ready
+    labels: {role: swamp}
+    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}, {step: Reach the VM by WireGuard, condition: {type: succeeded}}]
     task:
       type: assert
       expr: >-

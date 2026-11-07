@@ -34,6 +34,9 @@ sequenceDiagram
   %%> What it does:
   %%> - the same Ansible converge as the release refresh; with no delta every part is skipped, and it catches up a small delta when main moved since the last release
   %%> - then the new task branch on the checkout; it waits for no nested service
+  SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
+  %%> What it does:
+  %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides

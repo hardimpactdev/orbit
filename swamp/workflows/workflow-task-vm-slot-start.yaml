@@ -52,7 +52,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      # Named by target and never used with another type: `task-vm-slot-start-<node>` was an @swamp/ssh definition before (#2994).
+      behaviorName: ${{ "task-vm-start-phase-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
