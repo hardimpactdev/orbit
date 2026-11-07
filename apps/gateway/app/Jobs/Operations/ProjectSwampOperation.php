@@ -23,6 +23,9 @@ final class ProjectSwampOperation implements ShouldQueue
 
     public int $tries = 10;
 
+    /** Only the wait for the history retries; any other exception fails the job once, as a pass logs it and moves on. */
+    public int $maxExceptions = 1;
+
     private const int RetrySeconds = 1;
 
     public function __construct(public int $operationId)
