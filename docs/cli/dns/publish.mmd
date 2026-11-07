@@ -1,0 +1,96 @@
+sequenceDiagram
+  %% Target design (proposed 2026-11-07, option A of ADR 0248): every publication renders the complete private DNS from the Gateway database, and one Ansible phase writes one dnsmasq configuration on the vpn Node. Shared by Route, Node, Cluster and role kinds.
+  %% status: draft
+  %% command: none · shared step of Route, Node, Cluster and role kinds
+  %% kind: dns.publish
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as VPN Node<br/>reached over ssh
+  Note over GW: Render all private DNS<br/>one revision, three files
+  %%> What it does:
+  %%> - reads every Route, Node, Cluster and role holder from the database
+  %%> - renders the complete state, never a piece of it
+  %%> - takes the revision in the same transaction that reads the rows
+  %%> Result:
+  %%> - `orbit.conf`, `orbit.hosts` and `orbit.servers` as text, and the revision
+  %%> Why:
+  %%> - each publication is a whole state, so two parallel publications cannot lose each other's change
+  %%> - every caller gets the same answer
+  GW->>SW: Start run with the render<br/>child workflow dns-publish
+  %%> What it does:
+  %%> - the owning kind (Route, Node, Cluster or role change) starts this step in its own run
+  %%> Inputs:
+  %%> - the three files and the revision
+  %%> - the address and SSH host keys of the VPN Node
+  SW->>N: Run the DNS phase<br/>ansible-playbook dns-publish
+  %%> How:
+  %%> - one Ansible phase reads, changes and checks the Node in one run
+  %%> - a Swamp worker reaches the Node over SSH
+  %%> - the phase holds the Node's dnsmasq lock from the first read to the last write
+  alt revision is newer than installed
+    %% path: newer-revision
+    Note over N: Validate the files<br/>dnsmasq --test
+    %%> What it does:
+    %%> - checks the new files in a temporary folder before anything is replaced
+    %%> On failure:
+    %%> - nothing is installed and the phase fails with `dns.config_invalid`
+    Note over N: Install changed files
+    %%> What it does:
+    %%> - replaces only the files whose content changed, each in one rename
+    alt orbit.conf is unchanged
+      %% path: reload
+      Note over N: Reload dnsmasq<br/>SIGHUP
+      %%> Why:
+      %%> - dnsmasq reads the hosts and servers files again on SIGHUP, so an exact Route change drops no query
+      %%> - unchanged means equal to the copy dnsmasq last started with
+    else orbit.conf changed
+      %% path: restart
+      Note over N: Restart dnsmasq
+      %%> When:
+      %%> - a TLD is added, changed or removed; dnsmasq reads `orbit.conf` only at start
+      %%> - also when an earlier restart failed after the file was installed
+    end
+    Note over N: Check the answers<br/>dig on the VPN address
+    %%> What it does:
+    %%> - asks the running dnsmasq for the reserved names and one name per TLD
+    %%> - for each exact Route: the A answer, AAAA gives NODATA, and a child name is forwarded
+    %%> - fails the phase when an answer differs from the render
+    Note over N: Record the revision
+    %%> What it does:
+    %%> - writes `orbit.revision` last, so a failed run leaves the old revision and a rerun repairs it
+  else same or older revision
+    %% path: superseded
+    Note over N: Skipped — superseded<br/>dns.revision_superseded
+    %%> Result:
+    %%> - a newer publication already wrote a state that includes this change
+    %%> - the files stay as they are and the phase still succeeds
+  end
+  alt files installed and answers match
+    %% path: succeeded
+    N-->>SW: Phase result
+    %%> Returns:
+    %%> - the installed revision and whether dnsmasq reloaded, restarted or stayed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result
+    %%> Result:
+    %%> - the owning kind continues with its next step
+  else validation or check fails
+    %% path: failed
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - dnsmasq refuses the files, SSH fails, or an answer differs from the render
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the owner failed
+    %%> On the Node:
+    %%> - the last good files stay, or the new files stay without a new revision; a rerun renders and writes the whole state again
+    %%> Retry:
+    %%> - run the owning command again after fixing the cause
+  end
