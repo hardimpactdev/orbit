@@ -9,7 +9,7 @@
   vars:
     app_dev_id: "{{ node_ids['app-dev'] }}"
     src: "{{ hostvars['nested-gateway'].gateway_src }}"
-    checkout: /home/orbit/apps/orbit/workspace
+    checkout: "{{ lookup('ansible.builtin.env', 'ORBIT_CHECKOUT') | default('/home/orbit/apps/orbit/workspace', true) }}"
     orbit: [php, "{{ checkout }}/apps/cli/orbit"]
     cli_env: {PATH: /usr/local/bin:/usr/bin:/bin, HOME: /home/orbit, ORBIT_HOME: /home/orbit/.orbit}
     commands:
