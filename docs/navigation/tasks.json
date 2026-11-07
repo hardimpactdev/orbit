@@ -36,6 +36,7 @@
             "cli/tasks/question-close",
             "cli/tasks/agents",
             "cli/tasks/agent-show",
+            "cli/tasks/egress",
             "cli/tasks/provision",
             "cli/tasks/turn",
             "cli/tasks/check",

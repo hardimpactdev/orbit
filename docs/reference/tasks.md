@@ -450,6 +450,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
+| `tasks:egress` | `GET /api/v1/task-groups/{group}/egress` | Gateway |
 | `tasks:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.

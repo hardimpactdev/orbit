@@ -1065,7 +1065,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'gateway:release:deploy' => ['commit'],
             'gateway:release:rollback', 'gateway:release:show' => ['release'],
             'route:create' => ['instance', 'domain'],
-            'tasks:agents', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update', 'tasks:group:comment:create', 'tasks:group:comment:list' => ['group'],
+            'tasks:agents', 'tasks:egress', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update', 'tasks:group:comment:create', 'tasks:group:comment:list' => ['group'],
             'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
             'tasks:question:close' => ['question'],

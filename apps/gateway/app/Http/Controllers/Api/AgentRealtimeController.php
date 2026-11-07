@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Actions\NodeFacts\AgentWatchListAction;
 use App\Actions\NodeFacts\RecordNodeFactAction;
+use App\Actions\NodeFacts\RecordTaskGroupEgressAction;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Broadcasting\RealtimeConnection;
@@ -79,7 +80,7 @@ final class AgentRealtimeController extends Controller
     }
 
     /** One fact the caller's agent observed. An unchanged fact writes nothing; the answer is 204 either way. */
-    public function facts(Request $request, ManagedNodeEligibility $eligibility, RecordNodeFactAction $action): Response
+    public function facts(Request $request, ManagedNodeEligibility $eligibility, RecordNodeFactAction $action, RecordTaskGroupEgressAction $egress): Response
     {
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
@@ -95,9 +96,17 @@ final class AgentRealtimeController extends Controller
         }
         // The kind's rules require named fields, so a list never reaches the object read below.
         $envelope = Validator::make($request->all(), $rules)->validate();
+        // Only a task VM host reports an egress fact, for its own bridge; any other report would only fill the table.
+        if ($kind === NodeFactKind::Egress && (AgentWatchListAction::egress($node)['network'] ?? null) !== (is_array($envelope['data']) ? ($envelope['data']['network'] ?? null) : null)) {
+            throw new ResourceOperationException('agent.fact_not_expected', 'Only a task VM host reports egress.', 422);
+        }
         $data = ValidatedData::object($envelope['data']);
         $subject = $kind->hasSubject() ? ValidatedData::string($envelope['subject']) : '';
         $action->execute($node, $kind, $subject, CarbonImmutable::parse(ValidatedData::string($envelope['observed_at'])), $data);
+        // Every report is attributed, changed or not: a retried report must still reach the group that holds the VM.
+        if ($kind === NodeFactKind::Egress) {
+            $egress->execute($node, $subject, $data);
+        }
 
         return response()->noContent();
     }

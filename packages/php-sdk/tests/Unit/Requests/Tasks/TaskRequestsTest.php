@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskEgressRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
@@ -37,6 +38,7 @@ use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskEgressResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
@@ -75,6 +77,7 @@ describe('task transport', function (): void {
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
         'question close' => [new CloseTaskQuestionRequest(98, 'superseded', 'Stale.'), Method::POST, '/api/v1/task-questions/98/close'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
+        'egress' => [new ListTaskEgressRequest(13), Method::GET, '/api/v1/task-groups/13/egress'],
         'agent show' => [new ShowTaskAgentRequest(13, 21), Method::GET, '/api/v1/task-groups/13/agents/21'],
     ]);
 
@@ -211,6 +214,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'question close' => ['tasks-question-close/closed', new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.'), TaskQuestionResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
+        'egress' => ['tasks-egress/default', new ListTaskEgressRequest(1), TaskEgressResponse::class],
+        'empty egress' => ['tasks-egress/empty', new ListTaskEgressRequest(1), TaskEgressResponse::class],
         'agent show' => ['tasks-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
         'archived agent show' => ['tasks-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
         'agent delta' => ['tasks-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
@@ -569,6 +574,17 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($agents->agents[1]->inputTokens)->toBeNull()
             ->and($agents->agents[1]->peakContextTokens)->toBeNull()
             ->and($agents->toArray()['agents'][0])->not->toHaveKey('request_id');
+    });
+
+    it('keeps the destination order, the null port of a name and the sources of an egress row', function (): void {
+        $egress = task_fixture_send('tasks-egress/default', new ListTaskEgressRequest(1));
+
+        assert($egress instanceof TaskEgressResponse);
+
+        expect(array_map(static fn ($row): string => $row->destination, $egress->rows))->toBe(['140.82.121.4', 'example.com', 'registry.npmjs.org'])
+            ->and($egress->rows[1]->port)->toBeNull()->and($egress->rows[1]->protocol)->toBeNull()
+            ->and($egress->rows[2]->port)->toBe(443)->and($egress->rows[2]->sources)->toBe(['conn', 'dns'])->and($egress->rows[2]->addresses)->toBe(['104.16.1.34', '104.16.2.34'])
+            ->and($egress->toArray()['hosts'][0])->not->toHaveKey('request_id');
     });
 
     it('preserves the Gateway error code of a recorded refusal', function (string $fixture, GatewayRequest $request, string $code): void {
