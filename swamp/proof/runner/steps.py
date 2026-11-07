@@ -318,7 +318,7 @@ def check_operation_steps(run, label, document, wanted):
     rows = (result['json'] or {}).get('steps')
     if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('name'), str) or not isinstance(row.get('status'), str) for row in rows):
         return [f'{label}: Operation step data is missing or invalid']
-    pattern = re.compile(re.escape(wanted['name']) + r'(?:-\d+)?')
+    pattern = re.compile(re.escape(wanted['name']) + r'(?:-([0-9]+)-\1)?')
     count = sum(bool(pattern.fullmatch(row['name'])) and row['status'] in ('running', 'succeeded', 'failed') for row in rows)
     if count != wanted['count']:
         return [f"{label}: ran {count} steps named {wanted['name']}, expected {wanted['count']}"]

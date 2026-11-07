@@ -206,24 +206,54 @@ class StepTest(unittest.TestCase):
         with self.assertRaises(steps.Infra):
             steps.cli(self.run, {**args, 'forms': ['human']})
 
-    def test_cli_counts_only_executed_steps_of_the_returned_operation(self):
-        self.fleet.operation_steps = [
-            {'name': 'Change the rules-0', 'status': 'succeeded'},
-            {'name': 'Change the rules-1', 'status': 'skipped'},
-            {'name': 'Change the rules elsewhere-0', 'status': 'succeeded'},
-            {'name': 'Change the rules-0-extra', 'status': 'succeeded'},
+    def try_13_steps(self):
+        """The exact Operation step names/statuses supplied from proof 12699, allow child 12700."""
+        return [
+            {'name': 'Read the rules', 'status': 'succeeded'},
+            {'name': 'Plan the changes', 'status': 'succeeded'},
+            {'name': 'Change the rules-0-0', 'status': 'succeeded'},
+            {'name': 'Change the rules-1-1', 'status': 'skipped'},
+            {'name': 'Change the rules-2-2', 'status': 'skipped'},
+            {'name': 'Change the rules-3-3', 'status': 'skipped'},
+            {'name': 'Change the rules-4-4', 'status': 'skipped'},
+            {'name': 'Change the rules-5-5', 'status': 'skipped'},
+            {'name': 'Change the rules-6-6', 'status': 'skipped'},
+            {'name': 'Change the rules-7-7', 'status': 'skipped'},
+            {'name': 'Read the result', 'status': 'succeeded'},
+            {'name': 'Check the rules', 'status': 'succeeded'},
+            {'name': 'accepted', 'status': 'succeeded'},
         ]
+
+    def test_cli_counts_one_executed_indexed_step_in_the_try_13_operation(self):
+        self.fleet.operation_steps = self.try_13_steps()
         args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
                 'expect': {'exit': 0, 'status': 'succeeded', 'steps': {'name': 'Change the rules', 'count': 1}}}
         self.assertEqual(steps.cli(self.run, args), [])
         self.assertEqual(self.fleet.cli_calls[-1], ['operation:show', '1'])
-        self.assertIn('Change the rules-0', (Path(self.directory.name) / 'cli-2.json').read_text())
-        self.fleet.operation_steps.extend([{'name': f'Change the rules-{i}', 'status': 'succeeded'} for i in (2, 3)])
-        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 3 steps named Change the rules, expected 1'])
+        self.assertIn('Change the rules-0-0', (Path(self.directory.name) / 'cli-2.json').read_text())
+        self.fleet.operation_steps[2]['status'] = 'skipped'
+        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 0 steps named Change the rules, expected 1'])
+
+    def test_cli_counts_two_executed_indexed_steps_in_the_try_13_operation(self):
+        self.fleet.operation_steps = self.try_13_steps()
+        self.fleet.operation_steps[3]['status'] = 'succeeded'
+        args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
+                'expect': {'exit': 0, 'status': 'succeeded', 'steps': {'name': 'Change the rules', 'count': 2}}}
+        self.assertEqual(steps.cli(self.run, args), [])
+        args['expect']['steps']['count'] = 1
+        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 2 steps named Change the rules, expected 1'])
+
+    def test_cli_step_name_is_exact_or_has_only_a_repeated_numeric_index(self):
+        args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'],
+                'expect': {'steps': {'name': 'Change the rules', 'count': 1}}}
         self.fleet.operation_steps = [{'name': 'Change the rules', 'status': 'failed'}]
         self.assertEqual(steps.cli(self.run, args), [])
-        self.fleet.operation_steps = [{'name': 'Change the rules-0', 'status': 'skipped'}]
-        self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: ran 0 steps named Change the rules, expected 1'])
+        args['expect']['steps']['count'] = 0
+        for name in ('Change the rules-x', 'Change the rules-0', 'Change the rules-0-1',
+                     'Change the rules elsewhere-0-0', 'Change the rules-0-0-extra', 'Change the rules-١-١'):
+            with self.subTest(name=name):
+                self.fleet.operation_steps = [{'name': name, 'status': 'succeeded'}]
+                self.assertEqual(steps.cli(self.run, args), [])
 
     def test_cli_step_count_fails_without_an_operation_or_step_data(self):
         expect = {'steps': {'name': 'Change the rules', 'count': 1}}
