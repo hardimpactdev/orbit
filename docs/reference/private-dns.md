@@ -124,7 +124,7 @@ The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run:
 1. It skips a revision that is not newer than `orbit.revision`, and succeeds with `dns.revision_superseded`.
 2. It renders the files in a temporary folder and runs `dnsmasq --test` on them. A refusal fails with `dns.config_invalid` and installs nothing.
 3. It saves the installed files as the last good set and installs the files whose content changed, each in one rename.
-4. It compares `orbit.conf` with `orbit.conf.loaded`, the copy dnsmasq last started with. An equal file gets SIGHUP. A changed file gets a restart and a new copy.
+4. It compares `orbit.conf` with `orbit.conf.loaded`, the copy dnsmasq last started with. An equal file gets SIGHUP. A changed file, a missing copy or a dnsmasq that is not running gets a restart: the phase deletes the copy, stops the old listener and restarts dnsmasq in one detached command, and writes the copy again after the restart succeeded. A failed run deletes it too, so the next publication restarts.
 5. It asks the running dnsmasq for the reserved names and one name per TLD.
 6. For each exact Route it asks for the A answer, for NODATA on AAAA, and for a forwarded child name.
 7. A mismatch in step 5 or 6 restores the last good files and fails with `dns.check_failed`.

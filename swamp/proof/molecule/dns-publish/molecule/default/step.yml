@@ -43,7 +43,7 @@
         state: absent
     - name: Run the phase
       ansible.builtin.command:
-        argv: [timeout, "180", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+        argv: [timeout, "300", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
         chdir: "{{ ansible_dir }}"
       environment:
         ORBIT_RUN: "{{ folder.path }}"
@@ -114,6 +114,44 @@
         fail_msg: "{{ step.name }}: dnsmasq pid {{ before_pid.stdout }} -> {{ after_pid.stdout }}, expected it to be {{ step.pid }}"
         quiet: true
       when: step.pid is defined
+
+- name: "The old listener and the loaded copy: {{ step.name }}"
+  become: true
+  block:
+    - name: Read the socket of the old listener
+      ansible.builtin.command:
+        argv: [systemctl, is-active, orbit-private-dns.socket]
+      register: listener_state
+      changed_when: false
+      failed_when: false
+      when: step.listener is defined
+    - name: The old listener is where the step expects it
+      ansible.builtin.assert:
+        that: listener_state.stdout == ('active' if step.listener == 'running' else 'inactive')
+        fail_msg: "{{ step.name }}: the old listener socket is {{ listener_state.stdout }}, expected {{ step.listener }}"
+        quiet: true
+      when: step.listener is defined
+    - name: Read orbit.conf.loaded
+      ansible.builtin.stat:
+        path: "{{ state_dir }}/orbit.conf.loaded"
+      register: loaded_copy
+      when: step.loaded is defined
+    - name: The loaded copy is where the step expects it
+      ansible.builtin.assert:
+        that: loaded_copy.stat.exists == (step.loaded == 'present')
+        fail_msg: "{{ step.name }}: orbit.conf.loaded exists={{ loaded_copy.stat.exists }}, expected {{ step.loaded }}"
+        quiet: true
+      when: step.loaded is defined
+    - name: Read the files of the old listener setup
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ step.legacy_present | default([]) }}"
+      register: legacy_files
+    - name: The files of the old listener setup are back
+      ansible.builtin.assert:
+        that: legacy_files.results | map(attribute='stat') | map(attribute='exists') | list | unique in [[], [true]]
+        fail_msg: "{{ step.name }}: a file of the old listener setup is missing: {{ legacy_files.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
+        quiet: true
 
 - name: "Ask dnsmasq on {{ dns_address }}: {{ step.name }}"
   ansible.builtin.include_tasks: probe.yml

@@ -80,7 +80,7 @@
     dns_action: "{{ 'restarted' if dns_restart else ('reloaded' if dns_reload else 'unchanged') }}"
     # The files that make the last good set. The files of the new set keep their names; the old listener's go to previous/legacy/.
     dns_save_keep: "{{ dns_sums.keys() | select('in', [dns_conf_file, dns_hosts_file, dns_servers_file]) | list }}"
-    dns_save_legacy: "{{ dns_old_conf + dns_unit_files + (dns_find_catalog.files | map(attribute='path') | list) }}"
+    dns_save_legacy: "{{ dns_old_conf + dns_binders + dns_unit_files + (dns_find_catalog.files | map(attribute='path') | list) }}"
     dns_listener_started: >-
       {{ dns_listener_state.results | default([]) | selectattr('status.ActiveState', 'defined')
       | selectattr('status.ActiveState', 'equalto', 'active') | map(attribute='item') | list }}
@@ -300,21 +300,48 @@
                   loop: "{{ dns_binders }}"
                   changed_when: true
 
-                # The cutover. The old listener holds the VPN address, so it stops right before dnsmasq restarts onto it: these tasks
-                # follow each other with nothing between them, to keep the address without an owner as short as a restart.
+                # The cutover. The old listener holds the VPN address, so it stops right before dnsmasq restarts onto it. Both happen in one
+                # command, which runs detached on the Node (async): the address has no owner for as long as one restart takes, and a playbook that
+                # is killed meanwhile (the timeout of the Swamp step, a worker crash) cannot leave the listener stopped and dnsmasq not started.
+                # `orbit.conf.loaded` goes first and comes back only once the restart is done, so a run that dies in between is repaired by the next
+                # publication: it finds no loaded copy and restarts.
                 - name: Note that dnsmasq is being switched
                   ansible.builtin.set_fact:
                     dns_switching: true
-                - name: Stop the old listener, socket first
-                  ansible.builtin.systemd:
-                    name: "{{ item }}"
-                    state: stopped
-                  loop: "{{ dns_listener_started }}"
+                - name: Forget the configuration dnsmasq started with
+                  ansible.builtin.file:
+                    path: "{{ dns_loaded_file }}"
+                    state: absent
                   when: dns_restart
-                - name: Restart dnsmasq
+                - name: Stop the old listener, socket first, and restart dnsmasq
+                  ansible.builtin.command:
+                    argv: >-
+                      {{ ['sh', '-c', 'if [ "$#" -gt 0 ]; then systemctl stop -- "$@" || exit 1; fi; exec systemctl restart dnsmasq', 'sh']
+                      + dns_listener_started }}
+                  async: 90
+                  poll: 0
+                  register: dns_cutover_job
+                  changed_when: true
+                  when: dns_restart
+                - name: Wait for the cutover
+                  ansible.builtin.async_status:
+                    jid: "{{ dns_cutover_job.ansible_job_id }}"
+                  register: dns_cutover
+                  until: dns_cutover.finished
+                  retries: 90
+                  delay: 1
+                  changed_when: false
+                  failed_when: dns_cutover.finished and (dns_cutover.rc | default(1)) != 0
+                  when: dns_restart
+                - name: Remove the job file of the cutover
+                  ansible.builtin.async_status:
+                    jid: "{{ dns_cutover_job.ansible_job_id }}"
+                    mode: cleanup
+                  changed_when: false
+                  when: dns_restart
+                - name: Enable dnsmasq
                   ansible.builtin.systemd:
                     name: dnsmasq
-                    state: restarted
                     enabled: true
                   when: dns_restart
                 - name: Remember the configuration dnsmasq started with
@@ -442,6 +469,12 @@
         - name: Put the last good files back
           when: dns_touched | default(false) and not (dns_committed | default(false))
           block:
+            - name: Forget the configuration dnsmasq started with
+              ansible.builtin.file:
+                path: "{{ dns_loaded_file }}"
+                state: absent
+              when: dns_switching | default(false)
+              failed_when: false
             - name: Restore the files of the last good set
               ansible.builtin.copy:
                 src: "{{ dns_previous }}/{{ item | basename }}"
@@ -470,13 +503,14 @@
                 state: restarted
               when: dns_switching | default(false)
               failed_when: false
+              register: dns_restored_restart
             - name: Remember the restored configuration
               ansible.builtin.copy:
                 src: "{{ dns_conf_file }}"
                 dest: "{{ dns_loaded_file }}"
                 remote_src: true
                 mode: "0644"
-              when: (dns_switching | default(false)) and dns_conf_file in dns_save_keep
+              when: (dns_switching | default(false)) and dns_conf_file in dns_save_keep and dns_restored_restart is succeeded
               failed_when: false
             - name: Start the old listener again
               ansible.builtin.systemd:

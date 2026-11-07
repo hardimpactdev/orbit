@@ -6,6 +6,9 @@
 #   pid                         `same` after a reload or a skip, `new` after a restart
 #   files_kept                  after a failure, orbit.conf, orbit.hosts, orbit.servers and orbit.revision are as they were
 #   stop_dnsmasq                dnsmasq is stopped before the step (it crashed); the files are not touched
+#   listener                    `running` or `stopped`: the old listener's socket after the step
+#   loaded                      `present` or `absent`: orbit.conf.loaded, the copy dnsmasq last started with
+#   legacy_present              files of the old listener setup that must be back in place after the step
 #   leak                        a stray config makes dnsmasq answer an AAAA for gateway.orbit during the step
 #   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata
 tld_test: &tld_test {name: test, address: 10.99.99.7}
@@ -32,12 +35,34 @@ answers_base: &answers_base
 
 steps:
   # The old listener holds the address; the phase stops it, restarts dnsmasq onto the address, and retires the old setup.
-  - name: the cutover from the old listener
+  # The first cutover fails its check: the phase puts the old listener setup back, binds-interfaces snippet included, and leaves no
+  # `orbit.conf.loaded`, because the dnsmasq that runs is not the one of the new orbit.conf.
+  - name: a failed first cutover puts the old listener back
+    revision: "1762540000000001"
+    tlds: [*tld_test]
+    records: [*rec_gateway, *rec_x, *rec_app]
+    leak: true
+    succeeds: false
+    result: {error_code: dns.check_failed}
+    files_kept: true
+    listener: running
+    loaded: absent
+    legacy_present:
+      - /etc/dnsmasq.d/orbit-vpn.conf
+      - /etc/dnsmasq.d/orbit-records.conf
+      - /etc/dnsmasq.d/ubuntu-fan
+      - /etc/systemd/system/orbit-private-dns.socket
+      - /var/lib/orbit/private-dns/catalog.json
+
+  # The retry, with the same revision (the failed run recorded none), is the whole cutover: it restarts dnsmasq and stops the listener.
+  - name: the retry of the first cutover restarts dnsmasq and stops the listener
     revision: "1762540000000001"
     tlds: [*tld_test]
     records: [*rec_gateway, *rec_x, *rec_app]
     result: {revision: "1762540000000001", dnsmasq: restarted}
     pid: new
+    listener: stopped
+    loaded: present
     queries: *answers_base
 
   - name: the same revision again is superseded
