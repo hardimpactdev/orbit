@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design (proposed 2026-11-07, option A of ADR 0248): every publication renders the complete private DNS from the Gateway database, and one Ansible phase writes one dnsmasq configuration on the vpn Node. Shared by Route, Node, Cluster and role kinds.
-  %% status: draft
+  %% Target design (ADR 0248, option A chosen 2026-11-07): every publication renders the complete private DNS from the Gateway database, and one Ansible phase writes one dnsmasq configuration on the vpn Node. Shared by Route, Node, Cluster and role kinds.
+  %% status: reviewed
   %% command: none · shared step of Route, Node, Cluster and role kinds
   %% kind: dns.publish
   autonumber
@@ -62,6 +62,7 @@ sequenceDiagram
     Note over N: Record the revision
     %%> What it does:
     %%> - writes `orbit.revision` last, so a failed run leaves the old revision and a rerun repairs it
+    %%> - keeps the files it replaced as the last good set
   else same or older revision
     %% path: superseded
     Note over N: Skipped — superseded<br/>dns.revision_superseded
@@ -90,7 +91,7 @@ sequenceDiagram
     %%> - which step failed and its error code
     Note over GW: Mark the owner failed
     %%> On the Node:
-    %%> - the last good files stay, or the new files stay without a new revision; a rerun renders and writes the whole state again
+    %%> - the phase restores the last good files and reloads or restarts dnsmasq; a rerun renders and writes the whole state again
     %%> Retry:
     %%> - run the owning command again after fixing the cause
   end

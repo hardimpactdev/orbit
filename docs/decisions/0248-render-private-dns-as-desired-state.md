@@ -12,9 +12,17 @@ Every DNS publication renders the whole private DNS from the Gateway database. O
 
 In progress.
 
-Nick approved the direction on 2026-11-07. He chooses between two options below. Nothing is built, and live DNS is unchanged, until he does.
+Nick approved the direction on 2026-11-07 and chose option A the same day. The build follows the sections below.
 
-Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). Option A replaces [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole: no Cluster DNS, no member step, no fallback. Option B keeps the Cluster DNS of ADR 0219 and changes how the vpn Node uses it.
+Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole: no Cluster DNS, no member step, no fallback.
+
+Decisions of 2026-11-07:
+
+- Option A: all Routes in one dnsmasq file on the vpn Node.
+- The AAAA fix is taken: NODATA for exact Routes, no upstream IPv6 leak.
+- Rollback is the previous rendered configuration. The phase keeps the last good files and restores them when a check fails. A rerun with them is the rollback. There is no rollback bridge.
+- The render reads only stored rows. Every pending state (Cluster TLD, Router and LAN address changes, a pending Node) is stored before the publication.
+- Answers per caller are gone. A WireGuard member gets the Router's WireGuard address, and a LAN member reaches the Router through the hub.
 
 ## Context
 
@@ -49,14 +57,14 @@ Checked with dnsmasq 2.92 on scratch ports. Nothing live was touched.
 
 Today the per-caller rule gives the Router LAN address to an eligible member: an active Cluster member with a LAN address, a WireGuard address and a key, the Router included. It applies to the Cluster TLD and to Cluster-scoped Route names. An exact custom proxy record wins over it. In practice that is beast, sabre and shark asking for `dev` names. Everyone else gets the Router WireGuard address.
 
-## The two options
+## Options considered
 
-[Chart A](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/dns/publish.mmd) and [chart B](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/dns/publish-delegated.mmd) show the two flows.
+[Chart A](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/dns/publish.mmd) shows the chosen flow. Option B stays here as a rejected alternative.
 
 | | **A. All Routes in one file on the vpn Node** | **B. Delegate each TLD** |
 | --- | --- | --- |
 | Idea | The vpn dnsmasq answers every private name. | The vpn dnsmasq lists the TLDs, the reserved names and the Routes outside any TLD. It sends `server=/TLD/ADDRESS` to the Router (Cluster TLD) or to the owning Node (Node TLD). |
-| Status | Recommended first step | Later, if Nick wants LAN answers |
+| Status | Chosen | Rejected for now |
 | LAN clients get | The Router WireGuard address, like every caller. Beast, sabre and shark reach beast through the WireGuard hub, not the LAN. | With delegation alone, the same as A: the Router sees the vpn Node as the asker. LAN answers need the [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) member step as well. Members then ask the Router LAN address first and the vpn Node second. |
 | A Router is down | DNS is unaffected. Names of that Cluster still resolve and the connections fail, as today. Other Clusters work. | Every name under that TLD fails to resolve. It also fails when the Router is up but its dnsmasq or port 53 is broken, so a working Route can stop resolving. ADR 0219's fallback to WireGuard answers is gone for those names, because the vpn Node no longer holds them. |
 | The vpn Node is down | All private names fail, as today. | The same. |
@@ -69,11 +77,11 @@ Today the per-caller rule gives the Router LAN address to an eligible member: an
 | Costs of LAN answers | None. | The member step: a systemd-resolved delegate, automatic recovery after fallback, about 20 lifecycle events, and a resolved reload that fails lookups in flight. |
 | Moves to B later | The renderer builds the vpn state per owner: TLD, exact Route, reserved name. B adds a Router render per Cluster and proves its answers equal A's. One publication then swaps the Cluster's names under its TLD for one `server=/TLD/ROUTER` line. Rollback removes the line. No data migration. | Already there. |
 
-Recommendation: A. The vpn file stays small, because a TLD wildcard already answers every Cluster Route under it. B saves little there and adds a failure mode and more Nodes to write. It pays off only with LAN answers.
+Chosen: A. The vpn file stays small, because a TLD wildcard already answers every Cluster Route under it. B saves little there and adds a failure mode and more Nodes to write. It pays off only with LAN answers.
 
 If Nick wants LAN answers now, a third path keeps A and adds a second dnsmasq on the vpn Node, with eligible members pointed at it through `fleet.peer_dns`. It is not recommended. [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router#rejected-alternatives) rejected two listeners, because they select by member identity again. A membership change would also need a peer DNS run.
 
-## Decision if Nick picks A
+## Decision
 
 ### One render
 
@@ -93,10 +101,10 @@ The render is a function of rows. A change stores the row state that decides inc
 
 1. Skip when the revision is not newer than `orbit.revision`.
 2. Validate the files in a temporary folder with `dnsmasq --test` on a temporary `orbit.conf` that names the temporary hosts and servers files.
-3. Install the files whose content changed, each in one rename.
+3. Keep the installed files as the last good set, then install the files whose content changed, each in one rename.
 4. Reload with SIGHUP when `orbit.conf` equals `orbit.conf.loaded`, the copy dnsmasq last started with. Otherwise restart, then copy it to `orbit.conf.loaded`. A restart that failed on an earlier run is repaired by the next newer revision.
 5. Write `orbit.revision`.
-6. Check with `dig`: each reserved name, one name per TLD, and for each exact Route its A answer, AAAA NODATA and a child name that is forwarded.
+6. Check with `dig`: each reserved name, one name per TLD, and for each exact Route its A answer, AAAA NODATA and a child name that is forwarded. When the check fails, restore the last good files, reload or restart as needed, and fail the phase with the public error code.
 
 A Molecule scenario tests the phase and its templates. Publications to one Node run one at a time. Each takes a few seconds, and an older one skips at step 1.
 
@@ -112,15 +120,10 @@ Route, Node, Cluster, metrics and role workflows call the shared `dns-publish` c
 - The Router LAN DNS firewall families of ADR 0219 step 1, which nothing then uses.
 - About 3,000 lines of PHP and 500 lines of workflow YAML, with their tests. The build PR lists the exact files.
 
-### Proof before the cutover
+### Proof
 
-1. Molecule runs the phase on a scratch Node and checks every row of the table above.
-2. On the live vpn Node, a second dnsmasq with the rendered files starts on a spare port. A comparison queries every name, for A and AAAA, against the listener and the new dnsmasq, and prints each difference. The only differences allowed are the LAN-member answers, the AAAA fix and nested TLDs.
-3. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches.
-
-## Open points for Nick
-
-- Option A or B. Under A, do beast, sabre and shark accept WireGuard answers for LAN names?
-- The AAAA fix: NODATA for exact Routes, with no upstream IPv6 leak. It changes today's answers.
-- Rollback after the listener code is deleted. `gateway:release:rollback` brings the code back, but the new dnsmasq holds port 53 on the VPN address. The old publication then needs the rollback bridge of ADR 0219 step 4, or one manual command on the vpn Node. Does Nick want the bridge?
-- Rows that decide DNS before their state commits. The build PR must show that each is a stored row before admission: a pending Node, an enrollment candidate, a Cluster TLD, Router or LAN address change, a Router transition, a `secondary` site and a placement candidate. Any that cannot be stored keeps its override and is listed.
+1. Molecule tests the phase and its templates on a scratch Node: every row of the table above, the reload and restart choice, the superseded skip, and the restore of the last good files.
+2. A rehearsal on a task VM fleet runs the whole flow, from a Route change to the answers.
+3. On the live vpn Node, a comparison script queries every private name, for A and AAAA, against the listener and a second dnsmasq with the rendered files on a spare port. It prints each difference name by name. The only differences allowed are the AAAA fix and nested TLDs.
+4. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches. The listener code is already gone, so the rollback is the last good files.
+5. The restart gap of a TLD change is measured with a query loop, and the number goes into this ADR.
