@@ -22,14 +22,15 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - Secrets are never inputs. Pass the vault name and key name, and resolve them in the step.
    - Steps do not call back to the Gateway to read intent or report progress. There is no binding wait.
 2. **The Gateway records the result from the run.** Steps return outputs. The Gateway projects the terminal result of the run. It does not re-validate it.
-3. **One action group is one step.**
-   - Run each phase from a script file as one placed `command/shell` or official `@swamp/ssh` step (PLAN F9). Keep its commands and edge cases together.
-   - Use a typed TypeScript behavior only when you need a typed, schema-validated result.
-   - Separate phases, Node changes and guards remain visible native steps. A change to the phase sequence needs a written reason in the PR.
-   - An Ansible phase is the approved exception (Nick, 2026-11-03). It is one placed `command/shell` step that runs one tagged part of a repository playbook on the Swamp Node, against the intent file. Its tasks live in the playbook, not as native steps, and the chart shows one step. Use it for idempotent Node state with lists, especially across several Nodes. Gateway calls, single commands and work that must not repeat stay native. See the [ansible-phase skill](../../.agents/skills/ansible-phase/SKILL.md).
+3. **Ansible does every action on a machine; Swamp orchestrates.**
+   - Decided by Nick, 2026-11-07. Before that, an Ansible phase was the approved exception (2026-11-03); it is now the default. Run each logical phase as one placed `command/shell` step that runs one tagged part of a repository playbook on the Swamp Node, against the intent file. The playbook reads, changes and checks the machine in one run. A read, a plan or an end check is a task in the playbook, not a Swamp step. The chart shows one step per phase.
+   - Swamp keeps what is not machine work: the logical phases and their order (`dependsOn`, `guard`, `forEach`, `allowFailure`), the two Gateway calls a step may make (mint and sign), external API calls (GitHub, UpCloud), cancellation, and the `input`, result and `cleanup` steps of the run folder.
+   - A native step that acts on a machine (`@swamp/ssh exec`, an official `cfgmgmt` behavior) is the exception. The PR names the measured numbers that justify it: Swamp steps, end-to-end time and per-phase time of both forms. Several reads and changes on one machine, and any work that repeats per Node, belong in a phase.
+   - Use a typed TypeScript behavior only for a typed, schema-validated result that a file cannot print. A plan of a machine change is not one: it is a pure Jinja template in the playbook with its own Molecule `unit` cases (see the [porting guide](../../docs/swamp/porting.md)).
+   - A change to the phase sequence needs a written reason in the PR. See the [ansible-phase skill](../../.agents/skills/ansible-phase/SKILL.md) for the playbook rules.
 4. **Scripts are visible and linted.**
    - The script text lives in the workflow or the behavior definition (`run: |`), or in a file that Swamp ships to the worker, never inside a TypeScript string.
-   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/`; the first flow with an Ansible phase adds `ansible-lint` to CI.
+   - CI runs shellcheck (and ruff for Python) on all of it. Playbooks live in `swamp/ansible/` and pass `ansible-lint` in the `production` profile; the gate lists each playbook. Their Jinja templates (`swamp/ansible/templates/`) have Molecule `unit` cases that the gate runs.
 5. **Secrets come from Swamp vaults.**
    - The Gateway stays the source of truth. It pushes the execution copy with the native authenticated `vault.put` WebSocket request when a value changes. The value is in the frame payload, never argv; the shared Gateway helper launches no CLI.
    - Steps read `${{ vault.get('<vault>', '<key>') }}`. In `command/shell`, Swamp passes it as an environment variable. The approved Node209 worker SSH key instead uses official `@swamp/ssh` `identityFile` through native `LoadCredential`; worker-wide read is approved.
@@ -63,6 +64,7 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 ## Checks on every PR
 
 - `swamp workflow validate` for every workflow, on the pinned runtime.
+- `ansible-lint` for every playbook, and the Molecule `unit` cases of every template under `swamp/ansible/templates/`.
 - `deno test` for `extensions/behaviors/operations`.
 - The placement lint.
 - The Swamp-shape gate. It fails on:
