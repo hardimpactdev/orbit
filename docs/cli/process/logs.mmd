@@ -1,53 +1,31 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-06, agent strip (a): a log read is a typed source of the agent's log streaming. No SSH, no agent command, no Swamp run (R1).
   %% status: draft
   %% command: process:logs
   %% kind: process.logs
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane A icon=server pill=observer tone=amber
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant A as Node agent<br/>orbit-agent
+  participant CLI as CLI / web / MCP
+  participant GW as Gateway
+  participant A as Node observer
+  participant R as Reverb
   CLI->>GW: process:logs <process>
-  %%> Command:
-  %%> - `orbit process:logs <process>`
-  %%> - syntax: `process:logs <process> [--lines=COUNT] [--follow] [--json]`
-  %%> Input:
-  %%> - the numeric Process ID from `process:list`
-  %%> Who can call it:
-  %%> - the `orbit` CLI, the web app and the MCP tool send the same request
-  Note over GW: Validate, open a tail<br/>source: the Process
-  %%> Requirements:
-  %%> - your Node has an access grant to the Node that runs the Process
-  %%> - the agent of that Node has a fresh view and has joined its log channel
-  %%> - the Node has a free stream slot (16 for each Node)
-  %%> Result:
-  %%> - the Gateway opens the tail for itself with the requested line count and starts it at once; it needs no viewer channel
-  %%> - the source is derived by the Gateway: the Process's systemd unit, or its container labelled `orbit.managed=true` and `orbit.process.id`
-  %%> - the caller names no path or unit
-  GW->>A: log-streams.changed
-  %%> What it does:
-  %%> - prompts the agent to fetch its stream list over HTTPS; the event carries no data
-  Note over A: Read the newest lines<br/>journalctl · container logs
-  %%> What it does:
-  %%> - a systemd Process: read-only `journalctl --unit … --output short-iso --utc`, newest entries first, each entry cut at 256 KiB
-  %%> - a Docker Process: the container's standard output and error, in the order written
-  %%> - the agent redacts each line and sends the first lines as one batch, also when the batch is empty, so the Gateway knows the read is complete
-  A->>GW: Lines<br/>log channel
-  alt lines arrive within 5 s
-    Note over GW: Redact, close the tail<br/>stored environment values
-    GW-->>CLI: 200 lines<br/>truncated flag
-    %%> Result:
-    %%> - at most the requested number of newest lines and 256 KiB; `truncated` is set when either limit left out older lines
-    %%> - an empty log is an empty list
-  else agent cannot answer
-    Note over GW: Close the tail<br/>frees the stream slot
-    GW--xCLI: 409 logs.live_unavailable<br/>reason
-    %%> When:
-    %%> - the agent view is stale, the agent has not joined its log channel, the source cannot be read, or no batch arrives within 5 s
-    %%> - `logs.stream_limit` (429) when the Node already has 16 open tails
-    %%> Result:
-    %%> - there is no SSH fallback and no polling; read again once the agent is back
+  Note over GW: Authorize and read bounded journal or container log
+  GW-->>CLI: Snapshot and request ID
+  opt --follow (CLI or web viewer)
+    CLI->>GW: Open log stream with socket ID and line limit
+    Note over GW: Validate source and grant access<br/>Store inactive viewer lease
+    GW-->>CLI: Private channel and subscription signature
+    CLI->>R: Subscribe to private log channel
+    CLI->>GW: Renew lease after subscription succeeds
+    GW->>A: log-streams.changed
+    A->>GW: Fetch active stream sources
+    loop new lines while lease is active
+      A->>R: Read-only log observations
+      R->>GW: Log batch
+      Note over GW: Redact and preserve sequence and loss markers
+      GW->>R: Viewer log.lines frames
+      R-->>CLI: New lines
+      CLI->>GW: Renew lease every 20 seconds
+    end
+    Note over CLI: Reconnect reopens the stream<br/>Bounded reads only while live path is unavailable
+    CLI->>GW: Close lease on Ctrl-C or page exit
   end

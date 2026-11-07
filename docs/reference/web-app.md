@@ -353,7 +353,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### One live fleet view
 
-The web app is the only live fleet view, and the CLI has none. A terminal screen is rejected: it would need its own copy of the metrics queries, and it would have to follow every change to shared requests and realtime events. Without a browser, use the list commands and `realtime:tail`.
+The web app is the only live fleet view, and the CLI has none. A terminal screen is rejected: it would need its own copy of the metrics queries, and it would have to follow every change to shared requests and realtime events. Without a browser, use the list commands and `realtime:logs`.
 
 ### The Gateway origin
 

@@ -107,7 +107,6 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `inspect`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content, or [inspects](/cli/project/maintenance-inspect) a Project's dependencies. |
 | `proof` | `proof`, `run` | `proof` runs the cases of one command on the task VM that calls and reports a verdict for each; see [proof](/cli/proof/proof). `run` runs the cases that a commit selects; see [proof:run](/cli/proof/run). |
-| `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |
 | `tasks` | `analyze`, `cancel`, `check`, `close`, `complete`, `park`, `provision`, `publish`, `turn`, `status` | The CLI analyzes repositories, provisions or parks task VMs, checks or publishes work, sends turns, completes or cancels tasks, closes questions, and reports state. |
@@ -160,3 +159,5 @@ The CLI keeps no alias for a renamed command. The consumers of the CLI are this 
 A Project definition has the same fields as the Process or Schedule it produces. So the `process` and `schedule` families serve it with `--project`. `process:update` without `--project` takes an installed Process ID and reconverges it in place; with `--project`, it takes a definition name and changes later copies only. A separate definition command under the `project` family is a rejected alternative, because it would hide four verbs behind flags.
 
 The [Swamp policy contracts](/reference/deployments#swamp-policy-contracts) also have API/MCP-only routes under `instance:deployment-source`, `instance:auto-deploy`, and `instance:deploy:automatic:receipt`. They serve the trusted policy worker and add no operator commands.
+
+Log reads use `<family>:logs`; `--follow` selects streaming. Realtime requires `--follow` because it has no retained history.

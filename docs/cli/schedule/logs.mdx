@@ -5,14 +5,17 @@ description: "Return the newest complete lines of the Schedule's service journal
 ---
 
 ```bash
-orbit schedule:logs <schedule> [--lines=COUNT] [--json]
+orbit schedule:logs <schedule> [--lines=COUNT] [--follow] [--json]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--lines=COUNT` | `100` | 1 through 1,000 lines. |
+| `--follow` | off | Stream new lines until Ctrl-C. With `--json`, print NDJSON frames. |
 
-The Gateway answers from the Node agent's log stream, not over SSH. It returns at most 256 KiB and sets `truncated` when that limit removed older lines. It redacts the lines as it does for a Process. When the Gateway cannot answer it returns `logs.live_unavailable` (409), or `logs.stream_limit` (429) when the Node already has 16 open tails.
+Without `--follow`, Orbit returns a bounded snapshot of the service journal. `--follow` opens a viewer lease and subscribes to the private log channel. The Node agent reads the Schedule journal. Orbit renews the lease while the command runs and closes it on Ctrl-C. The same line limits, redaction, reconnect handling, and loss markers apply as for [Process logs](/cli/process/logs).
+
+When the live path is unavailable, the shared follower uses bounded reads until streaming is available again. It does not poll while a stream runs. See [Live logs](/reference/live-logs).
 
 ## How it works
 

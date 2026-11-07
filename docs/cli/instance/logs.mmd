@@ -1,56 +1,31 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-06, agent strip (a): a log read is a typed source of the agent's log streaming. No SSH, no agent command, no Swamp run (R1).
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): a production Instance's log is read through a read-only group, `orbit-logs`, that the agent's unit joins. Production apps and the observer's read-only rule stay unchanged.
   %% status: draft
   %% command: instance:logs
   %% kind: instance.logs
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane A icon=server pill=observer tone=amber
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant A as Node agent<br/>orbit-agent
+  participant CLI as CLI / web / MCP
+  participant GW as Gateway
+  participant A as Node observer
+  participant R as Reverb
   CLI->>GW: instance:logs <instance>
-  %%> Command:
-  %%> - `orbit instance:logs <instance>`
-  %%> - syntax: `instance:logs <instance> [--lines=COUNT] [--follow] [--json]`
-  %%> Input:
-  %%> - the numeric Instance ID from `instance:list`
-  %%> Who can call it:
-  %%> - the `orbit` CLI, the web app and the MCP tool send the same request
-  Note over GW: Validate, open a tail<br/>source: the Instance log
-  %%> Requirements:
-  %%> - your Node has an access grant to the Node that serves the Instance
-  %%> - the agent of that Node has a fresh view and has joined its log channel
-  %%> - the Node has a free stream slot (16 for each Node)
-  %%> Result:
-  %%> - the Gateway opens the tail for itself with the requested line count and starts it at once; it needs no viewer channel
-  %%> - the source is derived by the Gateway: `storage/logs/laravel.log` in the Instance's application directory, or the newest `laravel-*.log` when that file is absent
-  %%> - the caller names no path or unit
-  GW->>A: log-streams.changed
-  %%> What it does:
-  %%> - prompts the agent to fetch its stream list over HTTPS; the event carries no data
-  Note over A: Read the newest lines<br/>log file, read-only
-  %%> What it does:
-  %%> - the agent reads the file itself and starts no program
-  %%> - a development Instance: the file under the development Instance root
-  %%> - a production Instance: the shared `storage/logs` directory of the application in the production home carries a read ACL for the group `orbit-logs`, which the agent's unit joins; the unit already binds the production home back read-only
-  %%> - it refuses a file that root owns and a link at `storage/logs` or at the file
-  %%> - the agent redacts each line and sends the first lines as one batch, also when the batch is empty, so the Gateway knows the read is complete
-  A->>GW: Lines<br/>log channel
-  alt lines arrive within 5 s
-    Note over GW: Redact, close the tail<br/>stored environment values
-    GW-->>CLI: 200 lines<br/>truncated flag
-    %%> Result:
-    %%> - at most the requested number of newest lines and 256 KiB; `truncated` is set when either limit left out older lines
-    %%> - an Instance without a log file is an empty list
-  else agent cannot answer
-    Note over GW: Close the tail<br/>frees the stream slot
-    GW--xCLI: 409 logs.live_unavailable<br/>reason
-    %%> When:
-    %%> - the agent view is stale, the agent has not joined its log channel, the source cannot be read, or no batch arrives within 5 s
-    %%> - `logs.stream_limit` (429) when the Node already has 16 open tails
-    %%> Result:
-    %%> - there is no SSH fallback and no polling; read again once the agent is back
+  Note over GW: Authorize and read bounded application log
+  GW-->>CLI: Snapshot and request ID
+  opt --follow (CLI or web viewer)
+    CLI->>GW: Open log stream with socket ID and line limit
+    Note over GW: Validate source and grant access<br/>Store inactive viewer lease
+    GW-->>CLI: Private channel and subscription signature
+    CLI->>R: Subscribe to private log channel
+    CLI->>GW: Renew lease after subscription succeeds
+    GW->>A: log-streams.changed
+    A->>GW: Fetch active stream sources
+    loop new lines while lease is active
+      A->>R: Read-only log observations
+      R->>GW: Log batch
+      Note over GW: Redact and preserve sequence and loss markers
+      GW->>R: Viewer log.lines frames
+      R-->>CLI: New lines
+      CLI->>GW: Renew lease every 20 seconds
+    end
+    Note over CLI: Reconnect reopens the stream<br/>Bounded reads only while live path is unavailable
+    CLI->>GW: Close lease on Ctrl-C or page exit
   end

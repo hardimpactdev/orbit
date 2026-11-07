@@ -4,7 +4,7 @@ description: "How a viewer tails an Instance log or a Process log live: opening,
 covers:
   - apps/gateway/app/Domain/Logs/**
   - apps/gateway/app/Actions/Logs/**
-  - apps/gateway/app/Http/Controllers/Api/{InstanceLogStreamsController,ProcessLogStreamsController,RespondsWithLogStreams}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceLogStreamsController,ProcessLogStreamsController,ScheduleLogStreamsController,RespondsWithLogStreams}.php
   - apps/gateway/app/Infrastructure/Logs/**
   - apps/gateway/app/Infrastructure/AgentView/LogRelay.php
   - apps/agent/src/logs/**
@@ -12,9 +12,9 @@ covers:
 
 # Live logs
 
-A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
+A live log stream shows new lines of one Instance, Process, or Schedule log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance, Process, or Schedule.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) , [`orbit process:logs`](/cli/process/logs), and [`orbit schedule:logs`](/cli/schedule/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
 
 ## How a stream works
 
@@ -242,3 +242,7 @@ The subscriber's socket loop only records what arrives. A child process does eve
 ### End a stream instead of dropping old lines
 
 When the relay falls behind, it ends the stream with `relay_behind`. The viewer then falls back to SSH reads, which show the current tail. Dropping the oldest lines silently is rejected, because the viewer would miss lines without knowing it.
+
+Schedule viewer leases use `/api/v1/schedules/{schedule}/log-streams` and the `schedule:log-stream:{create,renew,destroy}` transport names. The Schedule ID stays a UUID. Orbit resolves only its `orbit-schedule-{uuid}.service` journal source. The same access, lease, redaction, reconnect, and loss rules apply. These transport endpoints are excluded from MCP.
+
+`realtime:logs --follow` subscribes to Gateway events instead of file logs. It retains the `{type,id,at,data}` envelope. Bare `realtime:logs` refuses because realtime has no event history.
