@@ -62,6 +62,22 @@ Changing `raw.dnsmasq` restarts the bridge's dnsmasq. Running VMs lose DNS for a
 
 A kernel without `/proc/net/nf_conntrack` is the reason for the `nftables` rule. Beast and shark build the kernel without it, and the agent has no netlink access.
 
+## Running the host part
+
+The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Every task VM host therefore gets it after a release that changed the playbooks, in the daily refresh at 03:20, and with `task-vms:refresh-image <host>`.
+
+A failed check fails the refresh before the base is touched. [Log task VM egress](/reference/compute-drivers#log-task-vm-egress) lists the end checks and their error codes. The part writes these files on the host:
+
+| File | Content |
+| --- | --- |
+| `/etc/orbit/egress-log.nft` | The `orbit_egress` table, loaded by `orbit-egress-log.service` |
+| `/etc/rsyslog.d/19-orbit-egress.conf` | The rule that moves the `orbit-egress ` lines to their own file |
+| `/var/log/orbit/task-egress.log` | One raw kernel line for each new flow |
+| `/var/log/incus/dnsmasq.<network>.log` | The DNS queries of the bridge |
+| `/etc/logrotate.d/orbit-egress` | The rotation of both logs |
+
+A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<bridge> OUT=<nic> MAC=<dst MAC>:<src MAC>:<type> SRC=<VM address> DST=<outside address> ... PROTO=<tcp|udp> SPT=<port> DPT=<port>`. The agent reads `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`.
+
 ## The agent fact
 
 The Gateway's watch list names the bridge, such as `{"egress": {"network": "orbittask0"}}`, for each task VM host. Without that member the agent reads nothing.
