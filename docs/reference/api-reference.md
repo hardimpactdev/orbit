@@ -7,6 +7,8 @@ covers:
 
 # API reference generation
 
+Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule}/log-streams`. The Schedule selector is a UUID. These viewer leases share the [live log contract](/reference/live-logs) with Instance and Process streams.
+
 The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.

@@ -1040,3 +1040,23 @@ function log_follow_json_lines(string $output): array
         array_values(array_filter(explode("\n", trim($output)))),
     );
 }
+
+it('follows Schedule journal logs through a viewer lease and closes it on interrupt', function (): void {
+    log_follow_profile();
+    $transport = log_follow_transport(log_follow_handshake('123.456', log_follow_stream_id('a')));
+    $mock = MockClient::global(log_follow_stream_mocks('a'));
+    $this->clock->onTick(function (float $now, int $count) use ($transport): void {
+        if ($count === 1) {
+            $transport->enqueue([log_follow_lines('a', 1, ['schedule output'])]);
+        }
+        if ($count >= 4) {
+            InterruptIntent::record(SIGINT);
+        }
+    });
+    $id = '123e4567-e89b-42d3-a456-426614174000';
+    expect(Artisan::call('schedule:logs', ['schedule' => $id, '--follow' => true, '--json' => true]))->toBe(0)
+        ->and(Artisan::output())->toContain('schedule output')
+        ->and(log_follow_sent($mock, CreateLogStreamRequest::class)[0]->getUrl())->toBe('https://10.44.0.1/api/v1/schedules/'.$id.'/log-streams')
+        ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->not->toBeEmpty()
+        ->and(log_follow_sent($mock, DestroyLogStreamRequest::class))->toHaveCount(1);
+});

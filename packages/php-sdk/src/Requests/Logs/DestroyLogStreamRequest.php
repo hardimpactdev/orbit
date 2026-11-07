@@ -15,7 +15,7 @@ final class DestroyLogStreamRequest extends GatewayRequest
     protected Method $method = Method::DELETE;
 
     public function __construct(
-        private readonly InstanceLogStreamTarget|ProcessLogStreamTarget $target,
+        private readonly LogStreamTarget $target,
         private readonly string $streamId,
     ) {}
 

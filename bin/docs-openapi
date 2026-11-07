@@ -726,6 +726,7 @@ SUMMARIES = {
     'agent:facts': "Report one fact the agent observed",
     'agent:log-streams': "List the live log streams the agent reads",
     'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
+    'schedule:log-stream:create': 'Open a live Schedule log stream', 'schedule:log-stream:renew': 'Renew a live Schedule log stream', 'schedule:log-stream:destroy': 'Close a live Schedule log stream',
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
     'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent:show': 'Show a task agent session', 'tasks:egress': 'List the outside hosts of a task group', 'tasks:agent-stream': 'Watch a task agent session',
@@ -781,6 +782,9 @@ DESCRIPTIONS = {
     'instance:log-stream:create': "Opens a live log stream of the Instance's application log for one Reverb socket, with the access rule of `instance:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
     'instance:log-stream:renew': 'Extends the lease of a live Instance log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.',
     'instance:log-stream:destroy': 'Closes a live Instance log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.',
+    'schedule:log-stream:create': 'Opens a live Schedule journal stream for one viewer socket. Requires an active installed Schedule and access to its serving Node. Uses the same lease, redaction, line limits and loss markers as Process streams.',
+    'schedule:log-stream:renew': 'Renews the lease of the calling viewer on this Schedule stream. Only its opening Node can renew it.',
+    'schedule:log-stream:destroy': 'Closes this Schedule viewer stream. Only its opening Node can close it.',
     'process:log-stream:create': "Opens a live log stream of the Process's journal or container output for one Reverb socket, with the access rule of `process:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
     'process:log-stream:renew': 'Extends the lease of a live Process log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.',
     'process:log-stream:destroy': 'Closes a live Process log stream at once and publishes `log.ended` with reason `closed`. Only the Node that opened the stream can close it.',
@@ -2056,7 +2060,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'source': source,
         }, 'required': ['id', 'lines', 'source']}
         responses['200'] = envelope({'type': 'array', 'items': stream_item}, 'The request succeeded.')
-    elif route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
+    elif route['name'] in ('instance:log-stream:create', 'process:log-stream:create', 'schedule:log-stream:create'):
         opened = {'type': 'object', 'properties': {
             'id': {'type': 'string', 'pattern': '^[0-9a-f]{32}$', 'description': 'The stream ID.'},
             'channel': {'type': 'string', 'description': 'The private channel, `private-log-stream.{id}`.'},
@@ -2067,12 +2071,12 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         }, 'required': ['id', 'channel', 'auth', 'lines', 'lease_seconds', 'renew_seconds']}
         responses['201'] = envelope(opened, 'Created.')
         responses['429'] = error_response('The Node already has 16 open log streams (`logs.stream_limit`).')
-    elif route['name'] in ('instance:log-stream:renew', 'process:log-stream:renew'):
+    elif route['name'] in ('instance:log-stream:renew', 'process:log-stream:renew', 'schedule:log-stream:renew'):
         responses['200'] = envelope({'type': 'object', 'properties': {
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'lease_seconds': {'type': 'integer', 'description': 'Seconds the stream lives from now without another renewal.'},
         }, 'required': ['id', 'lease_seconds']}, 'The request succeeded.')
-    elif route['name'] in ('instance:log-stream:destroy', 'process:log-stream:destroy'):
+    elif route['name'] in ('instance:log-stream:destroy', 'schedule:log-stream:destroy', 'process:log-stream:destroy'):
         responses['200'] = envelope({'type': 'object', 'properties': {
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
@@ -2159,9 +2163,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['404'] = error_response('No record matches the path parameters.')
     if starts_operation or (route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
-    if route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
+    if route['name'] in ('instance:log-stream:create', 'process:log-stream:create', 'schedule:log-stream:create'):
         responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.')
-    if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'process:log-stream:renew', 'process:log-stream:destroy'):
+    if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'schedule:log-stream:renew', 'process:log-stream:renew', 'schedule:log-stream:destroy', 'process:log-stream:destroy'):
         responses['404'] = error_response('The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).')
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:question:list', 'tasks:agents', 'tasks:egress', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`).')

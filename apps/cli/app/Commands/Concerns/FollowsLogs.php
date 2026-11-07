@@ -19,12 +19,11 @@ use App\Support\Realtime\WebSocketTransport;
 use Closure;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Logs\InstanceLogStreamTarget;
-use Orbit\Sdk\Requests\Logs\ProcessLogStreamTarget;
+use Orbit\Sdk\Requests\Logs\LogStreamTarget;
 use Throwable;
 
 /**
- * `--follow` for `instance:logs` and `process:logs`: a live log stream with a polling fallback,
+ * `--follow` for Instance, Process, and Schedule logs: a live log stream with a polling fallback,
  * rendered as log lines or as one JSON object per line. Ctrl-C closes the stream and exits 0.
  *
  * @phpstan-require-extends GatewayCommand
@@ -35,7 +34,7 @@ trait FollowsLogs
     protected function followLogs(
         GatewayConnector $connector,
         GatewayProfile $profile,
-        InstanceLogStreamTarget|ProcessLogStreamTarget $target,
+        LogStreamTarget $target,
         int $lines,
         Closure $fetch,
     ): int {

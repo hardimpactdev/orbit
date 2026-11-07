@@ -7,8 +7,10 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\InstanceLogStreamTarget;
+use Orbit\Sdk\Requests\Logs\LogStreamTarget;
 use Orbit\Sdk\Requests\Logs\ProcessLogStreamTarget;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;
+use Orbit\Sdk\Requests\Logs\ScheduleLogStreamTarget;
 use Orbit\Sdk\Responses\Logs\LogStreamClosedResponse;
 use Orbit\Sdk\Responses\Logs\LogStreamRenewalResponse;
 use Orbit\Sdk\Responses\Logs\LogStreamResponse;
@@ -18,7 +20,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe(CreateLogStreamRequest::class, function (): void {
-    it('opens a stream for an Instance or a Process with the socket ID and line count', function (InstanceLogStreamTarget|ProcessLogStreamTarget $target, string $endpoint): void {
+    it('opens a stream for an Instance or a Process with the socket ID and line count', function (LogStreamTarget $target, string $endpoint): void {
         $mock = new MockClient([CreateLogStreamRequest::class => MockResponse::make(log_stream_envelope(), 201)]);
         $request = new CreateLogStreamRequest($target, '123.456', 250);
 
@@ -38,6 +40,7 @@ describe(CreateLogStreamRequest::class, function (): void {
     })->with([
         'instance' => [new InstanceLogStreamTarget(12), '/api/v1/instances/12/log-streams'],
         'process' => [new ProcessLogStreamTarget(41), '/api/v1/processes/41/log-streams'],
+        'schedule' => [new ScheduleLogStreamTarget('123e4567-e89b-42d3-a456-426614174000'), '/api/v1/schedules/123e4567-e89b-42d3-a456-426614174000/log-streams'],
     ]);
 
     it('defaults to 100 lines', function (): void {
@@ -93,7 +96,7 @@ describe(CreateLogStreamRequest::class, function (): void {
 });
 
 describe(RenewLogStreamRequest::class, function (): void {
-    it('renews one stream through the record it was opened for, without a body', function (InstanceLogStreamTarget|ProcessLogStreamTarget $target, string $endpoint): void {
+    it('renews one stream through the record it was opened for, without a body', function (LogStreamTarget $target, string $endpoint): void {
         $mock = new MockClient([RenewLogStreamRequest::class => MockResponse::make([
             'data' => ['id' => log_stream_id(), 'lease_seconds' => 60],
             'meta' => ['request_id' => log_stream_request_id()],
@@ -114,6 +117,7 @@ describe(RenewLogStreamRequest::class, function (): void {
     })->with([
         'instance' => [new InstanceLogStreamTarget(12), '/api/v1/instances/12/log-streams'],
         'process' => [new ProcessLogStreamTarget(41), '/api/v1/processes/41/log-streams'],
+        'schedule' => [new ScheduleLogStreamTarget('123e4567-e89b-42d3-a456-426614174000'), '/api/v1/schedules/123e4567-e89b-42d3-a456-426614174000/log-streams'],
     ]);
 
     it('rejects a malformed renewal', function (): void {
@@ -145,7 +149,7 @@ describe(RenewLogStreamRequest::class, function (): void {
 });
 
 describe(DestroyLogStreamRequest::class, function (): void {
-    it('closes one stream without a body', function (InstanceLogStreamTarget|ProcessLogStreamTarget $target, string $endpoint): void {
+    it('closes one stream without a body', function (LogStreamTarget $target, string $endpoint): void {
         $mock = new MockClient([DestroyLogStreamRequest::class => MockResponse::make([
             'data' => ['id' => log_stream_id(), 'closed' => true],
             'meta' => ['request_id' => log_stream_request_id()],
@@ -166,6 +170,7 @@ describe(DestroyLogStreamRequest::class, function (): void {
     })->with([
         'instance' => [new InstanceLogStreamTarget(12), '/api/v1/instances/12/log-streams'],
         'process' => [new ProcessLogStreamTarget(41), '/api/v1/processes/41/log-streams'],
+        'schedule' => [new ScheduleLogStreamTarget('123e4567-e89b-42d3-a456-426614174000'), '/api/v1/schedules/123e4567-e89b-42d3-a456-426614174000/log-streams'],
     ]);
 
     it('rejects a malformed closure', function (): void {

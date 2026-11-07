@@ -14,7 +14,6 @@ import {
     deploymentsQuery,
     type Fleet,
     instanceAnalyticsQuery,
-    scheduleLogsQuery,
     useFleet,
 } from "../api/queries";
 import type {
@@ -500,7 +499,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
 }
 
 function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule }) {
-    const logs = useQuery(scheduleLogsQuery(schedule.id));
+    const logs = useLogTail("schedules", schedule.id, 100);
 
     return (
         <div
@@ -528,8 +527,10 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
                 title="Log"
                 testId="record-log"
                 className="min-h-[220px] flex-1"
-                lines={logs.data}
-                loading={logs.isPending}
+                lines={logs.lines}
+                loading={logs.loading}
+                error={logs.error}
+                live={logs.live}
             />
         </div>
     );

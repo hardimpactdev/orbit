@@ -10,11 +10,13 @@ use InvalidArgumentException;
 
 /**
  * The one source a live log stream reads, as the Gateway resolved it from its own records. A client
- * never names a source: it names an Instance or a Process. The agent checks every field again.
+ * never names a source: it names an Instance, a Process or a Schedule. The agent checks every field again.
  */
 final readonly class LogStreamSource
 {
     public const string UNIT = '/\Aorbit-process-[1-9][0-9]*-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.service\z/D';
+
+    public const string SCHEDULE_UNIT = '/\Aorbit-schedule-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.service\z/D';
 
     public const string CONTAINER = '/\Aorbit-process-([1-9][0-9]*)-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D';
 
@@ -33,8 +35,8 @@ final readonly class LogStreamSource
 
     public static function journal(string $unit): self
     {
-        if (preg_match(self::UNIT, $unit) !== 1) {
-            throw new InvalidArgumentException('A journal log source needs an Orbit Process unit name.');
+        if (preg_match(self::UNIT, $unit) !== 1 && preg_match(self::SCHEDULE_UNIT, $unit) !== 1) {
+            throw new InvalidArgumentException('A journal log source needs an Orbit Process or Schedule unit name.');
         }
 
         return new self(LogSourceType::Journal, unit: $unit);

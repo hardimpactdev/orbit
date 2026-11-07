@@ -266,7 +266,7 @@ A checkout that the agent cannot open or read is left out of its reports, and th
 
 ## Log tails
 
-The agent reads an Instance log or a Process log only while a viewer watches it through a [live log stream](/reference/live-logs). It sends the lines only to the Gateway.
+The agent reads an Instance, Process or Schedule log only while a viewer watches it through a [live log stream](/reference/live-logs). It sends the lines only to the Gateway.
 
 ### Stream list
 
@@ -627,7 +627,7 @@ The subscriber pushes the CPU and memory of every Process to browsers, so no bro
 
 ### Log relay
 
-The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` on that Node's log channel, and queues them in order. A publish run drops lines unless the stream is open for that Node. It redacts each line again, also with the stored environment values of the Instance or Process, and publishes `log.lines` in parts under 10,000 bytes. A failed run puts its events back in front of the queue and retries after 2 seconds. [Live logs](/reference/live-logs#limits) lists the Gateway's queue limits and the end reasons.
+The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` on that Node's log channel, and queues them in order. A publish run drops lines unless the stream is open for that Node. It redacts each line again, also with the stored environment values of the Instance or Process, or the Instance that owns a Schedule, and publishes `log.lines` in parts under 10,000 bytes. A failed run puts its events back in front of the queue and retries after 2 seconds. [Live logs](/reference/live-logs#limits) lists the Gateway's queue limits and the end reasons.
 
 ## Delivery
 

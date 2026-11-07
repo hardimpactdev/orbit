@@ -3,29 +3,30 @@ sequenceDiagram
   %% command: instance:logs
   %% kind: instance.logs
   autonumber
-  participant CLI as CLI / web / MCP
+  participant CLI as CLI / MCP
   participant GW as Gateway
   participant A as Node observer
   participant R as Reverb
   CLI->>GW: instance:logs <instance>
-  Note over GW: Authorize and read bounded application log
-  GW-->>CLI: Snapshot and request ID
-  opt --follow (CLI or web viewer)
-    CLI->>GW: Open log stream with socket ID and line limit
-    Note over GW: Validate source and grant access<br/>Store inactive viewer lease
-    GW-->>CLI: Private channel and subscription signature
-    CLI->>R: Subscribe to private log channel
-    CLI->>GW: Renew lease after subscription succeeds
+  alt bounded snapshot
+    Note over GW: Read bounded log
+    GW-->>CLI: Snapshot and request ID
+  else --follow (CLI or web viewer)
+    CLI->>GW: Open viewer lease
+    Note over GW: Authorize source<br/>Store inactive lease
+    GW-->>CLI: Channel and signature
+    CLI->>R: Subscribe to channel
+    CLI->>GW: Activate viewer lease
     GW->>A: log-streams.changed
-    A->>GW: Fetch active stream sources
+    A->>GW: Fetch active sources
     loop new lines while lease is active
       A->>R: Read-only log observations
       R->>GW: Log batch
-      Note over GW: Redact and preserve sequence and loss markers
+      Note over GW: Redact log lines<br/>Keep loss markers
       GW->>R: Viewer log.lines frames
       R-->>CLI: New lines
-      CLI->>GW: Renew lease every 20 seconds
+      CLI->>GW: Renew every 20 s
     end
-    Note over CLI: Reconnect reopens the stream<br/>Bounded reads only while live path is unavailable
-    CLI->>GW: Close lease on Ctrl-C or page exit
+    Note over CLI: Reopen on reconnect<br/>Read snapshots if offline
+    CLI->>GW: Close viewer lease
   end
