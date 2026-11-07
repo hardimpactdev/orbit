@@ -93,7 +93,7 @@ final readonly class GatewayReleaseAlerts
     }
 
     /**
-     * Raises the one alert of a verified release whose scheduler showed no `task:tick` in time. It returns what the
+     * Raises the one alert of a verified release whose scheduler showed no `tasks:tick` in time. It returns what the
      * caller stores on the release's `tick` phase, so it does not take the record's own alert, which a failure or a
      * paused document cleanup may already hold.
      *

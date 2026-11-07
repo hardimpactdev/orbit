@@ -12,6 +12,7 @@ use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -107,6 +108,15 @@ describe('omitted and invalid input', function (): void {
         'question close without reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded'], 'task.reason_required'],
         'question close with a long reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'task.reason_invalid'],
         'create without project' => ['task:create', ['title' => 'T', '--brief' => 'B'], 'task.project_required'],
+        'parent with child deliverables' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.option_invalid'],
+        'parent with child topology' => ['task:create', ['--project' => '1', '--topology' => '[]'], 'task.option_invalid'],
+        'child with parent status' => ['task:create', ['--parent' => '1', '--status' => 'todo'], 'task.option_invalid'],
+        'child with parent orchestration' => ['task:create', ['--parent' => '1', '--orchestration' => 'external'], 'task.option_invalid'],
+        'child with parent subtasks' => ['task:create', ['--parent' => '1', '--subtasks' => '/unused'], 'task.option_invalid'],
+        'child with parent review' => ['task:create', ['--parent' => '1', '--review' => 'manual'], 'task.option_invalid'],
+        'child with parent preview' => ['task:create', ['--parent' => '1', '--preview' => true], 'task.option_invalid'],
+        'child with parent recipe' => ['task:create', ['--parent' => '1', '--current-recipe' => true], 'task.option_invalid'],
+        'child with invalid project' => ['task:create', ['--parent' => '1', '--project' => 'abc'], 'task.project_invalid'],
         'create without title' => ['task:create', ['--project' => '1', '--brief' => 'B'], 'task.title_required'],
         'create without brief' => ['task:create', ['title' => 'T', '--project' => '1'], 'task.brief_required'],
         'create with a long title' => ['task:create', ['title' => str_repeat('x', 161), '--project' => '1', '--brief' => 'B'], 'task.title_invalid'],
@@ -950,7 +960,7 @@ it('transports external board status updates without deciding lifecycle policy',
 });
 
 it('registers one task family with direct selectors and no old aliases', function (): void {
-    $commands = app(\Illuminate\Contracts\Console\Kernel::class)->all();
+    $commands = app(Kernel::class)->all();
     $names = array_keys(array_filter($commands, static fn ($command): bool => str_starts_with($command->getName() ?? '', 'task:')));
     sort($names);
     expect($names)->toBe([

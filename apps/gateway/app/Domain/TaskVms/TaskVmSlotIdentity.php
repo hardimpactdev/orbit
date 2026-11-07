@@ -7,9 +7,9 @@ namespace App\Domain\TaskVms;
 use App\Models\TaskVm;
 
 /**
- * The network identity a task start mints for its VM (docs/cli/tasks/provision.mmd): its WireGuard key, its SSH host key and its agent
+ * The network identity a task start mints for its VM (docs/cli/task/start.mmd): its WireGuard key, its SSH host key and its agent
  * secret. The Gateway keeps them encrypted on the row and pins their public halves on the Node; the task start writes them onto the copy
- * of the base VM. A release deletes the Node and revokes them (docs/cli/tasks/cancel.mmd).
+ * of the base VM. A release deletes the Node and revokes them (docs/cli/task/cancel.mmd).
  */
 final readonly class TaskVmSlotIdentity
 {

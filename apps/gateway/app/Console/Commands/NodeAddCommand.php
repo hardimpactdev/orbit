@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
 
 /**
  * Admits `node.add` from the Gateway itself, the way `node:add` does through the API. The nested Gateway of a fleet build has no
- * CLI on its machine, so the build adds its Nodes this way (docs/cli/tasks/vm-fleet-build.mmd); Swamp then runs the enrollment.
+ * CLI on its machine, so the build adds its Nodes this way (docs/cli/task/vm-fleet-build.mmd); Swamp then runs the enrollment.
  */
 final class NodeAddCommand extends Command
 {

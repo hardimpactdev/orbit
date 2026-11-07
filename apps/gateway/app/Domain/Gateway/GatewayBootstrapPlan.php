@@ -13,7 +13,7 @@ use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
 
 /**
- * What a fresh machine needs before its own Gateway app can run (docs/cli/tasks/vm-fleet-build.mmd, "Prepare the Gateway"):
+ * What a fresh machine needs before its own Gateway app can run (docs/cli/task/vm-fleet-build.mmd, "Prepare the Gateway"):
  * the apt packages of the roles a new Gateway holds, the pinned Caddy package and the pinned PHP packages. It reads the
  * machine software recipe alone, so it needs no database, and it has the shape of the role prerequisites intent
  * (swamp/ansible/tasks/role-prerequisites.yml).

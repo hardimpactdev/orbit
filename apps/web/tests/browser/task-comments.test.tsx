@@ -101,15 +101,14 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         .element(comments.getByRole("region", { name: "Proposed pull request" }))
         .toMatchTextContent("No breaking changes");
     expect(
-        app.gateway.requests.some(
-            (request) => request.path === "/api/v1/tasks/31/comments",
-        ),
+        app.gateway.requests.some((request) => request.path === "/api/v1/tasks/31/comments"),
     ).toBe(true);
 
-    // The group page keeps the agents full width, without a comments column.
+    // Parent comments use the same collection selected by the parent's ID.
     await app.router.navigate({ to: "/tasks/$id", params: { id: "12" } });
     await expect.element(pane("Subtasks")).toBeVisible();
-    await expect.element(page.getByRole("region", { name: "Comments" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("region", { name: "Comments" })).toBeVisible();
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks/12/comments")).toBe(true);
 });
 
 it("shows the role before the comment type and collapses a long comment to three lines", async () => {

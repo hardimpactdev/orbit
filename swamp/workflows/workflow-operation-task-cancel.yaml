@@ -1,6 +1,6 @@
 id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
 name: operation-task-cancel
-description: End one task group on 209 (docs/cli/tasks/cancel.mmd); push approved work, then release its task VM, which deletes the VM, its seed clone, its hub peer and its Node.
+description: End one task group on 209 (docs/cli/task/cancel.mmd); push approved work, then release its task VM, which deletes the VM, its seed clone, its hub peer and its Node.
 vaults:
 - orbit-control-inputs
 inputs:

@@ -2010,10 +2010,12 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if starts_operation:
         op['x-orbit-operation'] = 'start'
         op['parameters'].append({
-            'name': 'Idempotency-Key', 'in': 'header', 'required': controllers.get(action, {}).get('requires_key', False),
+            'name': 'Idempotency-Key', 'in': 'header', 'required': route['name'] != 'task:cancel' and controllers.get(action, {}).get('requires_key', False),
             'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},
             'description': ('A permanent key scoped to this operation kind, binding caller and command as well as target and input.' if controllers.get(action, {}).get('binds_caller', False) else 'A permanent key scoped to this operation kind, target and input.') + ' The same request returns the existing operation with HTTP 202; a changed identity returns operation.idempotency_conflict (409).',
         })
+        if route['name'] == 'task:cancel':
+            op['parameters'][-1]['description'] = 'Required when cancelling a parent Task; unused when cancelling a child. ' + op['parameters'][-1]['description']
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}

@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
 
 /**
  * Admits `task:prep`: one run that prepares the spec of one command. It captures the whole intent in the admission
- * transaction of provision, so no step of the run calls the Gateway. See docs/cli/tasks/prep.mmd.
+ * transaction of provision, so no step of the run calls the Gateway. See docs/cli/task/prep.mmd.
  */
 final readonly class TaskPrepIntent
 {

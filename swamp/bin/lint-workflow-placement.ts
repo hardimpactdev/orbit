@@ -18,7 +18,7 @@ function placement(parent: ObjectValue, child: ObjectValue): ObjectValue {
 
 /**
  * Workflows that an operator runs with a local `swamp workflow run` on a machine that has no Swamp serve or worker
- * yet, so no step can request one. The Gateway bootstrap is the only one (docs/cli/tasks/vm-fleet-build.mmd, decided
+ * yet, so no step can request one. The Gateway bootstrap is the only one (docs/cli/task/vm-fleet-build.mmd, decided
  * 2026-11-06): it installs the Swamp binary on a fresh Gateway. Every other workflow needs a placement.
  */
 export const LocalWorkflows: readonly string[] = ["gateway-bootstrap"];

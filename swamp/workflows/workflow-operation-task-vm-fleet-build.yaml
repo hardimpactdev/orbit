@@ -1,7 +1,7 @@
 id: 7b12830f-6b39-516c-85bf-13dc5726cd61
 name: operation-task-vm-fleet-build
 description: >-
-  Build the nested fleet of a task VM from stock Ubuntu with Orbit's own steps (docs/cli/tasks/vm-fleet-build.mmd): the nested network and three Incus system containers, a Gateway with its own Swamp prepared by one local run of `gateway-bootstrap`, its own Node, role and websocket converges, app-dev and app-prod added through its own Orbit, the checkout as a disk device, and a Doctor check. Each step is one command over official SSH to the task VM; each wait is one run of `task-vm-fleet-wait.yml` from the Swamp Node.
+  Build the nested fleet of a task VM from stock Ubuntu with Orbit's own steps (docs/cli/task/vm-fleet-build.mmd): the nested network and three Incus system containers, a Gateway with its own Swamp prepared by one local run of `gateway-bootstrap`, its own Node, role and websocket converges, app-dev and app-prod added through its own Orbit, the checkout as a disk device, and a Doctor check. Each step is one command over official SSH to the task VM; each wait is one run of `task-vm-fleet-wait.yml` from the Swamp Node.
 vaults: [orbit-control-inputs]
 queueTimeout: 60
 inputs:

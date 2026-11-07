@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * One Tasks admission takes a slot and mints its identity (docs/cli/tasks/provision.mmd), then records the intent of its task start: a copy
+ * One Tasks admission takes a slot and mints its identity (docs/cli/task/start.mmd), then records the intent of its task start: a copy
  * of the host's base VM snapshot with that identity, the hub peer, the converge and the task branch. No child Operations.
  */
 final readonly class TaskProvisionIntent

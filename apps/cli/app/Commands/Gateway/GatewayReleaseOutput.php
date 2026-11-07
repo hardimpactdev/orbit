@@ -83,7 +83,7 @@ final class GatewayReleaseOutput
     }
 
     /**
-     * Whether the current release's own scheduler has run `task:tick`, with the time that decides it.
+     * Whether the current release's own scheduler has run `tasks:tick`, with the time that decides it.
      *
      * @param  array<string, mixed>|null  $phase
      */

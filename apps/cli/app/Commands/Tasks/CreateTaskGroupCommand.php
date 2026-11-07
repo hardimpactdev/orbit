@@ -37,10 +37,20 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create a task group in Backlog or Todo.';
+    protected $description = 'Create a task or subtask.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $child = $this->option('parent') !== null;
+        $unsupported = $child
+            ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe']
+            : ['deliverables', 'topology'];
+        foreach ($unsupported as $option) {
+            if (! in_array($this->option($option), [null, false], true)) {
+                return $this->renderGatewayFailure('task.option_invalid', "--{$option} is only available when creating ".($child ? 'a parent task.' : 'a subtask.'));
+            }
+        }
+
         if ($this->option('parent') !== null) {
             return $this->createChild($repository, $connectors);
         }
@@ -181,6 +191,11 @@ final class CreateTaskGroupCommand extends TaskCommand
 
     private function createChild(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $projectId = $this->option('project') === null ? null : $this->idOption('project', 'Project', 'project');
+        if ($projectId === false) {
+            return self::FAILURE;
+        }
+
         $groupId = $this->idOption('parent', 'Parent task', 'parent');
 
         if ($groupId === false) {
@@ -225,7 +240,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $title ??= $this->promptText('Title', self::TITLE_MAX);
         $brief ??= $this->promptText('Brief', self::BRIEF_MAX, multiline: true);
 
-        $task = $this->sendWithProgress($connector, new CreateTaskRequest(projectId: $this->option('project') === null ? null : (int) $this->option('project'), title: $title, brief: $brief, parentId: $groupId, deliverables: $deliverables, topology: $topology), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
+        $task = $this->sendWithProgress($connector, new CreateTaskRequest(projectId: $projectId, title: $title, brief: $brief, parentId: $groupId, deliverables: $deliverables, topology: $topology), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : self::FAILURE;
     }

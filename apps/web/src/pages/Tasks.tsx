@@ -385,7 +385,9 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const task = group.data;
     const project = projects.data?.find((item) => item.id === task?.project_id);
     const detail =
-        subtaskId === undefined ? task : task?.subtasks.find((item) => String(item.id) === subtaskId);
+        subtaskId === undefined
+            ? task
+            : task?.subtasks.find((item) => String(item.id) === subtaskId);
     const question = detail === undefined ? null : taskDirectionQuestion(detail);
     // The group's duration counts forward every second while it is active. A subtask's duration is
     // the value the Gateway stored when it last refreshed the group.

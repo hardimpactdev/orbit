@@ -228,8 +228,7 @@ export const taskAgentsQuery = (groupId: number) =>
 export const taskCommentsQuery = (groupId: number, taskId: number) =>
     queryOptions({
         queryKey: ["tasks", String(groupId), "tasks", String(taskId), "comments"],
-        queryFn: () =>
-            get<TaskComment[]>(`/api/v1/tasks/${taskId}/comments`),
+        queryFn: () => get<TaskComment[]>(`/api/v1/tasks/${taskId}/comments`),
         retry: false,
     });
 

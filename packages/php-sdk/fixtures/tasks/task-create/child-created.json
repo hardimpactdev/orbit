@@ -8,13 +8,13 @@
             "id": 4,
             "position": 3,
             "title": "Document the commands",
-            "brief": "Add docs/cli/tasks.mdx.",
+            "brief": "Add docs/cli/task/index.mdx.",
             "deliverables": [
                 {
                     "id": "cli-page",
                     "type": "file",
                     "description": "Document every tasks command",
-                    "path": "docs/cli/tasks.mdx",
+                    "path": "docs/cli/task/index.mdx",
                     "change": "modified"
                 },
                 {

@@ -10,7 +10,7 @@ use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 
-// What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, and the claim with its Pi token and the Pi
+// What a task start writes onto its new VM (docs/cli/task/start.mmd): the slot's identity, and the claim with its Pi token and the Pi
 // models file that holds the fixed model key; and the proof Swamp Club key, which a refresh gives the base VM.
 $taskStart = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'],
     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-(claim|token)-[1-9][0-9]*$']];

@@ -198,7 +198,7 @@ The fact holds no URL path, packet content or secret, and the agent never writes
 
 ## Task workspaces
 
-The agent reports the Git state of each [task](/reference/tasks) checkout on its Node, so the Gateway can skip `git` over SSH. It reads only Git metadata, never file contents or file names, and it starts no program.
+The agent reports the Git state of each parent [task](/reference/tasks) checkout on its Node. `task:start` prepares that shared checkout for the parent and its subtasks, so the Gateway can skip `git` over SSH. The agent reads only Git metadata, never file contents or file names, and it starts no program.
 
 ### Watch list
 

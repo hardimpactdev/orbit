@@ -1,8 +1,8 @@
 ---
-# The package cache of the task VM (docs/cli/tasks/vm-image-refresh.mmd): stock apt-cacher-ng, not in the recipe: it is not a pinned tool.
+# The package cache of the task VM (docs/cli/task/vm-image-refresh.mmd): stock apt-cacher-ng, not in the recipe: it is not a pinned tool.
 # It installs from the VM's own sources, as the first task of the software phase, so that the index reads of the later phases fill it.
 # The nested Nodes of the fleet read the Ubuntu snapshot indexes from it, and every apt run of their enrollment, roles and bootstrap goes
-# through it (docs/cli/tasks/vm-fleet-build.mmd, apt-proxy.yml). The image build fills it with the indexes only; the .deb files of a fleet build fill it later.
+# through it (docs/cli/task/vm-fleet-build.mmd, apt-proxy.yml). The image build fills it with the indexes only; the .deb files of a fleet build fill it later.
 - name: Read installed packages
   ansible.builtin.package_facts: { manager: apt }
 - name: Install the package cache

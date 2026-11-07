@@ -175,7 +175,7 @@ final readonly class TaskPrepPrompts
         return 'Build '.$this->command;
     }
 
-    /** The fixed brief of the implementation subtask that follows an approved spec. See docs/cli/tasks/build.mmd. */
+    /** The fixed brief of the implementation subtask that follows an approved spec. See docs/cli/task/build.mmd. */
     public function buildBrief(string $head, string $branch): string
     {
         return <<<TEXT

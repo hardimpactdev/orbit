@@ -15,7 +15,7 @@ use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
 
 /**
- * What a new Gateway's own Swamp needs on its machine (docs/cli/tasks/vm-fleet-build.mmd, "Converge itself"): the serve and
+ * What a new Gateway's own Swamp needs on its machine (docs/cli/task/vm-fleet-build.mmd, "Converge itself"): the serve and
  * worker units for the machine's checkout, and the grants of the release. No secret is in it: the tokens are minted on the
  * machine and stay there.
  */

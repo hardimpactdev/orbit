@@ -131,11 +131,11 @@ describe('tasks contract', function (): void {
         }
         $deliverables = $this->orbitHome.'/deliverables.json';
         file_put_contents($deliverables, json_encode([
-            ['id' => 'cli-page', 'type' => 'file', 'description' => 'Document every tasks command', 'path' => 'docs/cli/tasks.mdx', 'change' => 'modified'],
+            ['id' => 'cli-page', 'type' => 'file', 'description' => 'Document every tasks command', 'path' => 'docs/cli/task/index.mdx', 'change' => 'modified'],
             ['id' => 'docs-lint', 'type' => 'command', 'description' => 'The documentation lint passes', 'command' => 'composer docs-lint'],
         ], JSON_THROW_ON_ERROR));
 
-        run_task_contract('task-create/child-created', 'task:create', ['--parent' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/tasks.mdx.', '--deliverables' => $deliverables], 0);
+        run_task_contract('task-create/child-created', 'task:create', ['--parent' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/task/index.mdx.', '--deliverables' => $deliverables], 0);
         run_task_contract('task-update/child-deliverables-locked', 'task:update', ['task' => '1', '--deliverables' => $deliverables], 1);
         run_task_contract('task-update/child-updated', 'task:update', ['task' => '1', '--position' => '2'], 0);
         run_task_contract('task-destroy/child-destroyed', 'task:destroy', ['task' => '1', '--yes' => true], 0);

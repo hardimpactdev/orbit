@@ -14,7 +14,7 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 
 /**
- * Renders "Save the new images" of the seed refresh (docs/cli/tasks/vm-ready-copies.mmd) as the full workflow input: the
+ * Renders "Save the new images" of the seed refresh (docs/cli/task/vm-ready-copies.mmd) as the full workflow input: the
  * VM that runs the nested fleet, with its SSH identity and host key pin, the fixed names of the nested containers and their
  * network, and the proof Swamp Club key as a vault name. No host effects.
  */

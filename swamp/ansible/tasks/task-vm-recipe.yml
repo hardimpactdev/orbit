@@ -45,7 +45,7 @@
   ansible.builtin.set_fact:
     # Not in the recipe: the snapshot date is their pin. The shape gate builds its venv with python3-venv, and its Swamp load test pipes through jq.
     snapshot_packages: [python3-venv, jq]
-# What the VM already converged to (docs/cli/tasks/vm-image-refresh.mmd). Each phase records the digest of its inputs and of the role's
+# What the VM already converged to (docs/cli/task/vm-image-refresh.mmd). Each phase records the digest of its inputs and of the role's
 # code when it ends; a phase whose digest is unchanged is skipped, so a converge on a current image changes nothing and restarts nothing.
 - name: Read what the VM converged to
   ansible.builtin.command: { argv: [grep, -rH, "", "{{ converge_stamps_dir }}"] }

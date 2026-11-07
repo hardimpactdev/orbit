@@ -1,5 +1,5 @@
 ---
-# The nested fleet of a task VM (docs/cli/tasks/vm-image-refresh.mmd): the Gateway with Swamp, app-dev and app-prod as Incus system
+# The nested fleet of a task VM (docs/cli/task/vm-image-refresh.mmd): the Gateway with Swamp, app-dev and app-prod as Incus system
 # containers on the seed pool, with the checkout as their disk device, migrated and running, and the outer VM joined as operator. The
 # containers live in the seed and start with the VM. Each part checks its state first: the fleet is built from stock Ubuntu only when it is
 # not complete (task-vm-fleet-build.yml), and the operator, the tokens, the code and the migrations are applied only when

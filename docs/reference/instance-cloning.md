@@ -95,3 +95,5 @@ Failure or cancellation keeps the target reserved and records the error on the I
 ## Next steps
 
 The clone ends with an active Instance and no release. Review the warnings with `env:update` and `env:sync`, record deploy steps with `instance:deploy-step:create`, then run `instance:deploy`. The first deploy selects a release and starts the Processes and Schedules.
+
+A task VM receives its workspace through [`task:start`](/cli/task/start). It cannot use `instance:create` for that workspace.

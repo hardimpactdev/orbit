@@ -35,8 +35,8 @@ it('registers the ready and merge steps as native Swamp kinds with their workflo
 it('routes the two steps on a task group', function (): void {
     $routes = app('router')->getRoutes();
 
-    expect($routes->getByName('task:pr-ready')?->uri())->toBe('api/v1/tasks/{group}/pr-ready')
-        ->and($routes->getByName('task:pr-merge')?->uri())->toBe('api/v1/tasks/{group}/pr-merge')
+    expect($routes->getByName('task:pr-ready')?->uri())->toBe('api/v1/tasks/{task}/pr-ready')
+        ->and($routes->getByName('task:pr-merge')?->uri())->toBe('api/v1/tasks/{task}/pr-merge')
         ->and($routes->getByName('task:pr-ready')?->methods())->toContain('POST')
         ->and($routes->getByName('task:pr-merge')?->methods())->toContain('POST');
 });

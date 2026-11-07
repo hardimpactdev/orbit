@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Projects the terminal event of one `operation-task-build` run once: the task VM as ready once its resume step succeeded, the metrics
- * of the implementer thread, and the branch with the approved head. The group stays `running` for its driver. See docs/cli/tasks/build.mmd.
+ * of the implementer thread, and the branch with the approved head. The group stays `running` for its driver. See docs/cli/task/build.mmd.
  */
 final readonly class TaskBuildProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {

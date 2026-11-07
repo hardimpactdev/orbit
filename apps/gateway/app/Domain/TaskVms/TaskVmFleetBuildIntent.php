@@ -16,7 +16,7 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 
 /**
- * Renders the fleet build (docs/cli/tasks/vm-fleet-build.mmd) as the full workflow input: the VM that runs the nested fleet, with
+ * Renders the fleet build (docs/cli/task/vm-fleet-build.mmd) as the full workflow input: the VM that runs the nested fleet, with
  * its SSH identity and host key pin, the fixed layout of the nested containers and their network, and the public pins the new Gateway is
  * prepared with. No secret and no host effects.
  */

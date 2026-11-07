@@ -18,7 +18,7 @@ use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /**
- * The identity of one task VM (docs/cli/tasks/provision.mmd), minted at its task start and removed at its release: its Node, WireGuard
+ * The identity of one task VM (docs/cli/task/start.mmd), minted at its task start and removed at its release: its Node, WireGuard
  * key and hub peer, SSH host key and agent secret. A task start writes it onto the VM it makes and adds the hub peer beside the boot.
  */
 final readonly class TaskVmIdentity

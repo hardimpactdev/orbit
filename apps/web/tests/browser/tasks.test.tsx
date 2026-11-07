@@ -610,9 +610,7 @@ it("hides the Instance Tasks tab and skips task queries when the extension start
         .toHaveAttribute("aria-selected", "true");
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
     expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(
-        false,
-    );
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
 });
 
 it("returns an Instance to Overview when tasks are disabled with task data cached", async () => {
@@ -679,7 +677,5 @@ it("does not load cached Tasks data on a direct route when the extension is disa
         .element(page.getByText("The tasks extension is disabled on this Gateway."))
         .toBeVisible();
     expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(
-        false,
-    );
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
 });

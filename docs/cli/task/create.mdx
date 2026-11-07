@@ -39,3 +39,5 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no task. |
 
 Use `--parent=ID` in place of `--project=ID` to append a subtask. Its Project and workspace are inherited. A contradictory Project, a child parent, or a deeper hierarchy is refused. `--deliverables=FILE` and `--topology=JSON` apply to child creation. Creating in Todo changes board state only. Use `task:start` to start the parent VM.
+
+Parent creation refuses `--deliverables` and `--topology`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--preview` and `--current-recipe`.

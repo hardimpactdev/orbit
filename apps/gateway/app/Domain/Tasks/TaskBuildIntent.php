@@ -21,7 +21,7 @@ use App\Support\ValidatedData;
 /**
  * Admits `tasks.build`: the run that starts the implementation of a command once its spec is approved. The gate check calls it. It records
  * the approval, appends the implementation subtask, moves the group to `running` and captures the whole intent, so no step of the run
- * calls the Gateway. See docs/cli/tasks/build.mmd.
+ * calls the Gateway. See docs/cli/task/build.mmd.
  */
 final readonly class TaskBuildIntent
 {

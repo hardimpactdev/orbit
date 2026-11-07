@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Projects the terminal event of one `operation-task-review-round` run once: the task VM as ready once its resume step succeeded,
  * the metrics of the reviewer and author threads, the verdict and the pushed commit on the round, and the check row of the fix.
- * Every end records the round, so the gate check never waits on a round that ended. See docs/cli/tasks/review-round.mmd.
+ * Every end records the round, so the gate check never waits on a round that ended. See docs/cli/task/review-round.mmd.
  */
 final readonly class TaskReviewRoundProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput
 {

@@ -17,7 +17,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Projects the release of a task VM (docs/cli/tasks/vm-release.mmd), as its own run or as the last step of a cancel (docs/cli/tasks/cancel.mmd).
+ * Projects the release of a task VM (docs/cli/task/vm-release.mmd), as its own run or as the last step of a cancel (docs/cli/task/cancel.mmd).
  * A release that passed deleted the VM, its seed clone and its hub peer: its workspace Instance, its Node and its identity go, and the slot
  * is free. One that did not pass leaves the VM `failed`; the sweep releases it again.
  */

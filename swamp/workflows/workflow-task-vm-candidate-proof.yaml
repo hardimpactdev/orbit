@@ -1,7 +1,7 @@
 id: 4c2e9a71-6b3d-4f58-8e1a-0d7f5b9c3e26
 name: task-vm-candidate-proof
 description: >-
-  Prove a refreshed task image (docs/cli/tasks/vm-image-refresh.mmd, step "Prove the candidate"): steps 2 to 4 of a task start from the
+  Prove a refreshed task image (docs/cli/task/vm-image-refresh.mmd, step "Prove the candidate"): steps 2 to 4 of a task start from the
   candidate in a free slot, then the release of that VM, whatever the start did.
 queueTimeout: 30
 vaults:

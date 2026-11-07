@@ -739,7 +739,7 @@ export function createDemoGateway() {
                 /^\/api\/v1\/tasks\/(\d+)\/swamp-runs$/,
                 ([group = ""]) =>
                     ok(
-                        byRoute.get(`GET /api/v1/tasks/{group}/swamp-runs#${group}`) ?? {
+                        byRoute.get(`GET /api/v1/tasks/{task}/swamp-runs#${group}`) ?? {
                             availability: "available",
                             observed_at: new Date().toISOString(),
                             runs: [],
@@ -779,13 +779,12 @@ export function createDemoGateway() {
             [
                 "GET",
                 /^\/api\/v1\/tasks\/(\d+)\/agents$/,
-                ([group = ""]) => ok(list("GET /api/v1/tasks/{group}/agents", group)),
+                ([group = ""]) => ok(list("GET /api/v1/tasks/{task}/agents", group)),
             ],
             [
                 "GET",
                 /^\/api\/v1\/tasks\/(\d+)\/comments$/,
-                ([task = ""]) =>
-                    ok(list("GET /api/v1/tasks/{task}/comments", task)),
+                ([task = ""]) => ok(list("GET /api/v1/tasks/{task}/comments", task)),
             ],
             [
                 "GET",
