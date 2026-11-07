@@ -75,19 +75,13 @@
       # A VM applies its identity once; a parked VM that starts again keeps what it has.
       applied=/var/lib/orbit/identity-applied
       [ -e "$applied" ] && exit 0
-      # The agent's config share and a task VM's identity share are virtiofs devices that come up together, early in the boot; the unit
-      # mounts its share itself rather than wait for the agent. The base VM has only the config share and ends here.
+      # The kernel finds a task VM's identity share (a virtiofs tag) early in the boot, about 1.7 s in and before this unit runs; the
+      # unit mounts it itself rather than wait for the agent. The base VM has no share and ends after the 1 s grace.
       tags=
-      for i in $(seq 50); do
+      for i in 1 2 3 4 5 6 7 8 9 10; do
         tags=$(cat /sys/fs/virtiofs/*/tag 2>/dev/null || true)
-        case "$tags" in *config*) break ;; esac
-        sleep 0.1
-      done
-      # The identity share can show a moment after the config share.
-      for i in 1 2 3 4 5; do
         case "$tags" in *incus_orbit-identity*) break ;; esac
         sleep 0.1
-        tags=$(cat /sys/fs/virtiofs/*/tag 2>/dev/null || true)
       done
       case "$tags" in
         *incus_orbit-identity*) ;;
