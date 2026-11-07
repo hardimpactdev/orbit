@@ -88,7 +88,7 @@ jobs:
     - {step: withdraw_ingress, condition: {type: always}}
     task:
       type: workflow
-      workflowIdOrName: route-withdraw-node
+      workflowIdOrName: route-withdraw-node-ansible
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
