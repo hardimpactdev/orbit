@@ -146,7 +146,7 @@ On a task VM host, the [watch list](#watch-list) names the Incus bridge of the t
 
 | Source | Path | What the agent takes |
 | --- | --- | --- |
-| DNS log | `/var/log/incus/dnsmasq.<network>.log` | The names a VM asked for (`query[A]`) and the IPv4 addresses answered, paired by dnsmasq's serial number. An address in a CNAME chain counts for the name the VM asked for. |
+| DNS log | `/var/log/orbit/dnsmasq-<network>.log` | The names a VM asked for (`query[A]`) and the IPv4 addresses answered, paired by dnsmasq's serial number. An address in a CNAME chain counts for the name the VM asked for. |
 | Connection log | `/var/log/orbit/task-egress.log` | The sender, destination, protocol and port of each new outbound TCP or UDP connection, from the kernel's `orbit-egress` log lines of this bridge. Private, reserved and multicast destinations are skipped. |
 | VM identity | `/var/lib/incus/networks/<network>/dnsmasq.hosts/*` and `dnsmasq.leases` | The MAC and name of each VM from the host files Incus writes. A lease only gives the MAC of an address. The DHCP host name is never trusted. |
 
