@@ -19,6 +19,7 @@ jobs:
     # The one step that calls the Gateway: the signed leaf, then the Orbit root.
   - name: 'sign'
     labels: {role: swamp}
+    writes: true
     dependsOn: []
     task:
       type: behavior

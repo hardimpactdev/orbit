@@ -184,6 +184,7 @@ jobs:
       condition:
         type: succeeded
   - name: mint_github
+    writes: true
     labels:
       role: swamp
     task:
@@ -301,6 +302,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.finish.outputs.pending }}
   - name: revoke_write
+    writes: true
     labels:
       role: swamp
     task:
@@ -326,6 +328,7 @@ jobs:
     guard: ${{ !steps.finish.outputs.minted }}
     allowFailure: true
   - name: revoke_unused_read
+    writes: true
     labels:
       role: swamp
     task:

@@ -66,6 +66,7 @@ jobs:
       # One host's builders share its SSH behavior, so they run one at a time; a failed delete leaves the others.
       - name: delete
         labels: {role: swamp}
+        writes: true
         forEach:
           item: vm
           in: '${{ steps.pick.outputs.deletions }}'

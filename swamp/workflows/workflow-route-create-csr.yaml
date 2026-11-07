@@ -79,6 +79,7 @@ jobs:
     # With an Operation named: 209 has the CSR signed by the Gateway (the one call that route-create-sign makes), beside the key.
   - name: 'sign'
     labels: {role: swamp}
+    writes: true
     dependsOn:
     - {step: 'csr', condition: {type: always}}
     guard: '${{ !has(inputs.operation_id) || steps.exists(k, steps[k].status == "failed") }}'

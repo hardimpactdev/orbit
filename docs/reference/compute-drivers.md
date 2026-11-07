@@ -398,6 +398,8 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 
 The image builder verifies the guest account before publication. Cloud-init uses the configuration disk on its first boot; publication needs no guest service ordering drop-in.
 
+The steps that create the guest account on a VM (`bootstrap-account`) and delete an unused task VM image (`delete` in the image reaper) cannot run twice, so they declare `writes: true`: a lost dispatch fails the step instead of running `useradd` or `incus delete` again ([Operations](/reference/operations)).
+
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
 Before an image builder can install command mode, its system bus must be available. Incus can reach a guest earlier in boot. The native supervisor returns `agent.supervisor_not_ready` for an absent bus socket; image boot polling waits within its deadline. This refusal records no failed agent pin. Other installation refusals still fail the build.

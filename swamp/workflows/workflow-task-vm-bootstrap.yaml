@@ -45,6 +45,7 @@ jobs:
     role: swamp
   steps:
   - name: bootstrap-account
+    writes: true
     labels:
       role: swamp
     task:

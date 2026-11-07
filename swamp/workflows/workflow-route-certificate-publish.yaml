@@ -111,6 +111,7 @@ jobs:
     # The one step that calls the Gateway, from 209.
   - name: 'Sign the CSR'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Protect the key', condition: {type: succeeded}}]
     forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
