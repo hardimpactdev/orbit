@@ -244,6 +244,24 @@ Deno.test({
 
 Deno.test({
   name:
+    "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn",
+  ignore: !hasAnsible,
+  fn() {
+    const { log, passed, output } = run(
+      "host-clean",
+      host,
+      "--project orbit-baselines profile delete baseline",
+    );
+    assertEquals(passed, false);
+    assertStringIncludes(output, "task_vm.host_clean_failed: orbit-baselines");
+    assert(!log.includes("project delete orbit-baselines"));
+    assert(log.includes("project delete orbit-measure-nr"));
+    assert(log.includes("--project orbit-proto image delete c1c2cf4051fb"));
+  },
+});
+
+Deno.test({
+  name:
     "a retired project that shares its profiles with default loses none of them",
   ignore: !hasAnsible,
   fn() {
