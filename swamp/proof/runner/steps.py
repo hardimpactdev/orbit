@@ -146,9 +146,10 @@ def ufw_rule(run, args):
     source = args.get('from', 'any')
     anchor = args.get('above') or args.get('below')
     mark = (run.rules[anchor]['comment'] if anchor in run.rules else anchor) if anchor else None
+    anchor_rule = run.rules.get(anchor, {'comment': mark})
     position = None
     if anchor:
-        found = [row['n'] for row in family_rows(ufw_rows(run, node)[1], 4) if row['comment'] == mark]
+        found = [row['n'] for row in family_rows(ufw_rows(run, node)[1], 4) if matches(row, anchor_rule)]
         if not found:
             raise Unrun(f'ufw_rule {name}: no row to place it relative to: {anchor}')
         position = found[0] if args.get('above') else found[0] + 1
@@ -162,7 +163,7 @@ def ufw_rule(run, args):
     if len(mine) != 1:
         return [f'ufw_rule {name}: expected one row with the comment, found {len(mine)}']
     if anchor:
-        other = [row['n'] for row in rows if row['comment'] == mark]
+        other = [row['n'] for row in rows if matches(row, anchor_rule)]
         if not other or (mine[0] > other[0]) == bool(args.get('above')):
             return [f'ufw_rule {name} is not {"above" if args.get("above") else "below"} {anchor}']
         if args.get('above') and source == 'any':

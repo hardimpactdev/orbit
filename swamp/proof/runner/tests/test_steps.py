@@ -143,6 +143,17 @@ class StepTest(unittest.TestCase):
             self.assertEqual(steps.ufw_rule(self.run, {'as': 'deny', 'on': 'app-dev', 'action': 'deny', 'proto': proto, 'port': '47001', 'above': 'proof-network'}), [])
         self.assertEqual([row[0] for row in self.fleet.ufw['app-dev'][1:3]], ['47001/tcp', '47001/udp'])
 
+    def test_ufw_rule_uses_the_bound_anchor_when_an_earlier_case_reused_its_comment(self):
+        for port in ('47001', '47002'):
+            self.assertEqual(steps.ufw_rule(self.run, {'as': 'deny', 'on': 'app-dev', 'action': 'deny', 'proto': 'tcp', 'port': port, 'above': 'proof-network'}), [])
+
+        self.assertEqual(steps.ufw_rule(self.run, {'as': 'misplaced', 'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': '47002', 'below': 'deny'}), [])
+
+        rows = self.fleet.ufw['app-dev']
+        deny = rows.index(('47002/tcp', 'DENY', 'Anywhere', 'proof:deny'))
+        allow = rows.index(('47002/tcp', 'ALLOW', 'Anywhere', 'proof:misplaced'))
+        self.assertEqual(allow, deny + 1)
+
     def test_ufw_rule_moves_the_ipv6_line_above_the_ipv6_anchor(self):
         self.fleet.dual_stack = True
         self.fleet.ufw['app-dev'].append(('Anywhere (v6)', 'ALLOW', 'fd42:232:2::/64', 'proof-network'))
