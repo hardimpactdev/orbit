@@ -115,6 +115,14 @@ function proofSource(): object
         {
             return $this->paths;
         }
+
+        /** @var array<string,bool> release commit => whether it is at or after the merge base; an unknown commit is not */
+        public array $fresh = [];
+
+        public function atOrAfter(string $base, string $sha): bool
+        {
+            return $this->fresh[$sha] ?? false;
+        }
     };
 }
 
@@ -216,6 +224,38 @@ function proofFailureDetail(Operation $proof): ?string
     return $proof->state['native_failure']['detail'] ?? null;
 }
 
+/**
+ * One host with room for a large VM and ready copies that a refresh built from the release `$copiesCommit`, and a commit under proof that
+ * changes a firewall workflow. Returns the temporary release layout, which the test removes.
+ */
+function proofHostWithCopies(object $source, ?string $copiesCommit): string
+{
+    $base = sys_get_temp_dir().'/orbit-proof-copies-'.bin2hex(random_bytes(4));
+    $commit = 'eeeeeeeeeeee0000000000000000000000000000';
+    $release = $base.'/releases/'.substr($commit, 0, 12);
+    mkdir($release.'/apps/gateway/resources/machine-software', 0700, true);
+    file_put_contents($release.'/REVISION', $commit."\n");
+    symlink('releases/'.substr($commit, 0, 12), $base.'/orbit');
+    copy(base_path('resources/machine-software/recipe.json'), $release.'/apps/gateway/resources/machine-software/recipe.json');
+    config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway', 'proof.execution' => true]);
+    app(TaskExtensionState::class)->enable();
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+    $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
+        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)]]]);
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
+        'input' => ['refresh' => ['host_node_id' => $host->id, ...($copiesCommit === null ? [] : ['commit' => $copiesCommit]), 'ready_copies' => ['fleet' => ['format' => TaskVmReadyCopiesIntent::Format]]]],
+        'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
+    $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
+        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+    $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+    proofWorld($source);
+
+    return $base;
+}
 describe('proof:run admission', function (): void {
     it('answers after one insert: the proof is recorded and the admission is queued, with no read of GitHub and no run', function (): void {
         Queue::fake();
@@ -428,6 +468,56 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and(proofFailureDetail($proof))->toContain('A report-only proof leaves 3 slots free');
     });
 
+    it('places the proof on a host only when its ready copies come from a release at or after the merge base', function (?string $copies, bool $atOrAfter, bool $skipped): void {
+        $source = proofSource();
+        $base = proofHostWithCopies($source, $copies);
+        $source->fresh = $copies === null ? [] : [$copies => $atOrAfter];
+
+        $proof = proofAdmitted();
+
+        Process::run(['rm', '-rf', $base]);
+        $detail = proofFailureDetail($proof) ?? '';
+        expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
+            ->and(str_contains($detail, 'merge base of its commit'))->toBe($skipped);
+        if ($skipped) {
+            expect($proof->error_code)->toBe('tasks.capacity_unavailable');
+        }
+    })->with([
+        'newer copies' => ['dddddddddddd0000000000000000000000000000', true, false],
+        'older copies' => ['aaaaaaaaaaaa0000000000000000000000000000', false, true],
+        'a release GitHub does not know' => ['bbbbbbbbbbbb0000000000000000000000000000', false, true],
+        'no recorded provenance' => [null, false, true],
+    ]);
+
+    it('does not release a kept VM when no host has fresh enough copies, because a freed slot would not help', function (): void {
+        $source = proofSource();
+        $commit = 'aaaaaaaaaaaa0000000000000000000000000000';
+        $base = proofHostWithCopies($source, $commit);
+        $source->fresh = [$commit => false];
+        [$kept] = proofKeptRun();
+
+        $proof = proofAdmitted();
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+    it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
+        $source = proofSource();
+        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
+        app()->instance(ProofCommitSource::class, Mockery::mock($source::class, function ($mock) use ($source): void {
+            foreach (['commitExists', 'branchesWithHead', 'pullRequestsWithHead', 'canWrite', 'reviews', 'changes', 'file', 'proofPaths'] as $method) {
+                $mock->shouldReceive($method)->andReturnUsing(static fn (...$arguments) => $source->{$method}(...$arguments));
+            }
+            $mock->shouldReceive('atOrAfter')->andThrow(GitHubApiException::unavailable());
+        }));
+
+        $proof = proofAdmitted();
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.github_unavailable')->and(Task::query()->count())->toBe(0);
+    });
     it('admits nothing when the watchdog ended the proof while the job was slow', function (): void {
         config(['proof.execution' => true]);
         app(TaskExtensionState::class)->enable();

@@ -27,6 +27,9 @@ sequenceDiagram
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
   %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
+  %%> Decided by the orchestrator, for Nick's review (2026-11-07):
+  %%> - the Gateway places the proof only on a host whose ready copies were built from a release at or after the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet older than the base it is judged against
+  %%> - this is about the copies of the host. The next step checks the other side, the head of the proof against main
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>VM: Check the head<br/>behind a platform change?
   %%> What it does:
