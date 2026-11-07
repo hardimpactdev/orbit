@@ -16,7 +16,8 @@
       ansible.builtin.copy:
         dest: "{{ run_dir }}/known_hosts"
         mode: "0600"
-        content: "{% for key in host.ssh.target.host_keys %}{{ host.ssh.target.host if host.ssh.target.port == 22 else '[' ~ host.ssh.target.host ~ ']:' ~ host.ssh.target.port }} {{ key }}\n{% endfor %}"
+        content: "{% for key in host.ssh.target.host_keys %}{{ host.ssh.target.host if host.ssh.target.port == 22
+          else '[' ~ host.ssh.target.host ~ ']:' ~ host.ssh.target.port }} {{ key }}\n{% endfor %}"
     - name: Add the host
       ansible.builtin.add_host:
         name: task-vm-host
@@ -50,11 +51,13 @@
         # Seed copies are serialised on the host: two copies of one ZFS dataset at once make the second fail.
         - name: Clone the seed of the current image
           ansible.builtin.command:
-            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ seed_of ~ host.current[:12], host.pool ~ '/' ~ vm.seed_clone] }}"
+            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--',
+                host.pool ~ '/' ~ seed_of ~ host.current[:12], host.pool ~ '/' ~ vm.seed_clone] }}"
           changed_when: true
         - name: Create the refresh VM
           ansible.builtin.command:
-            argv: "{{ incus + ['init', '--vm', '--config', 'limits.cpu=' ~ vm.cpus, '--config', 'limits.memory=' ~ vm.memory, '--device', 'root,size=' ~ vm.disk,
+            argv: "{{ incus + ['init', '--vm', '--config', 'limits.cpu=' ~ vm.cpus, '--config', 'limits.memory=' ~ vm.memory, '--device',
+                'root,size=' ~ vm.disk,
                    '--device', 'eth0,network=' ~ host.network, '--', host.current, vm.name] }}"
             stdin: "{{ vm.launch_config }}"
           changed_when: true
@@ -69,6 +72,14 @@
         - name: Wait for its guest agent
           ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', vm.name, 'agent'] }}" }
           changed_when: false
+        # The nested Swamp renews its tokens with the proof Swamp Club key; the clean of the converge removes it before the publication.
+        - name: Give the refresh VM the Club key
+          no_log: true
+          ansible.builtin.command:
+            argv: "{{ incus + ['exec', vm.name, '--', 'install', '-D', '-m', '0600', '-o', '1000', '-g', '1000', '/dev/stdin', vm.club_key] }}"
+            stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_CLUB_KEY') }}"
+            stdin_add_newline: false
+          changed_when: true
 
     - name: Publish the image
       tags: [publish]
@@ -95,7 +106,8 @@
             candidate_fingerprint: "{{ (candidate_image.stdout | from_json | first).fingerprint }}"
         - name: Copy the seed clone as the candidate's seed
           ansible.builtin.command:
-            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ vm.seed_clone, host.pool ~ '/' ~ seed_of ~ candidate_fingerprint[:12]] }}"
+            argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus + ['storage', 'volume', 'copy', '--',
+                host.pool ~ '/' ~ vm.seed_clone, host.pool ~ '/' ~ seed_of ~ candidate_fingerprint[:12]] }}"
           changed_when: true
         # A copy is a ZFS clone of the source; promoting it ends the dependency, so refreshes form no chain of clones.
         - name: Read the ZFS dataset of the pool
@@ -103,7 +115,8 @@
           register: pool_dataset
           changed_when: false
         - name: Detach the candidate's seed from the clone
-          ansible.builtin.command: { argv: [zfs, promote, "{{ pool_dataset.stdout | trim }}/custom/{{ host.project }}_{{ seed_of ~ candidate_fingerprint[:12] }}"] }
+          ansible.builtin.command:
+            argv: [zfs, promote, "{{ pool_dataset.stdout | trim }}/custom/{{ host.project }}_{{ seed_of ~ candidate_fingerprint[:12] }}"]
           changed_when: true
         - name: Delete the refresh VM
           ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', '--', vm.name] }}" }
@@ -124,7 +137,8 @@
         - name: Work out the promotion
           ansible.builtin.set_fact:
             promote_current: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.alias) | map(attribute='target') | first | default('') }}"
-            promote_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.candidate_alias) | map(attribute='target') | first | default('') }}"
+            promote_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq',
+                host.candidate_alias) | map(attribute='target') | first | default('') }}"
         - name: Check the candidate exists
           ansible.builtin.assert:
             that: promote_candidate != '' or promote_current != ''
@@ -185,7 +199,8 @@
           changed_when: false
         - name: Work out the candidate
           ansible.builtin.set_fact:
-            discard_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.candidate_alias) | map(attribute='target') | first | default('') }}"
+            discard_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq',
+                host.candidate_alias) | map(attribute='target') | first | default('') }}"
             discard_keep: "{{ aliases_now.stdout | from_json | selectattr('name', 'in', [host.alias, host.previous_alias]) | map(attribute='target') | list }}"
         - name: Remove the candidate and its seed when it was not promoted
           when: discard_candidate != '' and discard_candidate not in discard_keep

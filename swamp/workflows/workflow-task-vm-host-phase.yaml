@@ -1,7 +1,8 @@
 id: 3c9b6f2e-8d41-4a7e-b5f0-6e2d9a1c7b84
 name: task-vm-host-phase
 description: Run one tagged part of the task VM host playbook (swamp/ansible/task-vm-host.yml) against one Incus host, from the Swamp Node with the host's pinned keys.
-vaults: []
+vaults:
+- orbit-control-inputs
 queueTimeout: 60
 inputs:
   type: object
@@ -10,10 +11,23 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, enum: [task_vm.image_refresh]}
     intent: {type: object}
+    # The proof Swamp Club key, which the refresh VM's nested Swamp runs with; a vault name and key, never the value.
+    execution_secrets:
+      type: object
+      properties:
+        club:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: ^swamp-proof-club-api-key$}
+          required: [vault, key]
+          additionalProperties: false
+      required: [club]
+      additionalProperties: false
     tags: {type: string, minLength: 1}
     # After the phase, read the host's image aliases, so the caller sees which image an alias names.
     read_aliases: {type: boolean}
-  required: [operation_id, node_id, kind, intent, tags]
+  required: [operation_id, node_id, kind, intent, execution_secrets, tags]
   additionalProperties: false
 jobs:
 - name: phase
@@ -47,6 +61,7 @@ jobs:
           ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_CLUB_KEY: ${{ vault.get(inputs.execution_secrets.club.vault, inputs.execution_secrets.club.key) }}
   - name: Read the aliases
     labels: {role: swamp}
     guard: '${{ !has(inputs.read_aliases) || !inputs.read_aliases }}'

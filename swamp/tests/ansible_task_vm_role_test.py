@@ -28,7 +28,12 @@ class TaskVmRoleTest(unittest.TestCase):
         play = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[0]
         self.assertEqual(play['hosts'], 'task_vm')
         self.assertEqual({task['name']: task['tags'] for task in play['tasks']},
-                         {'Wait for a new server': ['always'], 'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'], 'Check': ['check'], 'Clean': ['clean'], 'Template': ['template']})
+                         {'Wait for a new server': ['always'], 'Resolve the recipe': ['always'], 'Software': ['software'], 'Tools': ['tools'],
+                          'Boot': ['boot'], 'Checkout': ['checkout'], 'Fleet': ['fleet'], 'Check': ['check']})
+        # The image phases come after the fleet is ready: its `base` snapshots, then the clean that readies the publication.
+        image = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[2]
+        self.assertEqual({task['name']: task['tags'] for task in image['tasks']},
+                         {'Take the base snapshots': ['fleet'], 'Clean': ['clean'], 'Template': ['template']})
 
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:

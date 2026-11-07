@@ -21,7 +21,8 @@
 - name: Give the new containers their NIC
   ansible.builtin.command:
     argv: [incus, config, device, add, "{{ item.value }}", eth0, nic, "network={{ intent.fleet.network }}",
-           "hwaddr={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.hwaddr'] }}", "ipv4.address={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.ipv4'] }}"]
+           "hwaddr={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.hwaddr'] }}",
+           "ipv4.address={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.ipv4'] }}"]
   loop: "{{ fleet_guests | dict2items | rejectattr('value', 'in', fleet_present) | list }}"
   changed_when: true
 - name: Read the nested containers again
@@ -43,7 +44,8 @@
 - name: Attach the Club key
   when: "'club-key' not in fleet_devices[fleet_guests.gateway]"
   ansible.builtin.command:
-    argv: [incus, config, device, add, "{{ fleet_guests.gateway }}", club-key, disk, "source={{ fleet_club_key }}", path=/home/orbit/.config/swamp/api-key, required=false, shift=true]
+    argv: [incus, config, device, add, "{{ fleet_guests.gateway }}", club-key, disk, "source={{ fleet_club_key }}",
+           path=/home/orbit/.config/swamp/api-key, required=false, shift=true]
   changed_when: true
 # A claim starts the containers from `base`; they never start with the VM.
 - name: Keep the containers down at boot
@@ -56,7 +58,8 @@
   changed_when: true
 - name: Start the containers
   ansible.builtin.command: { argv: [timeout, "120", incus, start, "{{ item }}"] }
-  loop: "{{ fleet_now.stdout | from_json | selectattr('name', 'in', fleet_guests.values() | list) | rejectattr('status', 'eq', 'Running') | map(attribute='name') | list }}"
+  loop: "{{ fleet_now.stdout | from_json | selectattr('name', 'in', fleet_guests.values() | list) | rejectattr('status', 'eq',
+      'Running') | map(attribute='name') | list }}"
   changed_when: true
 # A container from a ready copy may still run cloud-init once; it never runs again (exit 2 is a finished boot with a warning).
 - name: Let cloud-init finish
@@ -74,23 +77,29 @@
 # long-running services. The tokens last 30 days; the daily refresh renews them.
 - name: Place the agent delivery
   ansible.builtin.command:
-    argv: [incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --, install, -D, -m, "0444", /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
+    argv: [incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --, install, -D, -m, "0444",
+           /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
            /home/orbit/orbit/apps/agent/delivery/manifest.json]
   changed_when: true
 - name: Renew the nested Swamp tokens
   ansible.builtin.command:
-    argv: [timeout, "900", incus, exec, "{{ fleet_guests.gateway }}", --, env, ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg, ANSIBLE_DISPLAY_FAILED_STDERR=true,
-           /opt/orbit/ansible/venv/bin/ansible-playbook, -i, "localhost,", -e, "@/opt/orbit/bootstrap/control.yml", --tags, remint, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
+    argv: [timeout, "900", incus, exec, "{{ fleet_guests.gateway }}", --, env, ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg,
+           ANSIBLE_DISPLAY_FAILED_STDERR=true,
+           /opt/orbit/ansible/venv/bin/ansible-playbook, -i, "localhost,", -e, "@/opt/orbit/bootstrap/control.yml",
+           --tags, remint, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
   changed_when: true
 - name: Migrate the nested Gateway
-  ansible.builtin.command: { argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --, php, artisan, migrate, --force] }
+  ansible.builtin.command:
+    argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --, php, artisan, migrate, --force]
   changed_when: true
 - name: Restart the long-running services
   ansible.builtin.command:
-    argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, orbit-gateway-horizon.service, orbit-gateway-schedule.service, orbit-agent-view.service]
+    argv:
+      [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, orbit-gateway-horizon.service, orbit-gateway-schedule.service,
+       orbit-agent-view.service]
   changed_when: true
 
-# The outer VM is the operator of its nested fleet, `10.45.0.10`. The key belongs to the nested network only and stays in the image:
+# The outer VM is the operator of its nested fleet, at `intent.fleet.operator.address`. The key belongs to the nested network only and stays in the image:
 # every VM from it has its own fleet, so the key reaches nothing else. The tunnel is a wg-quick unit, so it comes up at every boot.
 - name: Look for the operator key
   ansible.builtin.stat: { path: /etc/wireguard/wg-nested.key }
@@ -115,19 +124,21 @@
   no_log: true
   changed_when: false
 - name: Read the database of the nested Gateway
-  ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, grep, -m1, "^DB_DATABASE=", /var/lib/orbit-checkout-state/apps/gateway/.env] }
+  ansible.builtin.command:
+    argv: [incus, exec, "{{ fleet_guests.gateway }}", --, grep, -m1, "^DB_DATABASE=", /var/lib/orbit-checkout-state/apps/gateway/.env]
   register: fleet_database
   changed_when: false
 - name: Record the operator key in the nested Gateway
   ansible.builtin.command:
     argv: [incus, exec, "{{ fleet_guests.gateway }}", --, sqlite3, "{{ fleet_database.stdout.split('=', 1)[1] | trim }}",
-           "update nodes set wireguard_public_key = '{{ fleet_operator_public.stdout | trim }}' where name = 'operator'; select id from nodes where name = 'operator'"]
+           "update nodes set wireguard_public_key = '{{ fleet_operator_public.stdout | trim }}' where name = 'operator';
+           select id from nodes where name = 'operator'"]
   register: fleet_operator_id
   changed_when: true
 - name: Write the operator peer on the nested hub
   ansible.builtin.command:
     argv: [incus, file, push, --mode, "0600", "-", "{{ fleet_guests.gateway }}/etc/wireguard/orbit-peers.d/{{ fleet_operator_id.stdout | trim }}.conf"]
-    stdin: "[Peer]\n# operator\nPublicKey = {{ fleet_operator_public.stdout | trim }}\nAllowedIPs = 10.45.0.10/32\n"
+    stdin: "[Peer]\n# operator\nPublicKey = {{ fleet_operator_public.stdout | trim }}\nAllowedIPs = {{ intent.fleet.operator.address }}/32\n"
   changed_when: true
 - name: Restart the nested hub
   ansible.builtin.command: { argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, wg-quick@orbit] }
@@ -143,20 +154,21 @@
     content: |
       [Interface]
       PostUp = wg set %i private-key /etc/wireguard/wg-nested.key
-      Address = 10.45.0.10/24
+      Address = {{ intent.fleet.operator.address }}/{{ intent.fleet.operator.network.split('/')[1] }}
       ListenPort = 51821
 
       [Peer]
       PublicKey = {{ fleet_hub_key.stdout | trim }}
       Endpoint = {{ fleet_ready_gateway_ipv4 }}:51820
-      AllowedIPs = 10.45.0.0/24
+      AllowedIPs = {{ intent.fleet.operator.network }}
       PersistentKeepalive = 25
   vars:
-    fleet_ready_gateway_ipv4: "{{ (fleet_now.stdout | from_json | selectattr('name', 'eq', fleet_guests.gateway) | first).expanded_devices.eth0['ipv4.address'] }}"
+    fleet_ready_gateway_ipv4: "{{ (fleet_now.stdout | from_json | selectattr('name', 'eq',
+        fleet_guests.gateway) | first).expanded_devices.eth0['ipv4.address'] }}"
 - name: Bring up the operator tunnel
   ansible.builtin.systemd: { name: wg-quick@wg-nested.service, enabled: true, state: restarted }
 - name: Check the operator tunnel
-  ansible.builtin.command: { argv: [timeout, "30", ping, -c, "1", -w, "20", 10.45.0.1] }
+  ansible.builtin.command: { argv: [timeout, "30", ping, -c, "1", -w, "20", "{{ intent.fleet.operator.hub }}"] }
   changed_when: false
 
 # The candidate CLI on the outer VM talks to the nested Gateway as the operator, through the profile `nested`.
@@ -168,10 +180,18 @@
   changed_when: false
   failed_when: "'BEGIN CERTIFICATE' not in fleet_ca.stdout"
 - name: Pin the nested CA
-  ansible.builtin.copy: { dest: "{{ orbit_home }}/.orbit/nested-ca.pem", content: "{{ fleet_ca.stdout }}\n", owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0644" }
+  ansible.builtin.copy:
+    dest: "{{ orbit_home }}/.orbit/nested-ca.pem"
+    content: "{{ fleet_ca.stdout }}\n"
+    owner: "{{ orbit_user }}"
+    group: "{{ orbit_user }}"
+    mode: "0644"
 - name: Add the CLI profile
+  become: true
   become_user: "{{ orbit_user }}"
   ansible.builtin.command:
-    argv: [timeout, "120", php, "{{ intent.checkout.path }}/apps/cli/orbit", gateway:add, 10.45.0.1, --name=nested, --use, --accept-ca-change, "--ca={{ orbit_home }}/.orbit/nested-ca.pem", --json]
+    argv:
+      [timeout, "120", php, "{{ intent.checkout.path }}/apps/cli/orbit", gateway:add, "{{ intent.fleet.operator.hub }}", --name=nested, --use,
+       --accept-ca-change, "--ca={{ orbit_home }}/.orbit/nested-ca.pem", --json]
   environment: { HOME: "{{ orbit_home }}", ORBIT_HOME: "{{ orbit_home }}/.orbit" }
   changed_when: true

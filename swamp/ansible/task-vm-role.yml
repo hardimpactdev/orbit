@@ -37,10 +37,6 @@
     - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
     - { name: Boot, ansible.builtin.import_tasks: tasks/task-vm-boot.yml, tags: [boot] }
     - { name: Checkout, ansible.builtin.import_tasks: tasks/task-vm-checkout.yml, tags: [checkout] }
-    - name: Place the Club key of the refresh
-      tags: [fleet]
-      no_log: true
-      ansible.builtin.copy: { dest: "{{ fleet_club_key }}", content: "{{ lookup('ansible.builtin.env', 'ORBIT_CLUB_KEY') }}", owner: "1000", group: "1000", mode: "0600" }
     - { name: Fleet, ansible.builtin.import_tasks: tasks/task-vm-fleet.yml, tags: [fleet] }
     - { name: Check, ansible.builtin.import_tasks: tasks/task-vm-check.yml, tags: [check] }
 

@@ -41,6 +41,9 @@ final readonly class TaskVmImageRefreshIntent
 
     private const array Bun = ['apps/web', 'apps/pi-server', 'apps/desktop'];
 
+    /** Where the proof Swamp Club key lives on a task VM; the nested Gateway reads it through a disk device (swamp/ansible/task-vm-role.yml). */
+    public const string ClubKey = '/etc/orbit/swamp-club-api-key';
+
     public function __construct(private StartOperationAction $operations, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private ProofSettings $proof, private RecipeImageBuilds $recipes, private SwampCommandStep $shared,
         private StorageRootResolver $roots, private NodeSettingsNormalizer $nodeSettings) {}
@@ -122,7 +125,7 @@ final readonly class TaskVmImageRefreshIntent
                 // The refresh VM holds the nested fleet, so it has the resources of a large task VM. Its root disk is the host's base disk:
                 // a published image is as large as that disk, and no VM can be smaller than its image.
                 'vm' => ['name' => $vm, 'seed_clone' => $vm.'-seed', 'cpus' => $large->cpus, 'memory' => $large->memory, 'disk' => $location->disk,
-                    'launch_config' => TaskVmLaunchConfig::for($identity['public_key'])],
+                    'launch_config' => TaskVmLaunchConfig::for($identity['public_key']), 'club_key' => self::ClubKey],
                 'converge' => [
                     'project' => $location->project, 'jump' => $jump,
                     'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
@@ -133,7 +136,8 @@ final readonly class TaskVmImageRefreshIntent
                     'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->ssh->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
                     'boot' => ['authorized_key' => $identity['public_key']],
                     'checkout' => $this->checkout($commit),
-                    'fleet' => TaskVmReadyCopiesIntent::fleet(),
+                    // The outer VM joins the nested WireGuard network as its operator; the hub is the nested Gateway.
+                    'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24']],
                 ],
             ],
             'execution_secrets' => ['club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
