@@ -83,7 +83,7 @@ final readonly class GatewayReleaseAlerts
         }
 
         $summary = sprintf(
-            'Automatic releases are paused (%s) after release %s went live. Run gateway:release:auto:resume to hand back to automation.',
+            'Automatic releases are paused (%s) after release %s went live. Run gateway:auto-release:resume to hand back to automation.',
             $reason,
             $record->release_id ?? (string) $record->requested,
         );
