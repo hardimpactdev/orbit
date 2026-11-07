@@ -1,38 +1,66 @@
 ---
-# What each case runs and what its answer must be. Loaded by converge.yml and verify.yml for every case host: `inventory_hostname` is the
-# case, `d` its definition and `c` its ports (molecule.yml). Values that only the live fleet knows are templated when the case runs.
-app_dev_id: "{{ hostvars['localhost'].node_ids['app-dev'] }}"
-src: "{{ hostvars['nested-gateway'].gateway_src }}"
-app_dev_ip: "{{ hostvars['nested-app-dev'].app_dev_ip }}"
+# What each case runs and what its answer must be. Loaded by converge.yml and verify.yml for every case host: `inventory_hostname` is the case,
+# `d` its definition and `c` its ports (molecule.yml). The case works on one container (`tcontainer`, molecule.yml: case_target); `allowed` is
+# the one Node whose source its allow admits, `blocked` the one that stays blocked. Values that only the live fleet knows are templated when
+# the case runs.
+tnode: "{{ case_target[inventory_hostname] }}"
+tcontainer: "nested-{{ tnode }}"
+tid: "{{ hostvars['localhost'].node_ids[tnode] }}"
+tip: "{{ hostvars[tcontainer].node_ip }}"
+allowed: "{{ allowed_of[tnode] }}"
+blocked: "{{ blocked_of[tnode] }}"
+src: "{{ hostvars['nested-' ~ allowed].src_to[tnode] }}"
 row_pattern: '^\[ *([0-9]+)\].*$'
 d: "{{ case_defs[inventory_hostname] }}"
 c: "{{ cases[inventory_hostname] | default({}) }}"
+probe_list: "{{ d.probes | default([]) | map('combine', {'case': inventory_hostname, 'tip': tip}) | list }}"
 case_defs:
   new_restricted_allow:
-    argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+    argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
     expect: {rc: 0, status: succeeded}
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: connect}
+      - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
+      - {from: "nested-{{ allowed }}", port: "{{ c.control }}", expect: connect}
+      - {from: "nested-{{ blocked }}", port: "{{ c.control }}", expect: connect}
   already_applied:
     setup:
-      - [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-    argv: [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+      - [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
+    argv: [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
     expect: {rc: 0, status: succeeded, skipped: firewall.rule_exists}
   partial_application:
-    argv: [firewall:allow, "{{ cases.partial_application.port }}", "--node={{ app_dev_id }}", "--from={{ src }}"]
+    argv: [firewall:allow, "{{ cases.partial_application.port }}", "--node={{ tid }}", "--from={{ src }}"]
     expect: {rc: 0, status: succeeded}
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: connect}
+      - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
   conflict:
     setup:
-      - [firewall:deny, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-    argv: [firewall:allow, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+      - [firewall:deny, "{{ cases.conflict.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
+    argv: [firewall:allow, "{{ cases.conflict.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
     expect: {rc: 1, code: firewall.rule_conflict, request: false}
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: blocked}
   failure_code:
     argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}"]
     expect: {rc: 1, code: firewall.node_id_invalid, request: false}
   protocols_tcp:
-    argv: [firewall:allow, "{{ cases.protocols_tcp.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+    argv: [firewall:allow, "{{ cases.protocols_tcp.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
     expect: {rc: 0, status: succeeded}
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: connect}
+      - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
   port_range:
-    argv: [firewall:allow, "{{ cases.port_range.spec }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
+    argv: [firewall:allow, "{{ cases.port_range.spec }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
     expect: {rc: 0, status: succeeded}
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ c.lo }}", expect: connect}
+      - {from: "nested-{{ allowed }}", port: "{{ c.mid }}", expect: connect}
+      - {from: "nested-{{ allowed }}", port: "{{ c.hi }}", expect: connect}
+      - {from: "nested-{{ allowed }}", port: "{{ c.outside }}", expect: blocked}
+      - {from: "nested-{{ blocked }}", port: "{{ c.mid }}", expect: blocked}
   protected_port:
-    argv: [firewall:allow, "22", "--node={{ app_dev_id }}"]
+    argv: [firewall:allow, "22", "--node={{ tid }}"]
     expect: {rc: 0, status: succeeded, skipped: firewall.rule_exists}
+    probes:
+      - {from: "nested-{{ allowed }}", port: 22, expect: connect}

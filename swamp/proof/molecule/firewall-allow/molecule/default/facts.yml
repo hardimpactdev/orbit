@@ -1,9 +1,10 @@
 ---
-# Values that the cases need and that only the live fleet knows: the address of app-dev, the address that the Gateway Node really uses to reach
-# it (the kernel route, as the runner's `${gateway.src}`), and the Node IDs from the nested Gateway's API (the `uri` module, as the caller the
-# nested Gateway knows by its WireGuard address).
-- name: Facts from app-dev
-  hosts: nested-app-dev
+# Values that the cases need and that only the live fleet knows: the address of every container, the address each one really uses to reach
+# each other one (the kernel route, as the runner's `${gateway.src}`), and the Node IDs from the nested Gateway's API (the `uri` module, as the
+# caller the nested Gateway knows by its WireGuard address). With PROOF_FAST they are read once, in prepare, and later playbooks find them in
+# the fact cache.
+- name: The address of each container
+  hosts: nodes
   gather_facts: false
   tasks:
     - name: Read the bridge address
@@ -14,29 +15,36 @@
         executable: /bin/bash
       register: bridge
       changed_when: false
+      when: not (fast | bool) or node_ip is not defined
 
     - name: Keep it
       ansible.builtin.set_fact:
-        app_dev_ip: "{{ bridge.stdout }}"
+        node_ip: "{{ bridge.stdout }}"
+        cacheable: true
+      when: bridge is not skipped
 
-- name: Facts from the Gateway Node
-  hosts: nested-gateway
+- name: The address each container uses to reach each other one
+  hosts: nodes
   gather_facts: false
   tasks:
-    - name: Read the source address of the route to app-dev
+    - name: Read the source address of the route to each other container
       ansible.builtin.shell: |
         set -o pipefail
-        ip -4 route get {{ hostvars['nested-app-dev'].app_dev_ip }} | grep -o 'src [0-9.]*' | cut -d' ' -f2
+        ip -4 route get {{ hostvars[item].node_ip }} | grep -o 'src [0-9.]*' | cut -d' ' -f2
       args:
         executable: /bin/bash
-      register: route
+      loop: "{{ groups['nodes'] | difference([inventory_hostname]) }}"
+      register: routes
       changed_when: false
+      when: not (fast | bool) or src_to is not defined
 
-    - name: Keep it
+    - name: Keep them
       ansible.builtin.set_fact:
-        gateway_src: "{{ route.stdout }}"
+        src_to: "{{ dict(routes.results | map(attribute='item') | map('regex_replace', '^nested-', '') | zip(routes.results | map(attribute='stdout'))) }}"
+        cacheable: true
+      when: routes is not skipped
 
-- name: Facts from the nested Gateway API
+- name: The Node IDs from the nested Gateway API
   hosts: localhost
   gather_facts: false
   tasks:
@@ -47,7 +55,10 @@
         headers: {Accept: application/json}
         return_content: true
       register: node_list
+      when: not (fast | bool) or node_ids is not defined
 
     - name: Keep the Node IDs
       ansible.builtin.set_fact:
         node_ids: "{{ dict(node_list.json.data | map(attribute='name') | zip(node_list.json.data | map(attribute='id'))) }}"
+        cacheable: true
+      when: node_list is not skipped

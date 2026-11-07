@@ -3,8 +3,12 @@
 # Run by `orbit tasks:script`, from the repository root of the task VM checkout. Delete it, or make it the runner, after the verdict.
 #
 #   scripts/molecule-verify-spike diagnose        what the VM has (no install, nothing changes)
-#   scripts/molecule-verify-spike test [BASE] [FORKS]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),
-#                                                       FORKS the number of independent cases that run at a time (default 1, serial)
+#   scripts/molecule-verify-spike test [BASE] [FORKS] [STAGE]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),
+#                                                       FORKS the limit: cases, containers and probes that run at a time (default 1, serial);
+#                                                       STAGE 1 verify in parallel (shared reads, async probes, Doctor beside them), 2 adds the spread
+#                                                       over app-dev, app-prod and gateway, 3 adds the fast poll and the shared facts and prepare (default 1)
+#   scripts/molecule-verify-spike health           load, memory, listeners and UFW rows of each container
+#   scripts/molecule-verify-spike targets          what each container accepts: ufw, the proof-network row, one firewall:allow on its Node
 #   scripts/molecule-verify-spike log FROM [TO]   print lines FROM..TO of the last Molecule log (the result keeps only 16 KiB)
 #
 # The Python lives in a venv inside the workspace (.molecule-spike/, untracked). The result prints seconds for each stage, the verdict line of
@@ -57,18 +61,27 @@ run_test() {
   export PATH=$VENV/bin:$PATH
   export PROOF_PORT_BASE=${1:-47100}
   export ANSIBLE_FORKS=${2:-1}
+  local stage=${3:-1}
+  export PROOF_SPREAD=0 PROOF_FAST=0
+  [ "$stage" -ge 2 ] && export PROOF_SPREAD=1
+  [ "$stage" -ge 3 ] && export PROOF_FAST=1
+  export PROFILE_TASKS_TASK_OUTPUT_LIMIT=1000 PROFILE_TASKS_SORT_ORDER=none
   export ORBIT_CHECKOUT=$ROOT
   export ANSIBLE_DEPRECATION_WARNINGS=false ANSIBLE_NOCOLOR=1 NO_COLOR=1
   export XDG_CACHE_HOME=$WORK/cache ANSIBLE_HOME=$WORK/ansible   # nothing outside the workspace and /tmp
   rm -rf /tmp/molecule-firewall-allow-facts   # a rerun must not read the failures of the run before
   local start
   start=$(now); molecule --version >/dev/null 2>&1; say "molecule --version: $(since "$start") s"
+  say "== health before"; health
+  stop_listeners
   cd "$SCENARIO" || return 1
   molecule reset >/dev/null 2>&1   # Molecule skips `prepare` when its state says prepared: a rerun needs the listeners and denies again
   start=$(now)
   molecule test >"$LOG" 2>&1
   local rc=$?
-  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, forks $ANSIBLE_FORKS, log $(wc -l <"$LOG") lines)"
+  stop_listeners
+  say "== health after (listeners stopped)"; health
+  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, forks $ANSIBLE_FORKS, stage $stage, log $(wc -l <"$LOG") lines)"
   say "== time of each playbook (the total after each TASKS RECAP: facts, prepare, converge, verify)"
   grep -A1 '^TASKS RECAP' "$LOG" | grep -E '^[A-Z][a-z]+ [0-9]+' | sed -E 's/^.*\(([0-9:.]+)\) +([0-9:.]+) .*$/playbook total \2/'
   say "== tasks"
@@ -77,11 +90,27 @@ run_test() {
   say "== verdicts"
   grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-400
   say "== overlap (from the verdict lines): whole cases, and the CLI call of each case"
-  grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | awk '
+  grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | grep -v '"msg": "doctor:' | awk '
     function peak_of(first, last, x, y,   i, j, c, p) { p = 0; for (i = first; i <= last; i++) { c = 0; for (j = first; j <= last; j++) if (x[j] <= x[i] && x[i] < y[j]) c++; if (c > p) p = c } return p }
     { n++; for (i = 1; i <= NF; i++) { if ($i == "casewin") { cs[n] = $(i + 1); ce[n] = $(i + 2) } if ($i == "cli") { ls[n] = $(i + 1); le[n] = $(i + 2) } if ($i == "busy") busy += $(i + 1) + 0 }
           if (!cmin || cs[n] < cmin) cmin = cs[n]; if (ce[n] > cmax) cmax = ce[n] }
     END { printf "%d cases from first start to last end %.1f s; at most %d cases at once; at most %d CLI calls at once; asks refused as busy %d\n", n, cmax - cmin, peak_of(1, n, cs, ce), peak_of(1, n, ls, le), busy }'
+  say "== where the task seconds go (summed over hosts, so more than the wall time when tasks overlap)"
+  grep -E -- ' -{5,} [0-9]+\.[0-9]+s$' "$LOG" | sed -E 's/ -{5,} ([0-9.]+)s$/\t\1/' | awk -F'\t' '
+    { n = $1; t = $2 + 0; c = "other"
+      if (n ~ /Probe|probes|Expect/) c = "probes"
+      else if (n ~ /listener/) c = "listeners"
+      else if (n ~ /Deny each|Partial application|proof-network allowance|TCP deny/) c = "denies and fixture rows"
+      else if (n ~ /run the command|setup commands/) c = "the CLI calls"
+      else if (n ~ /Operation receipt/) c = "receipt waits"
+      else if (n ~ /UFW table|firewall records|Operations (before|after)|Read the UFW|Read the firewall/) c = "reads"
+      else if (n ~ /Doctor/) c = "doctor"
+      else if (n ~ /bridge address|source address|Node IDs|List the Nodes|Keep/) c = "facts"
+      else if (n ~ /evidence|clock/) c = "bookkeeping"
+      s[c] += t; k[c]++ }
+    END { for (c in s) printf "%-26s %7.1f s in %d tasks\n", c, s[c], k[c] }' | sort -k2 -rn
+  say "== doctor (apart from the cases)"
+  grep -E '"msg": "doctor:' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-200
   say "== slowest tasks"
   grep -E -- ' -{5,} [0-9]+\.[0-9]+s$' "$LOG" | awk '{ print $NF, $0 }' | sort -rn | head -12 | cut -d' ' -f2- | cut -c1-140
   grep -E '^(PLAY RECAP|[a-z_]+ +: +ok=|nested-[a-z-]+ +:|default >|SCENARIO RECAP)' "$LOG" | cut -c1-160 | tail -14
@@ -94,9 +123,48 @@ run_test() {
   return $rc
 }
 
+# What state a container carries: load, memory, how many test listeners and UFW rows pile up, whether a ufw process is running. A run on a reused
+# VM adds listeners and rules, and `ufw` reloads the whole rule set at every change, so this is printed before and after each run.
+health() {
+  local c
+  for c in nested-app-dev nested-app-prod nested-gateway; do
+    printf '%s: ' "$c"
+    incus exec "$c" -- sh -c 'printf "load %s, " "$(cut -d" " -f1-3 /proc/loadavg)"; printf "mem free %s MB of %s, " "$(awk "/MemAvailable/ {print int(\$2/1024)}" /proc/meminfo)" "$(awk "/MemTotal/ {print int(\$2/1024)}" /proc/meminfo)"; printf "http.server %s, ufw rows %s, ufw procs %s\n" "$(pgrep -fc "http.server")" "$(ufw status numbered | grep -c "^\[")" "$(pgrep -xc ufw)"' 2>&1 | head -1
+  done
+}
+
+# The listeners of a run stay after it. Stop them, so the next run on this VM starts as the first did.
+stop_listeners() {
+  local c
+  for c in nested-app-dev nested-app-prod nested-gateway; do incus exec "$c" -- pkill -f "http.server" >/dev/null 2>&1; done
+  return 0
+}
+
+targets() {
+  local allowed_app_dev=gateway allowed_app_prod=gateway allowed_gateway=app-dev
+  local nodes id ip src from out rc start name
+  nodes=$(orbit node:list --json 2>/dev/null)
+  for name in app-dev app-prod gateway; do
+    say "== $name (nested-$name)"
+    incus exec "nested-$name" -- sh -c 'printf "ufw: "; ufw status | head -1; printf "proof-network rows: "; ufw status numbered | grep -c proof-network; printf "listeners already there: "; ss -Htl | wc -l' 2>&1 | head -4
+    id=$(printf '%s' "$nodes" | jq -r --arg n "$name" '(.data // .) | (.nodes // .) | map(select(.name==$n)) | .[0].id // empty')
+    ip=$(incus exec "nested-$name" -- sh -c "ip -4 -o addr show scope global | awk '\$2!=\"orbit\" && \$2!=\"docker0\" {print \$4}' | head -1 | cut -d/ -f1")
+    case "$name" in app-dev) from=$allowed_app_dev ;; app-prod) from=$allowed_app_prod ;; gateway) from=$allowed_gateway ;; esac
+    src=$(incus exec "nested-$from" -- sh -c "ip -4 route get $ip | grep -o 'src [0-9.]*' | cut -d' ' -f2")
+    say "node id $id, address $ip, allowed source $from at $src"
+    [ -n "$id" ] || { say "no Node named $name in node:list"; continue; }
+    start=$(now)
+    out=$(orbit firewall:allow 49100 --node="$id" --from="$src" --protocol=tcp --json 2>&1); rc=$?
+    say "firewall:allow on $name: rc $rc in $(since "$start") s: $(printf '%s' "$out" | jq -c '(.data // .) | {status, error: (.error // null), code: (.error_code // null)}' 2>/dev/null | cut -c1-200)"
+    say "firewall:list: $(orbit firewall:list --node="$id" --json 2>/dev/null | jq -c '(.data // .) | (.nodes // .) | map({node, rules: (.rules | length)})' | cut -c1-120)"
+  done
+}
+
 case "${1:-test}" in
+  targets) targets ;;
+  health) health ;;
   diagnose) diagnose ;;
-  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" "${3:-}" ;;
+  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" "${3:-}" "${4:-}" ;;
   log) sed -n "${2:-1},${3:-80}p" "$LOG" | cut -c1-260 ;;
-  *) say "usage: $0 diagnose | test [PORT_BASE] [FORKS] | log FROM [TO]"; exit 2 ;;
+  *) say "usage: $0 diagnose | health | targets | test [PORT_BASE] [FORKS] [STAGE] | log FROM [TO]"; exit 2 ;;
 esac
