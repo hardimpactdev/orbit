@@ -73,7 +73,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
 | `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
-| `egress` | One task VM's outside destinations, named by the VM in `subject`. See [Task VM egress](#task-vm-egress). | every 5 seconds |
+| `egress` | One task VM's outside destinations, named by the VM in `subject`. See [Task VM egress](#task-vm-egress). | read every 5 seconds; sent on change, at most every 15 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
 
@@ -147,16 +147,20 @@ On a task VM host, the [watch list](#watch-list) names the Incus bridge of the t
 | Source | Path | What the agent takes |
 | --- | --- | --- |
 | DNS log | `/var/log/incus/dnsmasq.<network>.log` | The names a VM asked for (`query[A]`) and the IPv4 addresses answered, paired by dnsmasq's serial number. An address in a CNAME chain counts for the name the VM asked for. |
-| Connection log | `/var/log/orbit/task-egress.log` | The sender, destination, protocol and port of each new outbound TCP or UDP connection, from the kernel's `orbit-egress` log lines. Private, reserved and multicast destinations are skipped. |
-| VM identity | `/var/lib/incus/networks/<network>/dnsmasq.hosts/*` and `dnsmasq.leases` | The MAC and name of each VM from the host files Incus writes. A lease gives the MAC of an address. The DHCP host name is never trusted. |
+| Connection log | `/var/log/orbit/task-egress.log` | The sender, destination, protocol and port of each new outbound TCP or UDP connection, from the kernel's `orbit-egress` log lines of this bridge. Private, reserved and multicast destinations are skipped. |
+| VM identity | `/var/lib/incus/networks/<network>/dnsmasq.hosts/*` and `dnsmasq.leases` | The MAC and name of each VM from the host files Incus writes. A lease only gives the MAC of an address. The DHCP host name is never trusted. |
 
-Every 5 seconds the agent reads the identity files, then the new part of the DNS log, then the new part of the connection log. It reads each log from a remembered byte offset, at most 4 MiB per file per read. On first sight of a file, and after an agent restart, it starts at the end of the file, so history is not replayed. When a file shrinks or its inode changes, as after log rotation, it reads the new file from the start.
+Every 5 seconds the agent reads the identity files, then the new part of the DNS log, then the new part of the connection log. It reads each log from a remembered byte offset, at most 4 MiB per file per read.
 
-The agent keeps state per VM by MAC, so a reused VM name with a new MAC starts fresh. It drops the state of a MAC that no host file or lease names any more, and tracks at most 64 VMs, the ones it saw last.
+A log that does not exist yet reads as empty, because rsyslog and dnsmasq create theirs when they first write. A file that is there when the agent first looks is read from its end, so history is not replayed, also after an agent restart. A file that appears later is read once from its start. When a file shrinks or its inode changes, as after log rotation, the agent reads the new file from the start.
 
-A connection line names its VM by the source MAC in its `MAC=` field, which holds the 14 octets of the Ethernet header. Without a `MAC=` field, the agent finds the VM through the source address and the lease. A line with a `MAC=` field of another shape, or of a MAC that is no VM, is dropped. A DNS line names its VM through the lease of its client address.
+The agent keeps state per VM by MAC, so a reused VM name with a new MAC starts fresh. It tracks only the MACs that a host file names, and uses the leases only to find the MAC of an address. It drops the state of a MAC when its host file is gone. It tracks at most 64 VMs. With more host files, it keeps the 64 whose host files it saw appear last.
 
-A connection to address A by a VM gives one row for each name that VM resolved to A, or one row with the address when it resolved none. A DNS answer gives a row with no port or protocol for its name. The agent leaves that row out of the fact once the VM connects to the name. It ignores an answer that is private or reserved. Rows are unique by destination, port and protocol, and sorted by those three, so an unchanged set gives the same fact.
+A connection line names its VM by the source MAC in its `MAC=` field, which holds the 14 octets of the Ethernet header. Without a `MAC=` field, the agent finds the VM through the source address and the lease. A line with a `MAC=` field of another shape, or of a MAC that is no tracked VM, is dropped. So is a line without `IN=` of this bridge. A DNS line names its VM through the lease of its client address.
+
+A connection to address A by a VM gives one row for each name that VM resolved to A in the last 30 minutes, or one row with the address when it resolved none. A name's answer time is its latest answer. A DNS answer gives a row with no port or protocol for its name. The agent leaves that row out of the fact once the VM connects to the name.
+
+The agent ignores an answer that is private or reserved. Rows are unique by destination, port and protocol, and sorted by those three, so an unchanged set gives the same fact.
 
 ```json
 {
@@ -182,9 +186,13 @@ A connection to address A by a VM gives one row for each name that VM resolved t
 | `flags` | `dot` for port 853. `dns` for port 53 to an outside address. `doh` for port 443 to a well-known public resolver such as `1.1.1.1` or `8.8.8.8`. |
 | `first_seen` | The agent's UTC time, to the second, when it first saw the row. It never changes. |
 
-The agent keeps at most 1,500 rows per VM and counts each row it had to refuse in `overflow`. That keeps a full fact below the 1 MiB the Gateway accepts. It also remembers at most 8,192 DNS questions, 4,096 name and address pairs per VM, and 8 names per address, and drops the oldest. It sends a VM's fact when it changed, at most once every 15 seconds, and again every 10 minutes. State lives in memory only. When the watch list has no `egress`, the agent drops all state and reads no file.
+The agent keeps at most 1,500 rows per VM. That keeps a full fact below the 1 MiB the Gateway accepts. All VMs together share a budget of 32 MiB for rows, names and answers, so a host full of busy VMs stays well inside the agent's 128 MiB memory limit. A row that the row cap or the budget refuses is counted once in `overflow`, however often the VM repeats it, up to 1,024 distinct refused rows per VM.
 
-The agent runs as root without capabilities, so it reads only files that it owns or that others may read. A file it cannot open is not available. While it cannot read one of these files, the agent keeps its state and sends no `egress` fact. It logs the path and the kind of error, never content, at most once in 10 minutes per path.
+The agent also remembers at most 8,192 DNS questions, 1,024 name and address pairs per VM, and 8 names per address. A ninth name replaces the oldest name of its address, and the oldest pair goes first when a VM has too many.
+
+The agent reads every 5 seconds but sends a VM's fact only when it changed, at most once every 15 seconds, and again every 10 minutes. It hands at most 4 facts to the reporter per read, and the rest follow on the next reads. A fact that the Gateway refuses is not sent again before the next change or the 10-minute resync. State lives in memory only. When the watch list has no `egress`, the agent drops all state and reads no file.
+
+The agent runs as root without capabilities, so it reads only files that it owns or that others may read. A file it cannot open is not available, except a log that does not exist yet. While it cannot read one of the other files, the agent keeps its state and sends no `egress` fact. It logs the path and the kind of error, never content, at most once in 10 minutes per path.
 
 The fact holds no URL path, packet content or secret, and the agent never writes row contents to its log. Agents before 0.13.0 send no `egress` fact.
 
