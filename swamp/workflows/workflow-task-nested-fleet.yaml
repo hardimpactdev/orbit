@@ -193,11 +193,12 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['install', '-d', '-m', '0700', '/home/orbit/.orbit'], timeoutSec: 40}}
     dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
+  # Read with `incus exec`: `incus file pull` dropped its connection after the apply in 3 of 7 starts on 2026-11-07.
   - name: 'Pin the nested CA'
     labels: {role: swamp}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-pin-the-nested-ca").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-pin-the-nested-ca").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'file', 'pull', '${{ inputs.intent.fleet.guests.gateway }}/home/orbit/.orbit/ca/root.pem', '/home/orbit/.orbit/nested-ca.pem'], timeoutSec: 70}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'sh', '-c', 'set -e; incus exec "$0" -- cat /home/orbit/.orbit/ca/root.pem > "$1.tmp"; grep -q "BEGIN CERTIFICATE" "$1.tmp"; mv "$1.tmp" "$1"', '${{ inputs.intent.fleet.guests.gateway }}', '/home/orbit/.orbit/nested-ca.pem'], timeoutSec: 70}}
     dependsOn: [{step: 'Make the CLI home', condition: {type: succeeded}}]
   - name: 'Add the CLI profile'
     labels: {role: swamp}
