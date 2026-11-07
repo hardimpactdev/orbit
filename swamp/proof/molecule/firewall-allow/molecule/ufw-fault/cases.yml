@@ -1,0 +1,35 @@
+---
+# What each of the three cases runs and what must be true at the end. Loaded by converge.yml and verify.yml for every case host:
+# `inventory_hostname` is the case, `d` its definition, `c` its ports (molecule.yml). All three work on app-dev, the Node under test of
+# allow.cases.yaml. `src` is the one Node address its allow admits (the `${gateway.src}` of the cases file). Values that only the live fleet
+# knows are templated when the case runs. Every definition names its ports as cases.<name>, because Ansible templates the whole dict at once.
+tnode: app-dev
+tcontainer: "nested-{{ tnode }}"
+tid: "{{ hostvars['localhost'].node_ids[tnode] }}"
+tip: "{{ hostvars[tcontainer].node_ip }}"
+allowed: "{{ allowed_of[tnode] }}"
+blocked: "{{ blocked_of[tnode] }}"
+src: "{{ hostvars['nested-' ~ allowed].src_to[tnode] }}"
+row_pattern: '^\[ *([0-9]+)\].*$'
+d: "{{ case_defs[inventory_hostname] }}"
+c: "{{ cases[inventory_hostname] }}"
+probe_list: "{{ d.probes | default([]) | map('combine', {'case': inventory_hostname, 'tip': tip}) | list }}"
+case_defs:
+  # Row "Interrupted reorder". ufw fails on the first write after its first `delete`: the misplaced line is deleted, the insert fails.
+  interrupted_reorder:
+    fault: {word: delete, count: 1}
+    argv: [firewall:allow, "{{ cases.interrupted_reorder.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ cases.interrupted_reorder.port }}", expect: connect}
+  # Row "Failure after a partial change". ufw fails on the first write after its first `allow`: the TCP line is added, the UDP line fails.
+  failure_after_partial_change:
+    fault: {word: allow, count: 1}
+    argv: [firewall:allow, "{{ cases.failure_after_partial_change.port }}", "--node={{ tid }}", "--from={{ src }}"]
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ cases.failure_after_partial_change.port }}", expect: connect}
+  # Row "Busy target". `hold` is the write that keeps the Node busy; `argv` is the second write, which must be refused.
+  busy_target:
+    hold: [firewall:allow, "{{ cases.busy_target.spare }}", "--node={{ tid }}", "--protocol=tcp", "--label=proof-busy"]
+    argv: [firewall:allow, "{{ cases.busy_target.port }}", "--node={{ tid }}", "--from={{ src }}", "--protocol=tcp"]
+    probes:
+      - {from: "nested-{{ allowed }}", port: "{{ cases.busy_target.port }}", expect: blocked}

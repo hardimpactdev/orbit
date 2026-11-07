@@ -47,13 +47,12 @@
 - name: Mask what a short-lived copy never needs
   ansible.builtin.systemd_service: { name: "{{ item }}", masked: true }
   loop: [systemd-firstboot.service, apt-daily.timer, apt-daily-upgrade.timer, motd-news.timer, unattended-upgrades.service]
-# Docker starts on its first use, through its socket, not at boot.
-- name: Start Docker on its first use
-  ansible.builtin.systemd_service: { name: "{{ item.name }}", enabled: "{{ item.enabled }}" }
-  loop:
-    - { name: docker.service, enabled: false }
-    - { name: containerd.service, enabled: false }
-    - { name: docker.socket, enabled: true }
+# Docker starts at boot, as its package sets it. The agent's Docker watcher connects to its socket as soon as the agent starts, so starting
+# Docker only on its first use saved nothing: on shark-tvm-1 and -2 Docker started 0.07 s after the agent and was active at 6.0 s, and sshd
+# was up at 5.35 s before either. A base an earlier converge left socket-only gets the default back.
+- name: Start Docker at boot
+  ansible.builtin.systemd_service: { name: "{{ item }}", enabled: true }
+  loop: [containerd.service, docker.service, docker.socket]
 # Every copy of the base has the base's machine-id, from which networkd makes its DHCP client ID, so copies started at once got one address
 # (provision 12863). Incus gives each copy its own MAC, so the client ID is the MAC. It takes effect at the next boot, which is how copies start.
 - name: Make the folder of the network drop-ins
