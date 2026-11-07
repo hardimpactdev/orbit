@@ -79,7 +79,7 @@ The step runs before the base is touched. Only a safety check fails the refresh:
 | `/var/log/orbit/dnsmasq-<network>.log` | The DNS queries of the bridge |
 | `/etc/logrotate.d/orbit-egress` | The rotation of both logs |
 
-A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<bridge> OUT=<nic> MAC=<dst MAC>:<src MAC>:<type> SRC=<VM address> DST=<outside address> ... PROTO=<tcp|udp> SPT=<port> DPT=<port>`. The agent reads `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`.
+A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<bridge> OUT=<nic> MACSRC=<src MAC> MACDST=<dst MAC> MACPROTO=<type> SRC=<VM address> DST=<outside address> ... PROTO=<tcp|udp> SPT=<port> DPT=<port>`. The agent reads `IN=`, `MACSRC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`. Older kernels print one `MAC=<dst MAC>:<src MAC>:<type>` field instead of the three `MAC` fields; the agent reads the source MAC from that form too.
 
 ## The agent fact
 
