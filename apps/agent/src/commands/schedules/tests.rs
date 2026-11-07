@@ -481,7 +481,7 @@ fn snapshot_uses_the_live_journal_format_in_chronological_order() {
     executable(
         &program,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '2026-09-25T10:15:03+00:00 host job[1]: two' '2026-09-25T10:15:02+00:00 host job[1]: one'\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '2026-09-25T10:15:03+00:00 host job[1]: two' '                                      second stack frame' '                                      final stack frame' '2026-09-25T10:15:02+00:00 host job[1]: one' '                                      first stack frame'\n",
             args.display()
         ),
     );
@@ -498,7 +498,7 @@ fn snapshot_uses_the_live_journal_format_in_chronological_order() {
 
     assert_eq!(
         logs.output,
-        "2026-09-25T10:15:02+00:00 host job[1]: one\n2026-09-25T10:15:03+00:00 host job[1]: two\n"
+        "2026-09-25T10:15:02+00:00 host job[1]: one\n                                      first stack frame\n2026-09-25T10:15:03+00:00 host job[1]: two\n                                      second stack frame\n                                      final stack frame\n"
     );
     assert!(!logs.truncated);
     assert_eq!(fs::read_to_string(args).unwrap(), format!("--unit\norbit-schedule-{ID}.service\n--lines\n2\n--no-pager\n--quiet\n--reverse\n--output=short-iso\n--utc\n"));

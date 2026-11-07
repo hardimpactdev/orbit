@@ -52,7 +52,11 @@
             "Orbit\\Extensions\\Vault\\": "extensions/vault/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        }
+        },
+        "classmap": [
+            "../../packages/php-sdk/src/Requests/Logs/LogStreamTarget.php",
+            "../../packages/php-sdk/src/Requests/Logs/ScheduleLogStreamTarget.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

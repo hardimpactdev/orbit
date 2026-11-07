@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
-use App\Commands\Concerns\FollowsLogs;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Logs\ScheduleLogStreamTarget;
@@ -13,17 +12,15 @@ use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
 
 final class ScheduleLogsCommand extends ScheduleUuidCommand
 {
-    use FollowsLogs;
-
     #[\Override]
     protected $signature = 'schedule:logs
         {schedule : Schedule UUID}
         {--lines=100 : Number of lines, from 1 to 1000}
-        {--follow : Keep printing new lines until Ctrl-C}
+        {--follow : Reserved until the fixed Agent release is pinned}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Return bounded Schedule logs, or follow new lines.';
+    protected $description = 'Return bounded Schedule logs.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -47,6 +44,13 @@ final class ScheduleLogsCommand extends ScheduleUuidCommand
             );
         }
 
+        if ($this->option('follow') === true) {
+            return $this->renderGatewayFailure(
+                'schedule.follow_unavailable',
+                'Schedule follow needs orbit-agent '.ScheduleLogStreamTarget::MinimumAgentVersion.'.',
+            );
+        }
+
         $profile = $this->activeGatewayProfile($repository);
 
         if ($profile === null) {
@@ -54,11 +58,6 @@ final class ScheduleLogsCommand extends ScheduleUuidCommand
         }
 
         $connector = $connectors->make($profile);
-
-        if ($this->option('follow') === true) {
-            return $this->followLogs($connector, $profile, new ScheduleLogStreamTarget($scheduleId), $lines,
-                fn (int $read): string => $this->sendOrThrow($connector, new ScheduleLogsRequest($scheduleId, $read), ScheduleLogsResponse::class)->output);
-        }
 
         $response = $this->sendWithProgress(
             $connector,

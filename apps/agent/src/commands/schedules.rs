@@ -450,16 +450,18 @@ fn logs_with(program: &Path, input: &LogsInput) -> Result<Logs, ScheduleError> {
         text.truncate(end);
         text.truncate(text.rfind('\n').map_or(0, |index| index + 1));
     }
-    let entries: Vec<&str> = text
-        .trim_end_matches('\n')
-        .split('\n')
-        .filter(|_| !text.is_empty())
-        .collect();
-    let output = if entries.is_empty() {
-        String::new()
-    } else {
-        entries.into_iter().rev().collect::<Vec<_>>().join("\n") + "\n"
-    };
+    let mut entries: Vec<String> = Vec::new();
+    for line in text.split_inclusive('\n') {
+        if line.starts_with(' ') && !entries.is_empty() {
+            entries.last_mut().unwrap().push_str(line);
+        } else {
+            entries.push(line.to_owned());
+        }
+    }
+    let mut output = entries.into_iter().rev().collect::<String>();
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push('\n');
+    }
     Ok(Logs { output, truncated })
 }
 

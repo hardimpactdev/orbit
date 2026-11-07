@@ -161,4 +161,4 @@ A Project definition has the same fields as the Process or Schedule it produces.
 
 The [Swamp policy contracts](/reference/deployments#swamp-policy-contracts) also have API/MCP-only routes under `instance:deployment-source`, `instance:auto-deploy`, and `instance:deploy:automatic:receipt`. They serve the trusted policy worker and add no operator commands.
 
-Log reads use `<family>:logs`; `--follow` selects streaming. Realtime requires `--follow` because it has no retained history.
+Log reads use `<family>:logs`; `--follow` selects streaming. Schedule follow refuses until its fixed Agent release is pinned. Realtime requires `--follow` because it has no retained history.

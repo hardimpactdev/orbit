@@ -11,11 +11,11 @@ orbit schedule:logs <schedule> [--lines=COUNT] [--follow] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--lines=COUNT` | `100` | 1 through 1,000 lines. |
-| `--follow` | off | Stream new lines until Ctrl-C. With `--json`, print NDJSON frames. |
+| `--follow` | off | Reserved; refuses until the fixed Agent is pinned. |
 
-Without `--follow`, Orbit returns a bounded snapshot of the service journal. `--follow` opens a viewer lease and subscribes to the private log channel. The Node agent reads the Schedule journal. Orbit renews the lease while the command runs and closes it on Ctrl-C. The same line limits, redaction, reconnect handling, and loss markers apply as for [Process logs](/cli/process/logs).
+Orbit returns a bounded snapshot of the service journal. It redacts the owning Instance's stored environment values.
 
-When the live path is unavailable, the shared follower uses bounded reads until streaming is available again. Both paths use UTC journal timestamps and redact the owning Instance's stored environment values. It does not poll while a stream runs. See [Live logs](/reference/live-logs).
+`--follow` currently refuses with `schedule.follow_unavailable`: Schedule follow needs orbit-agent 0.14.0. The fixed Agent must be released, pinned and installed before follow is enabled. See [Agent releases](/reference/node-agent#releases).
 
 ## How it works
 

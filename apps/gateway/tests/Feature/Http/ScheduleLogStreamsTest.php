@@ -52,11 +52,10 @@ beforeEach(function (): void {
     $this->path = '/api/v1/schedules/'.$this->schedule->id.'/log-streams';
 });
 
-it('opens activates and closes the viewer lease without changing the Schedule UUID', function (): void {
-    $response = $this->postJson($this->path, ['socket_id' => '123.456', 'lines' => 250])->assertCreated();
-    $id = $response->json('data.id');
+it('renews and closes an existing viewer lease without changing the Schedule UUID', function (): void {
+    $stream = schedule_existing_stream($this->schedule, $this->node);
+    $id = $stream->id;
     $store = app(LogStreamStore::class);
-    $stream = $store->find($id);
     expect($stream->recordId)->toBe($this->schedule->id)
         ->and($stream->recordType)->toBe(LogStreamRecordType::Schedule)
         ->and($stream->source->unit)->toBe('orbit-schedule-'.$this->schedule->id.'.service')
@@ -69,7 +68,7 @@ it('opens activates and closes the viewer lease without changing the Schedule UU
 });
 
 it('refuses another viewer before renewing or closing the lease', function (): void {
-    $id = $this->postJson($this->path, ['socket_id' => '123.456'])->assertCreated()->json('data.id');
+    $id = schedule_existing_stream($this->schedule, $this->node)->id;
     $other = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'other-viewer', 'status' => 'active', 'platform' => 'linux',
         'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
@@ -124,3 +123,25 @@ it('redacts unlabeled stored Instance values from the snapshot used during polli
         ->assertJsonPath('data.truncated', true)
         ->assertDontSee('synthetic-schedule-value');
 });
+
+it('refuses a new Schedule stream until the fixed Agent release is pinned', function (): void {
+    $this->postJson($this->path, ['socket_id' => '123.456'])
+        ->assertStatus(409)
+        ->assertJsonPath('error.code', 'schedule.follow_unavailable')
+        ->assertJsonPath('error.message', 'Schedule follow needs orbit-agent 0.14.0.');
+
+    expect(app(LogStreamStore::class)->all())->toBe([]);
+});
+
+function schedule_existing_stream(Schedule $schedule, Node $viewer): LogStream
+{
+    $stream = new LogStream(
+        str_repeat('a', 32), LogStreamRecordType::Schedule, $schedule->id,
+        $schedule->host_node_id, $viewer->id,
+        LogStreamSource::journal('orbit-schedule-'.$schedule->id.'.service'),
+        250, microtime(true) + LogStreamStore::LeaseSeconds,
+    );
+    app(LogStreamStore::class)->open($stream);
+
+    return $stream;
+}

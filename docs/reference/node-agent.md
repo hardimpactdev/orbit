@@ -766,6 +766,8 @@ The Gateway selects the agent that its pin names: `apps/gateway/resources/agent/
 
 A [CLI release](/reference/cli-binaries#published-releases) also builds and carries the agent when the agent source changed since the previous release. Its manifest names the agent source commit. Other releases contain only CLI assets. A new agent reaches Nodes only when a reviewed commit moves the pin. That commit copies the release's `manifest.json` into the pin and records the binary's command contract in `frozen-commands.json` and `frozen-commands-source.json`, which `bin/check-frozen-agent-commands` verifies. The next Gateway release records the new pin, and the fleet rollout installs it Node by Node.
 
+Schedule follow requires Cargo version 0.14.0 or newer for UTC journal snapshots and ordered multiline entries. This requirement is declared by `ScheduleLogStreamTarget::MinimumAgentVersion` in the PHP SDK and shared with the Gateway. A CLI release tag supplies the download URLs; it does not replace the Cargo version in the Agent manifest.
+
 An agent release carries these assets:
 
 | Asset | Contents |

@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\GatewayConnectorFactory;
 use App\Support\Console\InterruptIntent;
+use App\Support\Logs\ConsoleLogFollowOutput;
 use App\Support\Logs\FakeLogFollowClock;
 use App\Support\Logs\LogFollowClock;
+use App\Support\Logs\LogFollower;
+use App\Support\Logs\LogStreamOpener;
 use App\Support\Realtime\FakeWebSocketTransport;
 use App\Support\Realtime\RealtimeConnectionException;
+use App\Support\Realtime\RealtimeSubscriber;
 use App\Support\Realtime\WebSocketTransport;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -17,12 +22,15 @@ use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;
+use Orbit\Sdk\Requests\Logs\ScheduleLogStreamTarget;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
+use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -1042,32 +1050,28 @@ function log_follow_json_lines(string $output): array
     );
 }
 
-it('follows Schedule journal logs through a viewer lease and closes it on interrupt', function (): void {
-    log_follow_profile();
-    $transport = log_follow_transport(log_follow_handshake('123.456', log_follow_stream_id('a')));
-    $mock = MockClient::global(log_follow_stream_mocks('a'));
-    $this->clock->onTick(function (float $now, int $count) use ($transport): void {
-        if ($count === 1) {
-            $transport->enqueue([log_follow_lines('a', 1, ['schedule output'])]);
-        }
-        if ($count >= 4) {
-            InterruptIntent::record(SIGINT);
-        }
-    });
-    $id = '123e4567-e89b-42d3-a456-426614174000';
-    expect(Artisan::call('schedule:logs', ['schedule' => $id, '--follow' => true, '--json' => true]))->toBe(0)
-        ->and(Artisan::output())->toContain('schedule output')
-        ->and(log_follow_sent($mock, CreateLogStreamRequest::class)[0]->getUrl())->toBe('https://10.44.0.1/api/v1/schedules/'.$id.'/log-streams')
-        ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->not->toBeEmpty()
-        ->and(log_follow_sent($mock, DestroyLogStreamRequest::class))->toHaveCount(1);
-});
+it('refuses Schedule follow before opening a connection until the fixed Agent is pinned', function (bool $json): void {
+    $mock = MockClient::global();
+    expect(Artisan::call('schedule:logs', [
+        'schedule' => '123e4567-e89b-42d3-a456-426614174000', '--follow' => true, '--json' => $json,
+    ]))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('Schedule follow needs orbit-agent 0.14.0.');
+    if ($json) {
+        expect(json_decode($output, true)['error']['code'])->toBe('schedule.follow_unavailable');
+    }
+    $mock->assertNothingSent();
+})->with([true, false]);
 
-it('prints each Schedule journal line once across live polling and live recovery', function (): void {
+it('keeps multiline journal entries in order across live polling and live recovery', function (): void {
     log_follow_profile();
     $id = '123e4567-e89b-42d3-a456-426614174000';
     $first = '2026-09-25T10:15:02+00:00 host job[1]: first';
     $polled = '2026-09-25T10:15:03+00:00 host job[1]: printed [REDACTED]';
     $resumed = '2026-09-25T10:15:04+00:00 host job[1]: resumed';
+    $firstLines = [$first, '                                      first stack frame', '                                      second stack frame'];
+    $polledLines = [$polled, '                                      polling stack frame'];
+    $resumedLines = [$resumed, '                                      recovery stack frame'];
     $transport = log_follow_transport(log_follow_handshake('1.1', log_follow_stream_id('a')));
     $creates = 0;
     $renewals = 0;
@@ -1075,15 +1079,15 @@ it('prints each Schedule journal line once across live polling and live recovery
         CreateLogStreamRequest::class => function () use (&$creates): MockResponse {
             return MockResponse::make(log_follow_stream_envelope(++$creates === 1 ? 'a' : 'b'), 201);
         },
-        RenewLogStreamRequest::class => function () use (&$renewals, $transport, $first, $polled, $resumed): MockResponse {
+        RenewLogStreamRequest::class => function () use (&$renewals, $transport, $firstLines, $polledLines, $resumedLines): MockResponse {
             if (++$renewals === 1) {
                 $transport->enqueue([
-                    log_follow_lines('a', 1, [$first]),
+                    log_follow_lines('a', 1, $firstLines),
                     log_follow_ended('a', 'agent_left'),
                 ]);
             } else {
                 $transport->enqueue([
-                    log_follow_lines('b', 1, [$first, $polled, $resumed]),
+                    log_follow_lines('b', 1, [...$firstLines, ...$polledLines, ...$resumedLines]),
                     log_follow_ended('b', 'closed'),
                 ]);
             }
@@ -1092,7 +1096,7 @@ it('prints each Schedule journal line once across live polling and live recovery
         },
         DestroyLogStreamRequest::class => log_follow_stream_mocks('a')[DestroyLogStreamRequest::class],
         ScheduleLogsRequest::class => MockResponse::make([
-            'data' => ['id' => $id, 'name' => 'cleanup', 'lines' => 1000, 'output' => "$first\n$polled\n", 'truncated' => false],
+            'data' => ['id' => $id, 'name' => 'cleanup', 'lines' => 1000, 'output' => implode("\n", [...$firstLines, ...$polledLines])."\n", 'truncated' => false],
             'meta' => ['request_id' => log_follow_request_id()],
         ]),
     ]);
@@ -1108,13 +1112,26 @@ it('prints each Schedule journal line once across live polling and live recovery
         }
     });
 
-    expect(Artisan::call('schedule:logs', ['schedule' => $id, '--follow' => true, '--json' => true]))->toBe(0)
-        ->and(log_follow_json_lines(Artisan::output()))->toBe([
-            ['type' => 'lines', 'lines' => [$first], 'dropped' => 0, 'skipped' => 0],
-            ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'agent_left'],
-            ['type' => 'lines', 'lines' => [str_replace('[REDACTED]', '[redacted]', $polled)], 'dropped' => 0, 'skipped' => 0],
-            ['type' => 'lines', 'lines' => [$resumed], 'dropped' => 0, 'skipped' => 0],
-        ])
+    $profile = new GatewayProfile(name: 'test', url: 'https://10.44.0.1', realtimeUrl: 'wss://reverb.test', realtimeKey: 'app-key');
+    $connector = app(GatewayConnectorFactory::class)->make($profile);
+    $opener = new LogStreamOpener($connector, new ScheduleLogStreamTarget($id), 100, $this->clock);
+    $subscriber = RealtimeSubscriber::forChannel($profile, app()->version(), $opener, $transport, $this->clock->now(...));
+    $buffer = new BufferedOutput;
+    $follower = new LogFollower($subscriber, $opener, function (int $lines) use ($connector, $id): string {
+        /** @var ScheduleLogsResponse $response */
+        $response = $connector->send(new ScheduleLogsRequest($id, $lines))->dtoOrFail();
+
+        return $response->output;
+    }, 100, $this->clock, new ConsoleLogFollowOutput($buffer, true));
+
+    $follower->run();
+
+    expect(log_follow_json_lines($buffer->fetch()))->toBe([
+        ['type' => 'lines', 'lines' => $firstLines, 'dropped' => 0, 'skipped' => 0],
+        ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'agent_left'],
+        ['type' => 'lines', 'lines' => [str_replace('[REDACTED]', '[redacted]', $polled), '                                      polling stack frame'], 'dropped' => 0, 'skipped' => 0],
+        ['type' => 'lines', 'lines' => $resumedLines, 'dropped' => 0, 'skipped' => 0],
+    ])
         ->and(log_follow_sent($mock, ScheduleLogsRequest::class))->not->toBeEmpty()
         ->and(log_follow_sent($mock, CreateLogStreamRequest::class))->toHaveCount(2)
         ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->toHaveCount(2);
