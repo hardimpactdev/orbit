@@ -1,5 +1,5 @@
 ---
-# Put the ufw shim in place on the container of the case (steps.py install_shim): the real program is kept once as ufw.real, and the shim of
+# Put the ufw shim in place on the container of the case (steps.py install_shim): a copy of the real program is kept once as ufw.real, and the shim of
 # the checkout (tools/swamp-proof-guest/ufw-shim.sh, not changed here) takes its path. Without state in {{ shim_dir }} every call goes to the
 # real ufw. Included by the cases; `tcontainer` and `shim_dir` come from cases.yml and molecule.yml.
 - name: "{{ inventory_hostname }}: the state directory of the shim"
@@ -9,9 +9,10 @@
     mode: "0755"
   delegate_to: "{{ tcontainer }}"
 
-- name: "{{ inventory_hostname }}: keep the real ufw as ufw.real, once"
+# A copy, not a move: /usr/sbin/ufw is never missing. The next task replaces it in one atomic step (the copy module renames its temp file).
+- name: "{{ inventory_hostname }}: keep a copy of the real ufw as ufw.real, once"
   ansible.builtin.command:
-    cmd: mv /usr/sbin/ufw /usr/sbin/ufw.real
+    cmd: cp -p /usr/sbin/ufw /usr/sbin/ufw.real
     creates: /usr/sbin/ufw.real
   delegate_to: "{{ tcontainer }}"
 

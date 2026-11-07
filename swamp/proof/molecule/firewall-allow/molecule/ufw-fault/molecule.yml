@@ -4,6 +4,8 @@
 # In the runner these cases are the batch `ufw-fault` (swamp/proof/batches.yaml): they run one after the other, on app-dev, after Swamp restored
 # `base`. Run it alone from the parent directory (firewall-allow/), in the task VM:   molecule test -s ufw-fault
 #   prepare (listeners, test denies, the misplaced row) -> converge (the shim, the CLI, the snapshots) -> verify (state, records, probes) -> cleanup
+# Molecule keeps a `prepared` state and skips prepare in a second `molecule test` on the same VM: run `molecule reset -s ufw-fault` first
+# (scripts/molecule-verify-spike does).
 # Same convention as ../default: the VM is the operator side (ansible_connection local), the three nested containers are reached with
 # community.general.incus, the real `orbit` CLI runs on the VM, and results are cacheable facts between the playbooks of one `molecule test`.
 driver:

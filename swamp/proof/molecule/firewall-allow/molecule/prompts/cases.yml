@@ -68,6 +68,9 @@ case_defs:
           absent: ['●']
 
   # Row "Missing input", case 3, human form (default has the --json form as failure_code): no terminal, no --node.
+  # The human output never holds the code: FirewallCommand::nodeId() calls renderGatewayFailure(), GatewayFailureRenderer::write() calls
+  # HumanRenderer::failure() without the code, so the only line is the message. The runner's human form (it needs the code in the text)
+  # fails the same way. The code firewall.node_id_invalid stays covered by default/failure_code (--json).
   missing_input_noninteractive:
     runs:
       - argv: [firewall:allow, "{{ c.port }}"]
@@ -75,5 +78,5 @@ case_defs:
         expect:
           rc: 1
           ops: 0
-          text: ['firewall[.]node_id_invalid']
+          text: ['Node ID must be a positive integer[.]']
           absent: ['Destination port or range']

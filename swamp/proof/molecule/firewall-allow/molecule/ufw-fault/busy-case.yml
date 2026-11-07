@@ -45,20 +45,27 @@
       retries: 30
       delay: "{{ poll_delay | int }}"
 
-    - name: "{{ inventory_hostname }}: the held Operation is not over, so it holds the Node"
+    # The task vars have their own names: a set_fact of converge.yml (held_id: '') would outrank task vars of the same name.
+    - name: "{{ inventory_hostname }}: keep the id of the held Operation"
       vars:
-        held_id: "{{ admitted.json.data | map(attribute='id') | list | difference(snaps.h0.ops) | first }}"
-        held_status: "{{ admitted.json.data | selectattr('id', 'in', [held_id | int, held_id | string]) | map(attribute='status') | first | default('?') }}"
+        new_id: "{{ admitted.json.data | map(attribute='id') | list | difference(snaps.h0.ops) | first }}"
       ansible.builtin.set_fact:
-        held_id: "{{ held_id }}"
-        held_status: "{{ held_status }}"
+        held_id: "{{ new_id }}"
         cacheable: true
 
-    - name: "{{ inventory_hostname }}: the held Operation is queued, running or waiting"
-      ansible.builtin.assert:
-        that: held_status in ['queued', 'running', 'waiting']
-        fail_msg: "the held Operation {{ held_id }} is {{ held_status }}, it does not hold the Node"
-        quiet: true
+    # An Operation that is still queued may not hold the Node yet: the snapshots and the second write wait until it runs.
+    - name: "{{ inventory_hostname }}: wait until the held Operation runs, so it holds the Node"
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/operations?kind=firewall.allow"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: running
+      until: >-
+        (running.json | default({})).data | default([]) | selectattr('id', 'in', [held_id | int, held_id | string])
+        | map(attribute='status') | first | default('?') == 'running'
+      retries: 30
+      delay: "{{ poll_delay | int }}"
 
     - name: "{{ inventory_hostname }}: snapshot before the second write"
       ansible.builtin.include_tasks: snapshot.yml
@@ -117,7 +124,7 @@
         headers: {Accept: application/json}
         return_content: true
       register: held_receipt
-      until: (held_receipt.json.data | default(held_receipt.json)).status in ['succeeded', 'failed', 'cancelled']
+      until: ((held_receipt.json | default({})).data | default(held_receipt.json | default({}))).status | default('') in ['succeeded', 'failed', 'cancelled']
       retries: 30
       delay: 2
       failed_when: false
@@ -125,5 +132,5 @@
 
     - name: "{{ inventory_hostname }}: keep how the held write ended"
       ansible.builtin.set_fact:
-        held_end: "{{ ((held_receipt.json.data | default(held_receipt.json)).status | default('?')) if held_receipt.json is defined else 'unknown' }}"
+        held_end: "{{ (((held_receipt.json | default({})).data | default(held_receipt.json | default({}))).status | default('unknown')) }}"
         cacheable: true

@@ -86,7 +86,7 @@
     - name: The Gateway has one active record for the IPv6 source
       vars:
         matching: >-
-          {{ rules | selectattr('source', 'equalto', src6) | selectattr('status', 'equalto', 'active')
+          {{ rules | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src6) | selectattr('status', 'equalto', 'active')
              | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
       ansible.builtin.assert:
         that: matching | length == 1

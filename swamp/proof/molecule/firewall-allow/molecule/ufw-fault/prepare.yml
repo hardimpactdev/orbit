@@ -45,6 +45,14 @@
       loop_control: {label: "{{ item.key }}"}
       changed_when: true
 
+    # The fixture of failure-after-partial-change has proto [tcp, udp] in the cases file: both protocols are denied, so the UDP allow has a UDP deny.
+    - name: Deny the UDP port of failure-after-partial-change too, above the proof-network allowance
+      ansible.builtin.command:
+        cmd: >-
+          ufw insert {{ anchor.stdout | int }} deny proto udp from any to any port {{ cases.failure_after_partial_change.port }}
+          comment 'proof:deny-failure_after_partial_change_udp'
+      changed_when: true
+
     - name: Find the row of the deny of interrupted-reorder
       ansible.builtin.shell: |
         set -o pipefail

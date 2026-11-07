@@ -55,7 +55,7 @@
       ansible.builtin.set_fact:
         src6_to: >-
           {{ dict(routes6.results | map(attribute='item') | map('regex_replace', '^nested-', '')
-             | zip(routes6.results | map(attribute='stdout') | map('regex_search', 'src (\S+)', '\1') | map('first'))) }}
+             | zip(routes6.results | map(attribute='stdout') | map('split', ' src ') | map('last') | map('split', ' ') | map('first'))) }}
         cacheable: true
 
 - name: Fixtures on the target container
@@ -65,6 +65,8 @@
     c: "{{ cases.family_ipv6 }}"
     deny_comment: proof:deny-family_ipv6
     row_start: '^\[ *[0-9]+\] +'
+    # A row of family 6, as the runner's family_rows tells it: the `(v6)` mark, or an address of the IPv6 prefix (in the From column).
+    v6_row: '\(v6\)|{{ ipv6_prefix }}'
   tasks:
     # `setsid -f` detaches the listener from the exec session; the redirects let the task end while it runs. `--bind ::` is the IPv6 wildcard.
     - name: Start the IPv6 listeners, a test and a control port
@@ -78,7 +80,7 @@
 
     # The listener binds a moment after its process starts: a refused connection is asked again.
     - name: Each listener accepts connections on the container itself, over IPv6
-      ansible.builtin.command: timeout 2 bash -c 'echo > /dev/tcp/::1/{{ item }}'
+      ansible.builtin.command: timeout 3 bash -c 'echo > /dev/tcp/::1/{{ item }}'
       loop: ["{{ c.port }}", "{{ c.control }}"]
       register: listening
       until: listening.rc == 0
@@ -96,7 +98,7 @@
     - name: Deny the test port above the IPv4 proof-network allowance
       vars:
         anchor: >-
-          {{ table.stdout_lines | select('search', 'proof-network') | reject('search', '\(v6\)') | first
+          {{ table.stdout_lines | select('search', 'proof-network') | reject('search', v6_row) | first
              | split(']') | first | replace('[', '') | trim | int }}
       ansible.builtin.command:
         cmd: ufw insert {{ anchor }} deny proto tcp from any to any port {{ c.port }} comment '{{ deny_comment }}'
@@ -114,7 +116,7 @@
           {{ table_v6.stdout_lines | select('search', row_start ~ c.port ~ '/tcp \(v6\) +DENY IN +Anywhere \(v6\) +# ' ~ deny_comment ~ '$')
              | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
         anchor_v6: >-
-          {{ table_v6.stdout_lines | select('search', 'proof-network') | select('search', '\(v6\)')
+          {{ table_v6.stdout_lines | select('search', 'proof-network') | select('search', v6_row)
              | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
       when: deny_v6 | length == 1 and anchor_v6 | length == 1 and deny_v6 | first > anchor_v6 | first
       block:
@@ -138,7 +140,7 @@
           {{ table_end.stdout_lines | select('search', row_start ~ c.port ~ '/tcp \(v6\) +DENY IN +Anywhere \(v6\) +# ' ~ deny_comment ~ '$')
              | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
         anchor_v6: >-
-          {{ table_end.stdout_lines | select('search', 'proof-network') | select('search', '\(v6\)')
+          {{ table_end.stdout_lines | select('search', 'proof-network') | select('search', v6_row)
              | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
       ansible.builtin.assert:
         that:

@@ -7,7 +7,7 @@
     command: "{{ (orbit + run.argv) | join(' ') }}"
     chdir: /
     responses: "{{ dict(run.answers | map(attribute='prompt') | map('extract', prompt_regex) | zip(run.answers | map(attribute='send'))) }}"
-    echo: true
+    # No echo of the answers: the terminal only echoes before the CLI switches it to -echo, and a repeated byte would break the `once` check.
     # Seconds without a match, not for the whole run: the CLI follows the Operation to its end after the last prompt.
     timeout: 120
   environment: "{{ tty_env }}"
@@ -18,7 +18,8 @@
   # expect fails the task on a non-zero exit status, and a cancelled prompt must be able to end with 1: the assert below reads rc.
   failed_when: false
   changed_when: false
-  until: tty_run.rc | default(none) == 0 or (tty_run.stdout | default('')) is not search('operation.target_busy')
+  # A busy refusal prints the detail line `operation_id: N` (GatewayFailureRenderer::safeDetails), never the code, in the human form.
+  until: tty_run.rc | default(none) == 0 or (tty_run.stdout | default('')) is not search('operation_id: [0-9]+')
   retries: 60
   delay: 1
   when: run.tty
@@ -33,7 +34,7 @@
   register: plain_run
   failed_when: false
   changed_when: false
-  until: plain_run.rc == 0 or (plain_run.stdout ~ plain_run.stderr) is not search('operation.target_busy')
+  until: plain_run.rc == 0 or (plain_run.stdout ~ plain_run.stderr) is not search('operation_id: [0-9]+')
   retries: 60
   delay: 1
   when: not run.tty

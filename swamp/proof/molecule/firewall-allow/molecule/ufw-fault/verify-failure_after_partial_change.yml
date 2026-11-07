@@ -7,12 +7,14 @@
     tcp_re: "{{ c.port }}/tcp +ALLOW IN +{{ src }}"
     udp_re: "{{ c.port }}/udp +ALLOW IN +{{ src }}"
     deny_re: 'proof:deny-failure_after_partial_change$'
+    deny_udp_re: 'proof:deny-failure_after_partial_change_udp$'
     ports: ["{{ c.port | int }}", "{{ c.port | string }}"]
     s1_rows: "{{ snaps.s1.ufw.split('\n') | select('search', '^\\[') | reject('search', '\\(v6\\)') | list }}"
     s1_tcp: "{{ s1_rows | select('search', tcp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
     s1_deny: "{{ s1_rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
     tcp: "{{ rows | select('search', tcp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
     udp: "{{ rows | select('search', udp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny_udp: "{{ rows | select('search', deny_udp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
     deny: "{{ rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
     s1_failed: "{{ snaps.s1.records | selectattr('status', 'equalto', 'failed') | selectattr('port', 'in', ports) | list }}"
     active: "{{ rules | selectattr('status', 'equalto', 'active') | selectattr('port', 'in', ports) | list }}"
@@ -26,9 +28,16 @@
       ansible.builtin.include_tasks: unchanged.yml
       vars: {from_snap: s0, to_snap: s1, except_port: "{{ c.port }}"}
 
-    - name: Stage 2, each line once and in order (TCP, UDP, deny), and one record is active
+    - name: Stage 2, each line once, each allow above its own deny, and one record is active
       ansible.builtin.assert:
-        that: [tcp | length == 1, udp | length == 1, deny | length == 1, tcp | first < udp | first, udp | first < deny | first, active | length == 1]
+        that:
+          - tcp | length == 1
+          - udp | length == 1
+          - deny | length == 1
+          - deny_udp | length == 1
+          - tcp | first < deny | first
+          - udp | first < deny_udp | first
+          - active | length == 1
         quiet: true
 
     - name: Stage 2, nothing else changed

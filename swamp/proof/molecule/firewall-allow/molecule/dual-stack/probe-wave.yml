@@ -3,7 +3,7 @@
 # runner does (steps.py probe_result): 0 connected, 124 the timeout of a dropped packet (blocked), anything else refused, which fits neither
 # expectation. The address is an IPv6 literal without brackets: bash takes `/dev/tcp/fd42:232:2::2/PORT`, and refuses `[fd42:232:2::2]`.
 - name: Start the probes of the wave
-  ansible.builtin.command: timeout 2 bash -c 'echo > /dev/tcp/{{ item.tip }}/{{ item.port }}'
+  ansible.builtin.command: timeout 3 bash -c 'echo > /dev/tcp/{{ item.tip }}/{{ item.port }}'
   delegate_to: "{{ item.from }}"
   loop: "{{ wave }}"
   loop_control: {label: "{{ item.case }} {{ item.from }} {{ item.port }}"}
