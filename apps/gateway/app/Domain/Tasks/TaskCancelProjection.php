@@ -14,7 +14,7 @@ use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** A cancel that pushed approved work and released the slot settles the group; anything less keeps it for another cancel. */
+/** A cancel that released the slot settles the group; anything less keeps it for another cancel. */
 final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationTimeout
 {
     public function input(Operation $operation): array
@@ -35,10 +35,6 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
             }
             $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             if ($data['status'] === 'succeeded') {
-                $push = $operation->input['push'] ?? null;
-                if (is_array($push) && is_string($push['commit'] ?? null)) {
-                    TaskFinalReview::recordRemovalPush($group, $push['commit']);
-                }
                 app(TaskCancelIntent::class)->input($operation);
             }
             $result = ['group_id' => $group->id, 'instance_id' => $operation->input['instance_id'] ?? null, 'released' => $data['status'] === 'succeeded'];

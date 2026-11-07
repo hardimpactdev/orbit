@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCommitComparison;
+use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupEnding;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -29,6 +32,14 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupEnding;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -41,10 +52,13 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Testing\TestResponse;
+use Mockery\MockInterface;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
@@ -557,4 +571,125 @@ it('refuses the removal of a workspace on a task VM that has no slot, which no r
 
     expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(ResourceOperationException::class, 'has no slot')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+
+/**
+ * A group whose workspace sits on its parked task VM, with subtask approvals of `$approved` in order, and a GitHub where each head in
+ * `$origin` reaches the commits it lists: `branch` is the group's task branch, any other key a commit. A head that is not there reads as
+ * missing, as a deleted branch does. The test may change `$origin` later. The watched pull request merged at `$merged`, when given.
+ *
+ * @param  list<string>  $approved
+ * @param  array<string,list<string>>  $origin
+ * @return array{0:Task,1:TaskVm,2:Node}
+ */
+function preservationWorld(array $approved, array &$origin, ?string $merged = null, TaskGroupStatus $status = TaskGroupStatus::Settling): array
+{
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use (&$origin, $merged): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('read-token');
+        $github->shouldReceive('compareCommits')->andReturnUsing(function (string $token, GitHubRepository $repository, string $base, string $head) use (&$origin): GitHubCommitComparison {
+            $reached = $origin[str_starts_with($head, 'task-') ? 'branch' : $head] ?? throw GitHubApiException::unavailable();
+
+            return match (true) {
+                ($reached[0] ?? null) === $base => new GitHubCommitComparison(GitHubComparisonStatus::Identical, $base, $base),
+                in_array($base, $reached, true) => new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $base, $base),
+                default => new GitHubCommitComparison(GitHubComparisonStatus::Diverged, $base, str_repeat('0', 40)),
+            };
+        });
+        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Merged, null, null, $merged, 'main', mergedAt: '2026-11-08T08:00:00Z'));
+    }));
+    $url = $merged === null ? null : 'https://github.com/hardimpactdev/orbit/pull/77';
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => $status, 'pr_url' => $url, 'watched_pr_url' => $url]);
+    $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Step', 'brief' => 'Brief', 'status' => TaskStatus::Completed]);
+    foreach ($approved as $sha) {
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.',
+            'author' => 'reviewer', 'commit_sha' => $sha, 'posted_at' => now()]);
+    }
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $slot->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->save();
+
+    return [$group, $slot, Node::query()->where('name', 'gateway')->sole()];
+}
+
+/** One `tasks:complete` or `tasks:cancel` call from the Gateway Node. */
+function preservationCall(Node $gateway, Task $group, string $command): TestResponse
+{
+    return test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->withHeader('Idempotency-Key', 'end-'.fake()->uuid())
+        ->postJson("/api/v1/task-groups/{$group->id}/{$command}");
+}
+
+it('refuses tasks:complete while origin lacks the latest approval, though the approved commit before it merged, and changes nothing', function (): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    // A merged and GitHub deleted the branch; B was approved later and lives only in the parked VM.
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin, merged: $a, status: TaskGroupStatus::Running);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished')
+        ->assertJsonPath('error.details.commit', $b)->assertJsonPath('error.details.branch', 'task-'.$group->id);
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBeNull()->and($group->taskable_id)->not->toBeNull()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked)
+        ->and(Operation::query()->whereIn('kind', [TaskVmSlotPool::ReleaseKind, 'task_vm.resume'])->exists())->toBeFalse();
+
+    // tasks:publish pushed B; now the group completes and its parked VM goes as it is.
+    $origin['branch'] = [$b, $a];
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('takes the merged pull request\'s head for a deleted task branch, so a merged latest approval completes', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running);
+
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('refuses tasks:cancel while origin lacks the latest approval, admitting nothing, and admits a release with no push once it has it', function (): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    $origin = ['branch' => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished')
+        ->assertJsonPath('error.details.commit', $b);
+    expect(Operation::query()->exists())->toBeFalse()->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $origin['branch'] = [$b, $a];
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+
+    $cancel = Operation::query()->where('kind', 'tasks.cancel')->sole();
+    expect($cancel->input)->not->toHaveKey('push')->and($cancel->input['release']['intent']['slot']['name'])->toBe($slot->name)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('refuses the release of a resuming task VM, completes the group with the reason, and releases it once on retries after the resume', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    $resume = Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->assistance_reason)->toContain('task_vm.resume')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $resume->update(['status' => OperationStatus::Succeeded]);
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });

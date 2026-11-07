@@ -1,20 +1,31 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees the slot.
+  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees the slot. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
   %% status: draft
   %% command: tasks:cancel
   %% kind: tasks.cancel
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
+  %% lane GH icon=server pill=target tone=purple
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
   %% lane HUB icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
+  participant GH as GitHub<br/>repository
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
+  GW->>GH: Compare the task branch<br/>approved...task-42
+  %%> What it does:
+  %%> - resolves the group's latest approved commit: the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval
+  %%> - asks GitHub, read-only, whether origin's task branch reaches it; after GitHub deleted the branch of a merged pull request, that pull request's head stands in for it
+  %%> - skipped when the group has no approval, or holds no workspace and no task VM
+  GH-->>GW: Branch reaches it
+  %%> Result:
+  %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `tasks:publish` first, which resumes a parked VM
+  %%> - a GitHub read that fails refuses the same way
   Note over GW: Admit the release
   %%> Result:
-  %%> - approved work is pushed first, as today
+  %%> - the run carries only the release; it pushes nothing and never starts a parked VM
   GW->>SW: Start run, full intent<br/>operation-tasks-cancel
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
