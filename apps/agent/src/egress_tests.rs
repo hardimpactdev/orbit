@@ -272,6 +272,7 @@ fn lines_that_are_not_ipv4_questions_or_answers_are_ignored() {
 #[test]
 fn a_connection_line_gives_source_destination_protocol_and_port_whatever_the_prefix() {
     let wanted = Connection {
+        interface: Some("orbittask0".into()),
         frame: Frame::Source(MAC.into()),
         source: ip(VM_IP),
         destination: ip("140.82.121.4"),
@@ -399,6 +400,27 @@ fn host_files_and_leases_give_the_mac_name_and_address() {
     assert_eq!(identity.leases[&ip(VM_IP)], MAC);
 }
 
+#[test]
+fn the_agent_reads_orbits_own_dns_log_and_not_the_one_incus_truncates() {
+    let paths = Paths::for_network("orbittask0");
+    assert_eq!(
+        paths.dns_log,
+        Path::new("/var/log/orbit/dnsmasq-orbittask0.log")
+    );
+    assert_eq!(
+        paths.connection_log,
+        Path::new("/var/log/orbit/task-egress.log")
+    );
+    assert_eq!(
+        paths.hosts_dir,
+        Path::new("/var/lib/incus/networks/orbittask0/dnsmasq.hosts")
+    );
+    assert_eq!(
+        paths.leases,
+        Path::new("/var/lib/incus/networks/orbittask0/dnsmasq.leases")
+    );
+}
+
 // Serial map
 
 #[test]
@@ -469,10 +491,8 @@ fn a_rotated_log_with_a_new_inode_is_read_from_the_start() {
     world.append(&path, "old\n");
     tail.read(&path, MAX_READ).unwrap();
     std::fs::rename(&path, path.with_extension("log.1")).unwrap();
-    let gap = tail.read(&path, MAX_READ).unwrap_err();
-    assert_eq!(
-        gap.kind,
-        ErrorKind::NotFound,
+    assert!(
+        tail.read(&path, MAX_READ).unwrap().is_empty(),
         "the file is gone for a moment"
     );
     // The new file is longer than the old offset, so only the inode shows the rotation.
@@ -853,16 +873,87 @@ fn a_file_the_agent_cannot_open_is_not_available_and_changes_nothing() {
 }
 
 #[test]
-fn a_missing_source_means_no_fact_and_no_panic() {
+fn missing_identity_files_mean_no_fact_and_no_panic() {
     let world = World::new();
     let mut observer = world.observer();
-    std::fs::remove_file(&world.paths.dns_log).unwrap();
+    std::fs::remove_file(&world.paths.leases).unwrap();
     let problems = observer.observe(Instant::now(), STAMP);
     assert_eq!(
         problems,
-        [Unreadable::new(&world.paths.dns_log, ErrorKind::NotFound)]
+        [Unreadable::new(&world.paths.leases, ErrorKind::NotFound)]
     );
     assert_eq!(observer.facts().count(), 0);
+}
+
+#[test]
+fn logs_that_do_not_exist_yet_read_as_empty_and_are_read_from_their_start_once_they_appear() {
+    let world = World::new();
+    std::fs::remove_file(&world.paths.dns_log).unwrap();
+    std::fs::remove_file(&world.paths.connection_log).unwrap();
+    let mut observer = world.observer();
+    observe(&mut observer, STAMP);
+    assert!(rows(&data_of(&observer)).is_empty(), "no log is no problem");
+
+    // rsyslog and dnsmasq create their logs on the first line.
+    world.dns(&[
+        query(1, "registry.npmjs.org"),
+        reply(1, "registry.npmjs.org", "104.16.1.34"),
+    ]);
+    world.connections(&[connection(VM_IP, "104.16.1.34", "TCP", 443)]);
+    observe(&mut observer, STAMP);
+    let data = data_of(&observer);
+    assert_eq!(
+        row(&rows(&data), "registry.npmjs.org", Some(443))["sources"],
+        json!(["conn", "dns"])
+    );
+}
+
+#[test]
+fn only_a_mac_with_a_host_file_is_tracked_and_a_lease_alone_is_not() {
+    let world = World::new();
+    std::fs::write(
+        &world.paths.leases,
+        format!(
+            "{}{}",
+            lease(MAC, VM_IP, "beast-tvm-3"),
+            lease("10:66:6a:00:00:77", "10.251.78.77", "stray")
+        ),
+    )
+    .unwrap();
+    let mut observer = world.observer();
+    observe(&mut observer, STAMP);
+    assert_eq!(observer.vms.len(), 1);
+    assert!(!observer.vms.contains_key("10:66:6a:00:00:77"));
+    // Its connections find no VM, even by the MAC in the log line.
+    world.connections(&[from_mac(
+        "10:66:6a:00:00:77",
+        "10.251.78.77",
+        "140.82.121.9",
+        "TCP",
+        443,
+    )]);
+    observe(&mut observer, STAMP);
+    assert!(rows(&data_of(&observer)).is_empty());
+}
+
+#[test]
+fn a_connection_line_of_another_bridge_or_without_a_bridge_is_ignored() {
+    let world = World::new();
+    let mut observer = world.observer();
+    observe(&mut observer, STAMP);
+    let other =
+        connection(VM_IP, "140.82.121.6", "TCP", 443).replace("IN=orbittask0", "IN=orbittask1");
+    let none = connection(VM_IP, "140.82.121.7", "TCP", 443).replace("IN=orbittask0 ", "");
+    world.connections(&[other, none, connection(VM_IP, "140.82.121.8", "TCP", 443)]);
+    observe(&mut observer, STAMP);
+    let data = data_of(&observer);
+    let destinations: Vec<&str> = data["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["destination"].as_str().unwrap())
+        .collect();
+    assert_eq!(destinations, ["140.82.121.8"]);
 }
 
 #[test]
@@ -873,7 +964,7 @@ fn the_agent_complains_about_a_path_once_in_ten_minutes_without_content() {
         ErrorKind::PermissionDenied,
     );
     let other = Unreadable::new(
-        Path::new("/var/log/incus/dnsmasq.orbittask0.log"),
+        Path::new("/var/log/orbit/dnsmasq-orbittask0.log"),
         ErrorKind::NotFound,
     );
     assert_eq!(
@@ -898,13 +989,40 @@ fn outside(index: u32) -> Ipv4Addr {
     Ipv4Addr::from(0x0b00_0000 + index)
 }
 
+/// One VM and the budget it draws on.
+struct Lab {
+    shared: Shared,
+    vm: Vm,
+}
+
+impl Lab {
+    fn new() -> Self {
+        let mut shared = Shared::new(BUDGET);
+        let vm = Vm::new(&mut shared).unwrap();
+        Self { shared, vm }
+    }
+
+    fn answer(&mut self, name: &str, address: Ipv4Addr, at: Instant) {
+        self.vm.answer(&mut self.shared, name, address, at, STAMP);
+    }
+
+    fn connect(&mut self, address: Ipv4Addr, protocol: Proto, port: u16, at: Instant) {
+        self.vm
+            .connect(&mut self.shared, address, protocol, port, at, STAMP);
+    }
+
+    fn data(&self) -> Value {
+        self.vm.data("orbittask0", MAC)
+    }
+}
+
 #[test]
 fn a_row_lists_at_most_eight_addresses() {
-    let mut vm = Vm::default();
+    let (mut lab, now) = (Lab::new(), Instant::now());
     for index in 0..12 {
-        vm.answer("many.example.com", outside(index), STAMP);
+        lab.answer("many.example.com", outside(index), now);
     }
-    let data = vm.data("orbittask0", MAC);
+    let data = lab.data();
     let rows = rows(&data);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["addresses"].as_array().unwrap().len(), 8);
@@ -912,29 +1030,60 @@ fn a_row_lists_at_most_eight_addresses() {
 }
 
 #[test]
-fn a_vm_keeps_1500_rows_and_counts_the_rest_as_overflow() {
-    let mut vm = Vm::default();
+fn a_vm_keeps_1500_rows_and_counts_each_refused_row_once() {
+    let (mut lab, now) = (Lab::new(), Instant::now());
     for index in 0..1505 {
-        vm.connect(outside(index), Proto::Tcp, 443, STAMP);
+        lab.connect(outside(index), Proto::Tcp, 443, now);
     }
-    vm.connect(outside(0), Proto::Tcp, 443, "later");
-    let data = vm.data("orbittask0", MAC);
+    let data = lab.data();
     assert_eq!(rows(&data).len(), 1500);
     assert_eq!(data["overflow"], 5);
-    assert_eq!(rows(&data)[0]["first_seen"], STAMP);
+    // The same refused rows again, and a row that exists, change nothing.
+    for _ in 0..50 {
+        for index in 1495..1505 {
+            lab.connect(outside(index), Proto::Tcp, 443, now);
+        }
+    }
+    assert_eq!(lab.data(), data);
     assert_gateway_shape("beast-tvm-3", &data);
 }
 
 #[test]
+fn a_saturated_vm_does_not_change_its_fact_or_become_dirty_by_repeats() {
+    let (mut lab, now) = (Lab::new(), Instant::now());
+    for index in 0..1501 {
+        lab.connect(outside(index), Proto::Tcp, 443, now);
+    }
+    lab.vm.dirty = false;
+    let before = fact_digest(&lab.data());
+    for _ in 0..100 {
+        lab.connect(outside(1500), Proto::Tcp, 443, now);
+        lab.answer("refused.example.com", outside(9000), now);
+    }
+    // The first refused name counts once; then nothing moves.
+    assert!(lab.vm.dirty);
+    lab.vm.dirty = false;
+    let after = fact_digest(&lab.data());
+    assert_ne!(before, after);
+    for _ in 0..100 {
+        lab.connect(outside(1500), Proto::Tcp, 443, now);
+        lab.answer("refused.example.com", outside(9000), now);
+    }
+    assert!(!lab.vm.dirty);
+    assert_eq!(fact_digest(&lab.data()), after);
+    assert_eq!(lab.data()["overflow"], 2);
+}
+
+#[test]
 fn a_full_fact_of_the_longest_rows_stays_below_the_one_mebibyte_the_gateway_accepts() {
-    let mut vm = Vm::default();
+    let (mut lab, now) = (Lab::new(), Instant::now());
     for index in 0..1500 {
         let name = format!("{}{index:04}", "a".repeat(249));
         for address in 0..8 {
-            vm.answer(&name, outside(index * 8 + address), STAMP);
+            lab.answer(&name, outside(index * 8 + address), now);
         }
     }
-    let data = vm.data("orbittask0", MAC);
+    let data = lab.data();
     assert_eq!(rows(&data).len(), 1500);
     assert!(rows(&data)
         .iter()
@@ -948,39 +1097,192 @@ fn a_full_fact_of_the_longest_rows_stays_below_the_one_mebibyte_the_gateway_acce
 }
 
 #[test]
-fn a_vm_remembers_at_most_4096_name_and_address_pairs_and_eight_names_per_address() {
-    let mut vm = Vm::default();
-    for index in 0..5000 {
-        vm.learn(&format!("host-{index}.example.com"), outside(index));
+fn several_full_vms_stay_inside_the_byte_budget_and_give_it_back() {
+    let now = Instant::now();
+    let mut shared = Shared::new(BUDGET);
+    let mut vms: Vec<Vm> = (0..MAX_VMS)
+        .map(|_| Vm::new(&mut shared).unwrap())
+        .collect();
+    for (number, vm) in vms.iter_mut().enumerate() {
+        for index in 0..1500 {
+            let name = format!("{}{number:02}{index:04}", "a".repeat(247));
+            vm.answer(
+                &mut shared,
+                &name,
+                outside((number * 2000 + index) as u32),
+                now,
+                STAMP,
+            );
+        }
     }
-    assert_eq!(vm.learned.len(), MAX_RESOLVED);
+    assert!(shared.used <= BUDGET, "{} > {BUDGET}", shared.used);
+    assert!(
+        shared.used > BUDGET / 10 * 9,
+        "the budget is really reached: {}",
+        shared.used
+    );
+    // The accounted bytes are what the entries cost, so nothing leaks.
+    let pool: usize = shared
+        .pool
+        .iter()
+        .map(|name| name.len() + NAME_OVERHEAD)
+        .sum();
+    let held: usize = vms.iter().map(|vm| vm.bytes).sum();
+    assert_eq!(shared.used, pool + held);
+    for vm in &vms {
+        assert_eq!(
+            vm.bytes,
+            VM_BASE + vm.rows.len() * ROW_COST + vm.pairs * PAIR_COST
+        );
+    }
+    let refused: u64 = vms.iter().map(|vm| vm.overflow).sum();
+    assert!(refused > 0, "the budget refused rows and counted them");
+    assert!(vms.iter().map(|vm| vm.rows.len()).sum::<usize>() < MAX_VMS * 1500);
+
+    for vm in vms.drain(..) {
+        shared.release(vm.bytes);
+    }
+    shared.prune();
+    assert_eq!(shared.used, 0);
+    assert!(shared.pool.is_empty());
+}
+
+#[test]
+fn a_vm_remembers_at_most_1024_pairs_and_drops_the_oldest_answered() {
+    let (mut lab, start) = (Lab::new(), Instant::now());
+    for index in 0..1500u32 {
+        let name = lab
+            .shared
+            .intern(&format!("host-{index}.example.com"))
+            .unwrap();
+        lab.vm.learn(
+            &mut lab.shared,
+            &name,
+            outside(index),
+            start + Duration::from_secs(u64::from(index)),
+        );
+    }
+    assert_eq!(lab.vm.pairs, MAX_RESOLVED);
     assert_eq!(
-        vm.resolved.values().map(BTreeSet::len).sum::<usize>(),
+        lab.vm.resolved.values().map(Vec::len).sum::<usize>(),
         MAX_RESOLVED
     );
-    assert!(!vm.resolved.contains_key(&outside(0)));
-    assert!(vm.resolved.contains_key(&outside(4999)));
+    assert!(!lab.vm.resolved.contains_key(&outside(0)));
+    assert!(lab.vm.resolved.contains_key(&outside(1499)));
+}
 
-    let mut shared = Vm::default();
-    for index in 0..12 {
-        shared.learn(&format!("n{index}.example.com"), ip("104.16.1.34"));
+#[test]
+fn a_ninth_name_replaces_the_oldest_name_of_an_address() {
+    let (mut lab, start) = (Lab::new(), Instant::now());
+    let address = ip("104.16.1.34");
+    for index in 0..9u64 {
+        lab.answer(
+            &format!("n{index}.example.com"),
+            address,
+            start + Duration::from_secs(index),
+        );
     }
-    assert_eq!(
-        shared.resolved[&ip("104.16.1.34")].len(),
-        MAX_NAMES_PER_ADDRESS
+    let at = start + Duration::from_secs(10);
+    let mut names: Vec<String> = lab
+        .vm
+        .fresh_names(address, at)
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 8);
+    assert!(
+        names.contains(&"n8.example.com".to_owned()),
+        "the newest is kept"
     );
+    assert!(
+        !names.contains(&"n0.example.com".to_owned()),
+        "the oldest is gone"
+    );
+    // A repeated answer renews a name instead of adding one.
+    lab.answer("n1.example.com", address, start + Duration::from_secs(20));
+    lab.answer("n9.example.com", address, start + Duration::from_secs(21));
+    let names: Vec<String> = lab
+        .vm
+        .fresh_names(address, start + Duration::from_secs(22))
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
+    assert!(names.contains(&"n1.example.com".to_owned()));
+    assert!(!names.contains(&"n2.example.com".to_owned()));
+    assert_eq!(lab.vm.pairs, 8);
+}
+
+#[test]
+fn a_connection_takes_a_name_only_from_an_answer_of_the_last_30_minutes() {
+    let (mut lab, start) = (Lab::new(), Instant::now());
+    let address = ip("104.16.1.34");
+    lab.answer("registry.npmjs.org", address, start);
+    lab.connect(
+        address,
+        Proto::Tcp,
+        443,
+        start + Duration::from_secs(29 * 60),
+    );
+    lab.connect(
+        address,
+        Proto::Tcp,
+        80,
+        start + Duration::from_secs(31 * 60),
+    );
+    let data = lab.data();
+    let early = rows(&data);
+    assert_eq!(row(&early, "registry.npmjs.org", Some(443))["kind"], "name");
+    // The late connection finds no fresh name: it stays an address row.
+    assert_eq!(row(&early, "104.16.1.34", Some(80))["kind"], "address");
+
+    // A new answer makes the name fresh again.
+    lab.answer(
+        "registry.npmjs.org",
+        address,
+        start + Duration::from_secs(40 * 60),
+    );
+    lab.connect(
+        address,
+        Proto::Udp,
+        443,
+        start + Duration::from_secs(41 * 60),
+    );
+    let data = lab.data();
+    assert_eq!(
+        row(&rows(&data), "registry.npmjs.org", Some(443))["protocol"],
+        "tcp"
+    );
+    assert!(rows(&data)
+        .iter()
+        .any(|row| row["destination"] == "registry.npmjs.org" && row["protocol"] == "udp"));
+}
+
+#[test]
+fn an_expired_pair_is_forgotten_and_gives_its_bytes_back() {
+    let (mut lab, start) = (Lab::new(), Instant::now());
+    lab.answer("registry.npmjs.org", ip("104.16.1.34"), start);
+    let held = lab.vm.bytes;
+    lab.vm
+        .expire(&mut lab.shared, start + Duration::from_secs(29 * 60));
+    assert_eq!(lab.vm.pairs, 1);
+    lab.vm
+        .expire(&mut lab.shared, start + Duration::from_secs(30 * 60));
+    assert_eq!(lab.vm.pairs, 0);
+    assert_eq!(lab.vm.bytes, held - PAIR_COST);
 }
 
 #[test]
 fn rows_are_sorted_by_destination_numeric_port_and_protocol_whatever_the_order_seen() {
+    let now = Instant::now();
     let build = |order: &[(u16, Proto)]| {
-        let mut vm = Vm::default();
-        vm.answer("a.example.com", ip("93.184.216.34"), STAMP);
-        vm.connect(ip("9.9.9.9"), Proto::Tcp, 80, STAMP);
+        let mut lab = Lab::new();
+        lab.answer("a.example.com", ip("93.184.216.34"), now);
+        lab.connect(ip("9.9.9.9"), Proto::Tcp, 80, now);
         for (port, protocol) in order {
-            vm.connect(ip("93.184.216.34"), *protocol, *port, STAMP);
+            lab.connect(ip("93.184.216.34"), *protocol, *port, now);
         }
-        vm.data("orbittask0", MAC)
+        lab.data()
     };
     let forward = build(&[(80, Proto::Tcp), (80, Proto::Udp), (443, Proto::Tcp)]);
     let backward = build(&[(443, Proto::Tcp), (80, Proto::Udp), (80, Proto::Tcp)]);
@@ -1045,6 +1347,18 @@ fn step(runner: &mut Runner, world: &World, network: Option<&str>) -> Step {
     })
 }
 
+fn dirty(runner: &Runner) -> bool {
+    runner
+        .observer
+        .as_ref()
+        .unwrap()
+        .vms
+        .values()
+        .next()
+        .unwrap()
+        .dirty
+}
+
 #[test]
 fn without_egress_in_the_watch_list_the_runner_holds_no_state_and_starts_at_the_end_again() {
     let world = World::new();
@@ -1058,7 +1372,7 @@ fn without_egress_in_the_watch_list_the_runner_holds_no_state_and_starts_at_the_
     step(&mut runner, &world, Some("orbittask0"));
     let cleared = step(&mut runner, &world, None);
     assert!(!runner.active());
-    assert!(runner.observer.is_none() && runner.gates.is_empty());
+    assert!(runner.observer.is_none());
     assert!(cleared.facts.is_empty() && cleared.known.is_empty());
 
     let back = step(&mut runner, &world, Some("orbittask0"));
@@ -1078,32 +1392,38 @@ fn another_bridge_starts_a_new_observer() {
 }
 
 #[test]
-fn a_new_vm_is_reported_at_once_a_change_after_three_ticks_and_an_unchanged_fact_every_twelve() {
+fn a_new_vm_is_reported_at_once_a_change_after_three_ticks_and_an_unchanged_fact_only_at_the_resync(
+) {
     assert_eq!(DEBOUNCE_TICKS, 3);
+    assert_eq!(RESYNC_TICKS, 121);
     let world = World::new();
     let mut runner = Runner::default();
     assert_eq!(step(&mut runner, &world, Some("orbittask0")).facts.len(), 1);
     assert!(step(&mut runner, &world, Some("orbittask0"))
         .facts
         .is_empty());
+    assert!(!dirty(&runner), "an unchanged VM is not built again");
 
     world.connections(&[connection(VM_IP, "140.82.121.4", "TCP", 443)]);
     assert!(step(&mut runner, &world, Some("orbittask0"))
         .facts
         .is_empty());
+    assert!(dirty(&runner));
     let sent = step(&mut runner, &world, Some("orbittask0"));
     assert_eq!(sent.facts.len(), 1);
     assert_eq!(rows(&sent.facts[0].1).len(), 1);
+    assert!(!dirty(&runner));
 
+    // However long the Gateway took to answer, nothing is offered again before the resync.
     let mut quiet = 0;
     let again = loop {
         quiet += 1;
         let next = step(&mut runner, &world, Some("orbittask0"));
-        if !next.facts.is_empty() || quiet > 20 {
+        if !next.facts.is_empty() || quiet > 200 {
             break next;
         }
     };
-    assert_eq!(quiet, OFFER_TICKS);
+    assert_eq!(quiet, RESYNC_TICKS);
     assert_eq!(again.facts.len(), 1);
 }
 
@@ -1121,11 +1441,35 @@ fn a_busy_vm_is_sent_at_most_once_in_three_ticks() {
 }
 
 #[test]
+fn at_most_four_facts_are_built_per_tick_and_the_rest_follow() {
+    let world = World::new();
+    let hosts: Vec<String> = (0..6)
+        .map(|index| format!("10:66:6a:00:00:{index:02x},vm-{index}"))
+        .collect();
+    for (index, host) in hosts.iter().enumerate() {
+        std::fs::write(
+            world.paths.hosts_dir.join(format!("p_vm-{index}.eth0")),
+            host,
+        )
+        .unwrap();
+    }
+    let mut observer = world.observer();
+    observe(&mut observer, STAMP);
+    let first = observer.due(MAX_SENDS);
+    assert_eq!(first.len(), 4);
+    assert_eq!(observer.due(MAX_SENDS).len(), 3);
+    assert!(observer.due(MAX_SENDS).is_empty());
+    let mut names: Vec<String> = first.into_iter().map(|(name, _)| name).collect();
+    names.sort();
+    assert_eq!(names.len(), 4);
+}
+
+#[test]
 fn a_source_that_is_not_available_sends_no_fact_but_keeps_the_vm_known() {
     let world = World::new();
     let mut runner = Runner::default();
     assert_eq!(step(&mut runner, &world, Some("orbittask0")).facts.len(), 1);
-    std::fs::remove_file(&world.paths.connection_log).unwrap();
+    std::fs::remove_file(&world.paths.leases).unwrap();
     let missing = step(&mut runner, &world, Some("orbittask0"));
     assert!(missing.facts.is_empty());
     assert_eq!(missing.known, BTreeSet::from(["beast-tvm-3".to_owned()]));

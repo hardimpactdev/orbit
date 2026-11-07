@@ -724,8 +724,16 @@ async fn report_facts(
                         Ok((runner, step)) => {
                             egress = runner;
                             reporter.retain("egress", |subject| step.known.contains(subject));
-                            for (name, data) in &step.facts {
-                                reporter.report("egress", Some(name), data).await;
+                            // A failed report stops the sending: the rest wait for the retry timer, so a Gateway
+                            // that does not answer holds this loop for one request, not for every fact.
+                            let mut waiting = step.facts.into_iter();
+                            while let Some((name, data)) = waiting.next() {
+                                reporter.report("egress", Some(&name), &data).await;
+                                if reporter.has_failed() {
+                                    for (name, data) in waiting.by_ref() {
+                                        reporter.defer("egress", Some(&name), data);
+                                    }
+                                }
                             }
                         }
                         Err(error) => {

@@ -8,15 +8,23 @@
 //!
 //! The agent runs as root without capabilities, so it reads only files that it owns or that others may read. A file it
 //! cannot open is "not available": the agent keeps its state, reports no fact and complains once in 10 minutes per path.
+//!
+//! Memory is bounded for the agent's `MemoryMax=128M`. All VMs share one byte [`BUDGET`] for rows, name and address
+//! pairs and interned names. Every name is stored once and shared by the pairs and rows that use it. A row the budget or
+//! the row cap refuses is counted once in `overflow`. The DNS question map adds at most 8192 entries of a few hundred
+//! bytes, and at most [`MAX_SENDS`] facts are built per tick.
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs::File;
+use std::hash::{Hash, Hasher};
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::net::Ipv4Addr;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// The most a log is read per tick. A line longer than this is skipped.
@@ -25,16 +33,20 @@ const MAX_READ: u64 = 4 << 20;
 const SERIAL_CAP: usize = 8192;
 /// A query is forgotten this long after the agent read it.
 const SERIAL_TTL: Duration = Duration::from_secs(120);
-/// Rows kept per VM; a row beyond this is counted in `overflow`. At the longest destination and 8 addresses a row is
-/// about 600 bytes, so a full fact stays below 1 MiB, which the Gateway refuses above.
+/// Rows kept per VM. At the longest destination and 8 addresses a row is about 600 bytes, so a full fact stays below
+/// 1 MiB, which the Gateway refuses above.
 const MAX_ROWS: usize = 1500;
 /// Addresses listed on one row.
 const MAX_ADDRESSES: usize = 8;
-/// Name and address pairs remembered per VM; the oldest is dropped beyond this.
-const MAX_RESOLVED: usize = 4096;
-/// Names remembered per address.
+/// Name and address pairs remembered per VM; the oldest answered is dropped beyond this.
+const MAX_RESOLVED: usize = 1024;
+/// Names remembered per address; a new name replaces the oldest answered.
 const MAX_NAMES_PER_ADDRESS: usize = 8;
-/// VMs tracked; the VMs the agent saw first are not tracked beyond this.
+/// A connection takes the name of an answer only for this long after the answer.
+const CREDIT_TTL: Duration = Duration::from_secs(30 * 60);
+/// Distinct refused rows counted per VM.
+const MAX_REFUSED: usize = 1024;
+/// VMs tracked.
 const MAX_VMS: usize = 64;
 /// Longest DNS name, in bytes.
 const MAX_NAME: usize = 253;
@@ -44,11 +56,21 @@ const MAX_IDENTITY_BYTES: u64 = 1 << 20;
 /// The agent complains about one path at most this often.
 const COMPLAIN_EVERY: Duration = Duration::from_secs(600);
 const MAX_COMPLAINTS: usize = 64;
+/// Bytes all VMs may account together. The costs below are generous estimates of what each entry holds.
+const BUDGET: usize = 32 << 20;
+const NAME_OVERHEAD: usize = 64;
+const ROW_COST: usize = 512;
+const PAIR_COST: usize = 96;
+const VM_BASE: usize = 24 << 10;
+/// Facts built and handed to the reporter per tick; the rest follow on later ticks.
+pub const MAX_SENDS: usize = 4;
 /// A changed fact waits at most this many ticks after the last one it sent (15 s at a 5 s tick).
 pub const DEBOUNCE_TICKS: u32 =
     (crate::facts::EGRESS_DEBOUNCE.as_secs() / crate::facts::EGRESS_INTERVAL.as_secs()) as u32;
-/// An unchanged fact is offered to the reporter this often (60 s), which resends it at its own resync interval.
-const OFFER_TICKS: u32 = 12;
+/// An unchanged fact is offered to the reporter after the reporter's resync interval (10 minutes), plus one tick so
+/// that the reporter's own clock agrees.
+pub const RESYNC_TICKS: u32 =
+    (crate::facts::RESYNC_INTERVAL.as_secs() / crate::facts::EGRESS_INTERVAL.as_secs()) as u32 + 1;
 /// Public resolvers that answer DNS over HTTPS on port 443.
 const DOH_RESOLVERS: [Ipv4Addr; 10] = [
     Ipv4Addr::new(1, 1, 1, 1),
@@ -92,7 +114,9 @@ impl Paths {
     pub fn under(root: &Path, network: &str) -> Self {
         let networks = root.join("var/lib/incus/networks").join(network);
         Self {
-            dns_log: root.join(format!("var/log/incus/dnsmasq.{network}.log")),
+            // Orbit's own file, which the host part creates. Incus keeps its dnsmasq output in another file
+            // and truncates it at every dnsmasq start.
+            dns_log: root.join(format!("var/log/orbit/dnsmasq-{network}.log")),
             connection_log: root.join("var/log/orbit/task-egress.log"),
             hosts_dir: networks.join("dnsmasq.hosts"),
             leases: networks.join("dnsmasq.leases"),
@@ -194,7 +218,7 @@ pub fn parse_dns_line(line: &str) -> Option<DnsLine> {
 }
 
 /// The transport of a logged connection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Proto {
     Tcp,
     Udp,
@@ -223,6 +247,8 @@ pub enum Frame {
 /// One new outbound connection from the kernel's log.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Connection {
+    /// The `IN=` interface: the bridge the packet came in on.
+    pub interface: Option<String>,
     pub frame: Frame,
     pub source: Ipv4Addr,
     pub destination: Ipv4Addr,
@@ -238,14 +264,15 @@ fn source_mac(field: &str) -> Frame {
     }
 }
 
-/// Parses a line with `orbit-egress ` and the kernel fields `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`. Fields are
-/// found by name, so any timestamp, host or `kernel:` prefix is fine. Only TCP and UDP count.
+/// Parses a line with `orbit-egress ` and the kernel fields `IN=`, `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`. Fields
+/// are found by name, so any timestamp, host or `kernel:` prefix is fine. Only TCP and UDP count.
 pub fn parse_connection_line(line: &str) -> Option<Connection> {
     let (_, fields) = line.split_once("orbit-egress ")?;
-    let (mut frame, mut source, mut destination, mut protocol, mut port) =
-        (None, None, None, None, None);
+    let (mut interface, mut frame, mut source, mut destination, mut protocol, mut port) =
+        (None, None, None, None, None, None);
     for token in fields.split_whitespace() {
         match token.split_once('=') {
+            Some(("IN", value)) if interface.is_none() => interface = Some(value.to_owned()),
             Some(("MAC", value)) if frame.is_none() => frame = Some(source_mac(value)),
             Some(("SRC", value)) if source.is_none() => source = value.parse().ok(),
             Some(("DST", value)) if destination.is_none() => destination = value.parse().ok(),
@@ -261,6 +288,7 @@ pub fn parse_connection_line(line: &str) -> Option<Connection> {
         }
     }
     Some(Connection {
+        interface,
         frame: frame.unwrap_or(Frame::Absent),
         source: source?,
         destination: destination?,
@@ -321,9 +349,10 @@ pub fn parse_lease_line(line: &str) -> Option<(String, Ipv4Addr)> {
 /// Who is who on the bridge, from Incus' own files.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Identity {
-    /// VM name by MAC, from the host files. The lease and DHCP host name are not trusted for this.
+    /// VM name by MAC, from the host files. The agent tracks exactly these MACs. The lease and DHCP host name are not
+    /// trusted for the name.
     names: BTreeMap<String, String>,
-    /// MAC by address, from the leases.
+    /// MAC by address, from the leases. Only used to find the MAC of an address.
     leases: BTreeMap<Ipv4Addr, String>,
 }
 
@@ -338,15 +367,6 @@ impl Identity {
                 .map(|(mac, address)| (address, mac))
                 .collect(),
         }
-    }
-
-    /// Every MAC a host file or a lease names.
-    fn macs(&self) -> BTreeSet<&str> {
-        self.names
-            .keys()
-            .chain(self.leases.values())
-            .map(String::as_str)
-            .collect()
     }
 }
 
@@ -380,29 +400,43 @@ fn read_identity(paths: &Paths) -> Result<Identity, Unreadable> {
 /// Follows a growing log from a remembered offset.
 #[derive(Debug, Default)]
 struct Tail {
-    /// The inode and offset after the last complete line read. None until the agent first sees the file.
+    /// Whether the agent has looked for the file before.
+    looked: bool,
+    /// The inode and offset after the last complete line read. None until the agent has read the file.
     at: Option<(u64, u64)>,
 }
 
 impl Tail {
-    /// The complete new lines of `path`. The first sight of a file starts at its end. A file that shrank or changed
-    /// inode is read from the start. At most `limit` bytes are read. An error when the file cannot be opened or read.
+    /// The complete new lines of `path`. A file that is there when the agent first looks starts at its end. A file that
+    /// appears later starts at its start. A file that does not exist reads as empty: rsyslog and dnsmasq create their
+    /// logs on the first line. A file that shrank or changed inode is read from the start. At most `limit` bytes are
+    /// read. An error when the file exists but cannot be opened or read.
     fn read(&mut self, path: &Path, limit: u64) -> Result<Vec<String>, Unreadable> {
         let problem = |error: std::io::Error| Unreadable::new(path, error.kind());
-        let mut file = File::open(path).map_err(problem)?;
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                self.looked = true;
+                return Ok(Vec::new());
+            }
+            Err(error) => return Err(problem(error)),
+        };
         let metadata = file.metadata().map_err(problem)?;
         if !metadata.is_file() {
             return Err(Unreadable::new(path, ErrorKind::InvalidInput));
         }
         let (inode, length) = (metadata.ino(), metadata.len());
         let start = match self.at {
-            None => {
+            None if !self.looked => {
+                self.looked = true;
                 self.at = Some((inode, length));
                 return Ok(Vec::new());
             }
+            None => 0,
             Some((known, offset)) if known == inode && offset <= length => offset,
             Some(_) => 0,
         };
+        self.looked = true;
         if start == length {
             self.at = Some((inode, start));
             return Ok(Vec::new());
@@ -483,6 +517,62 @@ impl Serials {
     }
 }
 
+/// The byte budget all VMs share, and the pool that stores each name once.
+struct Shared {
+    pool: HashSet<Arc<str>>,
+    used: usize,
+    limit: usize,
+}
+
+impl Shared {
+    fn new(limit: usize) -> Self {
+        Self {
+            pool: HashSet::new(),
+            used: 0,
+            limit,
+        }
+    }
+
+    /// Accounts `bytes`, or refuses when that would pass the budget.
+    fn charge(&mut self, bytes: usize) -> bool {
+        if self.used + bytes > self.limit {
+            return false;
+        }
+        self.used += bytes;
+        true
+    }
+
+    fn release(&mut self, bytes: usize) {
+        self.used = self.used.saturating_sub(bytes);
+    }
+
+    /// The one stored copy of `name`, or None when the budget cannot hold a new one.
+    fn intern(&mut self, name: &str) -> Option<Arc<str>> {
+        if let Some(stored) = self.pool.get(name) {
+            return Some(stored.clone());
+        }
+        if !self.charge(name.len() + NAME_OVERHEAD) {
+            return None;
+        }
+        let stored: Arc<str> = Arc::from(name);
+        self.pool.insert(stored.clone());
+        Some(stored)
+    }
+
+    /// Drops the names that no row or pair uses any more.
+    fn prune(&mut self) {
+        let mut freed = 0;
+        self.pool.retain(|name| {
+            let used = Arc::strong_count(name) > 1;
+            if !used {
+                freed += name.len() + NAME_OVERHEAD;
+            }
+            used
+        });
+        self.release(freed);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Kind {
     Address,
@@ -505,7 +595,7 @@ enum Flag {
 }
 
 /// The identity of a row: destination, port (0 for none) and protocol.
-type RowKey = (String, u16, Option<Proto>);
+type RowKey = (Arc<str>, u16, Option<Proto>);
 
 struct Row {
     kind: Kind,
@@ -518,7 +608,7 @@ struct Row {
 impl Row {
     fn json(&self, key: &RowKey) -> Value {
         json!({
-            "destination": key.0,
+            "destination": &*key.0,
             "kind": if self.kind == Kind::Name { "name" } else { "address" },
             "port": (key.1 != 0).then_some(key.1),
             "protocol": key.2.map(Proto::as_str),
@@ -537,19 +627,75 @@ impl Row {
     }
 }
 
+/// A name a VM resolved to an address, and when it last got that answer.
+struct Pair {
+    name: Arc<str>,
+    at: Instant,
+}
+
+fn key_hash(destination: &str, port: u16, protocol: Option<Proto>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    destination.hash(&mut hasher);
+    port.hash(&mut hasher);
+    protocol.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fact_digest(data: &Value) -> String {
+    format!("{:x}", Sha256::digest(data.to_string().as_bytes()))
+}
+
 /// What the agent knows about one VM.
-#[derive(Default)]
 struct Vm {
-    /// Names this VM resolved to an address, and the order they were learned in, for dropping the oldest.
-    resolved: BTreeMap<Ipv4Addr, BTreeSet<String>>,
-    learned: VecDeque<(Ipv4Addr, String)>,
+    /// Names this VM resolved to an address, with the time of the last answer.
+    resolved: BTreeMap<Ipv4Addr, Vec<Pair>>,
+    pairs: usize,
     rows: BTreeMap<RowKey, Row>,
+    /// Rows refused, counted once each. `refused` holds the hashes of the distinct refused rows.
     overflow: u64,
+    refused: HashSet<u64>,
+    /// Bytes this VM accounts in the [`Shared`] budget.
+    bytes: usize,
+    /// Whether the fact may differ from the one last handed to the reporter.
+    dirty: bool,
+    /// The digest of the fact last handed to the reporter, and the name it went out under.
+    digest: Option<String>,
+    reported_as: Option<String>,
+    /// Ticks since then.
+    ticks: u32,
 }
 
 impl Vm {
+    /// A new VM, or None when the budget cannot hold even its base.
+    fn new(shared: &mut Shared) -> Option<Self> {
+        shared.charge(VM_BASE).then(|| Self {
+            resolved: BTreeMap::new(),
+            pairs: 0,
+            rows: BTreeMap::new(),
+            overflow: 0,
+            refused: HashSet::new(),
+            bytes: VM_BASE,
+            dirty: true,
+            digest: None,
+            reported_as: None,
+            ticks: 0,
+        })
+    }
+
+    /// Counts a refused row once, however often it comes again.
+    fn refuse(&mut self, destination: &str, port: u16, protocol: Option<Proto>) {
+        if self.refused.len() < MAX_REFUSED
+            && self.refused.insert(key_hash(destination, port, protocol))
+        {
+            self.overflow += 1;
+            self.dirty = true;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn upsert(
         &mut self,
+        shared: &mut Shared,
         key: RowKey,
         kind: Kind,
         address: Ipv4Addr,
@@ -558,12 +704,18 @@ impl Vm {
         stamp: &str,
     ) {
         if let Some(row) = self.rows.get_mut(&key) {
+            let before = (row.addresses.len(), row.sources.len(), row.flags.len());
             if row.addresses.len() < MAX_ADDRESSES {
                 row.addresses.insert(address);
             }
             row.sources.extend(sources);
             row.flags.extend(flags);
-        } else if self.rows.len() < MAX_ROWS {
+            if before != (row.addresses.len(), row.sources.len(), row.flags.len()) {
+                self.dirty = true;
+            }
+        } else if self.rows.len() < MAX_ROWS && shared.charge(ROW_COST) {
+            self.bytes += ROW_COST;
+            self.dirty = true;
             self.rows.insert(
                 key,
                 Row {
@@ -575,39 +727,123 @@ impl Vm {
                 },
             );
         } else {
-            self.overflow += 1;
+            self.refuse(&key.0, key.1, key.2);
         }
     }
 
-    /// Remembers that the VM resolved `name` to `address`, and drops the oldest pair beyond [`MAX_RESOLVED`].
-    fn learn(&mut self, name: &str, address: Ipv4Addr) {
-        let names = self.resolved.entry(address).or_default();
-        if names.contains(name) || names.len() >= MAX_NAMES_PER_ADDRESS {
-            return;
+    /// Drops the oldest answered pair of this VM.
+    fn evict_oldest(&mut self, shared: &mut Shared) {
+        let oldest = self
+            .resolved
+            .iter()
+            .flat_map(|(address, pairs)| {
+                pairs
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, pair)| (pair.at, *address, index))
+            })
+            .min_by_key(|(at, _, _)| *at);
+        if let Some((_, address, index)) = oldest {
+            self.remove_pair(shared, address, index);
         }
-        names.insert(name.to_owned());
-        self.learned.push_back((address, name.to_owned()));
-        while self.learned.len() > MAX_RESOLVED {
-            let Some((old, name)) = self.learned.pop_front() else {
-                break;
-            };
-            if let Some(names) = self.resolved.get_mut(&old) {
-                names.remove(&name);
-                if names.is_empty() {
-                    self.resolved.remove(&old);
+    }
+
+    fn remove_pair(&mut self, shared: &mut Shared, address: Ipv4Addr, index: usize) {
+        if let Some(pairs) = self.resolved.get_mut(&address) {
+            pairs.remove(index);
+            if pairs.is_empty() {
+                self.resolved.remove(&address);
+            }
+            self.pairs -= 1;
+            self.bytes -= PAIR_COST;
+            shared.release(PAIR_COST);
+        }
+    }
+
+    /// Remembers that the VM got `name` as an answer for `address` now. A name already known only gets a new time.
+    /// A ninth name of an address replaces the oldest answered one.
+    fn learn(&mut self, shared: &mut Shared, name: &Arc<str>, address: Ipv4Addr, now: Instant) {
+        if let Some(pairs) = self.resolved.get_mut(&address) {
+            if let Some(pair) = pairs.iter_mut().find(|pair| pair.name == *name) {
+                pair.at = now;
+                return;
+            }
+            if pairs.len() >= MAX_NAMES_PER_ADDRESS {
+                if let Some(oldest) = pairs.iter_mut().min_by_key(|pair| pair.at) {
+                    *oldest = Pair {
+                        name: name.clone(),
+                        at: now,
+                    };
                 }
+                return;
             }
         }
+        if !shared.charge(PAIR_COST) {
+            return;
+        }
+        self.bytes += PAIR_COST;
+        self.pairs += 1;
+        self.resolved.entry(address).or_default().push(Pair {
+            name: name.clone(),
+            at: now,
+        });
+        if self.pairs > MAX_RESOLVED {
+            self.evict_oldest(shared);
+        }
     }
 
-    /// The VM resolved `name` to `address`.
-    fn answer(&mut self, name: &str, address: Ipv4Addr, stamp: &str) {
+    /// Forgets the pairs whose answer is older than [`CREDIT_TTL`].
+    fn expire(&mut self, shared: &mut Shared, now: Instant) {
+        let stale: Vec<(Ipv4Addr, usize)> = self
+            .resolved
+            .iter()
+            .flat_map(|(address, pairs)| {
+                pairs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, pair)| now.saturating_duration_since(pair.at) >= CREDIT_TTL)
+                    .map(move |(index, _)| (*address, index))
+            })
+            .collect();
+        // From the back, so earlier indexes stay valid.
+        for (address, index) in stale.into_iter().rev() {
+            self.remove_pair(shared, address, index);
+        }
+    }
+
+    /// The names the VM got for `address` in the last [`CREDIT_TTL`].
+    fn fresh_names(&self, address: Ipv4Addr, now: Instant) -> Vec<Arc<str>> {
+        self.resolved
+            .get(&address)
+            .map(|pairs| {
+                pairs
+                    .iter()
+                    .filter(|pair| now.saturating_duration_since(pair.at) < CREDIT_TTL)
+                    .map(|pair| pair.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The VM got `name` as an answer for `address`.
+    fn answer(
+        &mut self,
+        shared: &mut Shared,
+        name: &str,
+        address: Ipv4Addr,
+        now: Instant,
+        stamp: &str,
+    ) {
         if !is_outside(address) {
             return;
         }
-        self.learn(name, address);
+        let Some(name) = shared.intern(name) else {
+            return self.refuse(name, 0, None);
+        };
+        self.learn(shared, &name, address, now);
         self.upsert(
-            (name.to_owned(), 0, None),
+            shared,
+            (name, 0, None),
             Kind::Name,
             address,
             &[Source::Dns],
@@ -617,7 +853,15 @@ impl Vm {
     }
 
     /// The VM opened a connection to `address`.
-    fn connect(&mut self, address: Ipv4Addr, protocol: Proto, port: u16, stamp: &str) {
+    fn connect(
+        &mut self,
+        shared: &mut Shared,
+        address: Ipv4Addr,
+        protocol: Proto,
+        port: u16,
+        now: Instant,
+        stamp: &str,
+    ) {
         let mut flags = Vec::new();
         match port {
             53 => flags.push(Flag::Dns),
@@ -625,14 +869,15 @@ impl Vm {
             443 if DOH_RESOLVERS.contains(&address) => flags.push(Flag::Doh),
             _ => {}
         }
-        let names: Vec<String> = self
-            .resolved
-            .get(&address)
-            .map(|names| names.iter().cloned().collect())
-            .unwrap_or_default();
+        let names = self.fresh_names(address, now);
         if names.is_empty() {
+            let text = address.to_string();
+            let Some(destination) = shared.intern(&text) else {
+                return self.refuse(&text, port, Some(protocol));
+            };
             self.upsert(
-                (address.to_string(), port, Some(protocol)),
+                shared,
+                (destination, port, Some(protocol)),
                 Kind::Address,
                 address,
                 &[Source::Conn],
@@ -642,6 +887,7 @@ impl Vm {
         }
         for name in names {
             self.upsert(
+                shared,
                 (name, port, Some(protocol)),
                 Kind::Name,
                 address,
@@ -658,13 +904,13 @@ impl Vm {
             .rows
             .keys()
             .filter(|key| key.1 != 0)
-            .map(|key| key.0.as_str())
+            .map(|key| &*key.0)
             .collect();
         // A name the VM connected to is told by its connection rows, so its DNS-only row is left out.
         let rows: Vec<Value> = self
             .rows
             .iter()
-            .filter(|(key, _)| key.1 != 0 || !connected.contains(key.0.as_str()))
+            .filter(|(key, _)| key.1 != 0 || !connected.contains(&*key.0))
             .map(|(key, row)| row.json(key))
             .collect();
         json!({"network": network, "mac": mac, "rows": rows, "overflow": self.overflow})
@@ -679,8 +925,9 @@ pub struct Observer {
     connections: Tail,
     serials: Serials,
     identity: Identity,
+    shared: Shared,
     vms: BTreeMap<String, Vm>,
-    /// When the agent first saw each MAC the files name; the newest [`MAX_VMS`] are tracked.
+    /// When the agent first saw each MAC the host files name; with more than [`MAX_VMS`] it tracks the newest.
     first_seen: BTreeMap<String, u64>,
     next_seen: u64,
     /// Whether the last read could open all the sources. Without it the observer reports no fact.
@@ -693,6 +940,10 @@ impl Observer {
     }
 
     pub fn with_paths(network: &str, paths: Paths) -> Self {
+        Self::with_budget(network, paths, BUDGET)
+    }
+
+    fn with_budget(network: &str, paths: Paths, budget: usize) -> Self {
         Self {
             network: network.to_owned(),
             paths,
@@ -700,6 +951,7 @@ impl Observer {
             connections: Tail::default(),
             serials: Serials::default(),
             identity: Identity::default(),
+            shared: Shared::new(budget),
             vms: BTreeMap::new(),
             first_seen: BTreeMap::new(),
             next_seen: 0,
@@ -730,15 +982,19 @@ impl Observer {
         match self.connections.read(&self.paths.connection_log, MAX_READ) {
             Ok(lines) => lines
                 .iter()
-                .for_each(|line| self.apply_connection(line, stamp)),
+                .for_each(|line| self.apply_connection(line, now, stamp)),
             Err(problem) => return vec![problem],
         }
+        for vm in self.vms.values_mut() {
+            vm.expire(&mut self.shared, now);
+        }
+        self.shared.prune();
         self.available = true;
         Vec::new()
     }
 
     fn apply_identity(&mut self, identity: Identity) {
-        let known = identity.macs();
+        let known: BTreeSet<&str> = identity.names.keys().map(String::as_str).collect();
         self.first_seen
             .retain(|mac, _| known.contains(mac.as_str()));
         for mac in &known {
@@ -754,9 +1010,23 @@ impl Observer {
             .take(MAX_VMS)
             .map(|(mac, _)| mac.clone())
             .collect();
-        self.vms.retain(|mac, _| tracked.contains(mac));
+        let gone: Vec<String> = self
+            .vms
+            .keys()
+            .filter(|mac| !tracked.contains(*mac))
+            .cloned()
+            .collect();
+        for mac in gone {
+            if let Some(vm) = self.vms.remove(&mac) {
+                self.shared.release(vm.bytes);
+            }
+        }
         for mac in tracked {
-            self.vms.entry(mac).or_default();
+            if !self.vms.contains_key(&mac) {
+                if let Some(vm) = Vm::new(&mut self.shared) {
+                    self.vms.insert(mac, vm);
+                }
+            }
         }
         self.identity = identity;
     }
@@ -779,18 +1049,21 @@ impl Observer {
                     .get(&client)
                     .and_then(|mac| self.vms.get_mut(mac))
                 {
-                    vm.answer(&name, address, stamp);
+                    vm.answer(&mut self.shared, &name, address, now, stamp);
                 }
             }
             None => {}
         }
     }
 
-    fn apply_connection(&mut self, line: &str, stamp: &str) {
+    fn apply_connection(&mut self, line: &str, now: Instant, stamp: &str) {
         let Some(connection) = parse_connection_line(line) else {
             return;
         };
-        if !is_outside(connection.destination) {
+        // Only this bridge's lines count; the host may log other bridges into the same file.
+        if connection.interface.as_deref() != Some(self.network.as_str())
+            || !is_outside(connection.destination)
+        {
             return;
         }
         // The Ethernet source in the log line is the VM; the address and lease are the fallback without it.
@@ -801,15 +1074,17 @@ impl Observer {
         };
         if let Some(vm) = mac.and_then(|mac| self.vms.get_mut(mac)) {
             vm.connect(
+                &mut self.shared,
                 connection.destination,
                 connection.protocol,
                 connection.port,
+                now,
                 stamp,
             );
         }
     }
 
-    /// The names of the tracked VMs that a host file names.
+    /// The names of the tracked VMs.
     pub fn known(&self) -> BTreeSet<String> {
         self.vms
             .keys()
@@ -817,7 +1092,7 @@ impl Observer {
             .collect()
     }
 
-    /// The fact data of each tracked VM that a host file names, by VM name. Empty while a source is unavailable.
+    /// The fact data of each tracked VM, by VM name. Empty while a source is unavailable.
     pub fn facts(&self) -> impl Iterator<Item = (String, Value)> + '_ {
         self.vms
             .iter()
@@ -826,6 +1101,38 @@ impl Observer {
                 let name = self.identity.names.get(mac)?;
                 Some((name.clone(), vm.data(&self.network, mac)))
             })
+    }
+
+    /// Counts a tick and builds the facts that are due, at most `limit` of them: a VM not reported yet, one whose fact
+    /// changed at least [`DEBOUNCE_TICKS`] ago, and one not reported for [`RESYNC_TICKS`]. A VM that did not change
+    /// is not built at all. A VM beyond `limit` stays due for the next tick.
+    pub fn due(&mut self, limit: usize) -> Vec<(String, Value)> {
+        let mut due = Vec::new();
+        for (mac, vm) in self.vms.iter_mut() {
+            vm.ticks = vm.ticks.saturating_add(1);
+            if !self.available || due.len() >= limit {
+                continue;
+            }
+            let Some(name) = self.identity.names.get(mac) else {
+                continue;
+            };
+            let new = vm.digest.is_none() || vm.reported_as.as_deref() != Some(name.as_str());
+            let resync = vm.ticks >= RESYNC_TICKS;
+            let changed = vm.dirty && vm.ticks >= DEBOUNCE_TICKS;
+            if !(new || resync || changed) {
+                continue;
+            }
+            let data = vm.data(&self.network, mac);
+            let digest = fact_digest(&data);
+            vm.dirty = false;
+            if new || resync || vm.digest.as_deref() != Some(digest.as_str()) {
+                vm.digest = Some(digest);
+                vm.reported_as = Some(name.clone());
+                vm.ticks = 0;
+                due.push((name.clone(), data));
+            }
+        }
+        due
     }
 }
 
@@ -836,18 +1143,10 @@ pub struct Step {
     pub known: BTreeSet<String>,
 }
 
-struct Gate {
-    digest: String,
-    /// Ticks since this VM's fact was last handed to the reporter.
-    ticks: u32,
-}
-
-/// The lifecycle of the observer: it exists while the watch list names a bridge, and decides which facts go to the
-/// reporter on each tick.
+/// The lifecycle of the observer: it exists while the watch list names a bridge.
 #[derive(Default)]
 pub struct Runner {
     observer: Option<Observer>,
-    gates: BTreeMap<String, Gate>,
     complaints: Complaints,
 }
 
@@ -875,7 +1174,6 @@ impl Runner {
         };
         if self.observer.as_ref().map(Observer::network) != Some(network) {
             self.observer = Some(make(network));
-            self.gates.clear();
         }
         let Some(observer) = self.observer.as_mut() else {
             return Step::default();
@@ -885,24 +1183,10 @@ impl Runner {
                 eprintln!("{line}");
             }
         }
-        let known = observer.known();
-        self.gates.retain(|name, _| known.contains(name));
-        let mut facts = Vec::new();
-        for (name, data) in observer.facts() {
-            let digest = format!("{:x}", Sha256::digest(data.to_string().as_bytes()));
-            let gate = self.gates.entry(name.clone()).or_insert(Gate {
-                digest: String::new(),
-                ticks: u32::MAX,
-            });
-            gate.ticks = gate.ticks.saturating_add(1);
-            let changed = gate.digest != digest;
-            if gate.ticks >= if changed { DEBOUNCE_TICKS } else { OFFER_TICKS } {
-                gate.digest = digest;
-                gate.ticks = 0;
-                facts.push((name, data));
-            }
+        Step {
+            facts: observer.due(MAX_SENDS),
+            known: observer.known(),
         }
-        Step { facts, known }
     }
 }
 

@@ -410,6 +410,12 @@ impl Reporter {
         }
     }
 
+    /// Keeps a fact for [`Reporter::retry`] without sending it now, for a caller that stops sending after a failure.
+    pub fn defer(&mut self, kind: &str, subject: Option<&str>, data: Value) {
+        self.failed
+            .insert(key(kind, subject), (subject.map(str::to_owned), data));
+    }
+
     /// Whether a report is waiting to be sent again.
     pub fn has_failed(&self) -> bool {
         !self.failed.is_empty()
