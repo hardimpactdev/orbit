@@ -75,3 +75,7 @@ Deno.test("with keep_failed a run that succeeded in every part, with every verdi
     assert(!keeps({ keep_failed: true }, steps(passed)));
     assert(!keeps({ keep_failed: true }, steps(`${passed}\n${passed}`)));
 });
+
+Deno.test("with keep_failed a run that failed the check of the workspace commit, so that its proof step was skipped, skips the destroy step", () => {
+    assert(keeps({ keep_failed: true }, steps(null, { "Prove the command": { status: "skipped" } })));
+});

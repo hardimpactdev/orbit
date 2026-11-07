@@ -31,6 +31,16 @@ sequenceDiagram
   %%> - the Gateway places the proof only on a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet that lacks a change of what the image carries
   %%> - this is about the copies of the host. The next step checks the other side, the head of the proof against main
   GW->>SW: Start the proof<br/>cases file · this VM
+  SW->>VM: Check the workspace commit<br/>HEAD is the commit under proof
+  %%> Decided by the top orchestrator, for Nick's review (2026-11-07). Try 13's list run (`proof.command` 12701) went on after the import of its bundle failed in the provision: its kept VM (tvm-866) held a clone of main, not the commit under proof (4e3c2e93), so the cases would have proved the wrong code.
+  %%> What it does:
+  %%> - before any case, in the workflow `operation-proof-run` of `proof:run`, the parent reads `git rev-parse HEAD` in the workspace of the VM and an assert step compares it with the commit of the proof (`head` in the verify intent). The provision gate itself is fixed in the instance.create lane; this check is a second line and does not depend on it
+  %%> - on a mismatch, or a workspace that prints no commit, the run stops before the restore, the Check the head step and every case: all of its cases are `unrun`. When the SSH read itself fails, the run fails as `proof.run_failed` and the check is skipped
+  %%> - it is a second line, after the provision: a wrong checkout still costs the provision and the fleet start. The gate of the provision (another lane) stops it earlier
+  %%> - the run fails with `proof.workspace_commit_mismatch`. The Gateway records it from the failed step, and the result of the run (and of the proof) names both commits: `workspace: {expected, found}`, with `found` empty when the VM printed none. The proof ends with the same code when no case ran in any command
+  %%> - one read covers the nested Nodes: they mount this directory as an Incus disk device (stage 2), so there is no copy that could differ. `orbit proof` on the author's own VM does not run the check: the author's checkout is the thing under proof and may be ahead of any commit
+  %%> - `--keep-failed` keeps the VM of a run that fails this check, because it is ready and its cases did not pass
+  %%> Built.
   SW->>VM: Check the head<br/>behind a platform change?
   %%> What it does:
   %%> - the first step of the run, before any restore or case, in the task VM's workspace: `git merge-base HEAD origin/main`, then `git diff --name-only` from that merge base to `origin/main`, limited to the platform list `swamp/proof/platform.txt` (the glob syntax of `selection.txt`), read from `origin/main` and passed to git as pathspecs, so no matcher of ours runs

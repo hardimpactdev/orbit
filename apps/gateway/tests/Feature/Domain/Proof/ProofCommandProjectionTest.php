@@ -345,3 +345,106 @@ describe('keep_failed', function (): void {
         expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->result)->not->toHaveKey('kept');
     });
 });
+
+describe('the check of the workspace commit', function (): void {
+    /** The steps of a run that got a VM and failed the check of its workspace, so that no case ran. */
+    function proofWorkspaceSteps(string $printed): array
+    {
+        return ['Create the VM' => ['status' => 'succeeded'], 'Pin the VM' => ['status' => 'succeeded'],
+            'Read the workspace commit' => ['status' => 'succeeded', 'stdout' => $printed],
+            'Check the workspace commit' => ['status' => 'failed'], 'Prove the command' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'failed']];
+    }
+
+    it('records a workspace at another commit as proof.workspace_commit_mismatch, naming both commits, on the run and on the proof', function (): void {
+        Queue::fake();
+        [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', proofWorkspaceSteps(str_repeat('b', 40)."\n")));
+
+        expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('proof.workspace_commit_mismatch')
+            ->and($projected->result['workspace'])->toBe(['expected' => str_repeat('a', 40), 'found' => str_repeat('b', 40)])
+            ->and(array_column($projected->result['cases'], 'verdict'))->toBe(['unrun']);
+        expect($proof->refresh()->error_code)->toBe('proof.workspace_commit_mismatch')
+            ->and($proof->result['workspace'])->toBe([['command' => 'firewall:allow', 'expected' => str_repeat('a', 40), 'found' => str_repeat('b', 40)]]);
+    });
+
+    it('records no commit when the VM printed none that looks like one, so no text of the VM reaches the result', function (string $printed): void {
+        Queue::fake();
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', proofWorkspaceSteps($printed)));
+
+        expect($projected->error_code)->toBe('proof.workspace_commit_mismatch')->and($projected->result['workspace'])->toBe(['expected' => str_repeat('a', 40), 'found' => '']);
+    })->with(['nothing' => [''], 'an error' => ["fatal: not a git repository\n"], 'a short id' => ['abc123']]);
+
+    it('leaves the code to the cases when the check passed', function (): void {
+        Queue::fake();
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+        $steps = [...proofWorkspaceSteps(str_repeat('a', 40)), 'Check the workspace commit' => ['status' => 'succeeded'], 'Prove the command' => ['status' => 'succeeded']];
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', $steps, PROOF_PASSED."\n".PROOF_FAILED));
+
+        expect($projected->error_code)->toBe('proof.cases_failed')->and($projected->result)->not->toHaveKey('workspace');
+    });
+
+    it('keeps the code of a cancelled run, whatever the check did', function (): void {
+        Queue::fake();
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('cancelled', proofWorkspaceSteps(str_repeat('b', 40))));
+
+        expect($projected->error_code)->not->toBe('proof.workspace_commit_mismatch')->and($projected->result)->not->toHaveKey('workspace');
+    });
+});
+
+describe('the check of the workspace commit, with the end of the VM', function (): void {
+    it('keeps the VM of a run that failed the check when keep_failed is on, and records the commits next to the kept VM', function (): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        $ended = proofKeptEnd($vm, '', 'skipped', [
+            'Read the workspace commit' => ['status' => 'succeeded', 'stdout' => str_repeat('b', 40)], 'Check the workspace commit' => ['status' => 'failed'], 'Prove the command' => ['status' => 'skipped'],
+        ]);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->error_code)->toBe('proof.workspace_commit_mismatch')->and($projected->result['workspace'])->toBe(['expected' => str_repeat('a', 40), 'found' => str_repeat('b', 40)])
+            ->and($projected->result['kept']['vm'])->toBe($vm->name);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('cancels the group the normal way when the flag is off, and records no kept VM', function (): void {
+        Queue::fake();
+        [, [[$run]]] = proofRuns(['firewall:allow']);
+        $ended = proofEnded('failed', proofWorkspaceSteps(str_repeat('b', 40)));
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->error_code)->toBe('proof.workspace_commit_mismatch')->and($projected->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('lets the cases that ran decide the code of the proof, and still lists the commits of the run that did not', function (): void {
+        [$proof, [[$first], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+        $first->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'proof.cases_failed',
+            'result' => ['cases' => [['program' => 'p', 'command' => 'firewall:allow', 'case' => 'main', 'verdict' => 'failed', 'seconds' => 1]]]])->save();
+        $second->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'proof.workspace_commit_mismatch',
+            'result' => ['cases' => [['program' => 'p', 'command' => 'firewall:deny', 'verdict' => 'unrun', 'seconds' => 0]], 'workspace' => ['expected' => str_repeat('a', 40), 'found' => str_repeat('b', 40)]]])->save();
+
+        app(ProofRunSettlement::class)->settle($proof->id);
+
+        expect($proof->refresh()->error_code)->toBe('proof.cases_failed')
+            ->and($proof->result['workspace'])->toBe([['command' => 'firewall:deny', 'expected' => str_repeat('a', 40), 'found' => str_repeat('b', 40)]]);
+    });
+
+    it('ends the proof with the mismatch code when no command ran a case, over a run that was interrupted', function (): void {
+        [$proof, [[$first], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+        $first->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'proof.workspace_commit_mismatch',
+            'result' => ['cases' => [['program' => 'p', 'command' => 'firewall:allow', 'verdict' => 'unrun', 'seconds' => 0]], 'workspace' => ['expected' => str_repeat('a', 40), 'found' => '']]])->save();
+        $second->forceFill(['status' => OperationStatus::Failed, 'error_code' => ProofRunSettlement::AdmissionInterrupted, 'result' => ['error_code' => ProofRunSettlement::AdmissionInterrupted]])->save();
+
+        app(ProofRunSettlement::class)->settle($proof->id);
+
+        expect($proof->refresh()->error_code)->toBe('proof.workspace_commit_mismatch')->and($proof->result['workspace'])->toHaveCount(1);
+    });
+});
