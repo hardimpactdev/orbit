@@ -30,7 +30,7 @@ final readonly class RecipeLoader
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
             'sqlite3', 'mysql-client', 'postgresql-client',
         ], 'ubuntu');
-        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'chrome-headless-shell', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'swamp', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
+        foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'chrome-headless-shell', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'deno', 'swamp', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
