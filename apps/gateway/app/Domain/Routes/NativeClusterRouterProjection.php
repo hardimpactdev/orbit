@@ -12,6 +12,7 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Jobs\AppDev\PublishPrivateDns;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -85,6 +86,10 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
                 $this->project($projected, [...$data, 'result' => $result]);
+                // The run restored the DNS it changed with an older revision than a publication admitted meanwhile may hold.
+                if ($projected->kind === 'cluster.router_set' && $projected->status->terminal() && $projected->status !== OperationStatus::Succeeded) {
+                    PublishPrivateDns::dispatch()->afterCommit();
+                }
             }
 
             return $projected->refresh();

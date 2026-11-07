@@ -121,6 +121,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - AAAA for an exact Route gives NODATA. It no longer leaks a public IPv6 address.
 - A TLD change restarts dnsmasq, so every name stops for the length of the restart. The measured gap goes into this section after the rehearsal.
 - Parallel publications are safe because each one writes a whole state and the newest revision wins. A failed run leaves its rows in the database, and the next publication renders them.
+- Parallel publications are safe, but a restore keeps the revision it took at admission, and a publication admitted later takes a newer one. The Node then skips the restore as superseded. After the Gateway projects a failed `cluster.router_set` or `instance.transfer` into the rows, it queues one fresh `dns.publish` (`PublishPrivateDns`), so the newest render always holds the rolled-back rows.
 - The rollback is the last good set that the phase saved before its first install.
 
 ## Affects
