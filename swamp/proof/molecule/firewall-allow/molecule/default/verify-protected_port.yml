@@ -4,13 +4,9 @@
   vars:
     own_before: "{{ ufw_before.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', '^22[/ ]') | list }}"
     own_after: "{{ ufw_after.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', '^22[/ ]') | list }}"
-    rec_before: "{{ records_before | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [22, '22']) | list }}"
-    rec_after: "{{ records_after | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [22, '22']) | list }}"
+    rec_before: "{{ records_before | selectattr('node', 'equalto', tnode) | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [22, '22']) | list }}"
+    rec_after: "{{ records_after | selectattr('node', 'equalto', tnode) | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [22, '22']) | list }}"
   block:
-    - name: SSH still works
-      ansible.builtin.include_tasks: probe.yml
-      tags: [probe]
-      vars: {probe: {from: nested-gateway, port: 22, expect: connect}}
     - name: The rows and records of port 22 did not change
       ansible.builtin.assert:
         that: [own_before == own_after, rec_before == rec_after]

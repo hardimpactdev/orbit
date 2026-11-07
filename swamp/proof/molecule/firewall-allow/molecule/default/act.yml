@@ -21,9 +21,9 @@
       delay: 1
       changed_when: false
 
-    - name: "{{ inventory_hostname }}: UFW table of app-dev before"
+    - name: "{{ inventory_hostname }}: UFW table of the target before"
       ansible.builtin.command: ufw status numbered
-      delegate_to: nested-app-dev
+      delegate_to: "{{ tcontainer }}"
       register: ufw_pre
       changed_when: false
 
@@ -35,9 +35,9 @@
         return_content: true
       register: ops_pre
 
-    - name: "{{ inventory_hostname }}: firewall records of app-dev before"
+    - name: "{{ inventory_hostname }}: firewall records of the target before"
       ansible.builtin.uri:
-        url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+        url: "{{ gateway_url }}/firewall-rules?node={{ tid }}"
         ca_path: "{{ gateway_ca }}"
         headers: {Accept: application/json}
         return_content: true
@@ -90,15 +90,15 @@
         quiet: true
       when: d.expect.request | default(true)
 
-    - name: "{{ inventory_hostname }}: UFW table of app-dev after"
+    - name: "{{ inventory_hostname }}: UFW table of the target after"
       ansible.builtin.command: ufw status numbered
-      delegate_to: nested-app-dev
+      delegate_to: "{{ tcontainer }}"
       register: ufw_post
       changed_when: false
 
-    - name: "{{ inventory_hostname }}: firewall records of app-dev after"
+    - name: "{{ inventory_hostname }}: firewall records of the target after"
       ansible.builtin.uri:
-        url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+        url: "{{ gateway_url }}/firewall-rules?node={{ tid }}"
         ca_path: "{{ gateway_ca }}"
         headers: {Accept: application/json}
         return_content: true
@@ -125,6 +125,7 @@
         ops_after: "{{ ((ops_post.json | default({})).data | default([])) | map(attribute='id') | sort | list }}"
         records_before: "{{ (rec_pre.json | default({})).data | default([]) }}"
         records_after: "{{ (rec_post.json | default({})).data | default([]) }}"
+        tnode: "{{ tnode }}"
         case_secs: "{{ ((now().timestamp() - case_t0 | float) | round(1)) }}"
         case_start: "{{ case_t0 | float }}"
         case_end: "{{ now().timestamp() }}"

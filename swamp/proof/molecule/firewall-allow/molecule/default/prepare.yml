@@ -1,19 +1,32 @@
 ---
-# Fixtures for the cases, one play on app-dev: a listener on the test port and on a control port, and a test deny for the test port
-# placed above the proof-network allowance (the `blocked-port` fixture of the cases file).
+# Fixtures for the cases, one play on every container: a listener on the test and control ports of the cases that work on it, and a test deny
+# for each test port, placed above the proof-network allowance (the `blocked-port` fixture of the cases file). The containers are prepared at
+# the same time, as many as the limit allows (ANSIBLE_FORKS).
 - ansible.builtin.import_playbook: facts.yml
 
-- name: Fixtures on app-dev
-  hosts: nested-app-dev
+- name: Fixtures on each container
+  hosts: nodes
   gather_facts: false
+  vars_files: [fixtures.yml]
   tasks:
-    - name: Start a listener on each test and control port
+    - name: Start a listener on each test and control port, one exec each
       ansible.builtin.command:
         cmd: python3 -m http.server {{ item }} --bind 0.0.0.0 --directory /tmp
       async: 3600
       poll: 0
-      loop: "{{ listen_ports }}"
+      loop: "{{ my_ports }}"
       changed_when: true
+      when: my_cases | length > 0 and not (fast | bool)
+
+    - name: Start every listener with one exec
+      ansible.builtin.shell: |
+        for port in {{ my_ports | join(' ') }}; do
+          setsid -f python3 -m http.server "$port" --bind 0.0.0.0 --directory /tmp >/dev/null 2>&1 </dev/null
+        done
+      args:
+        executable: /bin/bash
+      changed_when: true
+      when: my_cases | length > 0 and fast | bool
 
     - name: Find the row of the proof-network allowance
       ansible.builtin.shell: |
@@ -23,14 +36,23 @@
         executable: /bin/bash
       register: anchor
       changed_when: false
+      when: my_cases | length > 0
+
+    - name: The proof-network allowance exists on this container
+      ansible.builtin.assert:
+        that: anchor.stdout | int > 0
+        fail_msg: "{{ inventory_hostname }} has no proof-network row in ufw: the test denies have no place to go"
+        quiet: true
+      when: my_cases | length > 0
 
     - name: Deny each test port above the proof-network allowance
       ansible.builtin.command:
         cmd: >-
           ufw insert {{ anchor.stdout | int }} deny proto {{ item.proto | default('tcp') }} from any to any port {{ item.port }}
           comment 'proof:deny-{{ item.name }}'
-      loop: "{{ denies }}"
+      loop: "{{ my_denies }}"
       changed_when: true
+      when: my_cases | length > 0
 
     - name: Find the row of the TCP deny of the partial-application case
       ansible.builtin.shell: |
@@ -40,10 +62,12 @@
         executable: /bin/bash
       register: partial_deny
       changed_when: false
+      when: "'partial_application' in my_cases"
 
     - name: Partial application, the TCP line exists above the deny and the UDP line does not
       ansible.builtin.command:
         cmd: >-
-          ufw insert {{ partial_deny.stdout | int }} allow proto tcp from {{ hostvars['nested-gateway'].gateway_src }}
+          ufw insert {{ partial_deny.stdout | int }} allow proto tcp from {{ hostvars['nested-' ~ allowed_of[node_short]].src_to[node_short] }}
           to any port {{ cases.partial_application.port }} comment 'proof:existing'
       changed_when: true
+      when: "'partial_application' in my_cases"
