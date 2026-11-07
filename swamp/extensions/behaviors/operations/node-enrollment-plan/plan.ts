@@ -23,7 +23,6 @@ const Args = z.object({
     }),
     roles: z.array(Role).max(12),
     dns: z.array(z.record(z.string(), z.unknown())).default([]),
-    private_dns: z.array(z.record(z.string(), z.unknown())).default([]),
     bootstrap_user: z.string(),
     bootstrap_account: z.object({ stdout: z.string(), exitCode: z.literal(0) })
         .nullable(),
@@ -34,7 +33,6 @@ const Bound = z.object({
     stdout: z.string(),
     roles: z.array(Role),
     dns: z.array(z.record(z.string(), z.unknown())),
-    private_dns: z.array(z.record(z.string(), z.unknown())),
     host_keys: z.array(z.string()),
     bootstrap_authorized_keys: z.string(),
 });
@@ -86,7 +84,6 @@ export function bindEnrollment(raw: unknown) {
         bootstrap_authorized_keys: authorizedKeys,
         roles: bind(input.roles, input.host_key.algorithm, key),
         dns: bind(input.dns, input.host_key.algorithm, key),
-        private_dns: bind(input.private_dns, input.host_key.algorithm, key),
     });
 }
 export const behavior = {

@@ -113,7 +113,7 @@ jobs:
         env:
           ORBIT_PROBE_ADDRESS: '${{ self.probe.address }}'
           ORBIT_PROBE_DOMAIN: '${{ self.probe.domain }}'
-    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+    # Only outside the TLD: the whole private DNS, written by the dns-publish phase.
   - name: 'Publish private DNS'
     labels: {role: swamp}
     dependsOn:
@@ -127,7 +127,19 @@ jobs:
     forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: route-create-dns
+      workflowIdOrName: dns-publish
       inputs:
-        intent: '${{ inputs.intent }}'
+        operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ self.vpn.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.vpn.node_id }}'
+          connection:
+            nodeHost: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host }}'
+            nodeUser: '${{ inputs.intent.nodes[string(self.vpn.node_id)].user }}'
+            nodePort: '${{ inputs.intent.nodes[string(self.vpn.node_id)].port }}'
+            nodeIdentityFile: '${{ inputs.intent.nodes[string(self.vpn.node_id)].identity_file }}'
+            become: true
+          host_keys: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host_keys }}'
+          dns: '${{ self.vpn.dns }}'
+        execution_secrets: {}

@@ -6,8 +6,10 @@ queueTimeout: 30
 inputs:
   type: object
   properties:
+    operation_id: {type: integer, minimum: 1}
+    kind: {type: string}
     intent: {type: object}
-  required: [intent]
+  required: [operation_id, kind, intent]
   additionalProperties: false
 jobs:
 - name: revert
@@ -44,7 +46,7 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
       inputs: {}
-    # Each VPN Node's before records (route-create-dns).
+    # Each VPN Node's before DNS, as a newer revision (dns-publish).
   - name: 'dns'
     labels: {role: swamp}
     dependsOn:
@@ -55,7 +57,19 @@ jobs:
     forEach: {item: vpn, in: '${{ inputs.intent.restore_dns_plan.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: route-create-dns
+      workflowIdOrName: dns-publish
       inputs:
-        intent: '${{ inputs.intent.restore_dns_plan }}'
+        operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ self.vpn.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.vpn.node_id }}'
+          connection:
+            nodeHost: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].host }}'
+            nodeUser: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].user }}'
+            nodePort: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].port }}'
+            nodeIdentityFile: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].identity_file }}'
+            become: true
+          host_keys: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].host_keys }}'
+          dns: '${{ self.vpn.dns }}'
+        execution_secrets: {}

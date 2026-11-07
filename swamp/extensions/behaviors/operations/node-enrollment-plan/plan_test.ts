@@ -34,7 +34,6 @@ Deno.test("enrollment binds the observed host key through every frozen role conn
         ...input,
         platform: "linux",
         dns: [],
-        private_dns: [],
         cli: null,
     }, context);
     assertEquals(
@@ -59,6 +58,17 @@ Deno.test("enrollment binds the observed host key through every frozen role conn
         result.bootstrap_authorized_keys,
         "/srv/bootstrap/.ssh/authorized_keys",
     );
+});
+Deno.test("enrollment binds the observed host key into every private DNS publication entry", () => {
+    const entry = {
+        node_id: 9,
+        connection: { nodeHost: "10.44.0.9", nodeUser: "orbit", nodePort: 22, nodeIdentityFile: "/swamp/identity", become: true },
+        host_keys: [`${AlgorithmMark} ${KeyMark}`],
+        dns: { revision: "1", listen: ["10.44.0.1"], tlds: [], records: [] },
+    };
+    const result = bindEnrollment({ ...input, dns: [entry] });
+    assertEquals(result.dns, [{ ...entry, host_keys: ["ssh-ed25519 public-key"] }]);
+    assertEquals("private_dns" in result, false);
 });
 Deno.test("enrollment refuses an unresolved bootstrap account instead of inventing its home", () => {
     assertThrows(

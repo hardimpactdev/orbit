@@ -1,6 +1,6 @@
 id: 3b9f6a14-52c7-4e08-8d1a-7e40c5b2f9a6
 name: route-withdraw-node
-description: "instance.destroy: one Node's Route withdrawal. Read what the Node holds, compose the withdrawal from the captured states, apply it: pools, Caddyfile, private DNS records and certificate folders, each written once."
+description: "instance.destroy: one Node's Route withdrawal. Read what the Node holds, compose the withdrawal from the captured states, apply it: pools, Caddyfile and certificate folders, each written once."
 vaults: []
 queueTimeout: 30
 inputs:
@@ -15,9 +15,8 @@ inputs:
         publication: {type: object}
         php: {type: object}
         caddy: {type: object}
-        dns: {type: object}
         cleanup: {type: array}
-      required: [publication, php, caddy, dns, cleanup]
+      required: [publication, php, caddy, cleanup]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -45,9 +44,8 @@ jobs:
             host_keys: '${{ inputs.intent.publication.host_keys }}'
             account: '${{ inputs.intent.publication.user }}'
           serves_routes: '${{ inputs.intent.publication.serves_routes }}'
-          reads_dns: '${{ size(inputs.intent.dns) > 0 }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-    # Read: the account, the PHP-FPM pool files, the Caddyfile and the private DNS files of this Node, into the run folder.
+    # Read: the account, the PHP-FPM pool files and the Caddyfile of this Node, into the run folder.
   - name: 'read'
     labels: {role: swamp}
     dependsOn:
@@ -88,10 +86,9 @@ jobs:
         plan_path: '${{ "/tmp/orbit-ansible-" + run.id + "/plan.json" }}'
         php: '${{ inputs.intent.php }}'
         caddy: '${{ inputs.intent.caddy }}'
-        dns: '${{ inputs.intent.dns }}'
         cleanup: '${{ inputs.intent.cleanup }}'
-    # Apply: pools written, tested and reloaded; the Caddyfile written, validated and reloaded; the private DNS records written and
-    # the backend restarted; the withdrawn certificate folders removed. The phase removes the run folder when it ends.
+    # Apply: pools written, tested and reloaded; the Caddyfile written, validated and reloaded; the withdrawn certificate folders
+    # removed. The phase removes the run folder when it ends.
   - name: 'apply'
     labels: {role: swamp}
     dependsOn:

@@ -199,6 +199,8 @@ jobs:
       type: workflow
       workflowIdOrName: cluster-router-select
       inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
         intent: '${{ inputs.intent }}'
     # The old Router's lasting Caddyfile, certificates and the LAN rules only it needed (route-target-retire).
   - name: Hold the Nodes to retire
@@ -306,4 +308,6 @@ jobs:
       type: workflow
       workflowIdOrName: cluster-router-revert
       inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
         intent: '${{ inputs.intent }}'

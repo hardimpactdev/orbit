@@ -46,7 +46,7 @@ sequenceDiagram
     %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
     %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
     %%> Not held:
-    %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read
+    %%> - the DNS Node: every publication writes the whole private DNS and the newest revision wins, so two publications cannot lose each other's change
     %%> Limit:
     %%> - two Route writes on one Node run one after the other, so each waits for the other's whole run
     %%> - a newer write waits behind an older waiting one that shares a Node, and a waiting write can be cancelled
@@ -80,7 +80,7 @@ sequenceDiagram
       SW->>N: Retire detached targets<br/>@swamp/cfgmgmt · absent
     end
     opt Node-scoped, outside TLD
-      SW->>V: Move private DNS<br/>records + catalog, then reload
+      SW->>V: Move private DNS<br/>child dns-publish
     end
     alt every step succeeds
       SW-->>GW: Run succeeded<br/>terminal event

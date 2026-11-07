@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
+  %% Decided: ADR 0248 (2026-11-07): a withdrawal publishes the whole private DNS once, through the shared `dns-publish` child, after the Node's own files.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
   %% Target design: ADR 0244 task, one Swamp run, official cfgmgmt behaviors and SSH argv commands. docs/reference/routes.md#remove-a-route.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work of the site child is one Ansible phase (see route:create).
@@ -26,7 +26,7 @@ sequenceDiagram
   %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
   %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
   %%> Not held:
-  %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read
+  %%> - the DNS Node: every publication writes the whole private DNS and the newest revision wins, so two publications cannot lose each other's change
   %%> Limit:
   %%> - two Route writes on one Node run one after the other, so each waits for the other's whole run
   %%> - a newer write waits behind an older waiting one that shares a Node, and a waiting write can be cancelled
@@ -41,7 +41,7 @@ sequenceDiagram
     %%> - a Node that does not answer is skipped and keeps its residue for `node:converge`; the VPN Node is never skipped
   end
   opt domain outside the TLD
-    SW->>V: Remove private DNS<br/>records + catalog, then reload
+    SW->>V: Remove private DNS<br/>child dns-publish
     SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
   end
   SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent

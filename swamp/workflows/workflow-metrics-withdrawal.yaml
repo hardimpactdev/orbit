@@ -25,8 +25,17 @@ jobs:
     forEach: {item: dns, in: '${{ inputs.intent.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.dns.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.dns }}', execution_secrets: {}}
+      workflowIdOrName: dns-publish
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ self.dns.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent:
+          node_id: '${{ self.dns.node_id }}'
+          connection: '${{ self.dns.connection }}'
+          host_keys: '${{ self.dns.host_keys }}'
+          dns: '${{ self.dns.dns }}'
+        execution_secrets: {}
   - name: certificate
     labels: {role: swamp}
     writes: true

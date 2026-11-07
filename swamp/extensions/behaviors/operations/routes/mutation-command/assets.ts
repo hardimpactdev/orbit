@@ -1,5 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import { mergeDns } from "./dns.ts";
 const Id = z.number().int().positive();
 const LanRule = z.object({
     model_name: z.string().regex(/^[a-z0-9-]+$/),
@@ -91,11 +90,6 @@ export const behavior = {
                 ready: z.literal(true),
                 result_json: z.string().optional(),
             }),
-        },
-        dns: {
-            lifetime: "infinite",
-            garbageCollection: 10,
-            schema: z.object({ records: z.string(), catalog: z.string() }),
         },
         contribution: {
             lifetime: "infinite",
@@ -189,43 +183,6 @@ export const behavior = {
                     ],
                 };
             },
-        },
-        dns: {
-            description:
-                "Compose captured DNS changes with current public files",
-            arguments: z.object({
-                before: z.object({ records: z.string(), catalog: z.string() })
-                    .passthrough(),
-                after: z.object({ records: z.string(), catalog: z.string() })
-                    .passthrough(),
-                current: z.object({ records: z.string(), catalog: z.string() }),
-                alternatives: z.array(
-                    z.object({ records: z.string(), catalog: z.string() })
-                        .passthrough(),
-                ),
-            }),
-            execute: async (
-                args: {
-                    before: { records: string; catalog: string };
-                    after: { records: string; catalog: string };
-                    current: { records: string; catalog: string };
-                    alternatives: { records: string; catalog: string }[];
-                },
-                ctx: Context,
-            ) => ({
-                dataHandles: [
-                    await ctx.writeResource(
-                        "dns",
-                        "dns",
-                        mergeDns(
-                            args.before,
-                            args.after,
-                            args.current,
-                            args.alternatives,
-                        ),
-                    ),
-                ],
-            }),
         },
         result: {
             description:

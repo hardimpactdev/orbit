@@ -27,7 +27,7 @@ sequenceDiagram
   alt active Cluster and the TLD changes, or an earlier change is unfinished
     GW->>SW: Start run, full intent<br/>operation-cluster-update
     GW-->>CLI: 202 Accepted<br/>task ID
-    SW->>V: Add the new TLD in DNS<br/>records + catalog, then reload
+    SW->>V: Add the new TLD in DNS<br/>child dns-publish
     %%> Why first:
     %%> - the new names must resolve before the child withdraws the old sites; the old TLD keeps answering
     %%> Managed peers:
@@ -37,7 +37,7 @@ sequenceDiagram
       %%> What it does:
       %%> - moves every generated Route to the new TLD, or back to its Node TLD when the TLD is unset; the cutover is inside the child
     end
-    SW->>V: Prune old DNS answers<br/>records + catalog, then reload
+    SW->>V: Prune old DNS answers<br/>child dns-publish
     %%> Why it always runs:
     %%> - it removes only what the stored state does not need, so after a failure before the cutover it removes the new TLD again
     alt every step succeeds

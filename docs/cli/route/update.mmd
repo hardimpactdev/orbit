@@ -39,7 +39,7 @@ sequenceDiagram
     %%> - holds each Node that serves this Route's site (Caddy and PHP) from admission to the terminal state
     %%> - a second Route write on one of those Nodes waits (task status `waiting`) and starts when the Node is free, oldest first
     %%> Not held:
-    %%> - the DNS Node: its records are keyed, and the apply phase refuses a file that changed since the read
+    %%> - the DNS Node: every publication writes the whole private DNS and the newest revision wins, so two publications cannot lose each other's change
     %%> Limit:
     %%> - two Route writes on one Node run one after the other, so each waits for the other's whole run
     %%> - a newer write waits behind an older waiting one that shares a Node, and a waiting write can be cancelled
@@ -75,7 +75,7 @@ sequenceDiagram
       SW->>N: Open or close the edge<br/>Ingress Caddy · ufw 80/443
     end
     opt --domain outside the TLD
-      SW->>V: Move private DNS<br/>records + catalog, then reload
+      SW->>V: Move private DNS<br/>child dns-publish
       Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
       %%> Why:
       %%> - the old DNS answer has 31 seconds to expire before the old site is withdrawn

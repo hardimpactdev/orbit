@@ -74,7 +74,7 @@ sequenceDiagram
   SW->>N: Publish the Caddy sites<br/>child operation-route-caddy
   %%> Order:
   %%> - the target serves before anything leaves the source; the source's sites are not published again
-  SW->>N: Publish the role DNS<br/>child route-dns-publish
+  SW->>N: Publish the role DNS<br/>child dns-publish
   opt private DNS moved
     SW->>SW: Let DNS answers expire<br/>child route-dns-grace
     %%> Why:

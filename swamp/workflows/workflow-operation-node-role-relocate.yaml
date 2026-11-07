@@ -244,8 +244,8 @@ jobs:
     forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p, p.after.dns != null) }}'}
     task:
       type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns }}', after: '${{ self.publication.after.dns }}', alternatives: []}, execution_secrets: {}}
+      workflowIdOrName: dns-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.after.dns }}'}, execution_secrets: {}}
 - name: check
   dependsOn: [{job: dns, condition: {type: succeeded}}]
   steps:

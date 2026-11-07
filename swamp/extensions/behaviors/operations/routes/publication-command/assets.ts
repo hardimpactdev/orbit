@@ -5,7 +5,6 @@ import {
     prepareCaddyInput,
     PublicationConnection,
 } from "../caddy-input.ts";
-import { mergeDns } from "../mutation-command/dns.ts";
 import { mergeCaddy, mergePhp, phpSections } from "./sections.ts";
 const Name = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Version = z.string().regex(/^[1-9][0-9]*\.[0-9]+$/);
@@ -171,11 +170,6 @@ export function composePhp(raw: unknown) {
     });
     return { files };
 }
-const DnsState = z.object({
-    records: z.string(),
-    catalog: z.string(),
-    digest: z.string(),
-}).passthrough();
 const none = z.object({}).strict();
 const states = <T extends z.ZodType>(state: T) =>
     z.union([
@@ -202,7 +196,6 @@ const WithdrawArgs = z.object({
     ),
     php: z.union([z.object({ before: Php, after: Php }).strict(), none]),
     caddy: states(Section),
-    dns: states(DnsState),
     cleanup: z.array(
         z.object({
             scope: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
@@ -214,8 +207,6 @@ const Read = z.object({
     account: z.string(),
     pools: z.record(z.string(), z.string()),
     caddy: z.string(),
-    records: z.string(),
-    catalog: z.string(),
 }).strict();
 const decode = (text: string) =>
     new TextDecoder().decode(
@@ -235,14 +226,13 @@ export function parseRead(text: string) {
         account: read.account,
         pools,
         caddy: decode(read.caddy),
-        records: decode(read.records),
-        catalog: decode(read.catalog),
     };
 }
 /**
  * One Node's withdrawal: the captured states applied in order to what the Node holds now, so each file is written once.
- * The first step of Caddy and DNS always runs, as the prepare step of a mutation does; a later step runs only when its
+ * The first step of Caddy always runs, as the prepare step of a mutation does; a later step runs only when its
  * states differ, as the withdraw and live steps do for a destroy. Every step keeps the three-way revision checks.
+ * Private DNS is not part of it: the `dns-publish` child writes the final state.
  */
 export async function composeWithdrawal(raw: unknown, readText: string) {
     const value = WithdrawArgs.parse(raw);
@@ -298,24 +288,6 @@ export async function composeWithdrawal(raw: unknown, readText: string) {
         }
         caddy = { content, version };
     }
-    let dns: { records: string; catalog: string } | null = null;
-    if ("before" in value.dns) {
-        const chain = [
-            value.dns.before,
-            value.dns.prepared,
-            value.dns.withdrawn,
-            value.dns.after,
-        ];
-        dns = { records: read.records, catalog: read.catalog };
-        for (let i = 0; i < 3; i++) {
-            const [from, to] = [chain[i], chain[i + 1]];
-            if (
-                i > 0 && from.records === to.records &&
-                from.catalog === to.catalog
-            ) continue;
-            dns = mergeDns(from, to, dns, chain);
-        }
-    }
     // What the phase finds on the Node must still be what was read: composing and applying are seconds apart.
     const expect: Record<string, string> = {};
     const hash = async (text: string) =>
@@ -336,18 +308,11 @@ export async function composeWithdrawal(raw: unknown, readText: string) {
             expect[pool.path] = await hash(read.pools[pool.version]);
         }
     }
-    if (dns) {
-        expect["/etc/dnsmasq.d/orbit-records.conf"] = await hash(read.records);
-        expect["/var/lib/orbit/private-dns/catalog.json"] = await hash(
-            read.catalog,
-        );
-    }
-    return { pools, caddy, dns, cleanup: value.cleanup, expect };
+    return { pools, caddy, cleanup: value.cleanup, expect };
 }
 const Withdrawal = z.object({
     pools: z.array(z.string()),
     caddy: z.string().nullable(),
-    dns: z.boolean(),
     cleanup: z.number().int().nonnegative(),
 });
 type Context = {
@@ -431,7 +396,6 @@ export const behavior = {
                         await ctx.writeResource("withdrawal", "withdrawal", {
                             pools: plan.pools.map((pool) => pool.path),
                             caddy: plan.caddy?.version ?? null,
-                            dns: plan.dns !== null,
                             cleanup: plan.cleanup.length,
                         }),
                     ],

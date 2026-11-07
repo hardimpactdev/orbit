@@ -183,26 +183,9 @@
   no_log: true
   register: gateway_settings
   changed_when: gateway_settings.rc == 0
-# The Gateway serves the private DNS of its network as the hub. The first converge of its Node installs the listener and the records and
-# restarts dnsmasq, which must already listen on loopback and not on port 53 of every address, where systemd-resolved listens too.
-- name: Write the private DNS backend
-  ansible.builtin.copy:
-    dest: /etc/dnsmasq.d/orbit-vpn.conf
-    content: "{{ control.dns_backend }}"
-    owner: root
-    group: root
-    mode: "0644"
-  register: dns_backend
-# The first publish of a private name reads the records and the catalog, so a new Gateway starts with the empty ones.
-- name: Make the private DNS folder
-  ansible.builtin.file: { path: /var/lib/orbit/private-dns, state: directory, owner: root, group: root, mode: "0755" }
-- name: Write the empty private DNS records
-  ansible.builtin.copy: { dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\n", force: false, owner: root, group: root, mode: "0644" }
-- name: Write the empty private DNS catalog
-  ansible.builtin.copy: { dest: /var/lib/orbit/private-dns/catalog.json, content: "{}\n", force: false, owner: root, group: root, mode: "0644" }
-- name: Restart dnsmasq on the loopback listener
-  ansible.builtin.systemd: { name: dnsmasq, state: restarted }
-  when: dns_backend.changed
+# The Gateway serves the private DNS of its network as the hub. `control.dns` is the complete state the Gateway rendered (revision, listen, tlds, records).
+# TODO(lead, ADR 0248): the dns-publish phase has no task file to include yet, so nothing here writes dnsmasq. Include that file with `dns: "{{ control.dns }}"`
+# as soon as the phase factors it out, so the machine answers before the first managed peer publishes.
 # The hub of the Gateway's own private network. Swamp reaches every Node, this one too, by its WireGuard address, so the hub is up
 # before any role runs. The private key is made here and never leaves; only the public key is recorded.
 - name: Make the hub folders

@@ -34,9 +34,9 @@ sequenceDiagram
       %%> What it does:
       %%> - moves every affected Route to the Cluster scope and namespace; the cutover is inside the child
     end
-    SW->>V: Select the Router in DNS<br/>records + catalog, then reload
+    SW->>V: Select the Router in DNS<br/>child dns-publish
     %%> What it does:
-    %%> - private DNS answers Cluster names with the Router's LAN address for LAN members and its WireGuard address for the rest
+    %%> - private DNS answers Cluster names with the Router's WireGuard address for every caller; LAN members reach it through the hub
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
     %%> Why it always runs:
     %%> - after a failure before the cutover it removes the LAN rules and DNS selection the stored state does not need

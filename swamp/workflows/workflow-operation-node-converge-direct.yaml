@@ -167,12 +167,22 @@ jobs:
     guard: '${{ inputs.intent.roles.dns == null }}'
     task:
       type: workflow
-      workflowIdOrName: node-private-dns
+      workflowIdOrName: dns-publish
       inputs:
         operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
-        intent: '${{ {"ssh": inputs.intent.ssh, "dns": inputs.intent.roles.dns} }}'
+        intent:
+          node_id: '${{ inputs.node_id }}'
+          connection:
+            nodeHost: '${{ inputs.intent.ssh.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh.target.user }}'
+            nodePort: '${{ inputs.intent.ssh.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+            become: true
+          host_keys: '${{ inputs.intent.ssh.target.host_keys }}'
+          dns: '${{ inputs.intent.roles.dns }}'
+        execution_secrets: {}
   - name: 'Configure PHP-FPM'
     labels: {role: swamp}
     writes: true

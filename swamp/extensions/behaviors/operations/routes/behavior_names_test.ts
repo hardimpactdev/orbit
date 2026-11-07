@@ -9,7 +9,6 @@ Deno.test("Route child behavior names never contain an unbounded path, domain or
             "route-create-sign",
             "route-create-site",
             "route-create-ingress",
-            "route-create-dns",
             "route-environment-write",
             "route-target-retire",
             "route-certificate-publish",

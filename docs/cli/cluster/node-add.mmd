@@ -36,7 +36,7 @@ sequenceDiagram
       %%> What it does:
       %%> - moves the Node's Routes to the Cluster scope, with generated domains in the Cluster TLD when it has one; custom proxy Routes keep their Node scope; the cutover is inside the child
     end
-    SW->>V: Select the Router in DNS<br/>records + catalog, then reload
+    SW->>V: Select the Router in DNS<br/>child dns-publish
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
     %%> Why it always runs:
     %%> - after a failure before the cutover it removes the LAN rules and DNS selection the stored state does not need

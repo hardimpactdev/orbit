@@ -129,7 +129,6 @@ Deno.test("restore keeps the observed candidate serving, then withdraws it after
 Deno.test("Route primitive and shared publication children use one209selector", async () => {
     for (
         const name of [
-            "route-dns-publish",
             "route-dns-grace",
             "route-environment-write",
             "route-certificate-publish",

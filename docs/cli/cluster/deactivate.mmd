@@ -32,7 +32,7 @@ sequenceDiagram
       %%> What it does:
       %%> - returns every affected Route to its Node scope, with generated domains on the Node TLDs; the cutover is inside the child
     end
-    SW->>V: Drop the Router from DNS<br/>records + catalog, then reload
+    SW->>V: Drop the Router from DNS<br/>child dns-publish
     %%> What it does:
     %%> - private DNS stops answering Cluster names with the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent

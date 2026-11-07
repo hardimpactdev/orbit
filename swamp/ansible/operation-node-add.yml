@@ -261,18 +261,6 @@
         state: >-
           {{ 'restarted' if agent_binary is changed or agent_files is changed
           or agent_secret is changed or agent_unit is changed else 'started' }}
-- name: Configure the private DNS backends
-  hosts: dns
-  tags: [dns]
-  become: true
-  tasks:
-    - name: Configure the DNS backend
-      ansible.builtin.copy:
-        dest: /etc/dnsmasq.d/orbit-vpn.conf
-        content: "{{ intent.private_dns[dns_index].backend }}"
-        owner: root
-        group: root
-        mode: "0644"
 - name: Check the Node state
   hosts: managed_linux
   tags: [check]

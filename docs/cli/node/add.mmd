@@ -113,11 +113,11 @@ sequenceDiagram
     %%> - the `vpn` role also enables forwarding on the hub
   end
   opt DNS needs publication
-    SW->>HUB: Configure DNS backend<br/>Ansible phase: dns
-    SW->>HUB: Install DNS listener<br/>native child workflow
-    SW->>N: Publish private DNS<br/>native child workflow
+    SW->>N: Publish private DNS<br/>child dns-publish
     %%> When:
-    %%> - a new VPN hub needs its DNS listener first, or private DNS records need publication
+    %%> - the Node is a VPN hub, or private DNS needs publication for the new Node
+    %%> What it does:
+    %%> - the child writes the complete private DNS the Gateway rendered, as one stock dnsmasq, in one Ansible phase ([DNS publication](/cli/dns/publish))
   end
   opt --platform=macos
     SW->>N: Inspect the Mac tunnel<br/>SSH argv

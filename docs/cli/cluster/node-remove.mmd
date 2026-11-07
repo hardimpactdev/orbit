@@ -32,9 +32,9 @@ sequenceDiagram
       SW->>N: Reconcile the Routes<br/>child route-reconcile
       %%> What it does:
       %%> - returns the Node's Routes to Node scope, with generated domains on the Node TLD; custom proxy Routes keep their Node scope; the cutover is inside the child
-      %%> - the child moves the Routes' own DNS records and removes the Router's LAN rules to the workload; the steps below change only the per-requester answers and the member's LAN rules
+      %%> - the child moves the Routes' own DNS records and removes the Router's LAN rules to the workload; the steps below change only the member's LAN rules and the Cluster names in DNS
     end
-    SW->>V: Select the Node in DNS<br/>records + catalog, then reload
+    SW->>V: Select the Node in DNS<br/>child dns-publish
     %%> What it does:
     %%> - private DNS answers the Node's names with the Node instead of the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
