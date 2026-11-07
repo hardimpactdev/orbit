@@ -27,7 +27,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. The [base snapshot refresh](#refresh-the-base-snapshot) converges the base VM to that document. Claims [copy the base snapshot](#claims-copy-the-base-snapshot), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
+The loader and validator define the recipe contract. The [base snapshot refresh](#refresh-the-base-snapshot) converges the base VM to that document. Claims [copy the base snapshot](#claims-copy-the-base-snapshot), and a topology that a contributor acquires by hand [copies its Nodes from its topology seed](/reference/incus-topologies#one-template-node).
 
 ### Recipe schema
 
@@ -105,7 +105,7 @@ The base list explicitly contains the app-dev tools. It does not inherit a role.
 
 The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each pin is the newest version in that authenticated snapshot, identical on both architectures.
 
-The base also holds the nested Incus packages, so a task VM [runs a topology](#prepare-the-topology) without an install:
+The base also holds the nested Incus packages, so a task VM can run a nested topology without an install:
 
 - The exact Incus 7.0 LTS package set, whose recovery API adopts the [topology seed](#the-base-vm-and-its-snapshot).
 - `dnsmasq-base`, for the nested bridge.
@@ -434,7 +434,7 @@ A Route that fails at the claim logs `The task workspace Route failed after the 
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. The base image already put `orbit` in `incus-admin`, so a [nested topology](#prepare-the-topology) needs no new login. Cloud-init does nothing else, because the base image already holds Incus, `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. The base image already put `orbit` in `incus-admin`, so a nested topology needs no new login. Cloud-init does nothing else, because the base image already holds Incus, `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the pinned Rust toolchain, the Node agent, and Pi. Enrollment trusts the recipe image for machine software. The Project's setup steps install the rest, for example its Playwright browsers.
 
 Provisioning and enrollment retain their synchronous jobs until the owning Node and Process child composition is installed. The Gateway also exposes bounded read views for the prepared Swamp workflows: power, address, image identity, cloud-init and runtime readiness. Enrollment allows ten minutes for boot, measured from launch.
 
@@ -1338,7 +1338,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-of-a-task-vm) when no subtask declares a topology. Default `[]` |
 | `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#size-of-a-task-vm) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
-| `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
+| `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need [real machines](#paths-that-need-real-machines). Default `{}` |
 
 Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()`, and `key()`. The [ai-router extension](/reference/ai-router) binds it. `origin()` is the [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node, such as `http://10.44.0.3:8318`, and `key()` is the one fixed placeholder key that every task VM holds. The Gateway keeps the key as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes the origin and the key into the Pi models file of the VM, inside the claim. No start and no release calls the model router, and no per-VM key exists.
 
@@ -1577,60 +1577,11 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 ### Declare a topology
 
-A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation and group creation keep the declaration. Only a subtask that has not started can change it.
+A task group cannot declare a topology. The `topology` field of a subtask stays in the API and the CLI, but the Gateway refuses any nonempty list with `422 tasks.orchestration_unsupported`. This holds when a request creates a group, creates a subtask, or updates a subtask. The Gateway checks the format first: an entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once, and may add the role `ingress` after a `+`. A malformed list, or one with more than two nodes, is refused with `tasks.invalid_topology`.
 
-The subtasks of a group declare at most two test nodes together, as many as a large VM holds. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory. A group that declares more is refused with `tasks.invalid_topology`.
+No task VM prepares a topology, and the Gateway reads no topology evidence. A group saved before this rule keeps its declaration. Only VM sizing (`TaskVmSize`) and the check evidence (`TaskCheckEvidence`) still read it. The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
-The Gateway validates a declaration once, when a request gives it. It trusts a stored declaration. So a node or role that leaves the format later never fails a tick or a response for a subtask that declares it; the harness refuses that node when the topology is prepared.
-
-The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-of-a-task-vm) at the claim.
-
-### Prepare the topology
-
-Orbit prepares the group's topology in the VM after the group's baseline check, because the check's Project setup installs what the harness needs, such as `apps/e2e/vendor`. Orbit admits the topology before each turn that it prepares for a subtask that declares one:
-
-- the implementer's first turn;
-- each relay of review findings to the implementer;
-- each relay of the reviewer's answer to the implementer, after a consult or a direction relay;
-- each review request;
-- each rubric reminder.
-
-Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
-
-To prepare the topology, the Gateway calls `task-vm.start-topology` and polls `task-vm.topology-status` on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The Rust agent starts the systemd unit `orbit-task-topology-<run>` as the managed account, with its home and workspace checkout. The unit runs the compiled `task-topology` service:
-
-| Step | What happens |
-| --- | --- |
-| `host-setup` | `sudo bin/e2e-topology-host-setup`: adopts the VM's clone of the topology seed as the Incus pool `topology-seed`, and installs the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). |
-| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. It copies each Node from `node-template`. After a failure it runs once more; the log records the retry. |
-
-A medium or large VM [boots with a clone](#incus-provider) of its base image's topology seed. So preparation installs no package, copies no image, and creates no pool. A VM without the clone fails at `host-setup` with `e2e-topology-host-setup: this machine has no topology seed disk; only a task VM of a size that runs a topology boots with one.` The subtask then asks for assistance.
-
-The base image already put `orbit` in the `incus-admin` group, so agents can run `bin/e2e-topology`. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
-
-A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the adopted pool stays. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again.
-
-A VM can also restart on its own. So before each of the turns above in a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
-
-When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A start stops the units of earlier runs first, so one preparation runs at a time. When the start call fails, Orbit reads the run's state: a unit that runs or finished is the run, and only a run without a unit fails. Host setup gets the Gateway's VPN subnet, so its input rule covers the VM's own address.
-
-The agent holds one start lock for the VM. A repeated start leaves an active, queued, or unreadable run alone. Without a result, status stays `running` until systemd and its cgroup prove the unit has stopped. The service writes its result atomically under the account's `.local/state/orbit/task-topology`, with the step, elapsed seconds, boot ID, and last 40 log lines. The returned log is bounded to 16 KiB. Project harness commands run as the managed account; only the existing host-setup command uses sudo.
-
-### Prove work on a topology
-
-The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
-
-The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
-
-The [evidence log](/reference/incus-topologies#evidence-log) defines the JSON record. The Gateway sends the checkout path to `task-vm.read-topology-evidence`. The agent reads at most the newest MiB of the fixed `.e2e/evidence.jsonl` file as the managed account. A missing file supplies no evidence. The Gateway skips partial or malformed lines and applies the review rules. A record counts when:
-
-- its command exited 0;
-- it started after the implementer's last handoff and before Orbit reads the evidence;
-- its command does work on the Node. `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes` do not count, including inside `sh -c` or `bash -c`.
-
-The gate is a cooperative check, not a control against forgery. The agent owns the VM and can write the file directly. The gate catches a reviewer that did not run anything on a declared node, and a person audits the records.
-
-Orbit adds the counted records, with their time, node, label, and command, to the approval, and so to its commit, for a person to audit. Appending to `.e2e/evidence.log` is not a workspace change: the file is ignored, and the reviewer's prompt says so.
+### Paths that need real machines
 
 `task_vms.topology_paths` is the safety net. It maps a Project ID to path patterns in the syntax of [file deliverables](/reference/tasks#deliverables). For Orbit, list its Node, agent, guest, deployment, and routing code, for example:
 
@@ -1638,9 +1589,9 @@ Orbit adds the counted records, with their time, node, label, and command, to th
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path, since no subtask can declare a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
 
-The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can take that work outside a task group.
 
 ## VM power
 

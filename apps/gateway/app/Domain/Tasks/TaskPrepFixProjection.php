@@ -90,7 +90,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
             if (NativeRunResult::stepStatus($native, 'Resume the VM') === 'succeeded') {
                 $vm = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($intent['resume'])['task_vm_id']));
                 if ($vm instanceof TaskVm && $vm->state === TaskVmState::Parked) {
-                    $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
+                    $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
                 }
             }
             $author = ValidatedData::integer(ValidatedData::object($intent['author'])['thread_id']);

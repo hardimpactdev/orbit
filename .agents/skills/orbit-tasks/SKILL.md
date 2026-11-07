@@ -27,7 +27,7 @@ Record a significant decision in an ADR with the status `In progress.`, as the [
 
 ### Topology and web UI
 
-A subtask that changes Node, agent, guest, deployment, or routing code declares the test nodes it needs in `topology`, such as `["app-dev", "app-prod+ingress"]`. The reviewer proves its deliverables there; see [using-incus-topologies](../using-incus-topologies/SKILL.md). A check on shared machines, such as beast or the live Gateway, is an operator step after deploy, listed in the pull request.
+A task group cannot declare a `topology`: the Gateway refuses any nonempty list with `tasks.orchestration_unsupported`. A subtask that changes Node, agent, guest, deployment, or routing code proves its deliverables with its own commands and tests. A check on shared machines, such as beast or the live Gateway, is an operator step after deploy, listed in the pull request.
 
 A subtask that changes the web UI gets a `review` deliverable for the phone and desktop screenshots from `bin/web-verify`. The reviewer judges the phone layout as [verifying-web-ui](../verifying-web-ui/SKILL.md) describes.
 

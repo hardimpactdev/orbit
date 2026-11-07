@@ -190,12 +190,6 @@ final readonly class TaskTopology implements Castable
         return array_map(strval(...), array_keys($this->entries));
     }
 
-    /** Whether this topology holds every node and role of another. */
-    public function covers(self $needed): bool
-    {
-        return array_all($needed->entries, fn (array $roles, string|int $node): bool => isset($this->entries[$node]) && array_diff($roles, $this->entries[$node]) === []);
-    }
-
     /**
      * The entries, such as `app-prod+ingress`.
      *

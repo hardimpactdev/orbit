@@ -47,7 +47,7 @@ Choose the entry point for the work at hand. They follow the pipeline stages.
 | Prepare, implement or review work tracked by Orbit Tasks | [orbit-tasks](.agents/skills/orbit-tasks/SKILL.md) |
 | Review a proposal or completed PR | [reviewing-pull-requests](.agents/skills/reviewing-pull-requests/SKILL.md) |
 
-For documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). For web UI layout on a phone and a desktop, use [verifying-web-ui](.agents/skills/verifying-web-ui/SKILL.md). For a task group's declared Incus topology, use [using-incus-topologies](.agents/skills/using-incus-topologies/SKILL.md). Project guidance supplies coding and testing conventions.
+For documentation work, use [writing-documentation](.agents/skills/writing-documentation/SKILL.md). For CLI design and audits, use [designing-cli-commands](.agents/skills/designing-cli-commands/SKILL.md). For real terminal recordings, use [verifying-cli-output](.agents/skills/verifying-cli-output/SKILL.md). For web UI layout on a phone and a desktop, use [verifying-web-ui](.agents/skills/verifying-web-ui/SKILL.md). For an Incus topology you acquire by hand, use [using-incus-topologies](.agents/skills/using-incus-topologies/SKILL.md). Project guidance supplies coding and testing conventions.
 
 ## Checks and resources
 

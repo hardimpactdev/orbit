@@ -1,17 +1,15 @@
 ---
 name: using-incus-topologies
-description: Use when exploring or checking behavior on a task group's Incus topology with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or reproducing a feature in review.
+description: Use when exploring or checking behavior on an Incus topology you acquire by hand with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or reproducing a feature in review.
 ---
 
 # Using Incus topologies
 
-A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). A subtask that declares a topology uses it to explore and check behavior while building, and the reviewer proves the deliverables on it. Subtasks do not carry proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
+An Incus topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). A contributor acquires one by hand to explore and check behavior; a task group cannot declare one. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
-## Use the declared topology
+## Acquire a topology by hand
 
-In a task VM group, a subtask that declares a `topology` runs with `TASK-<group>` nested in the VM. Orbit prepares it before your first turn, and your prompt names its nodes. Agents never acquire or release it. Topologies run only in a task VM: the VM boots with a clone of its host's topology seed, and every Node is a copy of its `node-template`, so nothing installs Incus or imports an image.
-
-When you review such a subtask, prove each deliverable on the declared nodes with `exec ... --record=LABEL`, where LABEL names the deliverable. Orbit refuses your approval until the evidence log holds a recorded command that exited 0 on each node the subtask declares, started after the implementer's last handoff. Cite the labels in your `--deliverable` evidence and summary.
+A task group cannot declare a topology, so Orbit prepares none and reads no evidence. Acquire one yourself in a task VM that [boots with a clone](../../../docs/reference/compute-drivers.md#incus-provider) of its host's topology seed, and release it when you finish. Every Node is a copy of the VM's `node-template`, so nothing installs Incus or imports an image. Record commands with `exec ... --record=LABEL` when a person will audit them.
 
 ## Work on the topology
 
