@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/firewall-inspection"
-version: 2026.11.03.1
+version: 2026.11.07.1
 visibility: private
 license: MIT
 description: Plans and checks one firewall rule from ufw's numbered status; each change is one ufw argv over official SSH.

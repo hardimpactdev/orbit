@@ -7,10 +7,13 @@ use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallIntentProjection;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampConnection;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
@@ -19,9 +22,11 @@ use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
+afterEach(fn () => app(SwampConnection::class)->release());
+
 beforeEach(function (): void {
     Queue::fake();
-    config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
+    config(['swamp.run_token' => 'test-token', 'swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
     $this->starts = [];
     $socket = Mockery::mock(WebSocketClient::class);
     $socket->shouldReceive('connect', 'close')->andReturnNull();
@@ -29,10 +34,17 @@ beforeEach(function (): void {
     $socket->shouldReceive('send')->andReturnUsing(function (array $message): void {
         $this->starts[] = $message;
     });
-    $socket->shouldReceive('receive')->andReturnUsing(fn (): array => [[
-        'type' => 'event', 'id' => end($this->starts)['id'],
-        'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-    ]]);
+    $socket->shouldReceive('receive')->andReturnUsing(function (): array {
+        $request = end($this->starts);
+        if (in_array($request['type'], ['workflow.history.get', 'workflow.run.search'], true)) {
+            return [['type' => $request['type'], 'id' => $request['id'], 'payload' => ['data' => $request['type'] === 'workflow.history.get' ? $this->history : ['results' => []]]]];
+        }
+
+        return [[
+            'type' => 'event', 'id' => $request['id'],
+            'event' => ['kind' => 'started', 'workflowName' => 'operation-firewall-direct', 'runId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]];
+    });
     $this->app->instance(WebSocketClient::class, $socket);
     $this->caller = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'operator', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
@@ -221,6 +233,40 @@ it('skips a source contained by one protected range but admits a wider range or 
     'all IPv6 admits IPv6' => ['8001', '2001:db8::1', true, '::/0'],
     'all IPv6 does not admit IPv4' => ['8001', '192.0.2.1', false, '::/0'],
 ]);
+
+it('retains the both-protocol failed record and native error when the second UFW allow fails before verification', function (): void {
+    $response = $this->postJson($this->url, ['port' => '47443', 'source' => '192.0.2.1'])->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $rule = FirewallRule::query()->sole();
+    $run = $operation->state['swamp_run_id'];
+    $this->history = [
+        'id' => $run, 'workflowName' => 'operation-firewall-direct', 'status' => 'failed',
+        'startedAt' => now()->subSecond()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'inputs' => $this->starts[0]['payload']['inputs'],
+        'jobs' => [['name' => 'firewall', 'steps' => [
+            ['name' => 'Read the rules', 'status' => 'succeeded'],
+            ['name' => 'Plan the changes', 'status' => 'succeeded'],
+            ['name' => 'Change the rules-0', 'status' => 'succeeded', 'outputs' => ['exitCode' => 0]],
+            ['name' => 'Change the rules-1', 'status' => 'failed', 'outputs' => ['exitCode' => 1, 'stderr' => 'The second UFW allow failed.']],
+            ['name' => 'Read the result', 'status' => 'skipped'],
+            ['name' => 'Check the rules', 'status' => 'skipped'],
+            ['name' => 'accepted', 'status' => 'skipped'],
+        ]]],
+    ];
+    $selector = app(DirectOperation::class)->definition('firewall.allow')['terminal_result'];
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run, 'status' => 'failed'], $selector);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('operation.native_failed')
+        ->and($operation->failed_step)->toBe('Change the rules-1')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($rule->refresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($rule->error_code)->toBe('operation.native_failed')
+        ->and($rule->protocol)->toBe('any');
+
+    $this->postJson($this->url, ['port' => '47443', 'source' => '192.0.2.1'])->assertAccepted();
+    expect(FirewallRule::query()->sole()->id)->toBe($rule->id);
+});
 
 it('projects the native allow result, retains failed intent, and releases the lock exactly once', function (string $status, ?string $code, array $result): void {
     $this->postJson($this->url, ['port' => '443'])->assertAccepted();

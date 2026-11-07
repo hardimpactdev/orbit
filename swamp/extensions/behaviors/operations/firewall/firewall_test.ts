@@ -38,7 +38,7 @@ function refusal(compute: () => unknown) {
     throw new Error("Expected a refusal");
 }
 
-Deno.test("any writes one commented line per protocol and family above managed lines", () => {
+Deno.test("any writes one commented line per protocol and family above broad managed lines", () => {
     const ufw = new UfwDouble();
     const { result } = converge(ufw, { protocol: "any", source: "any" });
     const before = structuredClone(ufw.rows);
@@ -53,9 +53,9 @@ Deno.test("any writes one commented line per protocol and family above managed l
         ["443/tcp", "allow", "Anywhere"],
         ["443/udp", "allow", "Anywhere"],
         ["Anywhere on orbit", "allow", "10.44.0.0/24"],
+        ["22/tcp (v6)", "allow", "Anywhere (v6)"],
         ["443/tcp (v6)", "allow", "Anywhere (v6)"],
         ["443/udp (v6)", "allow", "Anywhere (v6)"],
-        ["22/tcp (v6)", "allow", "Anywhere (v6)"],
     ]);
     assertEquals([
         ...new Set(
@@ -117,10 +117,10 @@ for (
             ["8000:8100/udp", "allow", "192.0.2.1"],
             ...expected4,
             ["Anywhere on orbit", "allow", "10.44.0.0/24"],
+            ["22/tcp (v6)", "allow", "Anywhere (v6)"],
             ["8000:8100/tcp", "allow", "2001:db8::1"],
             ["8000:8100/udp", "allow", "2001:db8::1"],
             ...expected6,
-            ["22/tcp (v6)", "allow", "Anywhere (v6)"],
         ]);
         assertEquals(
             ufw.rows.filter((row) =>
@@ -384,6 +384,55 @@ Deno.test("an interface-scoped source is preserved and does not stand in for an 
     assertEquals(ufw.rows[0], scoped);
     assertEquals(ufw.rows.length, 3);
     assertEquals(converge(ufw).commands, []);
+});
+
+Deno.test("a both-protocol allow keeps the existing TCP line below unrelated managed ports and adds only UDP", () => {
+    const existing = {
+        to: "47443/tcp",
+        action: "allow",
+        source: "192.0.2.1",
+        comment: "proof:existing",
+    };
+    const ufw = new UfwDouble([
+        { to: "22/tcp", action: "allow", source: "Anywhere", comment: "orbit:public-ssh" },
+        { to: "51820/udp", action: "allow", source: "Anywhere", comment: "orbit:wireguard" },
+        existing,
+        { to: "47443/tcp", action: "deny", source: "Anywhere", comment: "proof:deny" },
+        { to: "47443/udp", action: "deny", source: "Anywhere", comment: "proof:deny" },
+        ...new UfwDouble().rows,
+    ]);
+    const before = structuredClone(ufw.rows);
+    const request = { port: "47443", protocol: "any" };
+    const applied = converge(ufw, request);
+
+    assertEquals(applied.commands, [[
+        "timeout", "60", "/usr/sbin/ufw", "insert", "5", "allow", "in", "proto", "udp",
+        "from", "192.0.2.1", "to", "any", "port", "47443", "comment", "orbit web",
+    ]]);
+    assertEquals(applied.result, { backend: "active" });
+    assertEquals(ufw.rows.filter((row) => row.to !== "47443/udp" || row.action !== "allow"), before);
+    assertEquals(ufw.rows.filter((row) => row.comment === existing.comment), [existing]);
+    assertEquals(converge(ufw, request).commands, []);
+});
+
+Deno.test("a failed second allow keeps TCP and a retry adds only UDP for the same source", () => {
+    const ufw = new UfwDouble();
+    const request = intent("present", { protocol: "any" });
+    const commands = plan(request, ufw.status());
+    assertEquals(commands.length, 2);
+    ufw.apply(commands[0]);
+    const tcp = structuredClone(ufw.rows[0]);
+    ufw.fail = true;
+    assertEquals(refusal(() => ufw.apply(commands[1])), "firewall.apply_failed");
+    assertEquals(ufw.tuples("443"), [["443/tcp", "allow", "192.0.2.1"]]);
+
+    ufw.fail = false;
+    const retry = converge(ufw, { protocol: "any" });
+    assertEquals(retry.commands.length, 1);
+    assertEquals(retry.commands[0][retry.commands[0].indexOf("proto") + 1], "udp");
+    assertEquals(ufw.rows[0], tcp);
+    assertEquals(retry.result, { backend: "active" });
+    assertEquals(converge(ufw, { protocol: "any" }).commands, []);
 });
 
 Deno.test("a partial apply is not rolled back and a repeat repairs only the missing lines", () => {

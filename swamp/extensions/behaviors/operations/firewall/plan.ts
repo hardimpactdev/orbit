@@ -219,17 +219,19 @@ function scope(source: string): Network {
     return network(text);
 }
 
-/** `row` must sit below `other`: it is a managed line of the same family, or a broader overlapping operator line. */
+/** `row` must sit below `other`: an overlapping managed line, or a broader overlapping operator line. */
 function below(row: Row, other: Row): boolean {
-    if (!incoming(row) || !incoming(other)) return false;
-    if (managed(row) || managed(other)) {
-        return managed(row) && !managed(other) && v6(row) === v6(other);
-    }
+    if (!incoming(row) || !incoming(other) || v6(row) !== v6(other)) return false;
     const a = ports(row.to), b = ports(other.to);
-    if (!a || !b || v6(row) !== v6(other) || a[1] < b[0] || b[1] < a[0]) {
-        return false;
+    if (
+        a && b &&
+        (a[1] < b[0] || b[1] < a[0] ||
+            (a[2] !== null && b[2] !== null && a[2] !== b[2]))
+    ) return false;
+    if (managed(row) || managed(other)) {
+        return managed(row) && !managed(other);
     }
-    if (a[2] !== null && b[2] !== null && a[2] !== b[2]) return false;
+    if (!a || !b) return false;
     const wide = scope(row.source), narrow = scope(other.source);
     return !(wide.base === narrow.base && wide.bits === narrow.bits) &&
         contains(wide, narrow);
@@ -368,7 +370,7 @@ const Result = z.object({
 
 export const behavior = {
     type: "@nckrtl/firewall-plan",
-    version: "2026.11.05.1",
+    version: "2026.11.07.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
