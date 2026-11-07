@@ -107,6 +107,10 @@ Each pass reads every open Operation of a direct kind against Swamp:
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
+An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
+
+A recorded cancel request sets it to `cancelled`, and cancel does the same at once. Without a request it fails with `operation.timed_out` at its budget. The budget is 600 seconds for an unbound admission with attempts `0`, and the history budget of the kind otherwise. Either end clears the target hold.
+
 The pass has no retry, backoff or per-Operation job. Only one pass runs at a time.
 
 ### Kept read connection

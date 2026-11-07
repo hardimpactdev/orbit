@@ -51,6 +51,7 @@ final readonly class ProofRunSettlement
             $ran = false;
             $passed = true;
             $interrupted = false;
+            $kept = [];
             foreach ($children as $child) {
                 $rows = self::cases($child);
                 $passed = $passed && $child->status === OperationStatus::Succeeded && ProofVerdicts::passed($rows);
@@ -58,6 +59,9 @@ final readonly class ProofRunSettlement
                 // A run that no Swamp run ever started, because the request that admitted it stopped, timed out unstarted.
                 $interrupted = $interrupted || $child->error_code === self::AdmissionInterrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
                 $childInput = ValidatedData::object($child->input);
+                if (is_array($child->result['kept'] ?? null)) {
+                    $kept[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['kept']), ['vm' => 0, 'group_id' => 0, 'keep_until' => 0])];
+                }
                 // A run that ended with no record of its cases, such as one the Gateway timed out, is one unrun row.
                 $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
             }
@@ -65,7 +69,7 @@ final readonly class ProofRunSettlement
             $this->store->change($proof, [
                 'status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
                 'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : ($interrupted ? self::AdmissionInterrupted : 'proof.run_failed')),
-                'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null],
+                'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null, ...($kept === [] ? [] : ['kept' => $kept])],
             ]);
         });
     }

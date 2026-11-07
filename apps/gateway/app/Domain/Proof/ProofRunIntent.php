@@ -49,7 +49,7 @@ final readonly class ProofRunIntent
      * the groups and VMs and the hand-over to Swamp run in the job {@see AdmitProofRun}, which a release drains with the queue workers
      * (docs/cli/proof/run.mmd). The outcome of a refused or failed admission is on the proof Operation, with its code and message.
      */
-    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false): Operation
+    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false): Operation
     {
         if (($existing = $this->idempotency->replay(OperationKinds::ProofRun)) !== null) {
             return $existing;
@@ -59,7 +59,7 @@ final readonly class ProofRunIntent
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
-            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => []], $caller, $requestId);
+            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
         try {
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id));
@@ -191,6 +191,7 @@ final readonly class ProofRunIntent
                 // The proof of a new case switches the checkout to the merge base, with the new cases file of the head.
                 'head' => $commit, 'merge_base' => $base],
             'cancel' => app(TaskCancelIntent::class)->captureForProof($group),
+            ...(ValidatedData::object($proof->input)['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [],
         ];
     }
 

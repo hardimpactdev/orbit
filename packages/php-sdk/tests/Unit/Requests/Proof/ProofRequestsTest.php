@@ -48,6 +48,12 @@ describe('proof requests', function (): void {
         expect((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())->toBe('{"commit":"'.PROOF_COMMIT.'","report_only":true}');
     });
 
+    it('sends keep_failed only when the VM of a failed run is to be kept', function (): void {
+        $mock = proof_send(new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1', true), 'queued');
+
+        expect((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())->toBe('{"commit":"'.PROOF_COMMIT.'","keep_failed":true}');
+    });
+
     it('sends the key as a header and omits all unless it is set', function (string $commit, bool $all, string $body): void {
         $mock = proof_send(new RunProofRequest($commit, $all, false, 'proof.run.c1'), 'queued');
         $sent = $mock->getLastPendingRequest()?->createPsrRequest();

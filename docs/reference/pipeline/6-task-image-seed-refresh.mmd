@@ -65,7 +65,7 @@ sequenceDiagram
       %%> - the same step as in the proof CI (stage 4)
     %%> Decided by the orchestrator, for Nick's review:
     %%> - the run always converges: a VM at the pins reports no change in about a minute, so the Gateway needs no check of what changed; the `opt` stays as the chart of the intent
-    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes (the nested Orbit's `node:converge` on the checkout disk device) are the last piece
+    %%> Built: the outer VM, as the converge of the provision (`Converge once` of stage 2), which this run reuses instead of a step of its own; the nested Nodes as `Converge the nested Nodes` (child `task-nested-converge`: `orbit:node-converge` of app-dev, app-prod, then the Gateway, one at a time), only on a fleet started from ready copies
     end
     SW->>VM: Save the ready copies<br/>key-free · boot-checked
     %%> Decided by the orchestrator, for Nick's review (2026-11-06):
@@ -73,6 +73,7 @@ sequenceDiagram
     %%> - the copies carry format 4 (containers): the control plan the renewal reads is on the nested Gateway; copies of an older format are not used
     %%> Built: the child `operation-task-vm-ready-copies`, the kind `task_vm.ready_copies`, on the refresh VM
     SW->>VM: Stop the refresh VM<br/>its seed disk is complete
+    %%> Decided by the orchestrator, for Nick's review (2026-11-07): the stop, and with it the image, the seed copy and the promotion, waits for every refresh step before it to pass or to be skipped by its own guard; a failed step makes the steps after it `skipped` too, so the stop names each step (refresh 12497 promoted an image after a failed nested converge)
     %%> Decided by the orchestrator, for Nick's review (Nick approved 2026-11-06):
     %%> - the refresh VM yields only its seed disk and is never published; it is stopped so that the copy of the disk is consistent
     %%> - the seed disk holds only the `node-template` and the `fleet-ready-*` copies; the running nested guests are on the VM's own disk and go with the VM

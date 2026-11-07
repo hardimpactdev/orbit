@@ -11,6 +11,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
 use App\Infrastructure\Swamp\CancelSwampRun;
@@ -82,6 +83,12 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             }
         });
         $expire->releaseStaleHolds();
+        // An Operation of a kind that left the registry is read by nothing above; it ends on a cancel request or at its budget.
+        try {
+            app(RetiredOperationSettlement::class)->sweep();
+        } catch (Throwable $exception) {
+            Log::warning('The Operations of retired kinds could not be settled; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
         // A proof.run has no Swamp run, so no budget of its own: this ends one whose request stopped, and closes one whose runs have ended.
         try {
             app(ProofRunWatch::class)->sweep();

@@ -84,12 +84,26 @@ jobs:
         kind: task_vm.fleet_build
         intent: '${{ steps["Pin the VM"].outputs.fleet_build }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
+  # A fleet that started from ready copies holds what the copies held: the nested Gateway converges each of its Nodes to the release of
+  # the checkout (agent, unit, CLI, roles, network) before they are saved, so the copies never lag behind a release. A fleet built here is
+  # already at it.
+  - name: 'Converge the nested Nodes'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ (has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep") || !steps["Create the VM"].outputs["Check the workspace"].stdout.contains(''"nested_fleet": "started"'') }}'
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-nested-converge
+      inputs:
+        guest_node_id: ${{ inputs.intent.provision.guest_node_id }}
+        ssh_execution: '${{ steps["Pin the VM"].outputs.ready_copies.ssh_execution }}'
   # Stops the nested containers and copies them into the seed disk as key-free ready copies, then boot-checks them. With `seed=keep` it is skipped: the seed disk stays as the refresh VM cloned it.
   - name: 'Save the ready copies'
     labels: {role: swamp}
     writes: true
     guard: '${{ has(inputs.intent.refresh.seed) && inputs.intent.refresh.seed == "keep" }}'
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Converge the nested Nodes', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-ready-copies
@@ -100,10 +114,12 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.ready_copies }}'
         execution_secrets: '${{ {"proof_club": inputs.intent.provision.proof_club} }}'
   # The refresh VM yields only its seed disk: it is stopped, never published. The image comes from a clean builder.
+  # The VM stops, and the image, its seed and the promotion follow, only when every step before passed: a failed step makes the steps
+  # after it `skipped`, which the guards of `seed=keep` also give, so this step names each of them.
   - name: 'Stop the refresh VM'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Save the ready copies', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Create the VM', condition: {type: succeeded}}, {step: 'Pin the VM', condition: {type: succeeded}}, {step: 'Build the fleet', condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Converge the nested Nodes', condition: *done}, {step: 'Save the ready copies', condition: *done}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

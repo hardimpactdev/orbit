@@ -572,6 +572,8 @@ Replacing the file in place would leave serve and the workers on a deleted binar
 
 Convergence never restarts serve or a running worker, so a changed unit or binary takes effect at its next restart.
 
+The `node` phase gives the swamp account the Swamp start cache, `/tmp/deno-compile-swamp.cache`, when the file exists: owner and group the swamp account, mode `0644`. The check phase asserts it. The swamp account cannot replace a file that another owner left in sticky `/tmp`, and an unreadable cache adds about 0.35 s to every dispatch. The repair needs no restart. A Deno test fails when an Ansible task runs `swamp` without naming a user other than root.
+
 ### Bump the Swamp pin
 
 A new Swamp release reaches serve and its workers through the role, with one restart in a quiet moment.

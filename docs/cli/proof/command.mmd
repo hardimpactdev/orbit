@@ -61,6 +61,7 @@ sequenceDiagram
   SW->>VM: Destroy the task VM<br/>child · always
   %%> What it does:
   %%> - runs after success and after failure, so no VM is left behind
+  %%> - with `keep_failed` (see the chart of `proof:run`) a failed run skips it and the Gateway cancels the group 60 minutes later
   Note over SW: Join the verdicts<br/>Report step
   %%> What it does:
   %%> - every case of the plan has one line, in plan order; the Gateway reads this step once, when the run ends

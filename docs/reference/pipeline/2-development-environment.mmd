@@ -85,6 +85,11 @@ sequenceDiagram
   %%> - the checkout is the disk device of the fleet start; there is no NFS export, NFS mount or mount ordering step any more
   %%> Why:
   %%> - an edit on the outer VM is in the nested Nodes at once, at local disk speed; nothing can run against old code
+  SW->>NT: Place the agent delivery<br/>checkout pin · nested Gateway
+  %%> Decided by the orchestrator, for Nick's review (2026-11-07):
+  %%> - copies the checkout's agent pin (`resources/agent/frozen-manifest.json`) to the nested Gateway's delivery manifest (`apps/agent/delivery/manifest.json`), as a release does
+  %%> Why:
+  %%> - the manifest is an ignored file of the shared checkout, so a fleet from ready copies mounts a checkout without it, and its `node:converge` refuses to start
   SW->>NT: Re-mint the Swamp tokens<br/>nested Gateway · 30 days
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> What it does:
