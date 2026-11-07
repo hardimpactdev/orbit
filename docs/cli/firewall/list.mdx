@@ -29,7 +29,7 @@ The list shows what Orbit has recorded. It does not read the Node, so it works w
 
 Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. With several Nodes it also has a NODE column. A rule without a label shows `—`. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
 
-A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has `failed_step` and `error_code`; repeat the command that created it once the cause is fixed.
+A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has the failed Operation's `failed_step` and `error_code`, even if only part of the rule was applied. Repeat the command that created it once the cause is fixed. A retry clears those failure fields while the rule is `provisioning`.
 
 ## Orbit's own rules
 

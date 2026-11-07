@@ -90,7 +90,7 @@ sequenceDiagram
       %% path: failed
       SW--xGW: Run failed<br/>error_code · failed step
       %%> Result:
-      %%> - the rule stays visible as failed and the Operation fails
+      %%> - the rule stays visible as failed and the Operation fails; the rule records the Operation's `error_code` and `failed_step` for `firewall:list`
       %%> - a native step stopping before a public check result reports `operation.native_failed`
       %%> On the Node:
       %%> - previously added lines remain, and a line deleted for reordering may be absent; no rollback

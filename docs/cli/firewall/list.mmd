@@ -60,7 +60,7 @@ sequenceDiagram
     GW-->>CLI: Rules<br/>table or JSON
     %%> Result:
     %%> - columns PORT, PROTOCOL, SOURCE, ACTION, LABEL, STATUS; with `--live` also MATCH; with several Nodes also NODE
-    %%> - a failed rule has `failed_step` and `error_code` in JSON
+    %%> - a failed rule has the failed Operation's `failed_step` and `error_code` in JSON, including a native change that fails before verification; a retry clears both fields while provisioning
   else --live and an agent offline
     %% path: agent-offline
     GW-->>CLI: Rules<br/>some possibly outdated

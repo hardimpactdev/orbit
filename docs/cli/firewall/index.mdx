@@ -148,7 +148,7 @@ Every command accepts `--json` and requires `--node` with a numeric Node ID. In 
 
 ## Error codes
 
-The CLI validates the port, source, and protocol before it sends a request. Orbit returns admission errors. A failure while applying appears in the Operation's history. If execution stops before the final check, the final Operation reports `operation.native_failed`.
+The CLI validates the port, source, and protocol before it sends a request. Orbit returns admission errors. A failure while applying appears in the Operation's history. If execution stops before the final check, the final Operation reports `operation.native_failed`. The rule stays visible as `failed`; [`firewall:list --json`](/cli/firewall/list) shows its recorded failed step and error code.
 
 | Error code | Meaning |
 | --- | --- |

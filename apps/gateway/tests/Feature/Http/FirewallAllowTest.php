@@ -234,8 +234,9 @@ it('skips a source contained by one protected range but admits a wider range or 
     'all IPv6 does not admit IPv4' => ['8001', '192.0.2.1', false, '::/0'],
 ]);
 
-it('retains the both-protocol failed record and native error when the second UFW allow fails before verification', function (): void {
-    $response = $this->postJson($this->url, ['port' => '47443', 'source' => '192.0.2.1'])->assertAccepted();
+it('records and lists the failed native step for a both-protocol firewall rule', function (string $action): void {
+    $url = '/api/v1/nodes/'.$this->node->id.'/firewall-rules/'.$action;
+    $response = $this->postJson($url, ['port' => '47310', 'source' => '10.232.2.11'])->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     $rule = FirewallRule::query()->sole();
     $run = $operation->state['swamp_run_id'];
@@ -247,13 +248,13 @@ it('retains the both-protocol failed record and native error when the second UFW
             ['name' => 'Read the rules', 'status' => 'succeeded'],
             ['name' => 'Plan the changes', 'status' => 'succeeded'],
             ['name' => 'Change the rules-0', 'status' => 'succeeded', 'outputs' => ['exitCode' => 0]],
-            ['name' => 'Change the rules-1', 'status' => 'failed', 'outputs' => ['exitCode' => 1, 'stderr' => 'The second UFW allow failed.']],
+            ['name' => 'Change the rules-1', 'status' => 'failed', 'outputs' => ['exitCode' => 1, 'stderr' => 'ufw: injected fault']],
             ['name' => 'Read the result', 'status' => 'skipped'],
             ['name' => 'Check the rules', 'status' => 'skipped'],
             ['name' => 'accepted', 'status' => 'skipped'],
         ]]],
     ];
-    $selector = app(DirectOperation::class)->definition('firewall.allow')['terminal_result'];
+    $selector = app(DirectOperation::class)->definition('firewall.'.$action)['terminal_result'];
     app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run, 'status' => 'failed'], $selector);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
@@ -262,11 +263,33 @@ it('retains the both-protocol failed record and native error when the second UFW
         ->and($operation->lock_key)->toBeNull()
         ->and($rule->refresh()->status)->toBe(LifecycleStatus::Failed)
         ->and($rule->error_code)->toBe('operation.native_failed')
+        ->and($rule->failed_step)->toBe('Change the rules-1')
+        ->and($rule->action->value)->toBe($action)
         ->and($rule->protocol)->toBe('any');
 
-    $this->postJson($this->url, ['port' => '47443', 'source' => '192.0.2.1'])->assertAccepted();
-    expect(FirewallRule::query()->sole()->id)->toBe($rule->id);
-});
+    foreach (['', '&live=1'] as $flags) {
+        $this->getJson('/api/v1/firewall-rules?node='.$this->node->id.$flags)->assertOk()
+            ->assertJsonCount(1, 'data.0.rules')
+            ->assertJsonPath('data.0.rules.0.id', $rule->id)
+            ->assertJsonPath('data.0.rules.0.port', '47310')
+            ->assertJsonPath('data.0.rules.0.action', $action)
+            ->assertJsonPath('data.0.rules.0.protocol', 'any')
+            ->assertJsonPath('data.0.rules.0.status', 'failed')
+            ->assertJsonPath('data.0.rules.0.error_code', 'operation.native_failed')
+            ->assertJsonPath('data.0.rules.0.failed_step', 'Change the rules-1');
+    }
+
+    $this->postJson($url, ['port' => '47310', 'source' => '10.232.2.11'])->assertAccepted();
+    expect(FirewallRule::query()->sole()->id)->toBe($rule->id)
+        ->and($rule->refresh()->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($rule->failed_step)->toBeNull()
+        ->and($rule->error_code)->toBeNull();
+    $this->getJson('/api/v1/firewall-rules?node='.$this->node->id)->assertOk()
+        ->assertJsonPath('data.0.rules.0.id', $rule->id)
+        ->assertJsonPath('data.0.rules.0.status', 'provisioning')
+        ->assertJsonPath('data.0.rules.0.failed_step', null)
+        ->assertJsonPath('data.0.rules.0.error_code', null);
+})->with(['allow', 'deny']);
 
 it('projects the native allow result, retains failed intent, and releases the lock exactly once', function (string $status, ?string $code, array $result): void {
     $this->postJson($this->url, ['port' => '443'])->assertAccepted();
@@ -287,7 +310,8 @@ it('projects the native allow result, retains failed intent, and releases the lo
         ->and($operation->lock_key)->toBeNull()->and($operation->finished_at)->not->toBeNull()
         ->and($rule->status)->toBe($status === 'succeeded' ? LifecycleStatus::Active : LifecycleStatus::Failed)
         ->and($rule->protocol)->toBe('any')
-        ->and($rule->error_code)->toBe($code);
+        ->and($rule->error_code)->toBe($code)
+        ->and($rule->failed_step)->toBe($code === null ? null : 'Check the rules');
     $this->postJson($this->url, ['port' => '443', 'label' => 'retry'])->assertAccepted();
     expect(FirewallRule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(2)
         ->and($this->starts)->toHaveCount(2);
