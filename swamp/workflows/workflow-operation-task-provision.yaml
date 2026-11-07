@@ -116,10 +116,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-ready-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-ready-vm-" + string(inputs.intent.guest_ssh.target.node_id) }}
       methodName: exec
       globalArgs:
-        name: ${{ "task-vm-ready-" + string(inputs.node_id) }}
+        name: ${{ "task-vm-ready-vm-" + string(inputs.intent.guest_ssh.target.node_id) }}
         transport: {kind: ssh, user: '${{ inputs.intent.host.ssh.target.user }}', port: '${{ inputs.intent.host.ssh.target.port }}', identityFile: '${{ inputs.intent.host.ssh.identity_file }}'}
         hosts: [{name: host, address: '${{ inputs.intent.host.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.host.ssh.target.host_keys }}'}}]
       inputs:
