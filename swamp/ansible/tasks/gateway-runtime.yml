@@ -20,6 +20,9 @@
     regexp: "^{{ item | regex_escape }}="
     state: absent
   loop: "{{ rt.gateway.retired_settings }}"
+  # The file holds credentials: a diff or a failure must not print it.
+  no_log: true
+  diff: false
 # Hourly log rotation, unless an operator masked logrotate.
 - name: Read the logrotate mask
   ansible.builtin.command: { argv: [systemctl, is-enabled, logrotate.service, logrotate.timer] }
