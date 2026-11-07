@@ -27,6 +27,9 @@ final class SwampRoleUnits
 
     private const string WorkerHome = '/var/lib/orbit-swamp-worker/%i';
 
+    /** The temp directory of serve. The compiled binary keeps its start cache in `TMPDIR`, so a root run, which writes `/tmp`, can not replace it. */
+    private const string ServeTemp = '/var/lib/orbit-swamp-serve/tmp';
+
     private const string Checkout = '/apps/orbit-monorepo-staging/checkout/swamp';
 
     /**
@@ -49,10 +52,10 @@ final class SwampRoleUnits
 
         return "[Unit]\nDescription=Orbit swamp role worker %i\nAfter=network-online.target\n"
             ."Wants=network-online.target\nStartLimitIntervalSec=0\n\n"
-            ."[Service]\nType=exec\nUser={$user}\nStateDirectory=orbit-swamp-worker/%i\n"
+            ."[Service]\nType=exec\nUser={$user}\nStateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n"
             ."WorkingDirectory={$home}\n"
             ."Environment=HOME={$home} SWAMP_HOME={$home}/home SWAMP_CONFIG_DIR={$home}/config"
-            ." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
+            ." TMPDIR={$home}/tmp SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
@@ -75,11 +78,11 @@ final class SwampRoleUnits
 
         return "[Unit]\nDescription=Orbit swamp role serve\nAfter=network-online.target\nWants=network-online.target\n"
             ."RequiresMountsFor={$repo}\n\n"
-            ."[Service]\nType=simple\nUser={$user}\nWorkingDirectory={$repo}\n"
+            ."[Service]\nType=simple\nUser={$user}\nStateDirectory=orbit-swamp-serve orbit-swamp-serve/tmp\nWorkingDirectory={$repo}\n"
             ."Environment=HOME={$home} PATH={$home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
             ." SWAMP_HOME={$home}/.swamp SWAMP_CONFIG_DIR={$config} SWAMP_API_KEY_FILE={$config}/api-key"
             ." SWAMP_SERVER_TOKEN_FILE={$config}/serve-driver-token SWAMP_REMOTE_ONLY=1 NODE_USE_SYSTEM_CA=1"
-            ." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
+            .' TMPDIR='.self::ServeTemp." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
             ."ExecStart=/usr/local/bin/swamp serve --repo-dir {$repo} --port ".self::Port.' --host 127.0.0.1'
             ." --auth-mode token --admins user:nckrtl --club-api-key-file {$config}/api-key"
             .' --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=,'
