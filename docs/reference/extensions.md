@@ -121,7 +121,7 @@ The Node Caddy build renders core's sources first, then each `ContributedCaddySi
 
 A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
 
-A `ContributedNodeFirewallRules` contribution lists the UFW rules that the extension's own operation applies, so `firewall:list --managed` shows them and the live check matches them instead of reporting them as drift. It returns no rules for a Node it does not run on, or while its extension is off. The AI router contributes the two rules of its [task VM guard](/reference/ai-router#task-vm-guard).
+A `ContributedNodeFirewallRules` contribution lists the UFW rules that the extension's own operation applies, so `firewall:list --managed` shows them and the live check matches them instead of reporting them as drift. It returns no rules for a Node it does not run on. It keeps returning them until its own operation took them off, as a contributed Caddy site stays until its extension removes it. The AI router contributes the two rules of its [task VM guard](/reference/ai-router#task-vm-guard).
 
 The Node footprint captures core's artifact digests first, then each contributed `NodeFootprintArtifact` in provider order. Native Swamp actions execute supported artifacts. An applicable artifact without a native action refuses before effects. Core owns the `php-runtime` artifact for [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits); it uses this existing interface and adds no plug-in point. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
 
