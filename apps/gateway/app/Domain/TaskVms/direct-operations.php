@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
+use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
@@ -25,6 +26,12 @@ $provision = [
     'secret_outputs' => [],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$']],
 ];
+
+// What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, the claim's model key and its Pi token and
+// model file; and the proof Swamp Club key, which a refresh gives the base VM.
+$taskStart = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'],
+    ['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$'],
+    ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-(claim|token)-[1-9][0-9]*$']];
 
 return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-hub-converge',
@@ -53,16 +60,23 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'destroy', 'step' => 'Destroy the task VM', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
 ], 'task_vm.provision' => $provision, 'task_vm.slot_enrol' => [
-    // A ready slot (docs/cli/tasks/vm-slots.mmd): the VM child of task_vm.provision, the converge and a stop.
-    ...$provision, 'workflow' => 'operation-task-vm-slot-enrol', 'projection' => TaskVmSlotEnrolProjection::class,
+    'workflow' => 'operation-task-vm-slot-enrol', 'projection' => TaskVmSlotEnrolProjection::class, 'workflow_inputs' => true,
+    // No result step: the projector reads the hub peer step.
+    'terminal_result' => ['job' => 'enrol', 'step' => TaskVmSlotEnrolProjection::EndCheck, 'native' => true],
+], 'task_vm.slot_release' => [
+    'workflow' => 'operation-task-vm-slot-release', 'projection' => TaskVmSlotReleaseProjection::class, 'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'release', 'step' => 'Delete the VM', 'native' => true],
+    // The claim's model key, to revoke; the delete takes no secret.
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$']],
 ], 'task_vm.image_refresh' => [
     'workflow' => 'operation-task-vm-image-refresh',
     'projection' => TaskVmImageRefreshProjection::class,
     'workflow_inputs' => true,
-    // No result step: the projector reads the promotion's status and the aliases it printed.
-    'terminal_result' => ['job' => 'refresh', 'step' => TaskVmImageRefreshProjection::EndCheck, 'native' => true, 'captures' => TaskVmImageRefreshProjection::captures()],
-    // The proof Swamp Club key, which the nested Gateway's Swamp runs with while the refresh converges it.
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
+    // No result step: the projector reads the prune's status and promotes the snapshot the run took.
+    'terminal_result' => ['job' => 'refresh', 'step' => TaskVmImageRefreshProjection::EndCheck, 'native' => true],
+    // The proof Swamp Club key, which the nested Gateway's Swamp runs with while the refresh converges it, and what the task start that
+    // proves the candidate writes.
+    'execution_copies' => $taskStart,
 ], 'task_vm.fleet_build' => [
     'workflow' => 'operation-task-vm-fleet-build',
     'projection' => TaskVmFleetBuildProjection::class,

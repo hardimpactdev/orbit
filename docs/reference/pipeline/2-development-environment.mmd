@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (Nick 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a fixed slot `<node>-tvm-<n>` from the host's image. The image holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers, migrated and running, with a `base` snapshot each. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. A claim only starts the slot: docs/cli/tasks/provision.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fixed slot identity `<node>-tvm-<n>`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/tasks/provision.mmd.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -7,35 +7,30 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
-  %% lane VM icon=server pill=slot tone=purple
+  %% lane VM icon=server pill=task VM tone=purple
   %% lane NT icon=server pill=fleet tone=gray
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>provision run
   participant H as Task VM host<br/>Incus over ssh
-  participant VM as Slot<br/>outer · operator
+  participant VM as Task VM<br/>outer · operator
   participant NT as Nested fleet<br/>3 containers
-  Note over GW: Claim a free slot<br/>group at a commit
+  Note over GW: Claim a slot identity<br/>mint the claim's keys
   %%> Requirements:
-  %%> - an external task group in `todo` and a free slot on a host, enrolled from the host's promoted image
+  %%> - an external task group in `todo`, a free slot identity and a promoted base snapshot on its host
   %%> Result:
-  %%> - the group holds the slot; its Node, WireGuard peer, agent secret, Pi token, host key and workspace Instance already exist, so nothing is minted or published
+  %%> - the group holds the identity; its Node, WireGuard peer, host key and agent secret already exist; the claim's Pi token and model key are new
   %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission answers `tasks.capacity_unavailable` and names the release the host's image comes from
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof
-  SW->>H: Start the slot<br/>incus start
+  SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - starts the stopped slot; about 7 s to the guest agent
-  SW->>VM: Fetch the task branch<br/>onto the warm checkout
+  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), `incus start`, then the identity and the claim's keys are written; the containers start with the VM
+  SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
-  %%> - `git fetch` of the group's branch with an App read token minted for this step, then checkout; the token never stays on the VM
-  %%> - `composer install` or `npm ci` only when a lock file differs from main's
-  %%> - no step brings the task branch up to date with main: `tasks:sync` fetches refs only and the author merges, as stage 4 asks for a conflict
-  SW->>NT: Start the containers<br/>from base
-  %%> What it does:
-  %%> - restores `base` and starts the Gateway with Swamp, app-dev and app-prod; 3.5 to 7 s each
-  %%> - migrations run only when the branch adds new ones
-  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only, is private to each VM's fleet and is baked with the fleet, so it is no part of the slot's identity
+  %%> - the converge of the release refresh: a no-op on a current image; it catches up a small delta when main moved since the last release
+  %%> - then the new task branch on the warm checkout, at the group's start commit
+  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only and is baked with the fleet, so it is no part of the slot identity
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
@@ -55,6 +50,6 @@ sequenceDiagram
     %%> What it keeps:
     %%> - the outer VM, Pi and the checkout
   end
-  SW->>H: Release the slot<br/>stop · roll back to clean
+  SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - at the end of the group, the slot stops and rolls back to its `clean` snapshot (docs/cli/tasks/vm-slot-release.mmd); its identity stays
+  %%> - at the end of the group the VM and its seed clone go and the claim's model key is revoked (docs/cli/tasks/cancel.mmd); the identity stays

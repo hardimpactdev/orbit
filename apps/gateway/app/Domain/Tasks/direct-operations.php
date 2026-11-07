@@ -22,16 +22,16 @@ use App\Domain\Tasks\TaskSyncProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
 $taskVmKinds = require __DIR__.'/../TaskVms/direct-operations.php';
-$vmProvision = $taskVmKinds['task_vm.provision'];
+$slotRelease = $taskVmKinds['task_vm.slot_release'];
+// What a task start writes onto its new VM; the image refresh proves its candidate with one.
+$claimCopies = $taskVmKinds['task_vm.image_refresh']['execution_copies'];
 $vmResume = $taskVmKinds['task_vm.resume'];
 
-return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'cancel', 'step' => 'Check the VM is gone'], 'execution_copies' => [...(require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.destroy']['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
-    'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
-    'workflow_inputs' => true, 'terminal_result' => ['job' => 'provision', 'step' => 'Check the workspace',
-        'captures' => ['receipt' => ['job' => 'provision', 'step' => 'Set up the workspace', 'field' => 'result']]],
-    'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-(git|deps-composer|deps-npm|deps-token)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
-        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
-        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']],
+return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true], 'execution_copies' => $slotRelease['execution_copies']], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true], 'execution_copies' => [...$slotRelease['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']]], 'tasks.provision' => [
+    'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class,
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'provision', 'step' => TaskProvisionProjection::EndCheck, 'native' => true],
+    // The slot's identity and the claim's model key and Pi file, which the task start writes onto its new VM.
+    'execution_copies' => $claimCopies,
 ], 'tasks.package' => ['workflow' => 'operation-task-package', 'projection' => TaskPackageProjection::class, 'github_token_issuer' => TaskGitHubTokens::class, 'workflow_inputs' => true,
     'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the package', 'native' => true,
         'captures' => ['dependency_token' => ['job' => 'cleanup', 'step' => 'Remove the dependency auth', 'field' => 'result']]],
@@ -68,7 +68,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'prep', 'step' => 'Review has no findings', 'native' => true, 'captures' => [
-                'provision' => ['job' => 'prep', 'step' => 'Create the VM'],
+                'provision' => ['job' => 'prep', 'step' => 'Claim a slot'],
                 'draft' => ['job' => 'prep', 'step' => 'Draft the spec'],
                 'review_1' => ['job' => 'prep', 'step' => 'Review the spec 1'], 'fix_1' => ['job' => 'prep', 'step' => 'Fix the findings 1'],
                 'review_2' => ['job' => 'prep', 'step' => 'Review the spec 2'], 'fix_2' => ['job' => 'prep', 'step' => 'Fix the findings 2'],
@@ -76,10 +76,8 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 'publish' => ['job' => 'prep', 'step' => 'Open a draft PR'],
                 'findings' => ['job' => 'prep', 'step' => 'Settle review 3', 'field' => 'findings'],
             ]],
-            'execution_copies' => [...$vmProvision['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-provision-(git|deps-composer|deps-npm|deps-token)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$'],
-                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
-                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
-                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
+            'execution_copies' => [...$claimCopies,
+                ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
         ], 'tasks.prep_fix' => [
             'workflow' => 'operation-task-prep-fix', 'projection' => TaskPrepFixProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
             'workflow_inputs' => true,

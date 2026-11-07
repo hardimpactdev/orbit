@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (Nick 2026-11-07): stage 6 of the command development pipeline. When a release changed playbooks, pins or lock files, and once a day, every task VM host bakes its next image from its current one: one VM, one Ansible run that converges everything, then the image and its seed are published. Idle slots then re-enrol from it with their fixed identities. Nothing is copied between hosts. The per-host run: docs/cli/tasks/vm-image-refresh.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 6 of the command development pipeline. Each task VM host keeps one stopped base VM that never gets an identity; its ZFS snapshot is the base a task start copies. After a release, and once a day, every host starts its base VM, converges it as a task start would, stops it and snapshots it; the snapshot is proven with one task start and the Gateway promotes it. There is no Incus image and no publish. Nothing is copied between hosts. The per-host run: docs/cli/tasks/vm-image-refresh.mmd.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh
@@ -7,54 +7,49 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=each host tone=amber
-  %% lane VM icon=server pill=refresh VM tone=gray
-  %% lane SL icon=server pill=slots tone=purple
+  %% lane VM icon=server pill=base VM tone=gray
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>one run per host
   participant H as Task VM host<br/>Incus over ssh
-  participant VM as Refresh VM<br/>current image
-  participant SL as Slots<br/>fixed identities
+  participant VM as Base VM<br/>shark-base
   Note over GW: Start the refresh<br/>release · daily
   %%> Triggers:
-  %%> - a release whose commit changed what the image carries: the playbooks (`swamp/ansible`), the pins (`apps/gateway/resources/machine-software`) and the lock files (`TaskVmImageInputs`); a code-only release needs none, because a slot fetches its task branch
+  %%> - a release whose commit changed what the image carries: the playbooks (`swamp/ansible`), the pins (`apps/gateway/resources/machine-software`) and the lock files (`TaskVmImageInputs`); a code-only release needs none, because a task start converges to its own commit
   %%> - a daily Schedule; it only dispatches the admission
   %%> - a host with a refresh open returns it
   GW->>SW: Start one run per host<br/>all in parallel
   %%> Why:
   %%> - each host bakes its own image and seed; copying them between hosts is not a supported flow
   loop each task VM host, in parallel
-    SW->>H: Start the refresh VM<br/>from the current image
-    SW->>VM: Converge everything<br/>one Ansible run
+    SW->>H: Start the base VM<br/>incus start
+    SW->>VM: Converge<br/>the same converge as a task start
     %%> What it does:
-    %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins
-    %%> - the warm checkout: main at the release commit, with `vendor/` and `node_modules/`
-    %%> - each container: its role phases, the checkout device, migrations, services running; then a new `base` snapshot of each
-    SW->>H: Publish the image<br/>image and seed
+    %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed
+    %%> - the warm checkout: main at the release commit, installs only where a lock file changed
+    %%> - each container: migrations and restarts only when the code changed; no wait for nested services and no identity wipe
+    SW->>H: Stop and snapshot<br/>VM and seed
     %%> What it does:
-    %%> - stops the refresh VM, publishes it as the candidate image and its container disk as the candidate's seed; the refresh VM is deleted
-    SW->>SL: Re-enrol one slot<br/>proves the candidate
+    %%> - stops the base VM and snapshots it and its seed volume; ZFS snapshots, about 1 s
+    SW->>H: Prove the candidate<br/>one task start
     %%> What it does:
-    %%> - rebuilds the first idle slot from the candidate with its fixed identity, takes its `clean` snapshot and runs the claim's ready check; it proves exactly what a claim gets
-    SW->>H: Promote<br/>keep -previous
+    %%> - steps 2 to 4 of a task start from the new snapshot with a free slot identity, then its release
+    SW->>H: Prune old snapshots<br/>keep -previous
     %%> What it does:
-    %%> - the alias moves to the candidate, the old image keeps `-previous` for rollback, and older images are removed
-    SW->>SL: Re-enrol idle slots<br/>one at a time
-    %%> What it does:
-    %%> - each other idle slot re-enrols from the new image; a claimed slot re-enrols when it is released
+    %%> - keeps the new snapshot and the one before it; removes older ones
     opt a new host or a new base OS
       SW->>H: Build from the recipe<br/>once, not per release
       %%> What it does:
-      %%> - builds the first image from the stock image (`task_vm.image_build`); every later release only refreshes it
+      %%> - builds the first image from the stock image (`task_vm.image_build`); the first refresh makes the base VM from it once
     end
   end
   alt every host refreshed
     SW-->>GW: Host refreshed<br/>terminal event per host
-    Note over GW: Record the new image<br/>claims use it
+    Note over GW: Promote the snapshot<br/>task starts copy it
     %%> Result:
-    %%> - target about 3 min per host; one slow host does not hold the others
+    %%> - target about 25 s per host for a no-op refresh before the proof; one slow host does not hold the others
   else a refresh failed
     SW--xGW: Host not refreshed<br/>failed step
     Note over GW: Alert · try again<br/>next trigger
     %%> Result:
-    %%> - the host keeps its image; the refresh VM and the candidate are removed, and the proving slot re-enrols from the current image
+    %%> - the base VM is rolled back to the recorded snapshot and the run's snapshot removed; the identity that proved it is released
   end

@@ -1,0 +1,56 @@
+id: 8b920884-4d7f-4c4d-b740-1c00d0d809bc
+name: operation-task-vm-slot-release
+description: >-
+  Release one task VM slot (docs/cli/tasks/cancel.mmd) from full inputs on 209: the task VM and its seed clone are deleted and the
+  claim's model key is revoked. The slot identity stays with the Gateway: no Node, DNS, Metrics or hub peer change. No step calls the Gateway.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [task_vm.slot_release, tasks.cancel, task_vm.image_refresh]}
+    intent:
+      type: object
+      properties:
+        host: {type: object}
+        slot: {type: object}
+        model: {type: object}
+      required: [host, slot]
+      additionalProperties: true
+    execution_secrets:
+      type: object
+      # The claim's model key copies, when the claim issued one.
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: release
+  labels: {role: swamp}
+  steps:
+  - name: Delete the VM
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-slot-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', tags: delete}
+  # The model key of the claim goes; the next claim gets a new one. The Pi token goes with the VM.
+  - name: Revoke the model key
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.intent.model) }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-model-revoke
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ has(inputs.intent.model) ? inputs.intent.model : {} }}',
+        execution_secrets: '${{ !has(inputs.intent.model) ? {} : {"model_key": inputs.execution_secrets.model_key,
+          "model_router_management": inputs.execution_secrets.model_router_management, "model_router_anchor": inputs.execution_secrets.model_router_anchor} }}'}

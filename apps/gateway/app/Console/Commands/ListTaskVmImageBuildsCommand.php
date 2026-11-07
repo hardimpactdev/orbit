@@ -41,7 +41,9 @@ final class ListTaskVmImageBuildsCommand extends Command
             if ($build->recipe_identity !== null) {
                 $this->line('  Recipe: '.$build->recipe_identity.' | generation: '.$build->recipe_generation);
                 foreach ($build->images as $profile => $image) {
-                    $this->line("  {$profile} | {$image['project']}/{$image['alias']} | {$image['fingerprint']} | {$image['type']}");
+                    // An image build records an image; a refresh records a snapshot of the host's base VM.
+                    $name = isset($image['snapshot']) ? ($image['vm'] ?? '-').'/'.$image['snapshot'] : ($image['alias'] ?? '-').' | '.($image['fingerprint'] ?? '-');
+                    $this->line("  {$profile} | {$image['project']}/{$name} | {$image['type']}");
                 }
             }
             foreach ($build->steps as $record) {

@@ -1,426 +1,136 @@
 id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
-description: Compose canonical VM provision, source checkout and ordered setup from full inputs on209;
-  no guest worker or Gateway step callbacks.
+description: >-
+  Start a task VM for a task group (docs/cli/tasks/provision.mmd) from full inputs on 209: a new VM from the host's image with a clone of
+  its seed, the slot's fixed identity and the claim's Pi token and model key; the converge of the release refresh, which is a no-op on a
+  current image, and the new task branch; then one ready check. No step calls the Gateway.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind: {type: string, const: tasks.provision}
-    # The root run of the Operation. A parent run (prep) passes its own; a run the Gateway starts is the root.
-    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
-    intent:
-      type: object
-    converge:
-      type: object
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tasks.provision, task_vm.image_refresh]}
+    intent: {type: object}
     execution_secrets:
       type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
-        required:
-        - vault
-        - key
-        additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+      # The slot's identity, which the start writes onto the new VM; the claim's model key, registered while the
+      # VM starts; and the claim's Pi token and model file.
+      properties:
+        wireguard: &secret
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^(task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_host: *secret
+        agent_secret: *secret
+        model:
+          type: object
+          properties:
+            model_key:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+            model_router_management:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+            model_router_anchor:
+              type: object
+              properties:
+                vault: {type: string, enum: [orbit-control-inputs]}
+                key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
+              required: [vault, key]
+              additionalProperties: false
+          required: [model_key, model_router_management, model_router_anchor]
+          additionalProperties: false
+        claim:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-pi-claim-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [wireguard, ssh_host, agent_secret, model, claim]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: provision
   labels: {role: swamp}
   steps:
-  - name: Create and prepare the VM
-    # Stage 2 "Take a task VM": a claimed ready slot (docs/cli/tasks/vm-slots.mmd) is started; otherwise the VM is cloned and enrolled.
-    # A guard that is true skips its step: this step runs without `intent.slot`, the slot steps below run with it.
+  - name: Create and start the VM
     labels: {role: swamp}
-    guard: '${{ has(inputs.intent.slot) }}'
+    writes: true
     task:
       type: workflow
-      workflowIdOrName: task-vm-provision
+      workflowIdOrName: task-vm-slot-start
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
+          "agent_secret": inputs.execution_secrets.agent_secret, "claim": inputs.execution_secrets.claim} }}'}
+  # The claim's model key goes to the model router while the VM starts; Pi reads it from the claim's model file.
+  - name: Issue the model key
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-model-issue
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.model }}',
+        execution_secrets: '${{ inputs.execution_secrets.model }}'}
+  - name: Converge and branch
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-image-ansible
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-  - name: Start the slot
-    # A slot is enrolled already: a VM that already runs makes `incus start` exit 1 and counts as started; the agent wait proves it.
+        intent: ${{ inputs.intent.converge }}
+        guest: ${{ inputs.intent.slot.name }}
+        tags: software,tools,boot,checkout,fleet,check,branch
+        with_pi: ${{ inputs.intent.with_pi }}
+  # One exec: the agent, the tunnel, Pi and the three containers.
+  - name: Read the readiness
     labels: {role: swamp}
-    writes: true
-    guard: '${{ !has(inputs.intent.slot) }}'
+    dependsOn: [{step: Converge and branch, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-vm-ready-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: &slot_host
-        name: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
-        # A skipped step's inputs are still evaluated, and an UpCloud clone has no host target.
-        transport:
-          kind: ssh
-          user: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.user : "" }}'
-          port: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.port : 22 }}'
-          identityFile: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.identity_file : "" }}'
-        hosts:
-        - name: target
-          address: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.host : "" }}'
-          transport:
-            hostKeys: '${{ has(inputs.intent.slot) ? inputs.intent.host_ssh_execution.target.host_keys : [] }}'
+      globalArgs:
+        name: ${{ "task-vm-ready-" + string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.host.ssh.target.user }}', port: '${{ inputs.intent.host.ssh.target.port }}', identityFile: '${{ inputs.intent.host.ssh.identity_file }}'}
+        hosts: [{name: host, address: '${{ inputs.intent.host.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.host.ssh.target.host_keys }}'}}]
       inputs:
-        hosts: name:target
+        hosts: name:host
         sudo: true
-        okExitCodes: [0, 1]
-        argv: [timeout, '60', incus, start, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --, '${{ inputs.intent.name }}']
-  - name: Wait for the slot agent
+        okExitCodes: any
+        argv: [timeout, '60', incus, --project, '${{ inputs.intent.host.project }}', exec, '${{ inputs.intent.slot.name }}', --, sh, -c,
+          'systemctl is-active "$1" "$2" "$3"; ping -c 1 -W 5 "$4" > /dev/null && echo tunnel-up; incus list --format csv --columns ns', sh,
+          orbit-agent.service, wg-quick@orbit.service, '${{ inputs.intent.slot.pi_unit }}', '${{ inputs.intent.slot.hub_ip }}']
+        timeoutSec: 70
+  - name: Check ready
     labels: {role: swamp}
-    guard: '${{ !has(inputs.intent.slot) }}'
+    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}]
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *slot_host
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '130', incus, wait, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', --timeout, '120', --interval, '1', --, '${{ inputs.intent.name }}', agent]
-    dependsOn:
-    - step: Start the slot
-      condition:
-        type: succeeded
-  - name: Wait for the slot boot
-    # The agent answers before sshd, WireGuard and Pi; the workspace SSHes in next. A degraded boot exits 1 and still counts.
-    labels: {role: swamp}
-    guard: '${{ !has(inputs.intent.slot) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-slot-start-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *slot_host
-      inputs:
-        hosts: name:target
-        sudo: true
-        okExitCodes: [0, 1]
-        argv: [timeout, '130', incus, exec, --project, '${{ has(inputs.intent.slot) ? inputs.intent.vm.project : "" }}', '${{ inputs.intent.name }}', --, timeout, '120', systemctl, is-system-running, --wait]
-    dependsOn:
-    - step: Wait for the slot agent
-      condition:
-        type: succeeded
-  - name: Set up the workspace
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-workspace-source
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
-        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
-    dependsOn:
-    - step: Create and prepare the VM
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    - step: Start the slot
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    - step: Wait for the slot agent
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    - step: Wait for the slot boot
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-  - name: Accept the source
-    labels: {role: swamp}
-    # The source step reports the failures of its allowFailure steps (the profile, the dependency files, the Project setup) in the receipt and ends as succeeded.
-    # Nothing that needs the workspace starts before this step accepts that receipt: not the converge, not the fleet, not the Route, not the Processes.
-    task: {type: assert, expr: '"outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs && !steps["Set up the workspace"].outputs.result.result_json.contains("\"error_code\"")', severity: high, message: tasks.provision_failed}
-    dependsOn:
-    - step: Set up the workspace
-      condition:
-        type: succeeded
-  - name: Pin the converge
-    labels: {role: swamp}
-    # Stage 2, "Converge once": the task VM role phases on the outer VM (Incus with the seed pool and the nested network); a VM at the pins reports no change.
-    guard: '${{ !has(inputs.converge) }}'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: tp-data-pin-converge
-      methodName: pin
-      inputs:
-        receipt: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
-        guest_node_id: ${{ inputs.intent.guest_node_id }}
-        # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
-        intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
-    dependsOn:
-    - step: Accept the source
-      condition:
-        type: succeeded
-  - name: Converge once
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ !has(inputs.converge) }}'
-    task:
-      type: workflow
-      workflowIdOrName: operation-task-vm-converge
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.intent.guest_node_id }}
-        kind: task_vm.converge
-        intent: '${{ has(inputs.converge) ? steps["Pin the converge"].outputs.converge : {} }}'
-        execution_secrets: '${{ {} }}'
-    dependsOn:
-    - step: Pin the converge
-      condition:
-        type: succeeded
-    # A seed without its three ready copies of the current format has no nested fleet: the one decision for the fleet, and the VM goes on without it.
-    # The result says `nested_fleet: none`, and the refresh of the task image builds the fleet in such a VM.
-  - name: Find the fleet guest
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
-    task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'}}
-    dependsOn:
-    - step: Accept the source
-      condition:
-        type: succeeded
-    - step: Converge once
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-  - name: Look for ready copies
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("provision-" + string(inputs.intent.guest_node_id) + "-look-for-ready-copies").split(".").join("-") }}', methodName: exec,
-      globalArgs: {name: '${{ ("provision-" + string(inputs.intent.guest_node_id) + "-look-for-ready-copies").split(".").join("-") }}', transport: {kind: ssh, user: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.user }}', port: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.port }}',
-        identityFile: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.host }}',
-        transport: {hostKeys: '${{ steps["Find the fleet guest"].outputs.workspace.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['incus', 'list', 'fleet-ready-', '${{ "config.user.ready.format=" + inputs.intent.fleet.format }}', '--format', 'csv', '--columns', 'n'], timeoutSec: 40}}
-    dependsOn:
-    - step: Find the fleet guest
-      condition:
-        type: succeeded
-  - name: Start the nested fleet
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology || steps["Look for ready copies"].outputs.stdout.split("\n").filter(l, l.startsWith("fleet-ready-")).size() != 3 }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-nested-fleet
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
-    dependsOn:
-    - step: Accept the source
-      condition:
-        type: succeeded
-    - step: Converge once
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    - step: Look for ready copies
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    # The Gateway left the guest's SSH targets unpinned; the VM step just pinned its key.
-  - name: Bind the workspace keys
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.route == null && size(inputs.intent.processes) == 0 }}'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: '${{ "tp-data-bind" }}'
-      methodName: bind
-      inputs:
-        vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
-        guest_node_id: ${{ inputs.intent.guest_node_id }}
-        route: ${{ inputs.intent.route }}
-        processes: ${{ inputs.intent.processes }}
-    dependsOn:
-    - step: Accept the source
-      condition:
-        type: succeeded
-  - name: Hold the Route Nodes
-    labels: {role: swamp}
-    queueTimeout: 30
-    writes: true
-    guard: '${{ inputs.intent.route == null || has(inputs.run_id) }}'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-hold-acquire" }}
-      methodName: execute
-      inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 20 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\"\n"
-        env:
-          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
-          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
-    dependsOn:
-    - step: Accept the source
-      condition:
-        type: succeeded
-  - name: Route the workspace
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ inputs.intent.route == null }}'
-    task:
-      type: workflow
-      workflowIdOrName: operation-route-create
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        parent_run_id: ${{ run.id }}
-        kind: route.create
-        intent: ${{ steps["Bind the workspace keys"].outputs.route }}
-        execution_secrets: ${{ inputs.intent.route_secrets }}
-        # When the workspace step set the guest's Caddy access before the setup steps, the Route skips it there.
-        prepared: '${{ has(inputs.intent.workspace.access) && size(inputs.intent.workspace.access) > 0 ? string(inputs.intent.guest_node_id) : "" }}'
-    dependsOn:
-    - step: Bind the workspace keys
-      condition:
-        type: succeeded
-    - step: Hold the Route Nodes
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: Release the Route Nodes
-    labels: {role: swamp}
-    queueTimeout: 30
-    writes: true
-    guard: '${{ !("Hold the Route Nodes" in steps) }}'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-hold-release" }}
-      methodName: execute
-      inputs:
-        run: "curl --fail --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\" || true\n"
-        env:
-          ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-release" }}
-          ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
-    dependsOn:
-    - step: Route the workspace
-      condition:
-        type: always
-    - step: Hold the Route Nodes
-      condition:
-        type: always
-  - name: Create, start Processes
-    labels: {role: swamp}
-    writes: true
-    forEach:
-      item: member
-      in: ${{ inputs.intent.processes }}
-    task:
-      type: workflow
-      workflowIdOrName: operation-process-create
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: process.create
-        intent: ${{ steps["Bind the workspace keys"].outputs.processes[self._index].intent }}
-        execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
-    dependsOn:
-    - step: Bind the workspace keys
-      condition:
-        type: succeeded
-    - step: Route the workspace
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-    - step: Hold the Route Nodes
-      condition:
-        type: or
-        conditions: [{type: succeeded}, {type: skipped}]
-  - name: Check the workspace
-    labels: {role: swamp}
-    # Prints the whole receipt, workspace Route and Processes included; `accepted` fails the run on its error code.
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "tp-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          python3 -c '
-          import json, os
-          result = json.loads(os.environ["ORBIT_RESULT"])
-          route, processes = os.environ["ORBIT_ROUTE"], [p for p in os.environ["ORBIT_PROCESSES"].split(";") if p]
-          result["route"], result["processes"] = route, processes
-          result["nested_fleet"] = "started" if os.environ["ORBIT_FLEET"] == "succeeded" else "none"
-          failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" or os.environ["ORBIT_HOLD"] == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
-          if failed and "error_code" not in result:
-              result.update(error_code="tasks.provision_failed", failed_step=failed)
-          print(json.dumps(result))'
-        env:
-          ORBIT_FLEET: '${{ "Start the nested fleet" in steps ? steps["Start the nested fleet"].status : "skipped" }}'
-          ORBIT_BIND: '${{ "Bind the workspace keys" in steps ? steps["Bind the workspace keys"].status : "skipped" }}'
-          ORBIT_HOLD: '${{ "Hold the Route Nodes" in steps ? steps["Hold the Route Nodes"].status : "skipped" }}'
-          ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
-          ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'
-          ORBIT_RESULT: '${{ "Set up the workspace" in steps && "outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs ? steps["Set up the workspace"].outputs.result.result_json : "Set up the workspace" in steps && steps["Set up the workspace"].status == "failed" ? "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"source\"}" : "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"vm\"}" }}'
-    dependsOn:
-    - step: Create and prepare the VM
-      condition:
-        type: always
-    - step: Set up the workspace
-      condition:
-        type: always
-    - step: Accept the source
-      condition:
-        type: always
-    - step: Bind the workspace keys
-      condition:
-        type: always
-    - step: Route the workspace
-      condition:
-        type: always
-    - step: Hold the Route Nodes
-      condition:
-        type: always
-    - step: Release the Route Nodes
-      condition:
-        type: always
-    - step: Create, start Processes
-      condition:
-        type: always
-    - step: Start the nested fleet
-      condition:
-        type: always
-  - name: Accept the workspace
-    labels: {role: swamp}
-    task: {type: assert, expr: '!steps["Check the workspace"].outputs.stdout.contains("\"error_code\"")', severity: high, message: tasks.provision_failed}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: succeeded
+      type: assert
+      expr: >-
+        steps["Read the readiness"].outputs.stdout.split("\n").filter(l, l == "active").size() == 3
+        && steps["Read the readiness"].outputs.stdout.contains("tunnel-up")
+        && steps["Read the readiness"].outputs.stdout.split("\n").filter(l, l.endsWith(",RUNNING")).size() == 3
+      severity: high
+      message: '${{ "The task VM is not ready: " + steps["Read the readiness"].outputs.stdout }}'

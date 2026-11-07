@@ -94,20 +94,8 @@ it('cancels a group only for the Operation that owns it', function (string $kind
     'a proof.command that targets something else' => ['proof.command', 'node'],
 ]);
 
-it('names the caller of a cancel: the proof run, or the image refresh', function (): void {
-    expect((new CancelProofGroup(1))->trigger)->toBe('proof-run')->and((new CancelProofGroup(1, 'image-refresh'))->trigger)->toBe('image-refresh');
-});
-
-it('cancels the group of a task image refresh that is cancelled before its run starts, so its VM does not keep a slot', function (): void {
-    Queue::fake();
-    $run = proofRunning();
-    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => $run->target_id, 'node_id' => $run->node_id,
-        'input' => ['group_id' => $run->target_id], 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0]);
-
-    app(CancelOperationAction::class)->execute($refresh);
-
-    expect($refresh->refresh()->status)->toBe(OperationStatus::Cancelled);
-    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $refresh->id && $job->trigger === 'image-refresh');
+it('names the proof run as the caller of a cancel', function (): void {
+    expect((new CancelProofGroup(1))->trigger)->toBe('proof-run');
 });
 
 it('does not touch the group when another operation is cancelled', function (): void {

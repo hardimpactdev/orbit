@@ -22,6 +22,7 @@ use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
+use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
@@ -45,7 +46,7 @@ function proofRuns(array $commands): array
         $guest = $node('tvm-'.(600 + $index), '10.44.0.'.(140 + $index));
         $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Proof '.$command, 'brief' => 'Brief', 'status' => TaskGroupStatus::Reserved]);
         $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-'.(600 + $index),
-            'state' => TaskVmState::Provisioning, 'address' => '10.251.78.'.(40 + $index), 'wireguard_ip' => '10.44.0.'.(140 + $index), 'size' => TaskVmSize::Normal,
+            'slot_number' => $index + 1, 'slot_project_id' => $project->id, 'state' => TaskVmState::Provisioning, 'address' => '10.251.78.'.(40 + $index), 'wireguard_ip' => '10.44.0.'.(140 + $index), 'size' => TaskVmSize::Normal,
             'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace-'.$index, 'source_layout' => InstanceSourceLayout::Checkout,
             'source_prepare_id' => 'prepare-'.$index, 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
@@ -55,9 +56,8 @@ function proofRuns(array $commands): array
             'state' => ['swamp_run_id' => PROOF_RUN_ID], 'input' => [
                 'proof_operation_id' => $proof->id, 'commit' => str_repeat('a', 40), 'command' => $command, 'file' => $file, 'group_id' => $group->id, 'instance_id' => $instance->id,
                 'node_id' => $host->id, 'execution_secrets' => [],
-                'provision' => ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $host->id, 'guest_node_id' => $guest->id, 'name' => $vm->name, 'provider' => 'incus',
-                    'provider_id' => null, 'wireguard_ip' => $vm->wireguard_ip, 'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe', 'instance_id' => $instance->id,
-                    'enrollment' => [], 'route_id' => null, 'members' => []],
+                'provision' => ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'group_id' => $group->id, 'instance_id' => $instance->id,
+                    'workspace' => ['branch' => 'task-'.$group->id, 'start_commit' => str_repeat('a', 40)], 'intent' => ['slot' => ['name' => 'shark-tvm-1']]],
                 'verify' => ['group_id' => $group->id, 'file' => $file], 'cancel' => ['task_vm_id' => $vm->id, 'node_id' => $host->id],
             ]]);
         $runs[] = ['command' => $command, 'file' => $file, 'group_id' => $group->id, 'operation_id' => $run->id];
@@ -78,10 +78,12 @@ const PROOF_PASSED = '{"id": "main", "verdict": "passed", "secs": 9.5}';
 const PROOF_FAILED = '{"id": "deny", "verdict": "failed", "cause": "assertion", "secs": 4, "failed": ["ufw"]}';
 
 describe('the inputs of one run', function (): void {
-    it('refuses a provision without the converge intent that the workflow takes as an input of its own', function (): void {
+    it('passes the claim, the cases and the release of the slot, with the claim\'s vault key names', function (): void {
         [, [[$run]]] = proofRuns(['firewall:allow']);
 
-        expect(fn () => app(ProofCommandProjection::class)->input($run))->toThrow(ResourceOperationException::class, 'nested topology');
+        $input = app(ProofCommandProjection::class)->input($run);
+        expect($input['intent'])->toHaveKeys(['provision', 'verify', 'cancel'])->and($input['intent']['provision'])->toBe(['slot' => ['name' => 'shark-tvm-1']])
+            ->and($input)->not->toHaveKey('converge');
     });
 });
 
@@ -98,31 +100,33 @@ describe('the keep_failed input of one run', function (): void {
     it('is an input the workflow declares, and its destroy step is guarded on it and on the steps that the Gateway reads', function (): void {
         $workflow = Yaml::parseFile(dirname(base_path(), 2).'/swamp/workflows/workflow-operation-proof-run.yaml');
         $steps = collect($workflow['jobs'])->flatMap(static fn (array $job): array => $job['steps'])->keyBy('name');
-        $destroy = $steps['Destroy the VM'];
+        $destroy = $steps['Release the slot'];
 
         // The workflow takes exactly what the Gateway sends: a flag it does not declare would be refused at the start.
         expect($workflow['inputs']['properties']['keep_failed'])->toBe(['type' => 'boolean'])
             ->and(array_keys(ProofCommandProjection::keepFlag(['keep_failed' => true])))->each->toBeIn(array_keys($workflow['inputs']['properties']))
             // Swamp skips a step whose guard is true, so the guard names the flag and the two steps whose outcome keeps the VM.
-            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Create the VM"]', 'steps[?"Pin the VM"]', 'steps[?"Prove the command"]')
+            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Claim a slot"]', 'steps[?"Prove the command"]')
             // The destroy step is still one of the steps that the projection reads, and the report waits for it whether it ran or was skipped.
             ->and($destroy['dependsOn'])->toContain(['step' => 'Prove the command', 'condition' => ['type' => 'always']])
-            ->and(collect($steps['Report']['dependsOn'])->firstWhere('step', 'Destroy the VM')['condition'])->toBe(['type' => 'always']);
+            ->and(collect($steps['Report']['dependsOn'])->firstWhere('step', 'Release the slot')['condition'])->toBe(['type' => 'always']);
     });
 });
 describe('the record of one run', function (): void {
-    it('fails the run, with one unrun row, when the VM never became ready, and cancels the group the normal way', function (): void {
+    it('fails the run, with one unrun row, when the claim did not pass, and cancels the group the normal way', function (): void {
         Queue::fake();
         [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:allow']);
 
-        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Claim a slot' => ['status' => 'failed']]));
 
         expect($projected->status)->toBe(OperationStatus::Failed)
             ->and($projected->error_code)->toBe('proof.run_failed')
             ->and($projected->result['cases'])->toBe([['program' => 'swamp/proof/firewall/allow.cases.yaml', 'command' => 'firewall:allow', 'verdict' => 'unrun', 'seconds' => 0]])
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
-            ->and($vm->refresh()->state)->toBe(TaskVmState::Failed);
+            // The run released the slot itself; the claim's record starts no second release.
+            ->and($vm->refresh()->group_id)->toBe($group->id);
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
         expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.run_failed');
     });
 
@@ -130,7 +134,7 @@ describe('the record of one run', function (): void {
         Queue::fake();
         [$proof, [[$run]]] = proofRuns(['firewall:allow']);
 
-        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Create the VM' => ['status' => 'succeeded'], 'Destroy the VM' => ['status' => 'failed']], PROOF_PASSED."\n".PROOF_FAILED));
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Claim a slot' => ['status' => 'succeeded'], 'Release the slot' => ['status' => 'failed']], PROOF_PASSED."\n".PROOF_FAILED));
 
         expect($projected->error_code)->toBe('proof.cases_failed')
             ->and(array_column($projected->result['cases'], 'verdict'))->toBe(['passed', 'failed'])
@@ -141,14 +145,14 @@ describe('the record of one run', function (): void {
     it('refuses a run that succeeded and reports no ready VM', function (): void {
         [, [[$run]]] = proofRuns(['firewall:allow']);
 
-        expect(fn () => app(ProofCommandProjection::class)->apply($run, proofEnded('succeeded', ['Destroy the VM' => ['status' => 'succeeded']], PROOF_PASSED)))
+        expect(fn () => app(ProofCommandProjection::class)->apply($run, proofEnded('succeeded', ['Release the slot' => ['status' => 'succeeded']], PROOF_PASSED)))
             ->toThrow(ResourceOperationException::class);
     });
 
     it('records a run once', function (): void {
         Queue::fake();
         [, [[$run]]] = proofRuns(['firewall:allow']);
-        $ended = proofEnded('failed', ['Create the VM' => ['status' => 'failed']]);
+        $ended = proofEnded('failed', ['Claim a slot' => ['status' => 'failed']]);
 
         $first = app(ProofCommandProjection::class)->apply($run, $ended);
         $again = app(ProofCommandProjection::class)->apply($run->refresh(), $ended);
@@ -162,10 +166,10 @@ describe('the proof of the CLI', function (): void {
         Queue::fake();
         [$proof, [[$first], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
 
-        app(ProofCommandProjection::class)->apply($first, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        app(ProofCommandProjection::class)->apply($first, proofEnded('failed', ['Claim a slot' => ['status' => 'failed']]));
         expect($proof->refresh()->status)->toBe(OperationStatus::Running);
 
-        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Claim a slot' => ['status' => 'failed']]));
         expect($proof->refresh()->status)->toBe(OperationStatus::Failed)
             ->and(array_column($proof->result['cases'], 'command'))->toBe(['firewall:allow', 'firewall:deny']);
     });
@@ -214,8 +218,8 @@ function proofKeptEnd(TaskVm $vm, string $report, string $destroy = 'skipped', a
 {
     // A VM that is no longer provisioning keeps its state, so the enrollment of the receipt records nothing here.
     $vm->update(['state' => TaskVmState::Ready]);
-    $ended = proofEnded('failed', ['Create the VM' => ['status' => 'succeeded'], 'Pin the VM' => ['status' => 'succeeded'], 'Prove the command' => ['status' => 'succeeded'],
-        'Destroy the VM' => ['status' => $destroy], ...$steps], $report);
+    $ended = proofEnded('failed', ['Claim a slot' => ['status' => 'succeeded'], 'Prove the command' => ['status' => 'succeeded'],
+        'Release the slot' => ['status' => $destroy], ...$steps], $report);
     $ended['result']['provision'] = ['task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'ready' => true, 'enrollment' => ['ready' => true],
         'provider' => ['image_fingerprint' => 'fingerprint', 'running' => true, 'settled' => true], 'source' => ['branch' => 'main', 'commit' => str_repeat('a', 40), 'php_version' => '8.5', 'laravel' => false]];
 
@@ -262,7 +266,7 @@ describe('keep_failed', function (): void {
         app(ProofCommandProjection::class)->apply($first, proofKeptEnd($firstVm, PROOF_FAILED));
         expect($proof->refresh()->status)->toBe(OperationStatus::Running);
 
-        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Claim a slot' => ['status' => 'failed']]));
         expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and(array_column($proof->result['kept'], 'command'))->toBe(['firewall:allow']);
         Queue::assertPushed(CancelProofGroup::class, 1);
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $second->id);
@@ -296,7 +300,7 @@ describe('keep_failed', function (): void {
         [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:list']);
         $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
         // M5 try 11: the nested fleet did not start inside `Create the VM`, so the run never pinned the VM and never ran a case.
-        $ended = proofEnded('failed', [...$steps, 'Pin the VM' => ['status' => 'skipped'], 'Prove the command' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'skipped']]);
+        $ended = proofEnded('failed', [...$steps, 'Prove the command' => ['status' => 'skipped'], 'Release the slot' => ['status' => 'skipped']]);
 
         $projected = app(ProofCommandProjection::class)->apply($run, $ended);
 
@@ -306,14 +310,14 @@ describe('keep_failed', function (): void {
             ->and($proof->refresh()->result['kept'])->toBe([['command' => 'firewall:list', 'vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z']]);
         Queue::assertNotPushed(CancelProofGroup::class);
     })->with([
-        'the VM step failed' => [['Create the VM' => ['status' => 'failed']]],
-        'the nested fleet did not start' => [['Create the VM' => ['status' => 'failed'], 'Start the nested fleet' => ['status' => 'failed'], 'Pin the nested CA' => ['status' => 'failed']]],
+        'the VM step failed' => [['Claim a slot' => ['status' => 'failed']]],
+        'the nested fleet did not start' => [['Claim a slot' => ['status' => 'failed'], 'Start the nested fleet' => ['status' => 'failed'], 'Pin the nested CA' => ['status' => 'failed']]],
     ]);
 
     it('cancels the group the normal way when the same setup failure happens without the flag', function (): void {
         Queue::fake();
         [, [[$run]]] = proofRuns(['firewall:list']);
-        $ended = proofEnded('failed', ['Create the VM' => ['status' => 'failed'], 'Pin the VM' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'failed']]);
+        $ended = proofEnded('failed', ['Claim a slot' => ['status' => 'failed'], 'Release the slot' => ['status' => 'failed']]);
 
         $projected = app(ProofCommandProjection::class)->apply($run, $ended);
 
@@ -327,7 +331,7 @@ describe('keep_failed', function (): void {
         $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
         $vm->update(['state' => TaskVmState::Destroyed]);
 
-        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Create the VM' => ['status' => 'failed'], 'Destroy the VM' => ['status' => 'skipped']]));
+        $projected = app(ProofCommandProjection::class)->apply($run, proofEnded('failed', ['Claim a slot' => ['status' => 'failed'], 'Release the slot' => ['status' => 'skipped']]));
 
         expect($projected->result)->not->toHaveKey('kept');
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
@@ -350,9 +354,9 @@ describe('the check of the workspace commit', function (): void {
     /** The steps of a run that got a VM and failed the check of its workspace, so that no case ran. */
     function proofWorkspaceSteps(string $printed): array
     {
-        return ['Create the VM' => ['status' => 'succeeded'], 'Pin the VM' => ['status' => 'succeeded'],
+        return ['Claim a slot' => ['status' => 'succeeded'], 'Pin the VM' => ['status' => 'succeeded'],
             'Read the workspace commit' => ['status' => 'succeeded', 'stdout' => $printed],
-            'Check the workspace commit' => ['status' => 'failed'], 'Prove the command' => ['status' => 'skipped'], 'Destroy the VM' => ['status' => 'failed']];
+            'Check the workspace commit' => ['status' => 'failed'], 'Prove the command' => ['status' => 'skipped'], 'Release the slot' => ['status' => 'failed']];
     }
 
     it('records a workspace at another commit as proof.workspace_commit_mismatch, naming both commits, on the run and on the proof', function (): void {

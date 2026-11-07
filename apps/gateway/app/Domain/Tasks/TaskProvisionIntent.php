@@ -4,37 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Operations\StartOperationAction;
-use App\Actions\Routes\CreateRouteAction;
-use App\Actions\TaskVms\AllocateTaskVmAction;
-use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Logs\LogRedactor;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Processes\ProcessInstanceOperation;
-use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\ProjectLifecycleStepStore;
-use App\Domain\Projects\ProjectType;
-use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmConvergeIntent;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
-use App\Domain\TaskVms\TaskVmProvisionIntent;
-use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
-use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotPool;
-use App\Domain\TaskVms\TaskVmWorkspaceGuard;
-use App\Infrastructure\Swamp\PendingSshHostKey;
-use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Models\Instance;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -43,15 +21,16 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** One Tasks admission owns placement, enrollment and workspace intent. No child Operations. */
+/**
+ * One Tasks admission claims a slot identity (docs/cli/tasks/provision.mmd) and records the intent of its task start: a new VM from the
+ * host's image with the identity, the converge and the task branch. The admission mints only the claim's Pi token and model key. No child
+ * Operations.
+ */
 final readonly class TaskProvisionIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency,
-        private TaskVmEnrollmentIntent $enrollment, private AllocateTaskVmAction $allocate,
-        private TaskVmProvisionIntent $vms, private StorageRootResolver $roots,
-        private NodeSettingsNormalizer $settings, private ManagedCheckoutOverlap $overlap,
-        private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php,
-        private TaskStartCommit $startCommit, private TaskVmSlotPool $slots) {}
+        private TaskVmEnrollmentIntent $enrollment, private TaskStartCommit $startCommit, private TaskVmSlotPool $slots,
+        private TaskVmSlotRuns $runs) {}
 
     /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
     public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
@@ -60,16 +39,14 @@ final readonly class TaskProvisionIntent
     }
 
     /**
-     * Captures the provision intent in one admission transaction and records it as the Operation of `$kind`. A kind
-     * that runs provision as one step of a larger run, such as `tasks.prep`, adds its own intent through `$extend`,
-     * which receives the provision intent, the group, its workspace Instance and its VM, and returns the whole input of
-     * the Operation; the node of the Operation stays the VM host of the provision intent. `$host` pins the VM to one task VM
-     * host, and `$size` sets its size, as the refresh of that host's task image does. `$reserveSlots` makes the VM yield: it
-     * claims no ready slot, never overflows to UpCloud and is placed only where that many slots stay free after it.
+     * Claims a slot in one admission transaction and records the intent as the Operation of `$kind`. A kind that runs the claim as one step
+     * of a larger run, such as `tasks.prep`, adds its own intent through `$extend`, which receives the provision intent, the group, its
+     * workspace Instance and its slot, and returns the whole input of the Operation; the node of the Operation stays the slot's host.
+     * `$keepFree` slots of the chosen host stay free after the claim, as a report-only proof asks.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, ?int $host = null, ?TaskVmSize $size = null, int $reserveSlots = 0): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, int $keepFree = 0): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
@@ -79,114 +56,52 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $commit, $kind, $extend, $host, $size, $reserveSlots): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $keepFree): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
             $this->assertProvisionable($group);
             $project = $group->project;
-            // A routed workspace renders its Route from the Project's source facts, as instance:create does, so they must be valid.
-            if ($project->type->isWebServing() && $project->task_workspace_routed && $project->source_profile_error !== null) {
-                throw new ResourceOperationException($project->source_profile_error, 'The Project source metadata is invalid or unsupported for a routed task workspace.', 422);
-            }
-            // Project 62 and the group of a `proof:run` (the one provision with an explicit commit) get the proof club key, and no other task.
-            $proof = ($project->id === 62 && $project->slug === 'swamp-proof') || $commit !== null;
-            $proofClub = $proof ? config('swamp.proof_club_api_key') : null;
-            if ($proof && (! is_string($proofClub) || trim($proofClub) === '')) {
-                throw new ResourceOperationException('tasks.proof_credential_unavailable', 'A proof requires its Gateway-held sandbox club credential before placement.', 503);
-            }
             try {
-                // Stage 2 "Take a task VM": a ready slot, else a clone. A host-pinned provision (an image refresh) and a report-only one always clone.
-                $slot = $host === null && $reserveSlots === 0 ? $this->slots->claim($group) : null;
-                $vm = $slot ?? $this->allocate->capture($group, $host, $size, $reserveSlots);
+                $slot = $this->slots->claim($group, keepFree: $keepFree);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);
             }
-            $input = $slot !== null ? $this->slots->claimInput($slot) : $this->vms->capture($vm);
-            $node = $vm->node;
-            assert($node !== null);
-            $account = new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
-            $apps = $this->roots->resolveApps($this->settings->fromStored($node->settings), $account);
-            $sourceRoot = $apps->append($project->slug);
-            $checkout = $sourceRoot->append(TaskVmWorkspaceGuard::WorkspaceCheckout);
-            $this->overlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
-            $instance = Instance::query()->create([
-                'project_id' => $project->id, 'node_id' => $node->id, 'name' => TaskWorkspaceName::for($group),
-                'source_layout' => InstanceSourceLayout::Checkout, 'source_prepare_id' => (string) Str::uuid(),
-                'checkout_path' => $checkout->value, 'root' => null, 'branch_override' => TaskWorkspaceName::for($group),
-                'task_workspace_routed' => $routed = $project->type->isWebServing() && $project->task_workspace_routed, 'task_workspace_owner_id' => $group->id,
-                'status' => InstanceState::Reserved, 'first_setup_pending' => true,
-                // Admitted Project facts, as instance:create records them: the Route site renders from them before the run.
-                'selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true,
-            ]);
-            // The guest's host key is pinned only by this run's VM step; its SSH targets carry `host_keys: null`
-            // until the workflow binds them. The Route comes first: it changes how Process units render.
-            [$route, $routeInput, $members] = app(PendingSshHostKey::class)->during($node->id, function () use ($instance, $routed, $node): array {
-                $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
-                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-
-                return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
-                    // The run routes the workspace after its setup, so the Route publishes it served, not the 503 of a reserved
-                    // Instance, and keeps the .env the setup wrote; the Gateway's later render then matches what was published.
-                    preserveEnvironment: true, preparedWorkloads: true),
-                    app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];
-            });
-            $values = app(LogRedactor::class)->valuesFor($instance);
-            $setup = array_map(function ($step) use ($values): array {
-                if (app(LogRedactor::class)->redact($step->command, $values) !== $step->command) {
-                    throw new ResourceOperationException('tasks.provision_refused', 'Setup commands must contain no credential values.', 422);
-                }
-                $command = $step->toArray();
-
-                return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
-            }, $this->steps->ordered($project, LifecyclePhase::Setup));
-            // A claimed slot converged at its enrol; it converges again only when the release changed playbooks, pins or lock files since.
-            $converge = $slot !== null && $slot->slot_digest === $this->slots->releaseDigest() ? null : $this->converge($vm, $node, $input);
-            // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
-            $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                'swamp-proof-club-api-key', $proofClub) : null;
-            // Only the vault key name is admitted. The clone step mints the credential when it runs ({@see TaskGitHubTokens}):
-            // the VM step before it can wait for capacity longer than the hour that an installation token lives.
-            $gitAuthorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.$vm->id];
-            // The setup steps get the same: the key names of the Composer and npm configuration, written when the step runs.
-            $dependencyAuth = TaskGitHubTokens::dependencyAuth($vm);
-            $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
-                'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
-                'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization, 'dependency_auth' => $dependencyAuth,
-                'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
-                    'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
-                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
-                    'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
-                    'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
-                    'setup' => $setup, 'access' => self::access($routeInput, $node->id)],
-                'fleet' => TaskVmReadyCopiesIntent::fleet(), 'converge' => $converge,
-                'ssh_identity' => app(SwampSshExecutionInput::class)->identity(),
-                'route_id' => $route?->id, 'route' => $routeInput, 'members' => $members];
+            $branch = TaskWorkspaceName::for($group);
+            $claim = $this->runs->claim($slot, $branch, $startCommit);
+            $instance = $this->workspace($slot, $group, $branch, ValidatedData::string(ValidatedData::object($claim['intent']['slot'])['checkout']));
+            $input = ['group_id' => $group->id, 'instance_id' => $instance->id, 'task_vm_id' => $slot->id, 'node_id' => (int) $slot->host_node_id,
+                'project_id' => $project->id,
+                'workspace' => ['checkout_path' => $instance->checkout_path, 'user' => 'orbit', 'repository' => $project->repository_url,
+                    'branch' => $branch, 'start_commit' => $startCommit],
+                'intent' => $claim['intent'],
+                'execution_secrets' => $claim['execution_secrets']];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 
-            return $this->start->execute($kind, 'task_group', $group->id, ValidatedData::integer($input['node_id']), $extend($input, $group, $instance, $vm), $caller, $request);
+            return $this->start->execute($kind, 'task_group', $group->id, (int) $slot->host_node_id, $extend($input, $group, $instance, $slot), $caller, $request);
         }));
     }
 
     /**
-     * "Converge once" of stage 2: the task VM role phases on the outer VM, with Incus and the nested network, run
-     * before the fleet starts. The guest's host key is pinned by this run's VM step, so its SSH target carries `host_keys: null` until then.
-     *
-     * @param  array<string,mixed>  $input  the VM intent
-     * @return array<string,mixed>|null null for a task without a topology
+     * The slot's workspace Instance, bound to the group: one per slot, at the warm checkout the image carries. A release unbinds it; it is
+     * never deleted with a task.
      */
-    private function converge(TaskVm $vm, Node $node, array $input): ?array
+    private function workspace(TaskVm $slot, Task $group, string $branch, string $checkout): Instance
     {
-        $create = $input['create'] ?? null;
-        if (! is_array($create) || ($create['topology'] ?? false) !== true) {
-            return null;
+        $instance = Instance::query()->where('node_id', $slot->node_id)->where('checkout_path', $checkout)->lockForUpdate()->first()
+            ?? new Instance(['project_id' => $group->project_id, 'node_id' => $slot->node_id, 'source_layout' => InstanceSourceLayout::Checkout,
+                'checkout_path' => $checkout, 'root' => null, 'task_workspace_routed' => false]);
+        if ($instance->exists && $instance->task_workspace_owner_id !== null) {
+            throw new ResourceOperationException('tasks.capacity_unavailable', 'The slot\'s workspace is still bound to another group.', 409);
         }
+        $instance->fill(['name' => TaskWorkspaceName::for($group), 'branch_override' => $branch, 'task_workspace_owner_id' => $group->id,
+            'source_prepare_id' => (string) Str::uuid(), 'status' => InstanceState::Reserved, 'first_setup_pending' => false,
+            'failed_step' => null, 'error_code' => null])->save();
 
-        return app(PendingSshHostKey::class)->during($node->id, fn (): array => app(TaskVmConvergeIntent::class)->provisioning($vm,
-            ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network]));
+        return $instance;
     }
 
     private function assertProvisionable(Task $group): void
@@ -200,26 +115,5 @@ final readonly class TaskProvisionIntent
         if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
             throw TaskGroupGuard::alreadyClaimed();
         }
-    }
-
-    /**
-     * The guest's rows of the Route's Caddy access, as argv lists. The workspace step runs them after the fetch and before the setup
-     * steps write into the tree, so what the setup creates inherits the default entries; the Route then skips them for the guest.
-     * None when the Route also writes an APP_URL line on the guest, which only exists after the setup steps: the Route keeps both.
-     *
-     * @param  array<string,mixed>|null  $route
-     * @return list<list<string>>
-     */
-    private static function access(?array $route, int $guestNodeId): array
-    {
-        $create = $route === null ? [] : ValidatedData::object($route['route_create'] ?? []);
-        $guest = static fn (mixed $row): bool => ValidatedData::integer(ValidatedData::object($row)['node_id']) === $guestNodeId;
-        if (array_filter(is_array($create['url_lines'] ?? null) ? $create['url_lines'] : [], $guest) !== []) {
-            return [];
-        }
-        $rows = is_array($create['acl'] ?? null) ? $create['acl'] : [];
-
-        return array_values(array_map(static fn (mixed $row): array => ValidatedData::stringList(ValidatedData::object($row)['argv']),
-            array_filter($rows, $guest)));
     }
 }

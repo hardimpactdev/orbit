@@ -20,6 +20,8 @@ inputs:
       - tasks.provision
       - tasks.cancel
       - tasks.maintenance_finish
+      - task_vm.slot_release
+      - task_vm.image_refresh
     intent:
       type: object
       properties:

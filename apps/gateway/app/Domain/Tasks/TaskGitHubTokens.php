@@ -153,7 +153,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     {
         return match ($operation->kind) {
             'tasks.provision', 'tasks.package' => $operation->input,
-            'tasks.prep', 'proof.command', 'task_vm.image_refresh' => ValidatedData::object($operation->input['provision'] ?? []),
+            'tasks.prep', 'proof.command' => ValidatedData::object($operation->input['provision'] ?? []),
             default => throw $this->forbidden(),
         };
     }

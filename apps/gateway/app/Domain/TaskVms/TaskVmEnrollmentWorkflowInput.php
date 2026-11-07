@@ -80,10 +80,20 @@ final readonly class TaskVmEnrollmentWorkflowInput
     /** @param  array<string,mixed>  $runtime */
     private function piModels(array $runtime, TaskVm $vm): string
     {
+        return self::piModelsFile(ValidatedData::string($runtime['origin']), ValidatedData::stringList($runtime['models']),
+            $vm->model_key ?? throw new \LogicException('The VM has no model key.'));
+    }
+
+    /**
+     * The Pi model file of a task VM: the model router's provider with the VM's model key.
+     *
+     * @param  list<string>  $models
+     */
+    public static function piModelsFile(string $origin, array $models, #[\SensitiveParameter] string $modelKey): string
+    {
         return json_encode(['providers' => ['orbit-task-vm' => [
-            'baseUrl' => rtrim(ValidatedData::string($runtime['origin']), '/').'/v1', 'api' => 'openai-responses',
-            'apiKey' => $vm->model_key ?? throw new \LogicException('The VM has no model key.'),
-            'models' => array_map(static fn (string $id): array => ['id' => $id, 'reasoning' => true], ValidatedData::stringList($runtime['models']))]]],
+            'baseUrl' => rtrim($origin, '/').'/v1', 'api' => 'openai-responses', 'apiKey' => $modelKey,
+            'models' => array_map(static fn (string $id): array => ['id' => $id, 'reasoning' => true], $models)]]],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
 }

@@ -25,8 +25,6 @@ inputs:
       required: [club]
       additionalProperties: false
     tags: {type: string, minLength: 1}
-    # After the phase, read the host's image aliases, so the caller sees which image an alias names.
-    read_aliases: {type: boolean}
   required: [operation_id, node_id, kind, intent, execution_secrets, tags]
   additionalProperties: false
 jobs:
@@ -67,21 +65,6 @@ jobs:
           ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
           ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
           ORBIT_CLUB_KEY: ${{ vault.get(inputs.execution_secrets.club.vault, inputs.execution_secrets.club.key) }}
-  - name: Read the aliases
-    labels: {role: swamp}
-    guard: '${{ !has(inputs.read_aliases) || !inputs.read_aliases }}'
-    dependsOn:
-    - {step: Check the host phase, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-host-aliases-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-vm-host-aliases-" + string(inputs.node_id) }}
-        transport: {kind: ssh, user: '${{ inputs.intent.host.ssh.target.user }}', port: '${{ inputs.intent.host.ssh.target.port }}', identityFile: '${{ inputs.intent.host.ssh.identity_file }}'}
-        hosts: [{name: host, address: '${{ inputs.intent.host.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.host.ssh.target.host_keys }}'}}]
-      inputs: {hosts: 'name:host', sudo: true, argv: [timeout, '30', incus, --project, '${{ inputs.intent.host.project }}', image, alias, list, --format, json], timeoutSec: 40}
   - name: Check the host phase
     labels: {role: swamp}
     dependsOn:

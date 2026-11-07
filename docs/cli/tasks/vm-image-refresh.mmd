@@ -1,46 +1,44 @@
 sequenceDiagram
-  %% Target design (Nick approved 2026-11-07): one VM bakes the next image and seed; idle slots then re-enroll from it with their fixed identities. Replaces the full task VM provision, Save the ready copies, the builder VM, the smoke VM and the check VM.
-  %% status: reviewed
+  %% Target design (agreed with Nick, 2026-11-07): each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. After a release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op.
+  %% status: draft
   %% command: none · after a release, and daily
   %% kind: task_vm.image_refresh
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
-  %% lane VM icon=server pill=refresh VM tone=purple
+  %% lane VM icon=server pill=base VM tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
-  participant VM as Refresh VM<br/>current image
+  participant VM as Base VM<br/>shark-base
   Note over GW: Admit the refresh<br/>one run per host
-  %%> Started by:
-  %%> - the release projection, when the release changed playbooks, pins or lock files; a daily schedule
-  %%> Result:
-  %%> - the intent holds the release commit, the current image and the host; a second admission returns the open run
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
-  SW->>H: Start the refresh VM<br/>from the current image
-  SW->>VM: Converge everything<br/>one Ansible run
+  SW->>H: Start the base VM<br/>incus start
   %%> What it does:
-  %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins
-  %%> - the warm checkout: main at the release commit, with `vendor/` and `node_modules/`
-  %%> - each container: its role phases, the checkout device, migrations, services running; cloud-init off
-  %%> - then a new `base` snapshot of each container
-  SW->>H: Publish the image<br/>under the host lock
+  %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
+  %%> - a host without a base VM gets one once, from its recipe image and seed (`task_vm.image_build`)
+  SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
-  %%> - stops the refresh VM, publishes it as the candidate image and snapshots its container disk as the candidate's seed; the refresh VM is deleted
-  SW->>H: Re-enroll one slot<br/>proves the candidate
+  %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container
+  %%> - no wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
+  SW->>H: Stop and snapshot<br/>VM and seed
   %%> What it does:
-  %%> - rebuilds the first idle slot from the candidate with its fixed identity (`task_vm.slot_enrol`), takes its `clean` snapshot, then runs the claim's ready check
-  %%> Why: this replaces the smoke VM and the check VM; it proves exactly what a claim gets
-  SW->>H: Promote<br/>keep -previous
+  %%> - stops the base VM and snapshots it and its seed volume under the run's name; ZFS snapshots, about 1 s
+  SW->>H: Prove the candidate<br/>one task start
   %%> What it does:
-  %%> - the alias moves to the candidate, the old image keeps `-previous` for rollback, and older images are removed
-  %%> - the other idle slots re-enroll one at a time; a claimed slot re-enrolls when it is released
+  %%> - steps 2 to 4 of a task start from the new snapshot with a free slot identity, then its release
+  SW->>H: Prune old snapshots<br/>keep -previous
+  %%> What it does:
+  %%> - keeps the new snapshot and the one before it; removes older ones of the VM and the seed
   alt the run passes
-    SW-->>GW: Run succeeded<br/>new image
-    Note over GW: Record the image<br/>target about 3 min
+    SW-->>GW: Run succeeded<br/>new snapshot
+    Note over GW: Promote<br/>record the new snapshot
+    %%> Result:
+    %%> - task starts copy the new snapshot; the one before it is `-previous`
+    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s)
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the host keeps its image; the refresh VM and the candidate are removed, and the slot re-enrolls from the current image
+    %%> - the base VM is stopped and rolled back to the recorded snapshot, and a new snapshot is removed; task starts keep the recorded one
   end

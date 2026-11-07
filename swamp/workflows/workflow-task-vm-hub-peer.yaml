@@ -1,0 +1,64 @@
+id: 6e0d3b52-4f7a-4c1e-9a2b-8d5f1c7e3a90
+name: task-vm-hub-peer
+description: Write one task VM slot's peer file on the WireGuard hub and load it. The key is the slot's fixed public key, so a rerun changes nothing.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    hub: {type: object}
+    hub_ssh_execution: {type: object}
+    public_key: {type: string, minLength: 44, maxLength: 44}
+    guest_node_id: {type: integer, minimum: 1}
+  required: [hub, hub_ssh_execution, public_key, guest_node_id]
+  additionalProperties: false
+jobs:
+- name: peer
+  labels: {role: swamp}
+  steps:
+  - name: Write the peer file
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("wireguard-hub-peer-" + string(inputs.hub.hub_id) + "-" + string(inputs.guest_node_id)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.hub_ssh_execution.target.host }}
+        nodeUser: ${{ inputs.hub_ssh_execution.target.user }}
+        nodePort: ${{ inputs.hub_ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.hub_ssh_execution.identity_file }}
+        become: true
+        path: ${{ inputs.hub.file }}
+        ensure: present
+        content: ${{ inputs.hub.section.split("@KEY@").join(inputs.public_key) }}
+        owner: root
+        group: root
+        mode: '0600'
+      inputs: {}
+  - name: Load the peer
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Write the peer file, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("wireguard-hub-" + string(inputs.hub.hub_id)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.hub_ssh_execution.target.user }}
+          port: ${{ inputs.hub_ssh_execution.target.port }}
+          identityFile: ${{ inputs.hub_ssh_execution.identity_file }}
+        hosts:
+        - name: hub
+          address: ${{ inputs.hub_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.hub_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:hub
+        sudo: true
+        argv: ${{ ["wg", "addconf", "orbit", inputs.hub.file] }}

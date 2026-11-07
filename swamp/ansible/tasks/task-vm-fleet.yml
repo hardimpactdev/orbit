@@ -48,8 +48,8 @@
     argv: [incus, config, device, add, "{{ fleet_guests[item] }}", checkout, disk, "source={{ intent.checkout.path }}", path=/home/orbit/orbit, shift=true]
   loop: [gateway, app-dev]
   changed_when: true
-# The proof Swamp Club key is written on a task VM's root disk at its start, and the nested Gateway's Swamp reads it through this device.
-# The image holds no key; a container starts without it when the file is absent.
+# The proof Swamp Club key: a refresh gives it to the base VM, so every task VM copied from it has it, and the nested Gateway's Swamp reads
+# it through this device. A container starts without it when the file is absent.
 - name: Attach the Club key
   when: "'club-key' not in fleet_devices[fleet_guests.gateway]"
   ansible.builtin.command:
@@ -69,7 +69,10 @@
 - name: Start the containers
   ansible.builtin.command: { argv: [timeout, "120", incus, start, "{{ item }}"] }
   loop: "{{ fleet_now | rejectattr('status', 'eq', 'Running') | map(attribute='name') | list }}"
-  changed_when: true
+  register: fleet_start
+  # A container the VM's boot started since the read is running already.
+  changed_when: fleet_start.rc == 0
+  failed_when: fleet_start.rc != 0 and 'already running' not in fleet_start.stderr
 # A container made from a ready copy runs cloud-init once; it never runs again (exit 2 is a finished boot with a warning).
 - name: Finish the first boot of new containers
   when: fleet_new | length > 0

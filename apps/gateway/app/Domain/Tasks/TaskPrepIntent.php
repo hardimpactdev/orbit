@@ -9,7 +9,6 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
-use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -48,8 +47,7 @@ final readonly class TaskPrepIntent
 
         return $this->provision->admit($group, null, 'tasks.prep', function (array $input, Task $group, Instance $instance, TaskVm $vm) use ($prompts, $repository, $base, $subtask, $data): array {
             $instance->loadMissing('node');
-            // The guest's host key is pinned only by the VM step of the run; the run fills it into these targets.
-            $ssh = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => app(SwampSshExecutionInput::class)->forNode($instance->node));
+            $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
             $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
             // A query update: since the review mode column has a default, every subtask row carries `review_mode`, and a model save of a subtask refuses it.
             Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);

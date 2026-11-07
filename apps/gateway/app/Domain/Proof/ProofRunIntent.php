@@ -20,9 +20,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmModelAdmission;
-use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmSeedFloor;
-use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Models\Instance;
@@ -128,7 +126,7 @@ final readonly class ProofRunIntent
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, reserveSlots: $reportOnly ? TaskVmPlacementPolicy::reportOnlyReserve() : 0));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, keepFree: $reportOnly ? 1 : 0));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -224,7 +222,7 @@ final readonly class ProofRunIntent
     }
 
     /**
-     * The full input of one run: the provision as admitted, the cases of one command for the VM it makes, and the destruction of that VM.
+     * The full input of one run: the claim as admitted, the cases of one command on its slot, and the release of that slot.
      * Captured in the admission transaction of the provision, so that no step of the run calls the Gateway.
      *
      * @param  array{command:string,file:string}  $case
@@ -234,8 +232,7 @@ final readonly class ProofRunIntent
     private function runInput(Operation $proof, string $commit, string $base, array $case, array $input, Task $group, Instance $instance): array
     {
         $instance->loadMissing('node');
-        // The guest's host key is pinned only by the VM step of the run; the run fills it into this target.
-        $ssh = app(PendingSshHostKey::class)->during($instance->node_id, fn (): array => app(SwampSshExecutionInput::class)->forNode($instance->node));
+        $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
 
         return [
             'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'],

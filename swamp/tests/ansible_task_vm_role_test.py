@@ -29,10 +29,10 @@ class TaskVmRoleTest(unittest.TestCase):
         self.assertEqual(play['hosts'], 'task_vm')
         self.assertEqual({task['name']: task['tags'] for task in play['tasks']},
                          {'Wait for a new server': ['always'], 'Resolve the recipe': ['always'], 'Software': ['software'], 'Record the software': ['software'],
-                          'Tools': ['tools'], 'Record the tools': ['tools'], 'Boot': ['boot'], 'Record the boot': ['boot'], 'Checkout': ['checkout'],
+                          'Tools': ['tools'], 'Record the tools': ['tools'], 'Boot': ['boot'], 'Record the boot': ['boot'], 'Checkout': ['checkout'], 'Branch': ['branch'],
                           'Fleet': ['fleet'], 'Check': ['check'], 'Record the check': ['check']})
-        # The image phases come after the fleet is ready: its `base` snapshots, then the clean that readies the publication.
-        image = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[2]
+        # The image phases: the containers' `base` snapshots, then the clean of a recipe image build. No play waits for the nested fleet.
+        image = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())[1]
         self.assertEqual({task['name']: task['tags'] for task in image['tasks']},
                          {'Take the base snapshots': ['fleet'], 'Clean': ['clean'], 'Template': ['template']})
 

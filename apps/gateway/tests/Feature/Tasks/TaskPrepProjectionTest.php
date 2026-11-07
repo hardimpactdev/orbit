@@ -21,11 +21,13 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -51,9 +53,8 @@ function prepRun(): array
     $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $host->id, 'status' => OperationStatus::Running,
         'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => [
             'command' => 'firewall:deny', 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $host->id, 'execution_secrets' => [],
-            'provision' => ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'host_node_id' => $host->id, 'guest_node_id' => $guest->id, 'name' => 'tvm-598', 'provider' => 'incus',
-                'provider_id' => null, 'wireguard_ip' => '10.44.0.137', 'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe', 'instance_id' => $instance->id,
-                'enrollment' => [], 'route_id' => null, 'members' => []],
+            'provision' => ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'group_id' => $group->id, 'instance_id' => $instance->id,
+                'workspace' => ['branch' => 'task-'.$group->id, 'start_commit' => str_repeat('a', 40)], 'intent' => ['slot' => ['name' => 'tvm-598']]],
             'draft' => $turn(11), 'fix' => $turn(11), 'reviews' => [$turn(12), $turn(13), $turn(14)],
             'publish' => ['branch' => 'task-'.$group->id], 'publish_secrets' => [],
         ]]);
@@ -61,20 +62,22 @@ function prepRun(): array
     return [$operation, $group, $vm, $instance];
 }
 
-it('fails the run and the workspace records when the VM never became ready', function (): void {
+it('fails the run and the workspace, and releases the slot, when the claim did not pass', function (): void {
+    Queue::fake();
     [$operation, $group, $vm, $instance] = prepRun();
 
     $projected = app(TaskPrepProjection::class)->apply($operation, [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Create the VM' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Create the VM']]],
-        'failure' => ['failed_step' => 'Create the VM', 'detail' => 'exec failed', 'stderr_recorded' => true],
+        'result' => ['steps' => ['Claim a slot' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'failed_steps' => ['Claim a slot']]],
+        'failure' => ['failed_step' => 'Claim a slot', 'detail' => 'exec failed', 'stderr_recorded' => true],
     ]);
 
     expect($projected->status)->toBe(OperationStatus::Failed)
         ->and($projected->error_code)->toBe('tasks.provision_failed')
-        ->and($projected->result)->toMatchArray(['error_code' => 'tasks.provision_failed', 'failed_step' => 'Create the VM'])
+        ->and($projected->result)->toMatchArray(['error_code' => 'tasks.provision_failed', 'failed_step' => 'Claim a slot'])
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Failed);
+        ->and($instance->refresh()->failed_step)->toBe('provision');
+    Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $vm->id);
 });
 
 it('keeps the findings of the last review in the result of a run that ended on them', function (): void {
@@ -225,14 +228,12 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
 /** The terminal event of a prep run that opened its draft pull request. */
 function prepEnd(TaskVm $vm): array
 {
-    // A VM that is no longer provisioning keeps its state, so the enrollment of the receipt records nothing here.
-    $vm->update(['state' => TaskVmState::Ready]);
 
     return [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subHour()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['steps' => [], 'summary' => ['status' => 'succeeded', 'failed_steps' => []],
-            'provision' => ['task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'ready' => true, 'enrollment' => ['ready' => true], 'provider' => ['image_fingerprint' => 'fingerprint', 'running' => true, 'settled' => true],
-                'source' => ['branch' => 'main', 'commit' => str_repeat('a', 40), 'php_version' => '8.5', 'laravel' => false]],
+            // The claim step's outputs, captured only when it succeeded.
+            'provision' => ['Check ready' => ['exitCode' => 0]],
             'publish' => ['pull_request_number' => 2825, 'pull_request_url' => 'https://github.com/hardimpactdev/orbit/pull/2825']],
     ];
 }

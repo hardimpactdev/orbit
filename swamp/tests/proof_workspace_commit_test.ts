@@ -36,7 +36,7 @@ Deno.test("the read lets an unreadable workspace reach the assert, and it reads 
     const inputs = read.task.inputs as { okExitCodes: string; argv: string[] };
     assert(inputs.okExitCodes === "any");
     assert(inputs.argv.includes("rev-parse") && inputs.argv.includes("HEAD"));
-    assert(inputs.argv.some((word) => word.includes('steps["Pin the VM"].outputs.verify.checkout_path')));
+    assert(inputs.argv.some((word) => word.includes("inputs.intent.verify.checkout_path")));
 });
 
 Deno.test("no case runs before the check: the proof of the command depends on it succeeding, and the check on the read", () => {
