@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCapacityException;
@@ -54,8 +55,9 @@ final readonly class TaskVmSlotPool
             }
             $slot = $next['slot'];
 
-            // A failed release can leave a model key that the router still accepts: a release revokes it before the slot is enrolled again.
-            return $slot->state === TaskVmState::Failed && is_string($slot->model_key)
+            // A release that failed or never ran can leave a VM and a model key that the router still accepts: a release removes both before the
+            // identity is enrolled again. A free identity holds a model key only then.
+            return is_string($slot->model_key)
                 ? $this->runs->startRelease($slot, 'task-vm-slots')
                 : $this->startEnrol($slot);
         }));
@@ -75,7 +77,11 @@ final readonly class TaskVmSlotPool
             return null;
         }
         $slots = self::slots($hostNodeId)->lockForUpdate()->get()->keyBy('slot_number');
-        if ($slots->contains(static fn (TaskVm $vm): bool => $vm->group_id === null && in_array($vm->state, [TaskVmState::Provisioning, TaskVmState::Releasing], true))) {
+        // A free identity that enrols or releases holds the rule while its Operation, or the refresh that proves with it, is open. One whose
+        // Operation ended without a projection, such as a refused start, is stale and counts as failed.
+        $moving = $slots->filter(static fn (TaskVm $vm): bool => $vm->group_id === null && in_array($vm->state, [TaskVmState::Provisioning, TaskVmState::Releasing], true));
+        if ($moving->isNotEmpty() && (TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation || Operation::query()->whereIn('kind', [self::EnrolKind, self::ReleaseKind])
+            ->where('target_type', 'task_vm')->whereIn('target_id', $moving->pluck('id'))->whereNotIn('status', OperationStatus::terminalValues())->exists())) {
             return null;
         }
         foreach (range(1, self::count($this->settings->host($hostNodeId), $setting)) as $number) {
@@ -83,7 +89,7 @@ final readonly class TaskVmSlotPool
                 return ['slot' => $this->record($host, $setting, $number)];
             }
         }
-        $failed = $slots->first(static fn (TaskVm $vm): bool => $vm->group_id === null && $vm->state === TaskVmState::Failed);
+        $failed = $slots->first(static fn (TaskVm $vm): bool => $vm->group_id === null && ($vm->state === TaskVmState::Failed || $moving->contains($vm)));
 
         return $failed instanceof TaskVm ? ['slot' => $failed] : null;
     }

@@ -7,6 +7,7 @@ namespace App\Domain\TaskVms;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Instance;
@@ -21,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  * unbound, not deleted. Its Node, peer and keys stay. One whose VM was not deleted is `failed`: the slot rule releases it again while it still
  * holds a model key that was not revoked, and enrols it again once it holds none.
  */
-final readonly class TaskVmSlotReleaseProjection implements DirectOperationProjection
+final readonly class TaskVmSlotReleaseProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
@@ -50,6 +51,15 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
         });
     }
 
+    /** A refused start never ran: the VM and the model key are still there, so the identity is failed with its key and released again. */
+    public function refused(Operation $operation): void
+    {
+        $slot = TaskVm::query()->lockForUpdate()->find($operation->target_id);
+        if ($slot instanceof TaskVm) {
+            $this->record($slot, false, $operation->error_code ?? 'task_vm.slot_release_failed', false);
+        }
+    }
+
     /** The identity after its release: free, or failed, still holding its model key unless the release revoked it. */
     public function record(TaskVm $slot, bool $passed, ?string $errorCode, bool $revoked): void
     {
@@ -60,7 +70,10 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
                 'stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null]
             : ['state' => TaskVmState::Failed, 'group_id' => null, 'error_code' => $errorCode, 'error_message' => 'The slot release did not pass.',
                 ...$revoked ? ['model_key' => null, 'ai_router_origin' => null] : []]);
-        $host = (int) $slot->host_node_id;
-        DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor($host));
+        // After a failure the rule waits for its sweep, so a failing release does not loop.
+        if ($passed) {
+            $host = (int) $slot->host_node_id;
+            DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor($host));
+        }
     }
 }

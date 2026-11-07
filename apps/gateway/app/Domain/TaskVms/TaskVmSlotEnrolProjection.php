@@ -8,6 +8,7 @@ use App\Actions\Nodes\RecordNodeSshHostKeyAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Ssh\HostKey;
@@ -24,7 +25,7 @@ use Illuminate\Support\Facades\DB;
  * task start: its Node is active with the keys the Gateway made for it. One that did not pass is `failed`, so no task start takes it; the
  * rule that runs after every enrol enrols it again.
  */
-final readonly class TaskVmSlotEnrolProjection implements DirectOperationProjection
+final readonly class TaskVmSlotEnrolProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The end check: the identity's peer is on the hub. */
     public const string EndCheck = 'Add the hub peer';
@@ -50,10 +51,22 @@ final readonly class TaskVmSlotEnrolProjection implements DirectOperationProject
             $this->record($slot, $passed, $passed ? null : (ValidatedData::nullableString($data['error_code'] ?? null) ?? 'task_vm.slot_enrol_failed'));
             $result = ['slot' => $slot->name, 'enrolled' => $passed];
             $data['result'] = $result;
-            DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor((int) $slot->host_node_id));
+            // After a success the rule runs at once; after a failure it waits for its sweep, so a failing enrol does not loop.
+            if ($passed) {
+                DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor((int) $slot->host_node_id));
+            }
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** A refused start never ran: the identity is failed, and the slot rule enrols it again at its next sweep. */
+    public function refused(Operation $operation): void
+    {
+        $slot = TaskVm::query()->lockForUpdate()->find($operation->target_id);
+        if ($slot instanceof TaskVm) {
+            $this->record($slot, false, $operation->error_code ?? 'task_vm.slot_enrol_failed');
+        }
     }
 
     /** The identity after its enrol: free, or failed. */

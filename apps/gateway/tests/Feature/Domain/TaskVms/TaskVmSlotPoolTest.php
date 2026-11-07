@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotEnrolProjection;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
@@ -25,6 +26,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -73,7 +75,9 @@ it('records each missing slot by its fixed name and number, one enrol at a time'
     $first = $pool->next($host->id);
     expect($first['slot']->name)->toBe('beast-tvm-1')->and($first['slot']->slot_number)->toBe(1)
         ->and($first['slot']->state)->toBe(TaskVmState::Provisioning)->and($first['slot']->slot_project_id)->toBe($project->id);
-    // The first enrols: the rule waits for it.
+    // The first enrols: the rule waits for it while its Operation is open.
+    Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $first['slot']->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
     expect($pool->next($host->id))->toBeNull();
 
     $first['slot']->update(['state' => TaskVmState::Parked]);
@@ -156,3 +160,29 @@ it('submits an enrol and a release without secrets with an empty secret map, whi
     'enrol' => ['task_vm.slot_enrol', ['intent' => ['public_key' => str_repeat('a', 43).'=']]],
     'release' => ['task_vm.slot_release', ['intent' => ['host' => [], 'slot' => []], 'execution_secrets' => []]],
 ]);
+
+it('takes an identity whose enrol ended without a projection as failed, and waits while its enrol is open', function (): void {
+    [$host, $project, $build] = slotPoolHost(1);
+    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning]);
+    $enrol = Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->next($host->id))->toBeNull();
+    // A start the Gateway refused fails the Operation before any run; the identity stays as the enrol left it.
+    $enrol->update(['status' => OperationStatus::Failed]);
+    expect($pool->next($host->id)['slot']->id)->toBe($slot->id);
+});
+
+it('fails the identity of an enrol whose start was refused, without starting the rule at once', function (): void {
+    [$host, $project, $build] = slotPoolHost(1);
+    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning]);
+    $enrol = Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid', 'input' => [], 'triggered_by' => 'test']);
+
+    Queue::fake();
+    app(TaskVmSlotEnrolProjection::class)->refused($enrol);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('operation.execution_secrets_invalid');
+    Queue::assertNothingPushed();
+});
