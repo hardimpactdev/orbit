@@ -1,0 +1,31 @@
+sequenceDiagram
+  %% Target design (agreed with Nick, 2026-11-07): the release of a task VM as its own run, for a task start that failed or a group that ended without a cancel run. The same steps end a cancel (docs/cli/task/cancel.mmd).
+  %% status: draft
+  %% command: none · the end of a task start that failed
+  %% kind: task_vm.slot_release
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Incus over ssh
+  participant HUB as VPN hub<br/>over ssh
+  Note over GW: Admit the release
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
+  SW->>H: Delete the VM<br/>and its seed clone
+  %%> What it does:
+  %%> - `incus delete --force`, the seed clone and the identity volume
+  SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - the VM's peer leaves the WireGuard hub; there is no model key to revoke
+  alt the run passes
+    SW-->>GW: Run succeeded<br/>slot free
+    Note over GW: Delete the Node record
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - the VM keeps its slot and its Node; the sweep releases it again
+  end

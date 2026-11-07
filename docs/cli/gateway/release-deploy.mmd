@@ -53,7 +53,7 @@ sequenceDiagram
   %%> - the load child: checkout, grants the new release rendered, serve reload
   SW->>GN: Admit VM refreshes<br/>artisan · new release
   %%> What it does:
-  %%> - runs `task-vms:refresh-images --commit <sha>` from the new release: one `task_vm.image_refresh` run per task VM host, admitted by the new commit's code, started on the workflows the load installed, and running while the release goes on to switch (docs/cli/tasks/vm-image-refresh.mmd)
+  %%> - runs `task-vms:refresh-images --commit <sha>` from the new release: one `task_vm.image_refresh` run per task VM host, admitted by the new commit's code, started on the workflows the load installed, and running while the release goes on to switch (docs/cli/task/vm-image-refresh.mmd)
   %%> - every release refreshes, code-only ones too: the base holds the warm checkout and the nested Gateway agent of the commit
   %%> - Swamp has only just reloaded, so a host whose run Swamp cannot take yet (`swamp.vault_sync_unavailable`) is asked again, up to 6 rounds 5 s apart; the other hosts are not held
   %%> On failure:

@@ -23,7 +23,7 @@ The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, 
 
 
 
-The Tasks fixtures also cover [group assistance](/reference/tasks#group-assistance-after-all-children-end). `tasks/tasks-group-comment-create` records requests, resolutions, and open-child and closed-group refusals. `tasks/tasks-group-comment-list` records group-only history and an empty history. Successful comments carry the group ID in both ownership fields. The SDK checks typed responses, and the separate group CLI commands replay every case in human and JSON modes; these fixtures do not replace the child comment contracts.
+The Tasks fixtures also cover [group assistance](/reference/tasks#group-assistance-after-all-children-end). `tasks/task-comment-create` records requests, resolutions, and open-child and closed-group refusals. `tasks/task-comment-list` records group-only history and an empty history. Successful comments carry the group ID in both ownership fields. The SDK checks typed responses, and the separate group CLI commands replay every case in human and JSON modes; these fixtures do not replace the child comment contracts.
 
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
@@ -78,11 +78,11 @@ Instance fixtures include nullable `seed_path` and `seed_commit` fields. These n
 
 The recorded file holds the request class, the route, the status, and the body. It holds no secrets, because fixture tests use example values. Project fixtures include source defaults and task settings such as `task_check`, and the `maintenance` switch; update the corresponding CLI expectations when those response fields change. Task fixtures share one id sequence with their subtasks. A subtask id is greater than its task id, and creating another task does not reuse a subtask id.
 
-The `tasks/tasks-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.
+The `tasks/task-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.
 
-The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
+The `tasks/task-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
-The `tasks/tasks-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
+The `tasks/task-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
 
 Node fixtures include `agent`, the [agent liveness](/reference/node-agent#liveness). `NodeResponseFixturesTest` seeds the agent-view cache, so the Gateway Node is offline since a fixed time and the app-dev Node is online. Re-record the node-list, node-show and node-add responses together when `agent` changes.
 

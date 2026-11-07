@@ -78,7 +78,7 @@ Ctrl-C, or `operation:cancel` on the proof, ends every run at once and cancels t
 
 ## After the run
 
-The run destroys its VM after success and after failure, and Orbit records the end of the group from that step. If the destroy step did not run or failed, because the run was cancelled, timed out or failed early, Orbit cancels the group the normal way, which destroys the VM. The verdicts stay as they are. If that cancel fails, the group stays for another `tasks:cancel`.
+The run destroys its VM after success and after failure, and Orbit records the end of the group from that step. If the destroy step did not run or failed, because the run was cancelled, timed out or failed early, Orbit cancels the group the normal way, which destroys the VM. The verdicts stay as they are. If that cancel fails, the group stays for another `task:cancel`.
 
 A repeat starts a new run, because a proof checks the commit as it is now. The same `--idempotency-key` returns the original run instead of starting another.
 

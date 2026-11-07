@@ -1,0 +1,20 @@
+---
+title: "orbit task:cancel"
+sidebarTitle: "task:cancel"
+description: "Cancel a task that is stuck or that you do not want to run. The Gateway removes the task's workspace and task VM when it has them and marks the task `cancelled`. Subtasks, comments, and agent thread records stay as history. Cancellation does not stop the external agent conversation."
+---
+
+```bash
+orbit task:cancel [task] [--yes] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
+| `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
+
+In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When approved work is not on `origin`, the cancel run first pushes the latest approved commit to the task branch; a failed push fails the run and keeps the task, as the [tasks reference](/reference/tasks#cancel-a-stuck-task) describes.
+
+## How it works
+
+<div className="flow-at" data-chart="task/cancel"></div>

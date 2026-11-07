@@ -391,7 +391,7 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 ### From claim to workspace
 
-A task start (`tasks.provision`, [command](/cli/tasks/provision)) takes the lowest free slot of a host and mints the identity of the slot. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
+A task start (`tasks.provision`, [command](/cli/task/start)) takes the lowest free slot of a host and mints the identity of the slot. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
 
 1. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 2. The claim starts the baseline check. Then the same claim projects the Route.
@@ -432,7 +432,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run. Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, copies the agent transcripts to the Gateway, then admits the release and waits for it. A parked VM starts before preservation is attempted.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run. Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, copies the agent transcripts to the Gateway, then admits the release and waits for it. A parked VM starts before preservation is attempted.
 
 The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A failed push or a refused teardown keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
@@ -490,7 +490,7 @@ The configuration is two files with mode 0600: `~/.config/composer/auth.json` an
 
 The token reads every repository the App installation covers, because a private package can live in any of them. A setup command is repository code and can read the same repositories while the files exist. The Gateway revokes the token itself if it cannot store one of the three vault copies.
 
-A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. The same step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `tasks:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
+A later step removes both files after the last setup step, on success and on failure. A failed removal fails the provision. The same step revokes the token, so a setup command that echoes it leaves a token that is already revoked. The setup output is redacted for GitHub tokens, dots and dashes included, before it is kept. A cancelled or timed-out run keeps the files until the token expires or `task:cancel` removes the VM. The Project check and deliverable commands run after that and find no token.
 
 The provision result names what became of the token in `dependency_token`. `revoked` means GitHub answered 204. `none` means GitHub answered 401: no token was minted, as for a public repository that the App does not cover, or it had already expired or been revoked. `unrevoked` carries a `reason` (GitHub answered another status, the request did not complete, or the revoke step could not run), and the token may stay valid for up to an hour.
 
@@ -601,7 +601,7 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled.
 
-For each active configured Incus host, the job releases the task VMs that a failed start left: a row with no group whose release failed, or whose Operation ended without its projection. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it. An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
+For each active configured Incus host, the job releases the task VMs that a failed start left: a row with no group whose release failed, or whose Operation ended without its projection. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it. An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
 
 A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
@@ -917,13 +917,13 @@ The command takes these values from the host Node's typed `settings.task_vms`. S
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
-The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
+The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
 ### The base VM and its snapshot
 
-Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/provision.mmd)). There is no Incus image and no publish.
+Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/start.mmd)). There is no Incus image and no publish.
 
 Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
@@ -1087,7 +1087,7 @@ The rest of the phase then runs as on any converge: the operator join, the renew
 
 ##### Save the ready copies
 
-`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/tasks/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
+`php artisan task-vms:save-ready-copies <VM-ID>` saves the nested fleet that runs in one task VM as the ready copies of the VM's seed disk. It is the step "Save the new images" of the seed refresh, as a kind of its own (`task_vm.ready_copies`, chart `docs/cli/task/vm-ready-copies.mmd`); the refresh runs the same workflow as a child once it starts its own refresh VM. The VM must be `ready` and hold the nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod` on the network `nested`.
 
 The workflow `operation-task-vm-ready-copies` runs one `incus` command per step over official SSH to the VM. A step for each nested container runs once per role with `forEach`, and Swamp names its steps `<name>-<role>`. Each step has its own behavior name, per task VM, so steps that run together do not wait for each other's model lock. It sets the WireGuard key of the nested Gateway's `operator` Node record to null and takes the operator peer out of the hub's peer files. It deletes the proof Swamp Club key and searches every file of the three guests for it. It then stops the guests.
 
@@ -1097,7 +1097,7 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 ##### Build the nested fleet
 
-The fleet phase of the converge now [builds the fleet](#build-the-nested-fleet-in-the-converge) with these steps; this kind and the ready copies go once a live refresh of an empty host proves it. `php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
+The fleet phase of the converge now [builds the fleet](#build-the-nested-fleet-in-the-converge) with these steps; this kind and the ready copies go once a live refresh of an empty host proves it. `php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/task/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
 
 The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three system containers from the stock image with cloud-init and the key of the VM. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 
@@ -1357,6 +1357,6 @@ Task group responses report `vm_power` separately from task status. For a [task 
 
 Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
 
-Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
+Use `orbit task:create --preview` or `orbit task:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
 
 The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.

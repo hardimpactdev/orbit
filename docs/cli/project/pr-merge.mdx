@@ -4,7 +4,7 @@ sidebarTitle: "project:pr-merge"
 description: "Squash-merge a pull request that no task group watches, once its merge check is green on the exact head. API and MCP only."
 ---
 
-Merge a pull request of a Project straight into its base branch with a squash merge, when no Task group watches it. The Gateway first reads the PR and its checks with read-only tokens. It then mints a fresh write token. Swamp merges with the expected head SHA, so a moved head refuses. This is the merge step of [stage 4 of the command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) for a PR outside a Task group; a task PR merges through [`tasks:pr-merge`](/cli/tasks/pr-merge). There is no merge queue and no GitHub auto-merge.
+Merge a pull request of a Project straight into its base branch with a squash merge, when no Task group watches it. The Gateway first reads the PR and its checks with read-only tokens. It then mints a fresh write token. Swamp merges with the expected head SHA, so a moved head refuses. This is the merge step of [stage 4 of the command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) for a PR outside a Task group; a task PR merges through [`task:pr-merge`](/cli/task/pr-merge). There is no merge queue and no GitHub auto-merge.
 
 There is no `orbit` command yet. Use the API or the MCP tool `project-pr-merge`.
 
@@ -35,7 +35,7 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | Code | Status | When |
 | --- | --- | --- |
 | `project.review_and_merge_disabled` | 409 | The Project does not take part in review and merge. |
-| `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `tasks:pr-merge`. |
+| `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `task:pr-merge`. |
 | `operation.target_busy` | 409 | Another merge of the Project is running. |
 | `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. |

@@ -1,0 +1,15 @@
+---
+title: "orbit task:destroy"
+sidebarTitle: "task:destroy"
+description: "Delete a subtask while its task is in `backlog`. The later subtasks move up to close the gap."
+---
+
+```bash
+orbit task:destroy <task> [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
+
+In a terminal, the task list shows only `backlog` tasks. The question names the subtask and its task and defaults to No. Consent failures match `task:cancel`. JSON returns the deleted subtask.

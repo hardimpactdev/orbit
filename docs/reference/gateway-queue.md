@@ -235,7 +235,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 ## Not built
 
-Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks/status) when task groups stop moving.
+Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit task:status`](/cli/task/status) when task groups stop moving.
 
 A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The native Horizon health cadence records that issue; `problems:file` requires two qualifying observations before filing it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 

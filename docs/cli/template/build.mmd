@@ -18,7 +18,7 @@ sequenceDiagram
   %%> Why a task group:
   %%> - it gets a task VM, a workspace and Pi the normal way, and the morning result shows on the task board
   GW->>SW: Start run, full intent<br/>operation-template-build
-  SW->>V: Provision the task VM<br/>tasks:provision
+  SW->>V: Provision the task VM<br/>task:start
   SW->>V: Build from stock Ubuntu<br/>nested Gateway · dev · prod
   %%> Why from stock:
   %%> - proves a new Node reaches the release from nothing, which the templates never do again

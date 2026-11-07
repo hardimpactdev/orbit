@@ -31,9 +31,9 @@ A [Project removal](/reference/projects#remove-a-project) deletes its task group
 
 ## Extension switch and status
 
-Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `task:status` and the `task-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`task:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at` (always null), and `merges`. `merges` lists the stored open review-and-merge records. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. An ended task asks only for `removal_failure` assistance. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -65,7 +65,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
-| `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
+| `watched_pr_completion` | task | `merged` or `closed` after `task:complete` confirms the end, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
@@ -77,9 +77,9 @@ Clearing the assistance flag can keep the last reason.
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
-`GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `tasks-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
+`GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `task-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
 
-`GET /api/v1/task-groups` and `GET /api/v1/task-groups/{group}`, and their MCP tools `tasks-list` and `tasks-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
+`GET /api/v1/task-groups` and `GET /api/v1/task-groups/{group}`, and their MCP tools `task-list` and `task-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
 
 ### External orchestration
 
@@ -87,7 +87,7 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 #### Park an external group for review
 
-`POST /api/v1/task-groups/{group}/park`, CLI `tasks:park GROUP --idempotency-key=KEY`, and MCP `tasks-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
+`POST /api/v1/task-groups/{group}/park`, CLI `task:park GROUP --idempotency-key=KEY`, and MCP `task-park` start the keyed `tasks.park` operation. The request is bodyless and requires an idempotency key. It returns HTTP 202 with the operation. It accepts no VM identity or provider command.
 
 Parking requires an open external group with a published, open PR, an existing task VM and workspace, no running child, no preview, no assistance, and and no other unfinished operation. It returns HTTP 409 `tasks.park_refused` when review parking is unsafe.
 
@@ -103,7 +103,7 @@ A resource observation job checks every parked VM once a minute, including group
 
 #### Provision an external group
 
-`tasks:provision <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
+`task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/task-groups/{group}/provision`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
@@ -173,7 +173,7 @@ Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 Ki
 
 #### Check an external group
 
-`tasks:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
+`task:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
 
 The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows, and `Report the result` prints the result and fails the run on its error code. A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
@@ -239,17 +239,17 @@ Cancellation uses native Swamp cancel and official SSH session teardown. It does
 
 #### Install a private package
 
-`POST /api/v1/task-groups/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `tasks-package`. There is no `orbit` command.
+`POST /api/v1/task-groups/{group}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `task-package`. There is no `orbit` command.
 
 An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
 
 Admission needs an open external group with its owned task VM workspace and refuses other active work on the group. It records the request and names the vault keys of the dependency configuration. It mints no token. The run asks the Gateway for a read token (`purpose: dependencies`), writes the Composer and npm configuration of the task account from it, runs one `composer require --no-scripts` or `npm install --ignore-scripts` in the checkout, and removes both files. The package is `$0` of a fixed command, so no shell parses it.
 
-The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one. The result names the outcome in `dependency_token`: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason. An `unrevoked` token does not fail the run. A cancelled run keeps the files until the token expires or `tasks:cancel` removes the VM.
+The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one. The result names the outcome in `dependency_token`: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason. An `unrevoked` token does not fail the run. A cancelled run keeps the files until the token expires or `task:cancel` removes the VM.
 
 #### Run an external turn
 
-`tasks:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`task:turn <group> --subtask=ID --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/task-groups/{group}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
 A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
 
@@ -281,7 +281,7 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 #### Publish an external group
 
-`tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
+`task:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input is `{ check, pull_request?: { title, body, draft? } }`. Supply title and body together. `--draft` sets `draft` and opens a new pull request as a draft, as the Orbit App; an open pull request keeps its state. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
@@ -305,13 +305,13 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 #### Prepare a command
 
-`tasks:prep` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command`.
+`task:prep` starts `tasks.prep` through `POST /api/v1/task-groups/{group}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command`.
 
-It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `tasks:pr-ready`; the MCP tool `tasks-prep` is the caller. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
+It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `task:pr-ready`; the MCP tool `task-prep` is the caller. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
 
 The optional `brief` (8,000 characters) goes into every prompt of the run. The optional `reference` (80,000 characters) goes only into the draft prompt; use it for text the workspace does not hold, such as the approved files of a sibling that is still in an open PR.
 
-The group is an external `todo` group, made with `tasks:create`, of a Project that the GitHub App reads. It has no VM yet. The Gateway admits one run. In one transaction it captures the placement, VM, workspace and credentials the way [provision](#provision-an-external-group) does, and it captures the rest of the intent:
+The group is an external `todo` group, made with `task:create`, of a Project that the GitHub App reads. It has no VM yet. The Gateway admits one run. In one transaction it captures the placement, VM, workspace and credentials the way [provision](#provision-an-external-group) does, and it captures the rest of the intent:
 
 - the author thread, and one reviewer thread for each review round, with model, effort, session and Pi address;
 - the prompts of the draft, review and fix turns;
@@ -323,7 +323,7 @@ It records the author thread on the subtask with a query update, so no model gua
 
 Two steps of the run mint a GitHub credential at the Gateway: the clone step of the provision child and the publish step.
 
-The run is the same in both modes. When it succeeds in `manual` mode, the Gateway admits `tasks:park` for the group, so the VM stops while the spec waits for the owner; a park that the Gateway refuses is kept in the result as `park_refused`. In `automatic` mode nothing parks, and the VM keeps running.
+The run is the same in both modes. When it succeeds in `manual` mode, the Gateway admits `task:park` for the group, so the VM stops while the spec waits for the owner; a park that the Gateway refuses is kept in the result as `park_refused`. In `automatic` mode nothing parks, and the VM keeps running.
 
 The native `operation-task-prep` workflow is one parent run. Each step runs an existing workflow as a child, with its input taken from the parent's inputs.
 
@@ -359,13 +359,13 @@ Each review starts a new thread on the reviewer model of the group, which differ
 
 A fix that leaves HEAD where it was ends the run with `tasks.prep_not_committed`, because the next review would restore a commit that holds none of the fix. A finding left after the last round ends the run with `tasks.prep_review_unresolved`. Nothing is published, the result keeps the findings of the last review, and the VM stays for the orchestrator, who cancels the group when done.
 
-The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed, so [`tasks:park`](#park-an-external-group-for-review) can stop the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
+The Gateway projects the terminal event once. A succeeded run records the workspace and VM as provision does, the metrics of each thread, and the pull request on the group as publish does: `pr_url`, `watched_pr_url`, `watched_pr_number` and `watched_pr_state`. It also marks the spec subtask completed, so [`task:park`](#park-an-external-group-for-review) can stop the VM while the spec waits for review. A failed run leaves the subtask open. The result is `{ branch, commit, pull_request_number, pull_request_url, rounds }`. The group stays running; stage 4 of the pipeline takes the draft from there. A failed run records the failed step and its code, and keeps the workspace.
 
 #### Apply the corrections
 
-`tasks:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `tasks-prep-fix` is the caller, and so is the gate check of stage 4.
+`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/task-groups/{group}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
 
-Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `tasks:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
+Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `task:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
 
 The admission is keyed by group and review, so a repeat tick starts nothing and each new review starts one run. A run that failed is not started again by the next tick: the gate reports `tasks_pr.prep_fix_failed` for that review once the VM is parked again. A failed run leaves the VM running, so until then the gate reads nothing for the group. A new review of the owner starts a new run. A comment, an approval, a dismissed review or a review of an older head starts nothing.
 
@@ -389,7 +389,7 @@ The native `operation-task-prep-fix` workflow is one parent run, with existing w
 
 A branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`; nothing is overwritten. A correction that needs another file or a decision of the owner is left out, and the author's summary says so.
 
-The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `tasks:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes.
+The Gateway projects the terminal event once. A succeeded run records the task VM as ready, the metrics of each thread, and `{ branch, commit, rounds }`, and then admits `task:park` for the group, which stops the VM again. A failed run keeps the VM running for the orchestrator, except after a failed resume, which leaves it recorded as parked so the run can be admitted again. A park that the Gateway refuses is kept in the result as `park_refused`. A failed run records the failed step with `tasks.prep_not_committed`, `tasks.prep_plan_failed`, `tasks.prep_review_unresolved` or the publish codes.
 
 The gate check also admits this run when the owner requests changes, and it detects the approval, which [starts the build](#start-the-build).
 
@@ -425,43 +425,43 @@ A declared native Operation with the same `task_group` target and a nonterminal 
 
 ## Tasks and subtasks
 
-List, show, and `tasks:question:list` accept any authorized peer. Update and the subtask create, update, and destroy operations are served by the Node that holds the task's workspace, or by the Gateway for a task without one. The other operations require Gateway access.
+List, show, and `task:question:list` accept any authorized peer. Update and the subtask create, update, and destroy operations are served by the Node that holds the task's workspace, or by the Gateway for a task without one. The other operations require Gateway access.
 
 | Operation | Route | Access |
 | --- | --- | --- |
-| `tasks:create` | `POST /api/v1/task-groups` | Gateway |
-| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Workspace Node |
-| `tasks:list` | `GET /api/v1/task-groups` | Any peer |
-| `tasks:show` | `GET /api/v1/task-groups/{group}` | Any peer |
-| `tasks:provision` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
-| `tasks:check` | `POST /api/v1/task-groups/{group}/check` | Gateway |
-| `tasks:turn` | `POST /api/v1/task-groups/{group}/turn` | Gateway |
-| `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
-| `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
-| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
-| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
-| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
-| `tasks:subtask:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/cancel` | Gateway |
-| `tasks:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
-| `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
-| `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
-| `tasks:group:comment:create` | `POST /api/v1/task-groups/{group}/comments` | Gateway |
-| `tasks:group:comment:list` | `GET /api/v1/task-groups/{group}/comments` | Gateway |
-| `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
-| `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
-| `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
-| `tasks:egress` | `GET /api/v1/task-groups/{group}/egress` | Gateway |
-| `tasks:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
+| `task:create` | `POST /api/v1/task-groups` | Gateway |
+| `task:update` | `PATCH /api/v1/task-groups/{group}` | Workspace Node |
+| `task:list` | `GET /api/v1/task-groups` | Any peer |
+| `task:show` | `GET /api/v1/task-groups/{group}` | Any peer |
+| `task:start` | `POST /api/v1/task-groups/{group}/provision` | Gateway |
+| `task:check` | `POST /api/v1/task-groups/{group}/check` | Gateway |
+| `task:turn` | `POST /api/v1/task-groups/{group}/turn` | Gateway |
+| `task:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
+| `task:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
+| `task:create` | `POST /api/v1/task-groups/{group}/tasks` | Workspace Node |
+| `task:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
+| `task:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Workspace Node |
+| `task:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/cancel` | Gateway |
+| `task:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
+| `task:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `task:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `task:comment:create` | `POST /api/v1/task-groups/{group}/comments` | Gateway |
+| `task:comment:list` | `GET /api/v1/task-groups/{group}/comments` | Gateway |
+| `task:question:list` | `GET /api/v1/task-questions` | Any peer |
+| `task:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
+| `task:agent:list` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
+| `task:egress` | `GET /api/v1/task-groups/{group}/egress` | Gateway |
+| `task:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
 
-Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
+Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `tasks:create --orchestration`, and MCP expose this field. Update cannot change it.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
 Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. Status updates start no work.
 
-For an external group, `tasks:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `tasks:cancel` or `tasks:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
+For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
 A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
 
@@ -480,7 +480,7 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | `reserved` | Nothing. Subtask create still appends |
 | `completed`, `failed`, `cancelled` | Nothing |
 
-For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `completed` and `failed` are final. Only `tasks:subtask:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
+For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `completed` and `failed` are final. Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
@@ -488,7 +488,7 @@ Appending a subtask records new work. Swamp decides when to resume the group.
 
 ### Cancel a subtask
 
-For an external group, `tasks:subtask:cancel` cancels a `todo`, `running`, or `reviewing` subtask in an open group. It uses the existing interrupt path to stop the acting thread and any running check before marking active work `cancelled`. A failed interrupt leaves the status unchanged and returns HTTP 502 `tasks.subtask_interrupt_failed`. Cancellation starts no next subtask and does not settle or change the group's status.
+For an external group, `task:cancel` cancels a `todo`, `running`, or `reviewing` subtask in an open group. It uses the existing interrupt path to stop the acting thread and any running check before marking active work `cancelled`. A failed interrupt leaves the status unchanged and returns HTTP 502 `tasks.subtask_interrupt_failed`. Cancellation starts no next subtask and does not settle or change the group's status.
 
 ### Errors
 
@@ -616,7 +616,7 @@ Prepare a task in Backlog before any agent runs. A Backlog task has no workspace
 1. Create the task. It starts in `backlog`.
 2. Optionally, create the branch `task-{id}` from the Project default branch, commit the feature's contract to it, and push it.
 3. Add the ordered subtasks with their deliverables, following the Project's task policy.
-4. Move the task to `todo` with `tasks:update`.
+4. Move the task to `todo` with `task:update`.
 
 The Gateway does not check the branch contents. When `origin/task-{id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. The implementer prompt says that Orbit runs the configured Project check at handoff. It names the command only when one is configured.
 
@@ -760,7 +760,7 @@ Count is `occurrences`, the number of windows. Occurrences lists one line per wi
 | Evidence | The sample caps. Expected and observed are cut at 200 characters |
 | Suspected entry point | 500 characters, then `...` |
 
-The finished brief is at most 8,000 characters. The Evidence and Occurrences headings are always present. When either section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and both headings stay. The occurrence lines stay. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief states that subtask's goal. The symptom appears once, in the group brief.
+The finished brief is at most 8,000 characters. The Evidence and Occurrences headings are always present. When either section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and both headings stay. The occurrence lines stay. `task:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief states that subtask's goal. The symptom appears once, in the group brief.
 
 | Source | Title | Suspected entry point |
 | --- | --- | --- |
@@ -799,7 +799,7 @@ A failure in one source does not skip the others. The dispatch command exits suc
 
 ## Execution ownership
 
-Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
+Swamp drives each group through the API and MCP operations documented above. `task:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
 
 The Gateway retains task state, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase.
 
@@ -927,7 +927,7 @@ The driver maps a model name to Pi's `provider/model` form. Every model uses the
 
 ### Archive finished threads
 
-Task-agent threads are Pi sessions, and their files live on the task VM. Orbit keeps the thread row and its metrics after the work ends. Before Orbit deletes a ready task VM with its workspace, it saves each started thread's transcript on the Gateway, at `storage/app/private/task-transcripts/{task}/{thread}.json`. The file holds the driver's redacted observation: the state, the transcript entries, and the token metrics. A thread that Orbit cannot read is reported and skipped, so saving never stops workspace removal. A VM that died before removal leaves no saved transcript. The Gateway has no `tasks:archive-threads` command, and transcript archival is part of explicit cleanup.
+Task-agent threads are Pi sessions, and their files live on the task VM. Orbit keeps the thread row and its metrics after the work ends. Before Orbit deletes a ready task VM with its workspace, it saves each started thread's transcript on the Gateway, at `storage/app/private/task-transcripts/{task}/{thread}.json`. The file holds the driver's redacted observation: the state, the transcript entries, and the token metrics. A thread that Orbit cannot read is reported and skipped, so saving never stops workspace removal. A VM that died before removal leaves no saved transcript. The Gateway has no `task:archive-threads` command, and transcript archival is part of explicit cleanup.
 
 ## Session routing
 
@@ -982,7 +982,7 @@ A non-empty resolution clears its matching request and remains in comment histor
 
 #### Group assistance after all children end
 
-An open group with no unfinished child accepts an `assistance_requested` or `resolution` comment through `POST /api/v1/task-groups/{group}/comments`, CLI `tasks:group:comment:create`, or MCP `tasks-group-comment-create`. The body contains `type`, nonblank `body` (at most 100,000 characters) and `author` (at most 255 characters). The response is `201 {data: TaskCommentData, meta: {request_id}}`. An ended group returns `tasks.group_closed`; an unfinished child returns `tasks.assistance_subtask_open`.
+An open group with no unfinished child accepts an `assistance_requested` or `resolution` comment through `POST /api/v1/task-groups/{group}/comments`, CLI `task:comment:create`, or MCP `task-comment-create`. The body contains `type`, nonblank `body` (at most 100,000 characters) and `author` (at most 255 characters). The response is `201 {data: TaskCommentData, meta: {request_id}}`. An ended group returns `tasks.group_closed`; an unfinished child returns `tasks.assistance_subtask_open`.
 
 #### Direction requests
 
@@ -994,7 +994,7 @@ Use the comment API, CLI or MCP to post a resolution. This changes assistance on
 
 ### Bring the workspace up to date
 
-`tasks:sync` starts `tasks.sync` through `POST /api/v1/task-groups/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
+`task:sync` starts `tasks.sync` through `POST /api/v1/task-groups/{group}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
 
 The admission checks an open external group with its own task VM workspace and wakes a parked VM, as the other work admissions do. It captures the repository, the default branch, the branch `task-<group>`, the workspace path and the SSH target, and names the vault key of a read token. As it starts the run, the Gateway mints that token with `contents: read` and writes it to the key. No step of the run calls the Gateway.
 
@@ -1058,7 +1058,7 @@ The read APIs retain stored review observations and findings. Reading them autho
 
 #### Inspect approval observations
 
-`tasks:github-reviews` reports stored observations. It does not grant merge authority or complete a group.
+`task:github-reviews` reports stored observations. It does not grant merge authority or complete a group.
 
 ### Settle metrics
 
@@ -1078,9 +1078,9 @@ The agent driver reports input, output and cached token usage on each thread. Gr
 
 ## Ready and merge a task pull request
 
-**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `tasks-pr-ready` and `tasks-pr-merge`. Both need Gateway access, as the other task operations do.
+**Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `task-pr-ready` and `task-pr-merge`. Both need Gateway access, as the other task operations do.
 
-Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/tasks/pr-ready) and [`tasks/pr-merge`](/cli/tasks/pr-merge) show the steps.
+Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/task/pr-ready) and [`tasks/pr-merge`](/cli/task/pr-merge) show the steps.
 
 ### Ready step
 
@@ -1110,16 +1110,16 @@ The ready and merge steps, and the comment of a review round, end with the share
 
 ### Gate check
 
-The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extension is on. The command only reads GitHub and admits steps; it changes nothing on GitHub, and Swamp steps never call back to the Gateway. It looks at each open external group that has a published pull request and belongs to a Project with [review and merge](/reference/projects#review-and-merge) enabled. For each one it reads the pull request with a read-only App token and then:
+The Gateway scheduler runs `task:pr-gate` every minute while the Tasks extension is on. The command only reads GitHub and admits steps; it changes nothing on GitHub, and Swamp steps never call back to the Gateway. It looks at each open external group that has a published pull request and belongs to a Project with [review and merge](/reference/projects#review-and-merge) enabled. For each one it reads the pull request with a read-only App token and then:
 
 - A pull request in draft gets the ready step in the review mode of the group. Admission requires a green merge check on the head.
 - The ready step also requires a passed handoff check of the group on that commit.
-- A spec-only pull request, such as the one `tasks:prep` opens, has no such check and stays a draft.
+- A spec-only pull request, such as the one `task:prep` opens, has no such check and stays a draft.
 - The owner's approval of its head [starts the build](#start-the-build) instead.
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
@@ -1145,7 +1145,7 @@ A failed round ends with one of these codes, and the round records the verdict i
 | `tasks_pr.vm_unavailable` | At admission, the VM was neither parked nor running. |
 | `tasks_pr.no_author_thread` | At admission, the current subtask had no author thread to fix with. |
 
-A failed push ends with its own code, as for `tasks:publish`, for example `tasks.not_fast_forward`.
+A failed push ends with its own code, as for `task:publish`, for example `tasks.not_fast_forward`.
 
 A group switches to manual mode after round 3 with findings. It also switches after a round that failed or ended `blocked`, and when a new head finds the three rounds used. After the switch the ready step runs again and asks the reviewer. The pull request then waits for the approval of the head.
 
@@ -1157,7 +1157,7 @@ The command prints one JSON object with a result for each group: `admitted`, `re
 
 The Gateway keeps one row for each round, with the head, the round number, the operation of the run, the verdict, the commit that the run pushed and the check row of the fix. A group has at most 3 rounds.
 
-A group is put in automatic mode with `orbit tasks:create --review=automatic`; without the option it is in manual mode.
+A group is put in automatic mode with `orbit task:create --review=automatic`; without the option it is in manual mode.
 
 ### Not built
 
@@ -1165,7 +1165,7 @@ These parts of stage 4 do not exist yet:
 
 - The automatic gate: a fresh self-review agent with at most 3 review rounds.
 - An `orbit` command for each step, and a proof case for each step.
-- The Swamp prep flow that opens the spec pull request as a draft with `tasks:publish --draft`.
+- The Swamp prep flow that opens the spec pull request as a draft with `task:publish --draft`.
 
 Until the App opens the pull request, its author is `nckrtl`. GitHub refuses `nckrtl` as its reviewer, and an author cannot approve their own pull request. Manual mode therefore needs another reviewer login, or the App as author.
 
@@ -1183,7 +1183,7 @@ Each card shows the Project code and the task id, such as `ORB-13`, its line cou
 
 ## Task insights
 
-The task board shows an insights strip above its lanes. It answers one question: does a change to the task pipeline make it better or worse? `GET /api/v1/task-insights` returns the numbers, with `period` set to `7d` or `30d` (default `30d`) and an optional `project_id`. Node access is the same as for `tasks:list`. The web app is the only client, so the route has no CLI command.
+The task board shows an insights strip above its lanes. It answers one question: does a change to the task pipeline make it better or worse? `GET /api/v1/task-insights` returns the numbers, with `period` set to `7d` or `30d` (default `30d`) and an optional `project_id`. Node access is the same as for `task:list`. The web app is the only client, so the route has no CLI command.
 
 A period holds the tasks whose `ended_at` falls inside it. The previous period is the same length just before it, so each number has a value to compare with. Tasks without `ended_at` are not counted.
 
@@ -1240,7 +1240,7 @@ A snapshot replaces the browser transcript. Entries merge by id and kind, so an 
 
 ### Read a thread
 
-`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
+`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`task:agent:show`](/cli/task/agent-show) and the MCP tool `task-agent-show` call it. An agent polls it to follow a thread without a stream.
 
 A first read returns a transcript snapshot. If it exceeds the Gateway budget, the snapshot keeps the newest entries that fit and starts with an explicit truncation marker. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
 
@@ -1271,7 +1271,7 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 ## Cancel a stuck task
 
-`tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
+`task:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
 Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
@@ -1295,11 +1295,11 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries. The host cleanup job releases failed, unclaimed Incus task starts through `task_vm.slot_release`; it does not orchestrate task groups.
 
-`tasks:group:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
+`task:group:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
-Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown and saves the agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
+Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown and saves the agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
 
 ### Direct lifecycle acknowledgement
 

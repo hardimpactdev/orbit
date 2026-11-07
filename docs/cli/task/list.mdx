@@ -1,0 +1,18 @@
+---
+title: "orbit task:list"
+sidebarTitle: "task:list"
+description: "List tasks with their title, Project, status, and number of completed subtasks. The list shows each task's assistance kind. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. A task that is not asking shows an em dash for both, even when an old value is still stored. JSON includes `assistance_kind` and `assistance_question` on each task."
+---
+
+```bash
+orbit task:list [--project=ID] [--status=STATUS] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Only tasks of this numeric Project ID. |
+| `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, `completed`, `failed`, or `cancelled`. |
+
+An invalid filter fails with `tasks.project_invalid` or `tasks.status_invalid` before the request. The CLI does not prompt for a filter.
+
+Use `--parent=ID` to list the ordered subtasks of that parent instead of the board.

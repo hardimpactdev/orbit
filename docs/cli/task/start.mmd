@@ -1,0 +1,59 @@
+sequenceDiagram
+  %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed slot identities: a slot is only a place under the host's capacity (`max_vms`), and the VM is named `<host>-tvm-<n>` by its slot number.
+  %% status: draft
+  %% command: task:start
+  %% kind: tasks.provision
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane HUB icon=server pill=target tone=purple
+  %% lane VM icon=server pill=task VM tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant HUB as VPN hub<br/>over ssh
+  participant VM as Task VM<br/>shark-tvm-3
+  Note over GW: Take a slot<br/>mint an identity · database only
+  %%> Started by:
+  %%> - `task:start` for a todo group, from proof CI or feature work
+  %%> Result:
+  %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
+  %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
+  %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
+  GW->>SW: Start run, full intent<br/>operation-task-start
+  SW->>VM: Start and converge<br/>one Ansible run
+  %%> What it does:
+  %%> - one `ansible-playbook` run with two parts, and no second start: the host part runs on the task VM host over ssh, then the converge runs on the VM over WireGuard
+  %%> - host part: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+  %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
+  %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 12 s after the start (measured 2026-11-07)
+  %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
+  %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
+  %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
+  %%> - with no delta every part is skipped, each phase as one skipped task (a dynamic include), and it catches up a small delta when main moved since the last release
+  %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
+  %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
+  %%> - then the new task branch on the checkout; it waits for no nested service
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the converge part waits for the connection, and the readiness steps below wait for this step
+  SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
+  %%> What it does:
+  %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key
+  %%> - runs beside the readiness read
+  SW->>VM: Check ready<br/>one exec
+  %%> What it does:
+  %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
+  %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
+  alt the run passes
+    SW-->>GW: Run succeeded<br/>ready
+    Note over GW: Record the VM ready<br/>about 33 s
+    %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready, above the earlier target of 10-15 s:
+    %%> - Swamp writes the intent 1 s; the Ansible run 28 s: its own start 2 s, host part 8 s, wait for sshd 12 s, converge 6 s; the playbook input is removed 2 s; readiness 2 s
+    %%> - what is left to cut: the wait for sshd (VM boot) and the host part (about 14 `incus` calls for the identity)
+    %%> - one start with a commit three commits past the base, with a changed migration, took 45 s: the nested Gateway's migrate 7 s and restart 1 s, and the rest in the checkout and the delta's work
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - the release runs: the VM, its seed clone, its identity volume, the hub peer, the keys and the Node record go, and the slot is free
+  end

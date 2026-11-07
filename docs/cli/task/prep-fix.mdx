@@ -1,0 +1,40 @@
+---
+title: "task:prep-fix"
+sidebarTitle: "task:prep-fix"
+description: "Apply the review of the owner to a parked prep group and push the corrections to its draft pull request. API and MCP only."
+---
+
+Apply the review of the owner to the spec of a parked prep group. The group resumes, its author applies the corrections as a new commit, the runner plan and two review rounds check them, and Swamp pushes them to the same draft pull request. Then the group parks again. This is the "Apply the corrections" step of [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep). See [Apply the corrections](/reference/tasks#apply-the-corrections).
+
+There is no `orbit` command yet. Use the API or the MCP tool `task-prep-fix`. You do not need to: while the task VM is parked and the build has not started, the gate check calls it every minute when the owner's latest review requests changes on the current head of the draft pull request, with the review text and the inline comments as `corrections`.
+
+```bash
+curl -X POST "$GATEWAY/api/v1/task-groups/42/prep-fix" \
+  -H "Idempotency-Key: prep-fix-42-review-1" \
+  -d '{"corrections": "Finding 1: ... Decision on finding 4: ..."}'
+```
+
+The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation. Follow it with `operation:show` until it ends.
+
+| Input | Meaning |
+| --- | --- |
+| `group` | The numeric ID of a prep group: its prep run succeeded, its task VM is parked or still running, and its pull request is open. |
+| `corrections` | The review of the owner as text, up to 40,000 characters, with any decision made since. |
+
+## How it works
+
+<div className="flow-at" data-chart="task/prep-fix"></div>
+
+## Errors
+
+| Code | When |
+| --- | --- |
+| `tasks.prep_fix_refused` | the group is not a prep group with a parked or running VM, a Pi credential and an open pull request |
+| `tasks.group_closed`, `tasks.no_workspace`, `operation.target_busy` | the group has ended, has no workspace, or another operation runs on it |
+| `task_vm.resume_refused` | the task VM cannot be resumed: its guest or provider host is not active |
+| `task_vm.resume_failed` | the task VM did not come back; it stays recorded as parked, so admit the run again |
+| `tasks.turn_failed` | the author or a review turn did not complete |
+| `tasks.prep_not_committed` | the author left HEAD where it was |
+| `tasks.prep_plan_failed` | the runner plan of the cases file failed to run, with an exit other than 0 or 3 |
+| `tasks.prep_review_unresolved` | a finding is left after the last review round; nothing is pushed |
+| `tasks.not_fast_forward`, `tasks.head_moved`, `tasks.push_failed`, `tasks.publish_failed` | the push failed; see [publish](/reference/tasks#publish-an-external-group) |

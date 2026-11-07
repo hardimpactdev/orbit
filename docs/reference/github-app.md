@@ -177,7 +177,7 @@ A task VM never holds a GitHub credential, neither a token nor a deploy key, exc
 - **No admission token.** Admission mints no token for a later step. An installation token lives one hour. A prep run needs 43 to 90 minutes to reach its publish step.
 - **Private dependencies.** The setup steps install them. A step mints a read token for the setup steps only.
 - **Token removal.** A step deletes the token files after the last setup step.
-- **A new private package during a task.** The agent asks through assistance. The orchestrator starts `tasks-package`, whose steps mint the setup token and remove it.
+- **A new private package during a task.** The agent asks through assistance. The orchestrator starts `task-package`, whose steps mint the setup token and remove it.
 
 The publish token has `contents: write`, `pull_requests: write` and `workflows: write` for the Project repository. Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
 

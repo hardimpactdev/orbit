@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Target design: the end of stage 1 of the command development pipeline (docs/reference/pipeline/1-prep.mmd, "Start the build") and the start of stage 2. The pattern of task:prep-fix: one admission, one parent Swamp run, existing workflows as children. Decided by the orchestrator, for Nick's review.
+  %% status: draft
+  %% kind: tasks.build
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>implementer
+  participant GH as GitHub<br/>draft PR
+  GW->>GH: Read the PR and reviews<br/>approval of the head
+  %%> Who calls it:
+  %%> - the gate check `task:pr-gate`, every minute, for a prep group whose spec is done; there is no command, route or MCP tool
+  %%> What it does:
+  %%> - reads the draft PR and its reviews with a read-only App token; in manual mode the latest review of the reviewer must approve the exact head, and in automatic mode no review is read
+  %%> - changes nothing on GitHub
+  Note over GW: Admit the build<br/>parked prep group · head
+  %%> Requirements:
+  %%> - the group is open and external, with a succeeded `tasks.prep` run and no other subtask than its completed spec subtask: `waiting_for_review` after a manual prep, `running` after an automatic one or after a park that was refused
+  %%> - its task VM is parked or ready with its Pi credential, and no build was admitted for it before
+  %%> - the PR is open and a draft, and its head is the approved head
+  %%> - no other task runs on the group; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - records the approval (the head, the mode and the reviewer) in the intent
+  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes (the check command of the Project, or a review deliverable when the Project has none)
+  %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the resume, the sync and the first turn
+  %%> - names the vault keys of the Pi token and of the read token
+  %%> Refuses:
+  %%> - a group that has started its build, a head that is not the approved one, a missing approval, or a busy group; the gate check skips it quietly and reads again at the next tick
+  GW->>SW: Start one run, full intent<br/>operation-task-build
+  %%> Inputs:
+  %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - no step of the run calls the Gateway: as it starts the run, the Gateway mints the read token of the sync child, writes it and the Pi token to their vault keys, and passes only the key names
+  SW->>VM: Resume the VM<br/>operation-task-vm-resume
+  %%> What it does:
+  %%> - starts the parked VM and waits for its agent and Pi; the workspace is as the park left it
+  SW->>VM: Sync the refs<br/>operation-task-sync
+  %%> What it does:
+  %%> - brings the default branch and the branch of the PR into `refs/remotes/origin` of the workspace, so the approved head is there; the read token comes from its vault key
+  %%> - HEAD, the working tree and the local branches are not touched
+  SW->>VM: Run the first turn<br/>operation-task-turn
+  %%> What it does:
+  %%> - the first implementer turn, on a new thread, with the prompt that the Gateway composed: the title, brief and deliverables of the subtask, then the instruction to build the command
+  %%> - the brief tells the implementer to merge the approved commit, fast-forward only, when HEAD differs
+  alt every step succeeded
+    SW-->>GW: Native terminal result<br/>capture the steps
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway for it
+    Note over GW: Record the result<br/>VM · thread · head
+    %%> Result:
+    %%> - the task VM is recorded as ready, the metrics of the thread are recorded, and the result is the branch and the approved head
+    %%> - the group stays `running` for its driver, which goes on with the check and the publish
+  else a step failed
+    SW--xGW: Native failed result<br/>failed step · error code
+    %%> Result:
+    %%> - the failed step is recorded with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`
+    %%> - the group stays `running` and the VM stays for the orchestrator; the gate check does not admit the build again
+    %%> Retry:
+    %%> - inspect the failed step; native resume reuses the completed ones
+  end

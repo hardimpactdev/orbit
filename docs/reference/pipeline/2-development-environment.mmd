@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its slot under the host's `max_vms`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/tasks/provision.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a copy of the host's base VM snapshot with a fresh identity, named `<node>-tvm-<n>` by its slot under the host's `max_vms`. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers that start with the VM, with a `base` snapshot each for the proof. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. The task start: docs/cli/task/start.mmd.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -58,4 +58,4 @@ sequenceDiagram
   end
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - at the end of the group the VM, its seed clone and its identity volume go, the hub peer is removed and the Gateway deletes the Node (docs/cli/tasks/cancel.mmd)
+  %%> - at the end of the group the VM, its seed clone and its identity volume go, the hub peer is removed and the Gateway deletes the Node (docs/cli/task/cancel.mmd)
