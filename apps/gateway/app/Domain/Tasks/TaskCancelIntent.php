@@ -12,6 +12,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -57,6 +58,14 @@ final readonly class TaskCancelIntent
             if (Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
+            }
+            // A release of the group's slot that is still running, such as after a failed start, ends with the workspace; the cancel follows it.
+            $slot = TaskVm::forGroup($group);
+            $release = $slot === null ? null : Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')
+                ->where('target_id', $slot->id)->whereNotIn('status', OperationStatus::terminalValues())->value('id');
+            if ($release !== null) {
+                throw new ResourceOperationException('operation.target_busy', 'The release of the group\'s task VM is still running; cancel again when it ends.', 409,
+                    details: ['operation_id' => $release]);
             }
             if ($kind === 'tasks.cancel') {
                 $this->operations->cancelOpen($group);
@@ -166,8 +175,9 @@ final readonly class TaskCancelIntent
     {
         $group = Task::topLevel()->findOrFail($operation->target_id);
         self::eligible($group, $operation->kind);
+        // A release that ended after the admission may have deleted the workspace and unbound the group; then nothing is left to own.
         if (($operation->input['group_id'] ?? null) !== $group->id || ($operation->input['project_id'] ?? null) !== $group->project_id
-            || ($operation->input['instance_id'] ?? null) !== $group->taskable_id) {
+            || (($operation->input['instance_id'] ?? null) !== $group->taskable_id && $group->taskable_id !== null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Cancellation no longer owns its admitted group workspace.', 422);
         }
 

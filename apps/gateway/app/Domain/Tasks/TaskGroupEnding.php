@@ -45,7 +45,8 @@ final readonly class TaskGroupEnding
     {
         if (($captured['task_vm_id'] ?? null) !== null) {
             $slot = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($captured['task_vm_id']));
-            if ($slot instanceof TaskVm) {
+            // A slot that another release already destroyed stays destroyed.
+            if ($slot instanceof TaskVm && $slot->state !== TaskVmState::Destroyed) {
                 $slot->update(['state' => TaskVmState::Failed, 'error_code' => $errorCode ?? 'task_vm.slot_release_failed']);
             }
         }

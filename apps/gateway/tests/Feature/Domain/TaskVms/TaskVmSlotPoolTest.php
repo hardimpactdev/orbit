@@ -6,7 +6,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -225,4 +229,47 @@ it('leaves task VM Nodes out of the workers\' known hosts and keeps every other 
 
     expect(SwampWorkerKnownHostsInput::covers($slot->node))->toBeFalse()->and(SwampWorkerKnownHostsInput::covers($host))->toBeTrue()
         ->and($content)->toContain('10.44.0.7 ssh-ed25519 fixture-public-key')->not->toContain((string) $slot->wireguard_ip.' ');
+});
+
+it('unbinds a failed start\'s group from the workspace its release deletes, and its cancel waits for that release, then closes it', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Failed])->save();
+    $release = Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    expect(fn () => app(TaskCancelIntent::class)->start($group, 'test', null))->toThrow(ResourceOperationException::class, 'still running');
+
+    app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
+    $release->update(['status' => OperationStatus::Succeeded]);
+    expect($group->refresh()->taskable_id)->toBeNull();
+
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+    expect($cancel->input['instance_id'])->toBeNull()->and($cancel->input['release'])->toBeNull()
+        ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+});
+
+it('lets a cancel admitted before a failed start\'s release still close the group the release unbound, and keeps the slot destroyed', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Failed])->save();
+    // The cancel is admitted while the release job has not started its Operation yet.
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+    app(TaskVmSlotReleaseProjection::class)->record($slot->refresh(), true, null, true);
+
+    expect(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+    app(TaskGroupEnding::class)->failed($cancel->input, 'task_vm.slot_release_failed');
+    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed);
 });
