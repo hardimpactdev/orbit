@@ -1566,7 +1566,7 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A task group cannot declare a topology. The `topology` field of a subtask stays in the API and the CLI, but the Gateway refuses any nonempty list with `422 tasks.orchestration_unsupported`. This holds when a request creates a group, creates a subtask, or updates a subtask. The Gateway checks the format first: an entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once, and may add the role `ingress` after a `+`. A malformed list, or one with more than two nodes, is refused with `tasks.invalid_topology`.
 
-No task VM prepares a topology, and the Gateway reads no topology evidence. A row saved before this rule keeps its declaration and the Gateway does nothing with it. The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
+No task VM prepares a topology, and the Gateway reads no topology evidence. A group saved before this rule keeps its declaration. Only VM sizing (`TaskVmSize`) and the check evidence (`TaskCheckEvidence`) still read it. The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
 ### Paths that need real machines
 
@@ -1576,9 +1576,9 @@ No task VM prepares a topology, and the Gateway reads no topology evidence. A ro
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path, since no subtask can declare a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
 
-The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can take that work outside a task group.
 
 ## VM power
 

@@ -1,11 +1,11 @@
 ---
 name: using-incus-topologies
-description: Use when exploring or checking behavior on a task group's Incus topology with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or reproducing a feature in review.
+description: Use when exploring or checking behavior on an Incus topology you acquire by hand with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or reproducing a feature in review.
 ---
 
 # Using Incus topologies
 
-A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). A subtask that declares a topology uses it to explore and check behavior while building, and the reviewer proves the deliverables on it. Subtasks do not carry proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
+An Incus topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` VM, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). A contributor acquires one by hand to explore and check behavior; a task group cannot declare one. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
 ## Acquire a topology by hand
 
