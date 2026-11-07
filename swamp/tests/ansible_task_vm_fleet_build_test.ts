@@ -231,10 +231,15 @@ Deno.test({
   fn() {
     const { log, preseed, passed, output } = run([], false); // The run stops at the operator join, which needs root and systemd (see the header).
     assertEquals(passed, false, output);
+    // The run stops at the start of the operator join: at the fake `wg`, or one task earlier where `/etc/wireguard` is not readable,
+    // as on a CI runner.
     const failed = output.indexOf("FAILED!");
+    const stop = output.lastIndexOf("TASK [", failed);
     assert(
-      output.lastIndexOf("TASK [", failed) ===
-          output.indexOf("TASK [Make the operator key]") &&
+      [
+        output.indexOf("TASK [Look for the operator key]"),
+        output.indexOf("TASK [Make the operator key]"),
+      ].includes(stop) &&
         output.includes("failed=1"),
       output,
     );
