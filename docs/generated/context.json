@@ -6045,7 +6045,9 @@
             "path": "docs/reference/verification-cases.mdx",
             "title": "Verification cases",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
                 "Access grant",
                 "Doctor",

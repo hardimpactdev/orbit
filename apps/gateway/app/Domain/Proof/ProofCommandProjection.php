@@ -67,6 +67,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     {
         return ($input['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [];
     }
+
     /** A run the Gateway timed out may leave its VM; the group is cancelled the normal way. */
     public function timedOut(Operation $operation): void
     {
