@@ -63,9 +63,9 @@ use Throwable;
  * @property string|null $image_fingerprint
  * @property string|null $error_code
  * @property string|null $error_message
- * @property string|null $recipe_identity the recipe of the image the VM got, which is older than the current recipe on a fallback
- * @property int|null $image_build_id the promoted image build the VM got
- * @property bool $image_fallback whether the VM got the host's last promoted image instead of the current recipe's
+ * @property string|null $recipe_identity the recipe of the base snapshot the VM got
+ * @property int|null $image_build_id the promoted refresh the VM got
+ * @property bool $image_fallback kept for old rows; no start sets it
  * @property Carbon|null $ready_at when the VM last became `ready`: its first preparation, or its last resume
  * @property Carbon|null $stop_confirmed_at
  * @property Carbon|null $destroyed_at

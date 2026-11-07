@@ -17,8 +17,8 @@ command_errors! {
         Failed { operation: String, exit_code: i32, stderr: String } => "task_vm.host_command_failed", "The Incus host command failed.";
         VmMissing {} => "task_vm.vm_missing", "The task VM is gone from its host.";
         ImageMismatch {} => "task_vm.image_mismatch", "The task VM did not launch its claimed recipe image.";
-        BaseMissing {} => "task_vm.base_image_missing", "The Incus project has no base image. Build it with task-vms:build-image.";
-        SeedMissing {} => "task_vm.topology_seed_missing", "The host has no topology seed for the VM's base image. Build the image again with task-vms:build-image.";
+        BaseMissing {} => "task_vm.base_image_missing", "The Incus project has no base image. Refresh the host with task-vms:refresh-image <host>.";
+        SeedMissing {} => "task_vm.topology_seed_missing", "The host has no topology seed for the VM's base image. Refresh the host with task-vms:refresh-image <host>.";
     }
 }
 

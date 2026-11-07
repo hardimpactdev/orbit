@@ -18,7 +18,7 @@ Each guest is a copy of the task VM's `node-template`: a btrfs snapshot in the p
 
 ## Solution
 
-**Clean the base image before it is published.** Removing unused Docker images and APT archives, then `fstrim /`, cut Gateway referenced disk data from 6.55 GiB to 1.98 GiB and app-prod from 7.07 GiB to 2.48 GiB. Run `sync -f /` before the trim, or discard cannot reach blocks whose deletions are still pending. Trimming a clone does not free blocks its parent image still references, so measure the ZFS volume, not Docker's reclaimed-space report. The [recipe base build](/reference/compute-drivers#build-the-base-image) does this.
+**Clean the base image before it is published.** Removing unused Docker images and APT archives, then `fstrim /`, cut Gateway referenced disk data from 6.55 GiB to 1.98 GiB and app-prod from 7.07 GiB to 2.48 GiB. Run `sync -f /` before the trim, or discard cannot reach blocks whose deletions are still pending. Trimming a clone does not free blocks its parent image still references, so measure the ZFS volume, not Docker's reclaimed-space report. The `clean` phase of the [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) does this.
 
 **Size memory per Node.** Gateway 1.5 GiB, app-dev 2 GiB, app-prod 1 GiB passed the workload and all readiness checks after reboots. That is a 4.5 GiB budget instead of 6 GiB.
 

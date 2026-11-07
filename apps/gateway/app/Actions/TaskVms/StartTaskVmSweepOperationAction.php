@@ -12,14 +12,14 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** One immutable ownership capture and native root; no host or provider calls. */
+/** One immutable ownership capture of the UpCloud servers and one native root, on the Gateway Node; no host or provider calls. */
 final readonly class StartTaskVmSweepOperationAction
 {
     public function __construct(private StartOperationAction $operations, private TaskVmSweepWorkflowInput $inputs) {}
 
-    public function execute(int $nodeId, string $provider): Operation
+    public function execute(int $nodeId): Operation
     {
-        return DB::transaction(function () use ($nodeId, $provider): Operation {
+        return DB::transaction(function () use ($nodeId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
             $existing = Operation::query()->where('kind', 'task_vm.sweep_host')->where('target_type', 'task_vm_sweep')->where('target_id', $nodeId)
                 ->whereNotIn('status', OperationStatus::terminalValues())->first();
@@ -28,7 +28,7 @@ final readonly class StartTaskVmSweepOperationAction
             }
 
             return $this->operations->execute('task_vm.sweep_host', 'task_vm_sweep', $nodeId, $nodeId,
-                $this->inputs->capture($node, $provider), 'task-vm', null, lockKey: OperationStore::lockKey('task_vm_sweep', $nodeId));
+                $this->inputs->capture($node), 'task-vm', null, lockKey: OperationStore::lockKey('task_vm_sweep', $nodeId));
         });
     }
 }

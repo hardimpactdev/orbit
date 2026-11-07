@@ -10,10 +10,9 @@ use App\Models\Node;
 /**
  * The custom volumes that Orbit owns in a task VM host's pool ([ADR 0222](/decisions/0222-give-task-vms-a-cloned-topology-seed)):
  *
- * - `orbit-topology-seed-<12 hex>`: the topology seed of the base image with that fingerprint. The image build creates
- *   it as `orbit-topology-seed-<12 hex>-new` and renames it when it is finished, and pruning deletes it with its image.
- *   An image refresh copies the seed disk of its refresh VM to the seed name of the new image, so the old seed keeps its own
- *   name with the old image. Volumes that earlier refreshes left as `-refresh` or `-previous` are still owned, and pruned with their image.
+ * - `orbit-topology-seed-<12 hex>`: the topology seed of a base image with that fingerprint, which earlier builds and refreshes made
+ *   (with the endings `-new`, `-refresh` and `-previous`). Pruning deletes it with its image. The seed of the base VM is
+ *   `<host>-base-seed`, which the audit owns by name.
  * - `tvm-<id>-topology-seed`: the clone of its base image's topology seed that a VM whose size runs a topology boots
  *   with. It goes with the VM.
  *
@@ -35,18 +34,6 @@ final readonly class TaskVmVolumes
     private const string Seed = '/\Aorbit-topology-seed-([a-f0-9]{12})(?:-new|-refresh|-previous)?\z/D';
 
     public function __construct(private IncusHost $incus) {}
-
-    /** The topology seed of the base image `$fingerprint`. */
-    public static function seed(string $fingerprint): string
-    {
-        return self::SeedPrefix.substr($fingerprint, 0, 12);
-    }
-
-    /** The name a topology seed has while the image build creates it. */
-    public static function newSeed(string $fingerprint): string
-    {
-        return self::seed($fingerprint).'-new';
-    }
 
     /**
      * Orbit owns the volume `$name` in the host's pool: a VM's clone, or the topology seed of a base image in

@@ -35,7 +35,7 @@ final class PrepareTaskVmHostCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Node [{$node->name}] is ready for task VMs on bridge [{$host->network}]. Build its images with task-vms:build-image.");
+        $this->info("Node [{$node->name}] is ready for task VMs on bridge [{$host->network}]. Refresh its base with task-vms:refresh-image {$node->name}.");
 
         return self::SUCCESS;
     }

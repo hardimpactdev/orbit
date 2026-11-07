@@ -6,7 +6,6 @@ use App\Domain\TaskVms\TaskVmConvergeProjection;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmFleetBuildProjection;
 use App\Domain\TaskVms\TaskVmHubProjection;
-use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmImageRefreshProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
@@ -95,19 +94,12 @@ return ['task_vm.hub_converge' => [
     // No result step: the projector reads each batch reply and the run's step statuses; the native assert is the end check.
     'terminal_result' => ['job' => 'fill', 'step' => 'Check every archive', 'native' => true, 'captures' => TaskVmPackageCacheProjection::captures()],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-cache-fill-github-[1-9][0-9]*$']],
-], 'task_vm.image_build' => [
-    'workflow' => 'operation-task-vm-image-build',
-    'projection' => TaskVmImageProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the step statuses and the fingerprint that the publish step printed.
-    'terminal_result' => ['job' => 'publish', 'step' => TaskVmImageProjection::EndCheck, 'native' => true],
 ], 'task_vm.sweep_host' => [
     'workflow' => 'operation-task-vm-sweep',
     'projection' => TaskVmSweepProjection::class,
     'workflow_inputs' => true,
-    // No result step: the projector reads the admitted provider's plan; its native assert is the end check.
-    'terminal_result' => ['job' => 'check', 'step' => TaskVmSweepProjection::IncusCheck, 'alternatives' => [TaskVmSweepProjection::CloudCheck], 'native' => true,
-        'captures' => TaskVmSweepProjection::captures()],
+    // No result step: the projector reads the plan of the UpCloud sweep; its native assert is the end check.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmSweepProjection::CloudCheck, 'native' => true, 'captures' => TaskVmSweepProjection::captures()],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.upcloud_image_build' => [
     'workflow' => 'operation-task-vm-upcloud-image-build',

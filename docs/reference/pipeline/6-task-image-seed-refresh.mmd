@@ -22,6 +22,8 @@ sequenceDiagram
   %%> - each host bakes its own image and seed; copying them between hosts is not a supported flow
   loop each task VM host, in parallel
     SW->>H: Start the base VM<br/>incus start
+    %%> What it does:
+    %%> - a new host has no base VM yet: it is made here, once, from the stock Ubuntu VM image and an empty seed volume, and the converge that follows builds everything else
     SW->>VM: Converge<br/>the same converge as a task start
     %%> What it does:
     %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed
@@ -36,11 +38,6 @@ sequenceDiagram
     SW->>H: Prune old snapshots<br/>keep -previous
     %%> What it does:
     %%> - keeps the new snapshot and the one before it; removes older ones
-    opt a new host or a new base OS
-      SW->>H: Build from the recipe<br/>once, not per release
-      %%> What it does:
-      %%> - builds the first image from the stock image (`task_vm.image_build`); the first refresh makes the base VM from it once
-    end
   end
   alt every host refreshed
     SW-->>GW: Host refreshed<br/>terminal event per host

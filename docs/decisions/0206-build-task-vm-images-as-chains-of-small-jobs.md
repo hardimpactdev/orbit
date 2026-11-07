@@ -1,10 +1,12 @@
 ---
 title: "ADR 0206: Build task VM images as chains of small jobs"
 sidebarTitle: "0206 Image build jobs"
-description: "In progress. The task VM base image is built by a chain of small queued jobs, recorded in one image build row. The UpCloud chain remains unfinished."
+description: "Retired. The Incus recipe image build is gone; a host's base is the snapshot of its base VM, made only by the base snapshot refresh."
 ---
 
 # ADR 0206: Build task VM images as chains of small jobs
+
+**Retired 2026-11-07.** The Incus recipe image build that this ADR describes is removed: no chain, no `task_vm.image_build` kind, no per-minute recipe reconcile and no image reaper. Each host keeps a base VM, and the snapshot that the [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) proves is the base of every task start. The text below stays as history.
 
 The Gateway builds the task VM base image with a chain of small queued jobs. One `task_vm_image_builds` row records its progress and failure. ADR 0207 replaced the image inputs, build phases, triggers, sync, and workspace plans; the [machine software reference](/reference/compute-drivers#machine-software-recipe) holds them. The UpCloud chain remains unfinished.
 
@@ -26,7 +28,7 @@ The task VM image build was one long job on the `builds` queue. Three problems r
 
 ## Decision
 
-The Gateway owns the image build. See [task VM image builds](/reference/compute-drivers#build-the-base-image).
+The Gateway owns the image build. See [the base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot).
 
 ### The build is a chain of jobs
 
@@ -67,6 +69,6 @@ Move the [UpCloud builder](/reference/compute-drivers#build-the-upcloud-template
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: none in progress. [Build the base image](/reference/compute-drivers#build-the-base-image) and [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds) document the build and enrollment.
-- Detail: [Compute drivers: Build the base image](/reference/compute-drivers#build-the-base-image), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
+- ADRs: none in progress. [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot) and [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds) document the build and enrollment.
+- Detail: [Compute drivers: The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
 - Verify: a step made to fail leaves the row `failed` with that step and keeps the current image, and `--resume` continues from it. A release during a build starts the new Horizon after the running step.

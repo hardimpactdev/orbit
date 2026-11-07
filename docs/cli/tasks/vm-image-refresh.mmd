@@ -17,7 +17,7 @@ sequenceDiagram
   SW->>H: Start the base VM<br/>incus start
   %%> What it does:
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
-  %%> - a host without a base VM gets one once, from its recipe image and seed (`task_vm.image_build`)
+  %%> - a host without a base VM gets it here, once: `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, an empty seed volume, and a first boot that makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge builds everything else
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
@@ -37,7 +37,7 @@ sequenceDiagram
     Note over GW: Promote<br/>record the new snapshot
     %%> Result:
     %%> - task starts copy the new snapshot; the one before it is `-previous`
-    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s)
+    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s); the first refresh of a new host builds the whole base, so it takes much longer
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:

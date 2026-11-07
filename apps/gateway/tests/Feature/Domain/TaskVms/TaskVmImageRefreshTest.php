@@ -13,7 +13,6 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -26,6 +25,7 @@ uses(LazilyRefreshDatabase::class);
 
 const ImageRefreshCommit = 'dddddddddddd0000000000000000000000000000';
 const ImageRefreshImage = 'c1c2cf4051fb0123456789abcdef0123456789abcdef0123456789abcdef0123';
+const ImageRefreshSnapshot = 'r20261106030000';
 
 beforeEach(function (): void {
     // A release layout whose current release is ImageRefreshCommit.
@@ -40,7 +40,7 @@ afterEach(function (): void {
     Process::run(['rm', '-rf', $this->base]);
 });
 
-/** A configured task VM host with a promoted image. */
+/** A configured task VM host whose latest refresh recorded a snapshot of its base VM. */
 function imageRefreshHost(): Node
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
@@ -52,7 +52,8 @@ function imageRefreshHost(): Node
         [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
         'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
-        'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
+        'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed',
+            'snapshot' => ImageRefreshSnapshot]]]);
 
     return $host;
 }
@@ -76,12 +77,6 @@ it('refuses a host that cannot refresh', function (): void {
 
     expect(imageRefreshRefusal(fn () => $intent->start($other, 'test')))->toBe('task_vm.host_unavailable');
 
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Running]);
-    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test')))->toBe('task_vm.image_build_running');
-    $build->delete();
-
-    TaskVmImageBuild::query()->where('host_node_id', $host->id)->delete();
-    expect(imageRefreshRefusal(fn () => $intent->start($host, 'test')))->toBe('task_vm.image_unavailable');
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -120,7 +115,7 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     $failed = $operation->replicate();
     $failed->save();
     $projection->apply($failed, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
-    expect(fn () => app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id)))->toThrow(ResourceOperationException::class);
+    expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id))['snapshot'])->toBe(ImageRefreshSnapshot);
     // A refresh that failed before its proof released leaves the slot failed with its key, for the sweep to release.
     expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->model_key)->toBe(str_repeat('c', 64));
     $slot->update(['state' => TaskVmState::Provisioning]);
@@ -132,7 +127,26 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed)->and($slot->model_key)->toBeNull();
 });
 
-it('names the seed of an image from its fingerprint, so the refreshed image has a seed of its own', function (): void {
-    expect(TaskVmVolumes::seed(ImageRefreshImage))->toBe('orbit-topology-seed-c1c2cf4051fb')
-        ->and(TaskVmVolumes::SeedPrefix.substr(ImageRefreshImage, 0, 12))->toBe(TaskVmVolumes::seed(ImageRefreshImage));
+it('uses only a refresh snapshot as the base: a promoted image of the retired build is no base', function (): void {
+    $host = imageRefreshHost();
+    $location = app(TaskVmSettings::class)->host($host->id);
+    $images = app(TaskVmPromotedImage::class);
+    TaskVmImageBuild::query()->where('host_node_id', $host->id)->delete();
+
+    // A promoted virtual-machine build is not a usable base.
+    TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
+        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
+    expect($images->recorded($host, $location))->toBeNull()
+        ->and(imageRefreshRefusal(fn () => $images->forHost($host, $location)))->toBe('task_vm.image_unavailable')
+        ->and(imageRefreshRefusal(fn () => $images->snapshot($host, $location)))->toBe('task_vm.image_unavailable');
+
+    // A snapshot is the base, and an image promoted after it does not replace it.
+    TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-2', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()->subHour(),
+        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => ImageRefreshSnapshot]]]);
+    TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-3', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
+        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => ImageRefreshImage]]]);
+
+    expect($images->recorded($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
+        ->and($images->forHost($host, $location))->toBe(['recipe_identity' => 'recipe-2', 'snapshot' => ImageRefreshSnapshot])
+        ->and($images->snapshot($host, $location)['snapshot'])->toBe(ImageRefreshSnapshot);
 });

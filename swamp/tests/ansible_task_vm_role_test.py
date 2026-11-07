@@ -67,12 +67,12 @@ class TaskVmRoleTest(unittest.TestCase):
             self.assertNotIn('ansible_ssh_common_args', host)
             self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
 
-    def test_a_builder_is_reached_through_its_host_with_both_pinned_keys(self):
+    def test_a_guest_is_reached_through_its_host_with_both_pinned_keys(self):
         jump = {'identity_file': '/role/identity', 'target': {'host': '192.0.2.5', 'port': 2222, 'user': 'nckrtl', 'host_keys': ['ssh-ed25519 host']}}
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / 'intent.json').write_text(json.dumps(intent(jump=jump)))
-            builder.build(folder, 'task_vm.image_build')
+            builder.build(folder, 'task_vm.image_refresh')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             arguments = host['ansible_ssh_common_args']
             self.assertIn('ProxyCommand=', arguments)
@@ -89,7 +89,7 @@ class TaskVmRoleTest(unittest.TestCase):
             folder = Path(folder)
             (folder / 'intent.json').write_text(json.dumps(placeholder))
             with mock.patch.dict(os.environ, {'ORBIT_TARGET_HOST': '10.251.78.50\n', 'ORBIT_TARGET_KEY': 'ssh-ed25519 guest root@guest\n'}):
-                builder.build(folder, 'task_vm.image_build')
+                builder.build(folder, 'task_vm.image_refresh')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             self.assertEqual(host['ansible_host'], '10.251.78.50')
             self.assertEqual((folder / 'known_hosts').read_text(), '10.251.78.50 ssh-ed25519 guest root@guest\n192.0.2.5 ssh-ed25519 host\n')

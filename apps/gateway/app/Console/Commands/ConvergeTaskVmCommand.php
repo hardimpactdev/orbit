@@ -8,7 +8,7 @@ use App\Actions\TaskVms\StartTaskVmConvergeAction;
 use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Console\Command;
 
-/** Admit the task VM role phases (software, tools, check) on a running task VM, as the image build runs them on its builder. */
+/** Admit the task VM role phases (software, tools, check) on a running task VM, as the base snapshot refresh runs them on the base VM. */
 final class ConvergeTaskVmCommand extends Command
 {
     #[\Override]

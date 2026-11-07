@@ -1,7 +1,7 @@
 id: 17bf7d13-d591-4dc7-a735-5396d311994f
 name: operation-task-vm-image-refresh
 description: >-
-  Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: start the host's stopped base VM,
+  Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: make the host's base VM when it has none, start it,
   converge it as a task start would, stop it and snapshot it and its seed, prove the snapshot with one task start, and keep the newest two
   snapshots. The Gateway records the new snapshot. No step calls the Gateway.
 queueTimeout: 30

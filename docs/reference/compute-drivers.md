@@ -3,12 +3,12 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{BuildTaskVmFleetCommand,ConvergeTaskVmCommand,RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand,SaveTaskVmReadyCopiesCommand}.php}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-ansible,workflow-task-vm-image-smoke,workflow-task-vm-image-promote,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-task-vm-image-clean,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-task-nested-converge,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
+  - swamp/{workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-sweep,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-fleet,workflow-task-nested-apply,workflow-task-nested-ready,workflow-task-nested-converge,workflow-proof-fleet-restore,workflow-operation-task-vm-upcloud-image-build,workflow-task-vm-upcloud-image-server,workflow-task-vm-upcloud-image-ansible,workflow-task-vm-upcloud-image-smoke}.yaml,extensions/behaviors/operations/{task-vms/{upcloud_image_api,upcloud_image_api_test,image_reaper}.ts,task-vm-sweep/{manifest.yaml,metadata.ts,policy.ts}}}
 ---
 
 # Compute drivers
@@ -27,7 +27,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. Claims use the [current recipe](#claims-use-the-current-recipe), or for a day the host's [last promoted image](#image-fallback), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
+The loader and validator define the recipe contract. The [base snapshot refresh](#refresh-the-base-snapshot) converges the base VM to that document. Claims [copy the base snapshot](#claims-copy-the-base-snapshot), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -107,7 +107,7 @@ The base also includes the existing image builder's 26 explicit Ubuntu packages:
 
 The base also holds the nested Incus packages, so a task VM [runs a topology](#prepare-the-topology) without an install:
 
-- The exact Incus 7.0 LTS package set, whose recovery API adopts the [topology seed](#build-the-base-image).
+- The exact Incus 7.0 LTS package set, whose recovery API adopts the [topology seed](#the-base-vm-and-its-snapshot).
 - `dnsmasq-base`, for the nested bridge.
 - `btrfs-progs`, for the pool of the topology seed.
 - `nftables`, for the isolation table.
@@ -118,7 +118,7 @@ The base also holds `fcgiwrap` for a topology's `gateway` VM. It serves the topo
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership.
 
-Builder cloud-init declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. The `check` phase of the image build requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. Image smoke checks require the same IDs again.
+The cloud-init of a template builder declares the `orbit` account with UID 1000 and its own primary group. It runs no account-creation script. The `check` phase requires both UID and GID 1000. A taken ID or a pre-existing account with different IDs fails the build; Orbit does not renumber accounts or accept another group. Image smoke checks require the same IDs again.
 
 ### PHP build
 
@@ -287,7 +287,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. Recipe pins change only through reviewed manual edits. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
-2. Each task VM host [builds a new base image](#build-the-base-image).
+2. Each task VM host [refreshes its base snapshot](#refresh-the-base-snapshot).
 3. The next [PHP step](/reference/php-runtime#php-build) of an Instance brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
 
@@ -299,7 +299,7 @@ Internal source commits and digests remain in the identity; relocating identical
 
 Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
-[Base image builds](#build-the-base-image) record the same identity in the image and build row. Schema version `1` and a short display hash are not substitutes.
+A [refresh](#refresh-the-base-snapshot) records the same identity on the build row of the base snapshot. Schema version `1` and a short display hash are not substitutes.
 
 ### Show and validate the recipe
 
@@ -336,7 +336,7 @@ The command exits zero only for a successful requested operation and nonzero for
 
 ### Why it works this way
 
-A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. The [image build fence](#build-the-base-image) owns publication; the validator checks recipe inputs.
+A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. The [image build fence](#the-base-vm-and-its-snapshot) owns publication; the validator checks recipe inputs.
 
 One recipe identifies the software in task VM images. A changed recipe rebuilds the whole base from stock on each host. Partial builds and incremental images were rejected because previous image history would become another input. A fixed nightly rebuild without a versioned recipe would not identify the intended software or connect it to production.
 
@@ -376,7 +376,7 @@ Swamp requests review parking through `tasks.park`. A parked row reports unknown
 
 A `task_vm.destroy` Operation cannot be cancelled after its exact `provider-delete` child has succeeded with a proven deletion step. The Gateway returns `operation.cancel_refused` before changing cancellation flags or descendants. Destruction must finish or resume to remove the VM’s Node and workspace records. Before provider deletion succeeds, the Operation remains cancellable.
 
-A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which each host builds from the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
+A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which each host refreshes to the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Incus provides local capacity; [UpCloud](#upcloud-overflow) provides optional overflow.
 
 The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
 
@@ -396,16 +396,13 @@ Before enrollment, guest commands use the same command runner, delivery manifest
 
 `incus.instance-images` reads the original image fingerprint of each instance.
 
-The image builder verifies the guest account before publication. Cloud-init uses the configuration disk on its first boot; publication needs no guest service ordering drop-in.
+The template builder verifies the guest account before it becomes a template. Cloud-init uses the configuration disk on its first boot.
 
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
-Before an image builder can install command mode, its system bus must be available. Incus can reach a guest earlier in boot. The native supervisor returns `agent.supervisor_not_ready` for an absent bus socket; image boot polling waits within its deadline. This refusal records no failed agent pin. Other installation refusals still fail the build.
-
 Before an UpCloud template is published, the `clean` phase of the task VM role (`swamp/ansible/tasks/task-vm-clean.yml`) refuses a server that was enrolled, which has an agent secret or a WireGuard configuration. It masks the first-boot services, stops Caddy, Docker and containerd and removes their identities, then allows only public SSH in the firewall. It empties the journal, logs, temporary files and shell histories, cleans the cloud-init state and the machine id, and removes the SSH host keys and the authorized keys. Incus state stays on the image.
 
-An Incus build cleans its VM with the `task-vm-image-clean` workflow, which removes the nested guests and network, stops the services, deletes the agent, WireGuard and Pi identities, and resets the firewall. An enrolled Node cannot become a base image.
-
+A template build cleans its server with the `clean` phase of the task VM role. The phase masks the services of a first boot, removes the identities of the services, resets the firewall, empties the logs and the cloud-init state, and removes the SSH host keys. An enrolled server cannot become a template.
 
 ### From claim to workspace
 
@@ -427,7 +424,7 @@ So a routed workspace on a task VM stops before its Route. After the source, wor
 
 1. It classifies the source and records the PHP version.
 2. It writes `APP_URL`, and for a new `.env` the application key and name, as it does for every development Instance.
-3. It installs the `app-dev` PHP packages of that version. On a task VM they are in the [base image](#build-the-base-image), so the step only checks them.
+3. It installs the `app-dev` PHP packages of that version. On a task VM they are in the [base image](#the-base-vm-and-its-snapshot), so the step only checks them.
 
 The workspace stays `source_resolved`, and its Route stays `pending`. The claim attaches it to the group and starts the baseline check. Then, in the same claim, it projects the Route as Instance creation does: the certificates, Caddy, PHP-FPM, the Router, and DNS, under the projection lock. The workspace becomes `active`.
 
@@ -459,11 +456,11 @@ The official cfgmgmt behaviors are not used here: they trust the worker's shared
 
 #### Skip what the image holds
 
-Task VM enrollment trusts the [base image](#build-the-base-image) that the same Gateway code built. It does not run the `app-dev` software programs: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It does not read or compare program fingerprints. Every other Node runs every program at enrollment.
+Task VM enrollment trusts the [base image](#the-base-vm-and-its-snapshot) that the same Gateway code built. It does not run the `app-dev` software programs: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It does not read or compare program fingerprints. Every other Node runs every program at enrollment.
 
 Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
 
-New claims [use the deployed recipe](#claims-use-the-current-recipe), or a recent [fallback image](#image-fallback). The base includes both selectable PHP versions, now `8.5` and `8.4`, and Rust with Cargo, clippy, and rustfmt. The Instance's [PHP runtime check](/reference/php-runtime#development-runtime) verifies installed packages without repeating an installation.
+New claims [copy the base snapshot](#claims-copy-the-base-snapshot) of their host. The base includes both selectable PHP versions, now `8.5` and `8.4`, and Rust with Cargo, clippy, and rustfmt. The Instance's [PHP runtime check](/reference/php-runtime#development-runtime) verifies installed packages without repeating an installation.
 
 Enrollment uses the host as [SSH jump host](/reference/node-provisioning#enroll-through-a-jump-host) until WireGuard is up.
 
@@ -513,7 +510,7 @@ The removal of other Instances moves a checkout within one filesystem only. [Ins
 
 Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it.
 
-When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. The task VM sweep admits a `destroying` row without a group again; that admission claims the Node as `removing` again. When admission refuses one row, the sweep logs its code and still admits the other rows and sweeps the hosts. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
+When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
 
 A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
@@ -527,9 +524,7 @@ When the group has ended, or is `settling` or `waiting_for_review`, each tick th
 
 For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
 
-A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job records this wait as `task_vm.awaiting_host_sweep` on the VM and owns its `removal_failure` assistance. Workspace removal waits under that reason before lease admission, so it makes no SSH snapshot or push attempt. Repeated ticks and removal sweeps leave the reason and Activity unchanged.
-
-A later observation that finds the VM clears the wait so removal can retry. The Incus sweep runs only while task VMs are enabled and the host Node is active. If either is off, the reason names the blocker: task VMs are disabled, or the named host is inactive. A recorded wait needs no provider or host read while the sweep is paused. Cleanup waits until the sweep can run again. The destroy job does not make its own missing verdict.
+A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it. No sweep fails the row.
 
 A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and original VM failure once in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A failed deletion keeps that reason on retry; its delete error stays on the VM row. Removal never retries a lost head's push after destruction starts. A stopped VM without work to preserve is removed the same way:
 
@@ -577,7 +572,7 @@ Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compa
 
 Cache failures carry a typed code, operation, path, and bounded, sanitized reason. Seed failures identify the artifact key, package, and version and retain the underlying I/O cause, including archive extraction errors. Checking the mount marker preserves access errors instead of treating them as a missing mount.
 
-Existing images and VMs retain their permissions. After an image-builder fix, use `task-vms:build-recipe --rebuild` to replace the images, then recreate affected VMs. Attaching the cache again does not repair an old VM.
+Existing base snapshots and VMs retain their permissions. After a fix, refresh the host with `task-vms:refresh-image <host>`, then recreate affected VMs. Attaching the cache again does not repair an old VM.
 
 When the default branch moves in the Gateway Git mirror, Orbit compares the blob IDs of `composer.lock`, `package-lock.json`, `bun.lock`, and `pnpm-lock.yaml`, at the root and below `apps/` and `packages/`. A lock contributes only when the same directory contains a regular `composer.json` for Composer or `package.json` for JavaScript. This excludes standalone example and test fixture locks.
 
@@ -698,7 +693,7 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Converge a running task VM
 
-`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node. Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. The [image build](#build-the-base-image) runs the same playbook on its builder, so an image and a converged VM end in the same state.
+`php artisan task-vms:converge VM` brings a ready task VM to the pins of the release. It records the `task_vm.converge` Operation on the VM's guest Node. Swamp runs the three phases of the task VM role playbook (`swamp/ansible/task-vm-role.yml`) from Node 209 over SSH: `software`, `tools` and `check`. The [image build](#the-base-vm-and-its-snapshot) runs the same playbook on its builder, so an image and a converged VM end in the same state.
 
 The Gateway puts these in the Operation:
 
@@ -722,7 +717,7 @@ The `check` phase is the one end check. It asserts every package at its pin, eve
 
 The `check` phase also asserts that `orbit` has UID and GID 1000. The `template` phase asserts that ufw is active, denies incoming connections by default and has the recovery rule; the smoke of an UpCloud template runs it after `check`.
 
-The `clean` phase follows an image build and nothing else; it does nothing unless `intent.image` is set. The UpCloud template build runs it. The Incus build cleans through its own child workflow.
+The `clean` phase follows a UpCloud template build and nothing else; it does nothing unless `intent.image` is set. The base snapshot refresh runs the converge without it.
 
 The phase refuses a server that was enrolled. It masks the services of a first boot and turns ufw on with only the recovery SSH rule open (`orbit:public-ssh-recovery`). It empties the journal, the logs, the temporary files (not the ones of Ansible itself) and the shell histories.
 
@@ -746,35 +741,15 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state.
+The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set.
 
-One workflow serves both providers. A `guard` on each provider's first step skips the other provider, and its later steps skip with it. The run reads the inventory, plans in TypeScript on Node209, removes the plan with parallel `forEach` steps, reads the inventory again and ends with a native `assert` that no planned name is still listed.
+For each active configured Incus host, the job releases the task VMs that a failed start left: a row with no group whose release failed, or whose Operation ended without its projection. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it. An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
 
-No step ships a script: each Incus command is one official pinned `@swamp/ssh` `exec` argument list with `sudo` and a literal `timeout`, and each UpCloud request is one inline `curl` on Node209 that takes the token through `--variable`, never argv.
+While the UpCloud token file is set, the job records one `task_vm.sweep_host` Operation on the Gateway Node for the [UpCloud sweep](#sweep-upcloud). That Operation holds the lock of the Gateway Node and carries no Incus host input.
 
-The workflow has no format or result step: the Gateway reads the plan step's names once the provider's end check succeeded.
+A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
-A provider or SSH failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection.
-
-The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds, allowing for the 180-second Incus deletion timeout.
-
-The native run reads the images of the host's Incus project with `incus query /1.0/images?project=<project>`, which fails for a project that does not exist. Incus lists the instances of a missing project as empty, so this read makes a missing project fail the host, and the job changes nothing there. The run then compares the instance names with the task VM rows:
-
-- An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
-- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
-- An **orphaned volume** is a custom volume `tvm-<number>-topology-seed` in the project's pool whose VM is an orphan that is absent or deleted in the same run. The job deletes it after the orphaned VMs.
-
-The sweep fails a missing VM only when two distinct host Operations in a row miss it. Replaying one native root or its projected result never counts as a second miss. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
-
-Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
-
-The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
-
-A successful Incus sweep releases a failed build's cleanup claim only after its final observation contains none of that build's builder, attempt or smoke names. Failed, cancelled or incomplete sweeps keep the claim. The failed build can then start a fresh attempt through normal resume or recipe retry.
-
-It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Admission records retirement of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders. Captured maximum VM and build IDs exclude resources allocated after admission. The sweep preserves live VMs, running builds and names that the operator owns. An absent build row permits cleanup only within those captured ID limits.
-
-The sweep never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds. A provider failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned volumes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
@@ -782,7 +757,7 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders and their smoke VMs only when they are eligible for cleanup, as described above; recent unclaimed failed builds are retained for resume. For every other stray, neither tool changes it: the operator decides. The native sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+Doctor reports what Orbit does not own on a task VM host, and the records that should be gone. It never changes any of it: the operator decides. It reports one finding per stray in the host's `node` family. Builders and volumes that the image builds left behind are strays now, and the operator removes them.
 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
@@ -793,15 +768,15 @@ A **stray instance** is an Incus instance in any project of the host that is non
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
 - a task VM's clone of the topology seed, `tvm-<number>-topology-seed`, in the host's project and pool;
-- the [topology seed](#build-the-base-image) `orbit-topology-seed-<12 hex>` of an image that the host's project keeps, in its project and pool;
+- the [topology seed](#the-base-vm-and-its-snapshot) `orbit-topology-seed-<12 hex>` of an image that the host's project keeps, in its project and pool;
 - a seed under construction of such an image: `-new`;
 - an entry of the host's `operator_owned` list.
 
-The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. The sweep reads only the custom volumes of the host's configured pool, so it logs stray volumes of that pool; Doctor reports every pool. It reads the images of the host's project only to recognize their topology seeds. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
+The audit lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Doctor reports every pool. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`.
 
 A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
 
-A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep logs it while task VMs are enabled.
+A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep job logs it while task VMs are enabled.
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
@@ -811,21 +786,6 @@ A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is 
 | `node.task_vm_stray_node` | drift | A stray Node |
 
 To clear a finding, delete the stray after you check it, or add an operator-owned guest to `operator_owned`. For a stray record, cancel or complete its group, or destroy the VM. For a stray Node, remove the Node with `orbit node:remove`.
-
-### Reap image builders
-
-The `task-vm-image-reaper` schedule runs every thirty minutes on Node209. It deletes a base image builder or smoke VM that a killed build leaves behind. `ImageReaper` publishes the schedule's inputs: each active configured host with a pinned SSH host key, its project, pool and `operator_owned` list, its pinned SSH target, and the build ids of its `task_vm.image_build` Operations that are `queued`, `running` or `waiting`. It publishes again when such an Operation starts or ends, and after each run. Steps never read the Gateway.
-
-For each host, one official `@swamp/ssh` `exec` lists the project's instances. A TypeScript step on Node209 picks each VM that matches all of these:
-
-- its name is `tvm-image-<build id>`, with an optional `-attempt-<n>` and an optional `-builder` or `-smoke`;
-- it is a `virtual-machine` in state `Running` or `Stopped`;
-- it has one root disk, on the host's pool;
-- it is older than two hours;
-- no entry of `operator_owned` names it or reserves the whole project;
-- its build id is not one of the host's published active builds.
-
-One `exec` per picked VM runs `incus delete --force`. One `exec` per host then lists the pool's storage volumes, and a last TypeScript step checks that no root volume or snapshot of a deleted VM remains. A host whose list fails, a failed delete, or a remaining volume fails the run; the other hosts and VMs continue. The run's own history records the deleted and failed names. The Gateway keeps no deletion record.
 
 ### States
 
@@ -844,7 +804,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The Gateway jobs `FillTaskVmPackageCache`, `SweepTaskVmHosts`, `RefreshTaskVmBaseImages` and `RefreshUpCloudTaskVmBaseImage` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
+The Gateway jobs `FillTaskVmPackageCache`, `SweepTaskVmHosts` and `RefreshTaskVmImages` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
 
 Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
@@ -858,13 +818,7 @@ Every registered effect fixes its Node, command and input. The Gateway resolves 
 
 A parent yields its worker lease while its stamped child Operations run. Native effects carry the shared target receipt metadata, so recovery reads the original sanitized result before replay. Gateway projections accept only exact owning child proof; they never admit another Operation and wait for it. Package cache fills require list-result enforcement.
 
-Image builds have one permanent Operation per attempt. When reconciliation finds a Running build without a matching Swamp Operation, it increments the attempt, assigns a new builder name, clears saved image and step state, and starts from stock. It never adopts PHP phase progress as Swamp proof. Repeated reconciliation keeps the new Operation and attempt.
-
-Swamp checkpoints reset, launch, boot, the six recipe phases, cleanup, publication, smoke, topology seed, promotion and pruning. A lost reply reuses its saved child identity. A native phase keeps its boot and invocation identity; only a later explicit Incus resume may restart a proven failed invocation. Unknown observations fail closed.
-
-Successful publication alone cannot move the base alias: smoke verification and a finished topology seed must have successful Operation receipts. UpCloud uses the same base recipe, verifies the firewall on its smoke server, and promotes only its own unverified template. Older templates stay while pinned by allocations; pruning keeps the newest two verified templates.
-
-A failed recipe build does not retry because the Gateway restarts or releases code. Run `task-vms:build-recipe --retry` after fixing the cause. An Incus build with retained resources can resume its failed stage. A failed prune resumes without rebuilding or moving the alias again. A newer recipe generation fences every subsequent effect and promotion of the older build. The Gateway retains build state, validation and immutable recipe intent; Swamp owns ordering, waits and recovery.
+The UpCloud template build verifies the firewall on its smoke server and promotes only its own unverified template. Older templates stay while pinned by allocations; pruning keeps the newest two verified templates.
 
 Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the admitted owned orphans. Incus uses official SSH from 209; UpCloud uses the existing provider API helper and a shared vault execution copy. Active and recent failed builders remain protected.
 
@@ -878,15 +832,15 @@ The fixed `incus.vm` agent command runs on the Operation's host Node as its mana
 
 A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Every task VM's config on stdin sets `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait on every boot. A medium or large VM's key also turns on free page reporting for the balloon device `qemu_balloon`. Incus applies the key only when the VM starts, so the launch sets it.
 
-A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#build-the-base-image) of its `image_fingerprint`:
+A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#the-base-vm-and-its-snapshot) of its `image_fingerprint`:
 
 1. When the volume `tvm-<id>-topology-seed` is missing, create copies the seed `orbit-topology-seed-<12 hex>` to that name. On ZFS the copy is a clone. It uses only what the VM writes.
 2. A retried create finds the clone and copies nothing.
 3. The launch adds the clone as the disk device `topology-seed` in the `devices` of the instance YAML on stdin, beside its `config`.
 
-When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone, and an UpCloud VM is always normal. The [claim gate](#claims-use-the-current-recipe) needs a promoted base, and promotion needs the seed, so a claimed VM always finds one.
+When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone, and an UpCloud VM is always normal. The [claim gate](#claims-copy-the-base-snapshot) needs a recorded base snapshot, which carries its seed, so a claimed VM always finds one.
 
-When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Build the recipe](#build-the-base-image) on the host. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
+When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Refresh the host](#refresh-the-base-snapshot) with `task-vms:refresh-image <host>`. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
 Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
 
@@ -910,7 +864,7 @@ Orbit uses complete CLI command names and explicit archive destinations, compati
 2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
-6. Run `php artisan task-vms:build-image shark`. Require base and seed verification and promotion before the topology gate.
+6. Run `php artisan task-vms:refresh-image shark`. Require the proof and the promotion of the snapshot before the topology gate.
 7. Run one complete topology task group explicitly on Shark. Require seed adoption, Node copies, enrollment, checks, teardown, and clone removal.
 
 The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task VM 7.0.1 → topology Node chain remains unverified until it passes. Failure stops rollout and invokes the rehearsed rollback below before normal admission resumes.
@@ -1092,7 +1046,7 @@ Run `task-vms:prepare-host {node}` once for each host. It calls `incus.prepare-h
 
 First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
 
-- The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the [base image](#build-the-base-image) build launches it.
+- The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the creation of the base VM of a host launches it.
 - The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
 - The ACL `<bridge>-egress`, which the bridge gets at creation.
 - ACL egress drops private, link-local, CGNAT, and multicast ranges, and allows the rest.
@@ -1111,140 +1065,52 @@ The restrictions forbid privileged and nested containers, host devices, backups,
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
-### Build the base image
+### The base VM and its snapshot
 
-**Old path.** Stage 6 of the [command development pipeline](/reference/command-development-pipeline) replaces this per-release recipe image build with a refresh of the topology seed by converge. Keep the build working until that refresh exists, and do not extend it ([old paths](/reference/old-paths)).
+Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/provision.mmd)). There is no Incus image and no publish.
 
-An Incus build puts the `recipe.json` and the Vite+ lock of the stored machine recipe in its intent. The recipe identity does not name the Orbit agent, and an image holds none; the guest gets the observer when it enrols. The UpCloud build still compiles its image input from the stored recipe and the pinned agent delivery. It selects architecture-specific tools, separates PHP and Rust inputs, and keeps empty tool maps as JSON objects. A mismatched agent pin refuses the UpCloud build before a guest phase starts.
+Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; start another stock attempt for a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
+A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server. The converge that follows builds everything else, because no digest is recorded yet. The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
-Use `php artisan task-vms:build-recipe --rebuild` after an image-builder fix, or whenever the current recipe needs a fresh image. It rebuilds the unchanged recipe from stock on every configured Incus host and UpCloud. It cannot be combined with `--retry`. It refuses while a build for the same recipe is running or its UpCloud rebuild request is pending, or while a configured Incus host is building another recipe.
+The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The UpCloud template build compiles its own input from the same recipe ([Build the UpCloud template](#build-the-upcloud-template)). The base is identified by the recipe identity that its refresh converged to, recorded on the build row.
 
-Each candidate runs the normal build, smoke and promote path
+The converge of a refresh and the UpCloud template build install the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
 
-A failed or cancelled image Operation also marks its owning build attempt failed, including a Gateway run-budget timeout. That records failure, not native termination: the Operation keeps its native-settlement hold until the shared reader verifies the terminal run. When the shared reader corrects an expiry to verified native success, the same attempt and recipe become succeeded with the already promoted fingerprint; recipe retry reuses that image.
-
-A failed candidate leaves the promoted image in service. A newer promoted build for the same host and recipe resolves the failed candidate's image-build incident. Promotion swaps the image only after the candidate passes. Build records and candidate aliases distinguish rebuilds of the same recipe; the recipe identity used by Nodes does not change.
-
-A recipe revert builds the selected identity from stock. Swamp retains completed steps within each native run; an explicit Gateway retry records a new stock attempt. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
-
-Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
-
-Each Incus image attempt starts one native Swamp workflow, `operation-task-vm-image-build`, in the steps of the chart `docs/cli/tasks/vm-image-build.mmd`. Every step runs on a 209 worker with `labels: {role: swamp}`; the build host needs no Swamp worker and no agent. The Gateway passes the full admitted intent as workflow inputs. It checks at the run start that the attempt owns its build and that its recipe is still current. Steps make no Gateway calls. A recipe that changes during the run does not stop it; the next reconcile builds the new recipe.
-
-The intent names these:
-
-- The host's SSH target with its recorded host keys, which Node 209 uses for every `incus` call and as the jump to the builder.
-- The builder and smoke names, the project, the network and the size of the VM.
-- The stock image, the candidate alias and the base alias with its `-previous` copy.
-- The `recipe.json` of the release, the Vite+ lock, and the Pi server digest with its place on the Gateway host.
-- The cloud-init config that makes the `orbit` account with the key of the Swamp control Node.
-
-Each Node action is one official `@swamp/ssh` step with pinned host keys and the 209 worker key, as one argv bounded by a literal `timeout`. The first four steps run in this order:
-
-1. **Remove earlier attempts.** `incus delete --force` for the builder and the smoke VM. A missing instance is fine.
-2. **Launch the builder.** `incus init` reads the cloud-init config from standard input. `incus start` boots the stock Ubuntu VM. The config makes the `orbit` account and installs `openssh-server`, which the stock image lacks.
-3. **Wait for the builder.** `incus wait agent`, then `cloud-init status --wait`.
-4. **Run the task image phases.** The child workflow `task-vm-image-ansible` runs the `software`, `tools` and `check` phases of the [task VM role playbook](#converge-a-running-task-vm) through the host.
-
-The child reads the builder's bridge address and host key from the host before it runs Ansible. The playbook knows it builds an image through `intent.image`. It removes its downloads and the snapshot apt configuration at the end of the `tools` phase.
-
-The last six steps follow:
-
-5. **Clean and stop.** The child workflow `task-vm-image-clean` cleans the VM and stops it.
-6. **Publish the candidate.** `incus publish --quiet` with the properties `orbit.recipe` and `orbit.profile`.
-   The quiet flag leaves only the fingerprint line, and the Gateway reads it from the output.
-7. **Smoke the candidate.** The child workflow `task-vm-image-smoke` boots a throwaway VM from the candidate and runs the `check` phase on it.
-8. **Check the seed.** It lists the volumes of the host's pool and looks for `orbit-topology-seed-` and the first 12 hex characters of the candidate's fingerprint.
-9. **Promote the image.** The child workflow `task-vm-image-promote` points the base alias at the candidate's fingerprint. It keeps the old image as `-previous`.
-   This step runs only when the seed exists.
-10. **Remove builder and smoke.** This step always runs. A failed removal does not fail the run.
-
-The parent passes the fingerprint to the promote child as a plain string, and `incus` refuses a wrong one. The builder has no nested fleet, so step 5 passes the child an empty `nested` object. A clone makes its own cloud-init state, machine id and host keys at its first boot. The Operation holds the host lock key for the whole run, so no other host Operation runs while the alias moves. A later attempt removes a stray builder first.
-
-The base alias moves only after the candidate passed its smoke check and the host has a seed for it. A failed build leaves the promoted image in service. The old image stays as the `-previous` rollback copy until the next promotion.
-
-Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
-
-Both builds run as one native workflow. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
-
-The Incus build records the image identity as the properties `orbit.recipe` and `orbit.profile` of the published image. The UpCloud build records it as the label `orbit.recipe` of the template. The Gateway stores progress and safe error codes; it does not read guest logs or run recipe commands.
-
-Swamp resumes failed native steps; completed steps remain checkpoints in the same root.
-
-An Incus build copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the builder when the digest differs from the pin, and checks the digest again.
-
-The Gateway projects the result once, from Swamp's terminal run data. Step statuses give the build steps and the failed stage. The published fingerprint, read from the output of `Publish the candidate`, and the successful `Promote the image` step give the image record.
-A run whose seed check skipped the promote is a recorded build without a promotion: the candidate and its fingerprint stay, and claims keep the promoted image. A failed guest wait reports `task_vm.bootstrap_timeout`, a failed launch `task_vm.bootstrap_failed`, and any other failed step `task_vm.image_build_failed`. `task-vms:build-image` prints the steps when the run ends.
-
-An image build, Incus or UpCloud, installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the image, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
-
-Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type.
+The converge copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the guest when the digest differs from the pin, and checks the digest again. The refresh fetches it only when the recipe of the base is older than the release's.
 
 #### The topology seed
 
-The image build does not build the topology seed, and it never promotes an image without one. A new image has no seed under its fingerprint until a [seed refresh](#refresh-the-topology-seed) makes one.
-The build then keeps the candidate without a promotion, and the refresh promotes the image together with its seed. A task VM on that host keeps booting from the promoted image, which has its seed. The first seed of a host, a nested fleet built from scratch without ready copies, is not designed yet (chart `docs/cli/tasks/vm-image-build.mmd`).
+The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed` with the stopped `node-template` and the nested fleet of the running release. The snapshot of the seed is taken with the snapshot of the VM, and a task start copies both. A medium or large VM mounts its copy as the disk `topology-seed`, so a topology task has its Nodes at once and does not build Orbit again. A task VM that already runs keeps its own clone of the older seed snapshot.
 
-The build leaves the promoted image and, from the first promotion on, the `-previous` alias as the rollback copy. Published images remain subject to normal image pruning. A failed build needs a fresh stock attempt; native resume cannot continue after the builder has been removed.
+#### Refresh the base snapshot
 
-#### Refresh the task image and the topology seed
+Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records and UpCloud attempts.
 
-A new task image comes from the recipe build only for a new host or a new base OS. Every release after that brings the image and the seed up to date by converge ([stage 6](/reference/command-development-pipeline#6-per-host-task-image-and-seed-refresh)).
+The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
 
-The seed that the image build leaves holds only the stopped `node-template`. A refresh adds the ready nested topology of the running release. That is three stopped system containers: `fleet-ready-gateway` (Gateway with Swamp), `fleet-ready-app-dev` and `fleet-ready-app-prod`. They run on the nested WireGuard network 10.45.0.0/24. A task VM that claims the seed has them at once and boots copies, so it does not build Orbit again.
+- the SSH target of the host with its recorded host keys, the project and the pool;
+- the recorded base snapshot, if any, and the name of the new one;
+- the stock image, the size of the base VM and the cloud-init config for a base VM that does not exist yet;
+- the converge intent of a task start, and a free slot for the proof.
 
-Each task VM host refreshes its own image and seed. Nothing is copied between hosts: copying across hosts is not a supported flow, so each host refreshes and, if needed, builds its own. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. There is no CLI command of its own. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger.
+It refuses a host that is not an active, configured task VM host, a host with no free slot, and a Gateway whose release has no commit. No step of the run calls the Gateway.
 
-`php artisan task-vms:refresh-image <host> --seed=keep` runs the image part alone. It skips `Build the fleet` and `Save the ready copies`; the refresh VM still clones the current seed, and the clone is copied under the new image. The seed content stays stale on purpose, the first use of a task VM converges it, and the Gateway never counts a `keep` run as a usable seed. The triggers always use `build`.
-
-The `task_vm.image_refresh` kind is admitted like [`tasks:prep`](/cli/tasks/prep). The refresh VM is a task VM like any other. The Gateway creates a group of its own in the proof Project and places it on this host only. The VM starts from the image the host promoted last, whatever its recipe or age. It keeps the root disk of the host's base VM: a published image is as large as its VM's root disk, and no VM can be smaller than its image.
-
-The Gateway captures the whole intent in the admission transaction of provision, so no step of the run calls the Gateway. A second admission for a host returns the open Operation. The Gateway refuses a host that is not an active, configured task VM host. It also refuses a host with an image build running or no promoted image, and a Gateway whose release has no commit.
-
-The workflow `operation-task-vm-image-refresh` runs from Node 209.
+The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/shell` step per phase of the Ansible playbooks:
 
 | Step | What it does |
 |---|---|
-| `Create the VM` | Runs `operation-task-provision` as a child: the VM from the current image and seed, the release checkout, the converge of the outer VM, and the nested fleet from the ready copies. |
-| `Pin the VM` | Fills the host key of the new guest into the ready copies intent and the fleet build intent. |
-| `Build the fleet` | Runs `operation-task-vm-fleet-build` as a child when the VM step started no fleet, because the seed has no usable ready copies. A fleet that started from ready copies skips it. |
-| `Converge the nested Nodes` | Runs `task-nested-converge` when the fleet started from ready copies: a `node.converge` of each nested Node, one at a time, before the save. |
-| `Save the ready copies` | Runs `operation-task-vm-ready-copies`: key-free copies in the seed disk, boot-checked. |
-| `Stop the refresh VM` | Runs `incus stop` on the refresh VM. It yields only its seed disk and is never published. |
-| `Build the image` | Runs `task-vm-image-builder` as a child: a builder cloned from the image the refresh VM started from, the phases `software`, `tools` and `check`, `task-vm-image-clean`, then `incus publish` of the stopped builder under a candidate alias. |
-| `Smoke the candidate` | Runs `task-vm-image-smoke`, the smoke of the image build: a throwaway VM from the candidate and the check phase of the task VM role on it. |
-| `Enroll the check VM` | Runs `task-vm-bootstrap`, the bootstrap steps of an enrollment, on the smoke VM: the account, the key, the sudoers file and the observer install with their checks. |
-| `Converge the check VM` | Runs `task-vm-image-ansible` on the smoke VM with the phases `software`, `tools` and `check`, as the converge of a provision does. |
-| `Copy the seed`, `Detach the seed` | Copy the seed disk of the stopped refresh VM to `orbit-topology-seed-<12 hex of the new fingerprint>` under the host seed lock, then run `zfs promote` on it, so refreshes form no clone chain. |
-| `Promote the image` | Runs `task-vm-image-promote`, the promotion of the image build: the alias moves to the new image and the old image keeps `<alias>-previous`. |
+| `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
+| `Converge` | The same converge as a task start (`task-vm-image-ansible`, phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`). It waits for no nested Gateway and wipes no identity. |
+| `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
+| `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free slot, then its release. |
+| `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
 
-The refresh has no converge step of its own, because the provision converges the outer VM before the nested fleet. The builder never is enrolled and never has a seed, so the clean step has one case: it resets cloud-init, the machine-id and the SSH host keys, trims the disk and stops the builder. The image build runs the same clean step.
+A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
 
-The fleet build first makes the SSH key of the `orbit` account in the refresh VM, because a fresh task VM has none. The key reaches the nested containers. Its private half stays on the refresh VM, which is never published. The build creates the three nested containers one at a time, because three parallel `incus init` calls of one image race on the image cache of the client.
-
-The fleet build runs only in a large task VM (12 GiB, 6 CPUs), because the three nested containers may use 10 GiB and a medium VM lost its nested Gateway to the out-of-memory killer. The Gateway refuses the build for any other size. The admission of the refresh sets the size to large, so the Project size lists do not decide it, and the refresh needs three free slots of its host.
-
-Every wait of the build for the nested Gateway is one run of the playbook `task-vm-fleet-wait.yml` from Node 209 against the refresh VM. A task with `until`, `retries` and `delay` checks with one `incus exec` every 5 seconds. A check that finds the Gateway guest not running ends the wait at once. The playbook then lists the nested containers, fails naming any that is not running, and asserts the end state. An Operation that did not succeed fails with its failed step and error code. The last wait is the step `Check the nested fleet`, which the Gateway reads as the end of the run.
-
-The build reads the checkout of the refresh VM's own workspace, which its intent names as `operator_checkout`. A task VM keeps it under `/home/orbit/apps/<project>/workspace`. The nested containers have that path as the disk device `checkout` at `/home/orbit/orbit`.
-
-The old image keeps the alias `<alias>-previous`, and the old seed stays under its own name. Together they are the rollback copy. The cleanup job removes the check VM and the builder. When the alias does not point at the new image, it also removes the candidate image and the new seed. A failed run keeps the image and seed the host had. The builder starts only after the VM step and the save of the ready copies passed, so a VM whose fleet failed its readiness check promotes nothing.
-
-A cancelled refresh cancels its group, whether it ends before its Swamp run starts or the run ends cancelled. A cancelled run marks the group cancelled and leaves its VM in provisioning, so the group cancel still runs while that VM is not destroyed. It destroys the refresh VM and frees its slot. When the run ends, the Gateway records the new image as the host's latest promoted build, with the recipe identity of the release. It then cancels the group, which destroys the refresh VM. A claim then picks the new image and finds its seed by the fingerprint.
-
-##### How a claim selects the new seed
-
-The seed of an image is named from its fingerprint (`orbit-topology-seed-<12 hex>`). A refresh makes a new image with a new fingerprint, so it makes a new seed under a new name. The old seed and image stay as they were. A task VM that already runs keeps its own clone of the old seed.
-
-One host lock, `/run/lock/orbit-task-vm-seed.lock`, orders the seed copy and the alias move of a refresh against the seed clone of a claim.
-
-Image pruning deletes an image and its seeds together. The `-previous` alias and the old seed go when pruning removes the old image.
+The proof task start needs one free slot of the host. The refresh VM of the old design, its group in the proof Project, the nested-fleet build and the ready copies are not part of this run. The kinds `task_vm.fleet_build` and `task_vm.ready_copies` stay as kinds of their own.
 
 ##### Not built
-
-The chart lists what the run still lacks:
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
 
@@ -1324,31 +1190,15 @@ The proof Swamp Club key is in no copy. `ready` removes it from the Gateway and 
 
 The Gateway keeps no state of its own for a refresh. The succeeded Operation is the record. It holds the seed, the ready copies, the size of the seed (`referenced_bytes`) and the bytes the build wrote (`written_bytes`). The budget is in [Operations](/reference/operations).
 
-After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds.
+### Claims copy the base snapshot
 
-Pruning deletes a base image's topology seed, and a seed under construction, right before the image, so a kept base keeps its seed. An [image refresh](#refresh-the-task-image-and-the-topology-seed) keeps the old image and its seed as the rollback copy, under their own names, until pruning removes them. When VMs still use clones of a deleted seed, Incus moves the seed's dataset to its `deleted` path and destroys it with the last clone, so Orbit tracks no references.
+A new Incus start copies the host's recorded base snapshot and its seed snapshot, which are ZFS clones, starts the copy and writes the identity of the claim. The VM records the `recipe_identity` of the snapshot at allocation. A later refresh cannot change the snapshot a VM was copied from. A host without a base snapshot cannot serve a new claim. UpCloud claims require a verified template for the current recipe; they never take a fallback image.
 
-Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 15 jobs, including the topology seed, promotion, and pruning.
-
-The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
-
-The two image-build workers check `builds` before `builds-optional`, so a waiting Incus chain step takes priority over the optional UpCloud job. A running UpCloud build is not interrupted. UpCloud remains one synchronous job, with no new lock. Failures from the recipe installers and recipe verification store their phase, exit status, and bounded, sanitized stderr before deleting the builder. Other stages, including launch, cloud-init, templatize, and smoke checks outside recipe verification, report their stage error without that structured diagnostic. `php artisan task-vms:image-builds` shows the retained diagnostics. The failed-attempt fence remains; only `php artisan task-vms:build-recipe --retry` admits another attempt. This command also retries failed Incus builds.
-
-### Claims use the current recipe
-
-A new Incus claim uses a succeeded, promoted base image for the deployed recipe on its selected host. The VM records `recipe_identity`, `image_fingerprint`, `image_build_id`, and `image_fallback` at allocation; launch uses the fingerprint, so a later alias move cannot change the selected image. Enrollment checks the observed fingerprint and trusts the image's software, as ADR 0206 requires. There is no full-enrollment fallback for stale images.
-
-An existing group keeps its VM and recorded image across recipe changes, failures, parking, and resume. UpCloud claims require a verified template for the current recipe; they never take a fallback image.
+An existing group keeps its VM across recipe changes, failures, parking, and resume.
 
 #### Image fallback
 
-While a host builds the current recipe, or after that build failed, a new claim on that host starts from the host's last promoted base image if that image was promoted at most one day ago. The VM then records that image's own recipe identity and build, with `image_fallback` true. A [`tasks.provision` result](/reference/tasks#provision-an-external-group) reports the same four facts under `image`.
-
-A group created with `current_recipe: true` (`tasks:create --current-recipe`) needs the new recipe. It never takes a fallback image and waits as before. Proof topologies and ordinary tasks leave the field false.
-
-A host with no current image and no promoted image under a day old cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a usable image can serve it. Image unavailability never triggers UpCloud overflow.
-
-A fallback image is safe for enrollment: enrollment installs the pinned agent from its artifact URL and checks its digest, and the runtime step installs the pinned Pi build, before either is used. Pruning keeps the current and previous promoted base images and every image an existing VM uses, so the fallback image stays while a claim can select it or a VM runs from it.
+There is no fallback image. A claim copies the recorded base snapshot of its host, or waits. Another host with a base snapshot can serve it. Image unavailability never triggers UpCloud overflow.
 
 ### Add a task VM host
 
@@ -1356,7 +1206,7 @@ A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
-3. Run `task-vms:build-image {node}` to build the current recipe locally.
+3. Run `task-vms:refresh-image {node}`. The first refresh makes the base VM and its first snapshot ([the base VM and its snapshot](#the-base-vm-and-its-snapshot)).
 
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
@@ -1468,14 +1318,13 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
-| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
-| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:build-image` |
+| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
+| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
-| `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
-| `task_vm.image_channel_lost` | 409 | The bounded observation period ended without a readable phase result. The guest outcome is unknown; inspect the retained builder before resuming |
-| `task_vm.image_build_running` | 409 | A recipe image build on the host is already running |
+| `task_vm.image_build_failed` | 502 | A UpCloud template build failed. The build row records the step and error |
+| `task_vm.image_build_running` | 409 | A UpCloud template build is already running |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
@@ -1528,7 +1377,6 @@ These alternatives were also rejected:
 ## UpCloud overflow
 
 The native orphan sweep verifies the recorded name and label and calls UpCloud directly. The template build cleans up its own servers and unverified template from 209. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
-
 
 When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
 
@@ -1598,15 +1446,13 @@ Deletes are best effort: a failed delete does not change the run's outcome, and 
 
 One build runs at a time. A build marks its time stamp as running for two hours, and no sweep deletes the servers or the template of a marked build.
 
-### Refresh the UpCloud template on recipe changes
+### Refresh the UpCloud template
 
-Each minute, the recipe reconcile queues `RefreshUpCloudTaskVmBaseImage` on the `builds-optional` queue when UpCloud is configured and no verified template matches the deployed recipe. The [Gateway queue](/reference/gateway-queue#queues) gives waiting required builds priority. There is no separate nightly schedule.
+Only `php artisan task-vms:build-upcloud-image` starts a template build. The per-minute recipe reconcile that used to queue it on a recipe change is gone with the Incus recipe image build, so run the command after a recipe change. The admission makes the recipe of the release the desired one. A claim without a verified template for the current recipe fails with `task_vm.base_image_missing`.
 
-The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. A queued build that finds an earlier attempt refuses with `task_vm.image_build_superseded`; use the explicit retry command instead of redispatching it. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
+A database ledger records each attempt before remote work, including failed and interrupted builds. A run that finds the desired recipe changed since its admission refuses with `task_vm.image_build_superseded`. An explicit command starts a new attempt.
 
-Reconcile raises a recipe-maintenance alert when the current identity has a failed attempt, or a running attempt at least two hours old, and no verified template. The alert names the identity and attempt and includes `php artisan task-vms:build-recipe --retry`. Repeated alerts for an attempt are limited to one per hour. The build command also reports this fenced state. Reconcile reports only the latest attempt and stops alerting once a verified template exists. `--retry` also retries failed Incus builds.
-
-The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
+The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim.
 
 The build takes about 20 minutes; its run budget is 2,100 seconds. Swamp owns dispatch, cancellation and recovery. The token and the private host key reach curl only from its environment, through `--variable`; they are never in argv, inputs, outputs or history. Each Ansible run has one literal timeout of 3,300 seconds. A failed smoke check prevents promotion. An explicit retry records a new attempt.
 
