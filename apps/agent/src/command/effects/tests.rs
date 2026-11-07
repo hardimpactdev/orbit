@@ -550,6 +550,10 @@ fn masks_numbers_and_booleans_before_persisting_a_receipt() {
     let fixture = Fixture::new();
     let store = fixture.store();
     let masks = context()
+        .with_effect_identity(
+            "73111111-1111-4111-8111-111111111111".into(),
+            time::OffsetDateTime::now_utc().unix_timestamp(),
+        )
         .with_effect_masks(vec!["731".into(), "1".into(), "4.25".into(), "82".into()])
         .with_effect_boolean_masks(vec![true]);
     store.execute("test.effect", "op-42.scalars", "input", &masks, || {
@@ -567,8 +571,13 @@ fn masks_numbers_and_booleans_before_persisting_a_receipt() {
         json!({"integer":"[REDACTED]","boolean":"[REDACTED]","float":"[REDACTED]","whole_float":"[REDACTED]","public":false})
     );
     let bytes = fs::read_to_string(store.path("op-42.scalars")).unwrap();
-    assert!(!bytes.contains("731"));
-    assert!(!bytes.contains("4.25"));
+    let stored: Value = serde_json::from_str(&bytes).unwrap();
+    // Identity and timing metadata may contain the same digits as a protected result value.
+    assert_eq!(
+        stored["effect_nonce"],
+        "73111111-1111-4111-8111-111111111111"
+    );
+    assert_eq!(stored["response"], json!({"Ok": result["data"]}));
 }
 
 #[test]
