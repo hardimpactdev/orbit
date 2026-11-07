@@ -384,7 +384,12 @@ describe('proof:run admission', function (): void {
             ->and($proof->input)->not->toHaveKey('cases');
     });
 
-    it('selects the cases and fails while execution is switched off, which is the default', function (): void {
+    it('is on by default, as in production', function (): void {
+        expect(config('proof.execution'))->toBeTrue();
+    });
+
+    it('selects the cases and fails while execution is switched off', function (): void {
+        config(['proof.execution' => false]);
         $source = proofSource();
         $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
         proofWorld($source);
@@ -397,6 +402,7 @@ describe('proof:run admission', function (): void {
     });
 
     it('runs every case for --all and never lets a docs-only commit skip it', function (): void {
+        config(['proof.execution' => false]);
         $source = proofSource();
         $source->files = [new ProofChangedFile('docs/a.md', 'modified')];
         proofWorld($source);
