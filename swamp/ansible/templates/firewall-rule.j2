@@ -1,0 +1,118 @@
+{#-
+  One Orbit firewall rule against `ufw status numbered`: the changes it needs, or the check of the result.
+  Pure: it reads `fw_status` (the output), `fw_rule` and `fw_ensure` from the intent, `fw_mode` (plan or check) and, for the
+  check, `fw_changes` (how many changes the plan made), and prints one JSON object. The playbook applies the changes with
+  `community.general.ufw`; an insert number counts the rows as they will be after the earlier changes. The order is the one
+  of `firewall/plan.ts`: a line sits above every managed `orbit:` line of its family and above every broader overlapping
+  operator line, and below every narrower one.
+-#}
+{%- macro key(row) -%}{{ row.to }}|{{ row.action }}|{{ row.source }}{%- endmacro -%}
+{%- macro six(row) -%}{{ 'true' if ('(v6)' in row.to or '(v6)' in row.source or ':' in row.source) else 'false' }}{%- endmacro -%}
+{%- macro managed(row) -%}{{ 'true' if row.comment.startswith('orbit:') else 'false' }}{%- endmacro -%}
+{%- macro scope(source) -%}
+{{ ('::/0' if source.endswith('(v6)') else '0.0.0.0/0') if source.startswith('Anywhere') else source.replace(' (v6)', '') }}
+{%- endmacro -%}
+{#- 'true' when `row` must sit below `other`: a managed line of the same family under an operator line, or a broader overlap. -#}
+{%- macro below(row, other) -%}
+{%- if managed(row) == 'true' or managed(other) == 'true' -%}
+{{ 'true' if (managed(row) == 'true' and managed(other) == 'false' and six(row) == six(other)) else 'false' }}
+{%- else -%}
+{%- set a = row.to | regex_findall('^(\\d{1,5})(?::(\\d{1,5}))?(?:/(tcp|udp))?(?: \\(v6\\))?$') -%}
+{%- set b = other.to | regex_findall('^(\\d{1,5})(?::(\\d{1,5}))?(?:/(tcp|udp))?(?: \\(v6\\))?$') -%}
+{%- if a | length == 0 or b | length == 0 or six(row) != six(other) -%}false
+{%- elif (a[0][1] or a[0][0]) | int < b[0][0] | int or (b[0][1] or b[0][0]) | int < a[0][0] | int -%}false
+{%- elif a[0][2] and b[0][2] and a[0][2] != b[0][2] -%}false
+{%- else -%}
+{%- set wide = scope(row.source) | trim -%}{%- set narrow = scope(other.source) | trim -%}
+{{ 'true' if (wide | ansible.utils.ipaddr('net') != narrow | ansible.utils.ipaddr('net') and narrow | ansible.utils.ipaddr(wide)) else 'false' }}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+{#- 'true' when no line of `mine` has a row before it that must sit below it, or after it that it must sit below. -#}
+{%- macro ordered(rows, mine) -%}
+{%- set bad = namespace(found=false) -%}
+{%- for row in rows -%}
+{%- if key(row) in mine -%}
+{%- set index = loop.index0 -%}
+{%- for other in rows -%}
+{%- if (loop.index0 < index and below(other, row) == 'true') or (loop.index0 > index and below(row, other) == 'true') -%}{%- set bad.found = true -%}{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- endfor -%}
+{{ 'false' if bad.found else 'true' }}
+{%- endmacro -%}
+{#- The rows without any row of this key. -#}
+{%- macro without(rows, wanted_key) -%}
+{%- set kept = [] -%}
+{%- for row in rows if key(row) != wanted_key -%}{%- set _ = kept.append(row) -%}{%- endfor -%}
+{{ kept | to_json }}
+{%- endmacro -%}
+
+{%- set ns = namespace(rows=[], changes=[], error=none) -%}
+{%- for p in fw_status | regex_findall('(?m)^\\s*\\[\\s*\\d+\\]\\s+(.+?)\\s+(ALLOW|DENY)\\s+IN\\s+(.+?)(?:\\s+#\\s*(.*))?$') -%}
+{%- set ns.rows = ns.rows + [{'to': p[0] | trim, 'action': p[1] | lower, 'source': p[2] | trim, 'comment': (p[3] or '') | trim}] -%}
+{%- endfor -%}
+{%- if (fw_status.split('\n') | map('trim') | select('equalto', 'Status: active') | list | length) != 1 -%}
+{%- set ns.error = 'firewall.backend_inactive' -%}
+{%- endif -%}
+{%- set wanted = [] -%}
+{%- for protocol in (['tcp', 'udp'] if fw_rule.protocol == 'any' else [fw_rule.protocol]) -%}
+{%- set to = fw_rule.port ~ '/' ~ protocol -%}
+{%- if fw_rule.source == 'any' -%}
+{%- set _ = wanted.append({'argument': '0.0.0.0/0', 'protocol': protocol, 'row': {'to': to, 'action': fw_rule.action, 'source': 'Anywhere', 'comment': fw_rule.comment}}) -%}
+{%- set _ = wanted.append({'argument': '::/0', 'protocol': protocol, 'row': {'to': to ~ ' (v6)', 'action': fw_rule.action, 'source': 'Anywhere (v6)', 'comment': fw_rule.comment}}) -%}
+{%- else -%}
+{%- set _ = wanted.append({'argument': fw_rule.source, 'protocol': protocol, 'row': {'to': to, 'action': fw_rule.action, 'source': fw_rule.source, 'comment': fw_rule.comment}}) -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set keys = [] -%}
+{%- for line in wanted -%}{%- set _ = keys.append(key(line.row)) -%}{%- endfor -%}
+{%- if ns.error is not none -%}
+{{ {'changes': [], 'error': ns.error} | to_json }}
+{%- elif fw_mode == 'plan' -%}
+{%- for line in wanted -%}
+{%- set row = line.row -%}
+{%- set exists = namespace(value=false) -%}
+{%- for item in ns.rows if key(item) == key(row) -%}{%- set exists.value = true -%}{%- endfor -%}
+{%- if fw_ensure == 'absent' -%}
+{%- if exists.value and not fw_rule.retain -%}
+{%- set ns.changes = ns.changes + [{'op': 'delete', 'action': row.action, 'protocol': line.protocol, 'source': line.argument, 'port': fw_rule.port}] -%}
+{%- set ns.rows = without(ns.rows, key(row)) | from_json -%}
+{%- endif -%}
+{%- else -%}
+{%- if exists.value and ordered(ns.rows, [key(row)]) == 'false' -%}
+{%- set ns.changes = ns.changes + [{'op': 'delete', 'action': row.action, 'protocol': line.protocol, 'source': line.argument, 'port': fw_rule.port}] -%}
+{%- set ns.rows = without(ns.rows, key(row)) | from_json -%}
+{%- set exists.value = false -%}
+{%- endif -%}
+{%- if not exists.value -%}
+{%- set probe = {'to': row.to, 'action': row.action, 'source': row.source, 'comment': ''} -%}
+{%- set hit = namespace(index=-1, six=-1) -%}
+{%- for other in ns.rows -%}
+{%- if hit.index < 0 and below(other, probe) == 'true' -%}{%- set hit.index = loop.index0 -%}{%- endif -%}
+{%- if hit.six < 0 and six(other) == 'true' -%}{%- set hit.six = loop.index0 -%}{%- endif -%}
+{%- endfor -%}
+{%- if hit.index >= 0 -%}
+{%- set ns.changes = ns.changes + [{'op': 'insert', 'insert': hit.index + 1, 'action': row.action, 'protocol': line.protocol, 'source': line.argument, 'port': fw_rule.port, 'comment': row.comment}] -%}
+{%- set ns.rows = ns.rows[:hit.index] + [row] + ns.rows[hit.index:] -%}
+{%- else -%}
+{#- ufw appends an IPv4 line after the last IPv4 line and an IPv6 line at the end. -#}
+{%- set end = (ns.rows | length) if (six(row) == 'true' or hit.six < 0) else hit.six -%}
+{%- set ns.changes = ns.changes + [{'op': 'add', 'action': row.action, 'protocol': line.protocol, 'source': line.argument, 'port': fw_rule.port, 'comment': row.comment}] -%}
+{%- set ns.rows = ns.rows[:end] + [row] + ns.rows[end:] -%}
+{%- endif -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{{ {'changes': ns.changes, 'error': none} | to_json }}
+{%- else -%}
+{%- set present = namespace(count=0) -%}
+{%- for item in ns.rows if key(item) in keys -%}{%- set present.count = present.count + 1 -%}{%- endfor -%}
+{%- if fw_ensure == 'absent' -%}
+{{ {'changes': [], 'error': ('firewall.remove_verify_failed' if (present.count > 0 and not fw_rule.retain) else none), 'result': {'backend': 'absent'}} | to_json }}
+{%- elif present.count != (keys | length) or ordered(ns.rows, keys) == 'false' -%}
+{{ {'changes': [], 'error': 'firewall.verify_failed'} | to_json }}
+{%- else -%}
+{{ {'changes': [], 'error': none, 'result': ({'backend': 'active', 'skipped': 'firewall.rule_exists'} if (fw_changes | int) == 0 else {'backend': 'active'})} | to_json }}
+{%- endif -%}
+{%- endif -%}
