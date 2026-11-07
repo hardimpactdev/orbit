@@ -1,0 +1,31 @@
+---
+# port-range (changes-needed, succeeded). Independent: the rows of the port outside the range must not change.
+- name: port-range
+  vars:
+    allow_row: "{{ rows | select('search', c.spec ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny_row: "{{ rows | select('search', 'proof:deny-port_range$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    matching: "{{ rules | selectattr('status', 'equalto', 'active') | selectattr('port', 'equalto', c.spec) | list }}"
+    outside_before: "{{ ufw_before.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', c.outside | string) | list }}"
+    outside_after: "{{ ufw_after.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', c.outside | string) | list }}"
+  block:
+    - name: Every port of the range passes for the Gateway, the port outside it and app-prod stay blocked
+      ansible.builtin.include_tasks: probe.yml
+      tags: [probe]
+      vars: {probe: "{{ item }}"}
+      loop:
+        - {from: nested-gateway,  port: "{{ c.lo }}",      expect: connect}
+        - {from: nested-gateway,  port: "{{ c.mid }}",     expect: connect}
+        - {from: nested-gateway,  port: "{{ c.hi }}",      expect: connect}
+        - {from: nested-gateway,  port: "{{ c.outside }}", expect: blocked}
+        - {from: nested-app-prod, port: "{{ c.mid }}",     expect: blocked}
+    - name: One active record for the range, the allow line sits above the range deny, the outside port is untouched
+      ansible.builtin.assert:
+        that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first, outside_before == outside_after]
+        quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

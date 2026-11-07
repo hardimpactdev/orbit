@@ -3,7 +3,8 @@
 # Run by `orbit tasks:script`, from the repository root of the task VM checkout. Delete it, or make it the runner, after the verdict.
 #
 #   scripts/molecule-verify-spike diagnose        what the VM has (no install, nothing changes)
-#   scripts/molecule-verify-spike test [BASE]     install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100)
+#   scripts/molecule-verify-spike test [BASE] [FORKS]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),
+#                                                       FORKS the number of independent cases that run at a time (default 1, serial)
 #   scripts/molecule-verify-spike log FROM [TO]   print lines FROM..TO of the last Molecule log (the result keeps only 16 KiB)
 #
 # The Python lives in a venv inside the workspace (.molecule-spike/, untracked). The result prints seconds for each stage, the verdict line of
@@ -55,6 +56,7 @@ install() {
 run_test() {
   export PATH=$VENV/bin:$PATH
   export PROOF_PORT_BASE=${1:-47100}
+  export ANSIBLE_FORKS=${2:-1}
   export ORBIT_CHECKOUT=$ROOT
   export ANSIBLE_DEPRECATION_WARNINGS=false ANSIBLE_NOCOLOR=1 NO_COLOR=1
   export XDG_CACHE_HOME=$WORK/cache ANSIBLE_HOME=$WORK/ansible   # nothing outside the workspace and /tmp
@@ -66,17 +68,23 @@ run_test() {
   start=$(now)
   molecule test >"$LOG" 2>&1
   local rc=$?
-  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, log $(wc -l <"$LOG") lines)"
+  say "molecule test: rc $rc in $(since "$start") s (port base $PROOF_PORT_BASE, forks $ANSIBLE_FORKS, log $(wc -l <"$LOG") lines)"
   say "== time of each playbook (the total after each TASKS RECAP: facts, prepare, converge, verify)"
   grep -A1 '^TASKS RECAP' "$LOG" | grep -E '^[A-Z][a-z]+ [0-9]+' | sed -E 's/^.*\(([0-9:.]+)\) +([0-9:.]+) .*$/playbook total \2/'
   say "== tasks"
   say "tasks run: $(grep -c '^TASK \[' "$LOG")"
-  say "results on a nested Node or delegated to one: $(grep -cE '^(ok|changed|failed|fatal|skipping): \[(localhost -> )?nested-' "$LOG")"
+  say "results on a nested Node or delegated to one: $(grep -cE '^(ok|changed|failed|fatal|skipping): \[([a-z_]+ -> )?nested-' "$LOG")"
   say "== verdicts"
   grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-400
+  say "== overlap (from the verdict lines): whole cases, and the CLI call of each case"
+  grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | awk '
+    function peak_of(first, last, x, y,   i, j, c, p) { p = 0; for (i = first; i <= last; i++) { c = 0; for (j = first; j <= last; j++) if (x[j] <= x[i] && x[i] < y[j]) c++; if (c > p) p = c } return p }
+    { n++; for (i = 1; i <= NF; i++) { if ($i == "casewin") { cs[n] = $(i + 1); ce[n] = $(i + 2) } if ($i == "cli") { ls[n] = $(i + 1); le[n] = $(i + 2) } if ($i == "busy") busy += $(i + 1) + 0 }
+          if (!cmin || cs[n] < cmin) cmin = cs[n]; if (ce[n] > cmax) cmax = ce[n] }
+    END { printf "%d cases from first start to last end %.1f s; at most %d cases at once; at most %d CLI calls at once; asks refused as busy %d\n", n, cmax - cmin, peak_of(1, n, cs, ce), peak_of(1, n, ls, le), busy }'
   say "== slowest tasks"
   grep -E -- ' -{5,} [0-9]+\.[0-9]+s$' "$LOG" | awk '{ print $NF, $0 }' | sort -rn | head -12 | cut -d' ' -f2- | cut -c1-140
-  grep -E '^(PLAY RECAP|localhost +:|nested-[a-z-]+ +:|default >|SCENARIO RECAP)' "$LOG" | cut -c1-160 | tail -14
+  grep -E '^(PLAY RECAP|[a-z_]+ +: +ok=|nested-[a-z-]+ +:|default >|SCENARIO RECAP)' "$LOG" | cut -c1-160 | tail -14
   if [ "$rc" -ne 0 ]; then
     say "== failed: the lines around the first error"
     grep -n -m1 -E 'fatal:|\[ERROR\]|ERROR ' "$LOG" | cut -c1-200
@@ -88,7 +96,7 @@ run_test() {
 
 case "${1:-test}" in
   diagnose) diagnose ;;
-  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" ;;
+  test) diagnose >"$WORK/diagnose.txt" 2>&1; install || { say "install failed"; cat "$WORK/diagnose.txt" | head -30; exit 1; }; run_test "${2:-}" "${3:-}" ;;
   log) sed -n "${2:-1},${3:-80}p" "$LOG" | cut -c1-260 ;;
-  *) say "usage: $0 diagnose | test [PORT_BASE] | log FROM [TO]"; exit 2 ;;
+  *) say "usage: $0 diagnose | test [PORT_BASE] [FORKS] | log FROM [TO]"; exit 2 ;;
 esac

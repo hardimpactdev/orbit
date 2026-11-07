@@ -1,29 +1,33 @@
 ---
-# One command of the batch, as a user runs it: setup commands, a before snapshot, `orbit ... --json`, the assert on the answer, the wait on the
-# Operation receipt, an after snapshot. Included once per case by converge.yml with `c` set. Everything is a stock module; the only state
-# kept for verify.yml are cacheable facts (the fact cache of molecule.yml), so a failed check never stops the batch: it is recorded and
-# verify.yml prints one verdict per case.
-- name: "{{ c.id }}"
+# One case, run for its own host: setup commands, the snapshots before, `orbit ... --json`, the assert on the answer, the wait on the
+# Operation receipt, the snapshots after. The product refuses a firewall write while another one holds the Node (`operation.target_busy`),
+# so every CLI call asks again until it is admitted; the number of asks is kept as `busy_retries`. A failed check is recorded, not raised,
+# so one verdict per case survives. Results stay as cacheable facts of the case host (the fact cache of molecule.yml) for verify.yml.
+- name: "{{ inventory_hostname }}"
   block:
-    - name: "{{ c.id }}: start the clock"
+    - name: "{{ inventory_hostname }}: start the clock"
       ansible.builtin.set_fact:
         case_t0: "{{ now().timestamp() }}"
 
-    - name: "{{ c.id }}: setup commands"
+    - name: "{{ inventory_hostname }}: setup commands"
       ansible.builtin.command:
         argv: "{{ orbit + item + ['--json'] }}"
         chdir: /
       environment: "{{ cli_env }}"
-      loop: "{{ c.setup | default([]) }}"
+      loop: "{{ d.setup | default([]) }}"
+      register: setup_run
+      until: setup_run.rc == 0 or (setup_run.stdout ~ setup_run.stderr) is not search('operation.target_busy')
+      retries: 60
+      delay: 1
       changed_when: false
 
-    - name: "{{ c.id }}: UFW table of app-dev before"
+    - name: "{{ inventory_hostname }}: UFW table of app-dev before"
       ansible.builtin.command: ufw status numbered
       delegate_to: nested-app-dev
       register: ufw_pre
       changed_when: false
 
-    - name: "{{ c.id }}: Operations before"
+    - name: "{{ inventory_hostname }}: Operations before"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/operations?kind=firewall.allow"
         ca_path: "{{ gateway_ca }}"
@@ -31,7 +35,7 @@
         return_content: true
       register: ops_pre
 
-    - name: "{{ c.id }}: firewall records of app-dev before"
+    - name: "{{ inventory_hostname }}: firewall records of app-dev before"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
         ca_path: "{{ gateway_ca }}"
@@ -39,32 +43,35 @@
         return_content: true
       register: rec_pre
 
-    - name: "{{ c.id }}: run the command"
+    - name: "{{ inventory_hostname }}: run the command"
       ansible.builtin.command:
-        argv: "{{ orbit + c.argv + ['--json'] }}"
+        argv: "{{ orbit + d.argv + ['--json'] }}"
         chdir: /
       environment: "{{ cli_env }}"
       register: ran
       failed_when: false
       changed_when: false
+      until: ran.rc == 0 or (ran.stdout ~ ran.stderr) is not search('operation.target_busy')
+      retries: 60
+      delay: 1
 
-    - name: "{{ c.id }}: read the answer"
+    - name: "{{ inventory_hostname }}: read the answer"
       ansible.builtin.set_fact:
         answer: "{{ (ran.stdout | from_json) if (ran.stdout is search('^\\s*[{\\[]')) else {} }}"
 
-    - name: "{{ c.id }}: the answer is the one the contract promises"
+    - name: "{{ inventory_hostname }}: the answer is the one the contract promises"
       vars:
         code: "{{ answer.error_code | default(answer.error.code | default('')) }}"
       ansible.builtin.assert:
         that:
-          - ran.rc == c.expect.rc
-          - (c.expect.status | default('')) == '' or answer.status == c.expect.status
-          - (c.expect.code | default('')) == '' or code == c.expect.code
-          - (c.expect.skipped | default('')) == '' or c.expect.skipped in (answer | to_json)
-        fail_msg: "exit {{ ran.rc }}, status {{ answer.status | default('-') }}, code {{ code }}; expected {{ c.expect }}"
+          - ran.rc == d.expect.rc
+          - (d.expect.status | default('')) == '' or answer.status == d.expect.status
+          - (d.expect.code | default('')) == '' or code == d.expect.code
+          - (d.expect.skipped | default('')) == '' or d.expect.skipped in (answer | to_json)
+        fail_msg: "exit {{ ran.rc }}, status {{ answer.status | default('-') }}, code {{ code }}; expected {{ d.expect }}"
         quiet: true
 
-    - name: "{{ c.id }}: wait for the Operation receipt"
+    - name: "{{ inventory_hostname }}: wait for the Operation receipt"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/operations/{{ answer.id | default(answer.operation.id | default('')) }}"
         ca_path: "{{ gateway_ca }}"
@@ -74,22 +81,22 @@
       until: (receipt.json.data | default(receipt.json)).status in ['succeeded', 'failed', 'cancelled']
       retries: 30
       delay: 2
-      when: c.expect.request | default(true)
+      when: d.expect.request | default(true)
 
-    - name: "{{ c.id }}: the receipt agrees with the answer"
+    - name: "{{ inventory_hostname }}: the receipt agrees with the answer"
       ansible.builtin.assert:
-        that: (receipt.json.data | default(receipt.json)).status == c.expect.status
-        fail_msg: "receipt status {{ (receipt.json.data | default(receipt.json)).status }}, expected {{ c.expect.status }}"
+        that: (receipt.json.data | default(receipt.json)).status == d.expect.status
+        fail_msg: "receipt status {{ (receipt.json.data | default(receipt.json)).status }}, expected {{ d.expect.status }}"
         quiet: true
-      when: c.expect.request | default(true)
+      when: d.expect.request | default(true)
 
-    - name: "{{ c.id }}: UFW table of app-dev after"
+    - name: "{{ inventory_hostname }}: UFW table of app-dev after"
       ansible.builtin.command: ufw status numbered
       delegate_to: nested-app-dev
       register: ufw_post
       changed_when: false
 
-    - name: "{{ c.id }}: firewall records of app-dev after"
+    - name: "{{ inventory_hostname }}: firewall records of app-dev after"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
         ca_path: "{{ gateway_ca }}"
@@ -97,7 +104,7 @@
         return_content: true
       register: rec_post
 
-    - name: "{{ c.id }}: Operations after"
+    - name: "{{ inventory_hostname }}: Operations after"
       ansible.builtin.uri:
         url: "{{ gateway_url }}/operations?kind=firewall.allow"
         ca_path: "{{ gateway_ca }}"
@@ -105,19 +112,24 @@
         return_content: true
       register: ops_post
   rescue:
-    - name: "{{ c.id }}: record the failed check"
+    - name: "{{ inventory_hostname }}: record the failed check"
       ansible.builtin.set_fact:
-        failures: "{{ failures | default({}) | combine({c.id: ('converge | ' ~ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.msg | default('?')))}) }}"
+        failures: "{{ 'converge | ' ~ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.msg | default('?')) }}"
         cacheable: true
   always:
-    - name: "{{ c.id }}: keep the evidence for verify"
+    - name: "{{ inventory_hostname }}: keep the evidence for verify"
       ansible.builtin.set_fact:
-        act: "{{ act | default({}) | combine({c.id: {'rc': ran.rc | default(-1), 'secs': ran.delta | default('0:00:00') , 'out': answer | default({})}}) }}"
-        ufw_before: "{{ ufw_before | default({}) | combine({c.id: ufw_pre.stdout | default('')}) }}"
-        ufw_after: "{{ ufw_after | default({}) | combine({c.id: ufw_post.stdout | default('')}) }}"
-        ops_before: "{{ ops_before | default({}) | combine({c.id: ((ops_pre.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
-        ops_after: "{{ ops_after | default({}) | combine({c.id: ((ops_post.json | default({})).data | default([])) | map(attribute='id') | sort | list}) }}"
-        case_secs: "{{ case_secs | default({}) | combine({c.id: ((now().timestamp() - case_t0 | float) | round(1))}) }}"
-        records_before: "{{ records_before | default({}) | combine({c.id: (rec_pre.json | default({})).data | default([])}) }}"
-        records_after: "{{ records_after | default({}) | combine({c.id: (rec_post.json | default({})).data | default([])}) }}"
+        ufw_before: "{{ ufw_pre.stdout | default('') }}"
+        ufw_after: "{{ ufw_post.stdout | default('') }}"
+        ops_before: "{{ ((ops_pre.json | default({})).data | default([])) | map(attribute='id') | sort | list }}"
+        ops_after: "{{ ((ops_post.json | default({})).data | default([])) | map(attribute='id') | sort | list }}"
+        records_before: "{{ (rec_pre.json | default({})).data | default([]) }}"
+        records_after: "{{ (rec_post.json | default({})).data | default([]) }}"
+        case_secs: "{{ ((now().timestamp() - case_t0 | float) | round(1)) }}"
+        case_start: "{{ case_t0 | float }}"
+        case_end: "{{ now().timestamp() }}"
+        cmd_secs: "{{ ((ran.delta | default('0:00:00')).split(':')[0] | int * 3600 + (ran.delta | default('0:00:00')).split(':')[1] | int * 60 + (ran.delta | default('0:00:00')).split(':')[2] | float) | round(1) }}"
+        cli_start: "{{ ((ran.start | default('1970-01-01 00:00:00.000000')) | to_datetime('%Y-%m-%d %H:%M:%S.%f')).timestamp() }}"
+        cli_end: "{{ ((ran.end | default('1970-01-01 00:00:00.000000')) | to_datetime('%Y-%m-%d %H:%M:%S.%f')).timestamp() }}"
+        busy_retries: "{{ ((ran.attempts | default(1) | int) - 1) + ((setup_run.results | default([]) | map(attribute='attempts') | map('int') | sum) - (setup_run.results | default([]) | length)) }}"
         cacheable: true

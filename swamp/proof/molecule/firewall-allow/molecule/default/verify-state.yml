@@ -1,0 +1,20 @@
+---
+# What every case reads once: the UFW table of app-dev and its firewall records from the nested Gateway, as they are now.
+- name: "{{ inventory_hostname }}: read the UFW table of app-dev"
+  ansible.builtin.command: ufw status numbered
+  delegate_to: nested-app-dev
+  register: ufw_now
+  changed_when: false
+
+- name: "{{ inventory_hostname }}: read the firewall records of app-dev"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: records
+
+- name: "{{ inventory_hostname }}: keep the rows and the rules"
+  ansible.builtin.set_fact:
+    rules: "{{ records.json.data | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first }}"
+    rows: "{{ ufw_now.stdout_lines }}"

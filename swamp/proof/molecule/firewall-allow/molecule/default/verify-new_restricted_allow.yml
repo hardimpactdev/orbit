@@ -1,0 +1,53 @@
+---
+# new-restricted-allow (main, changes-needed, succeeded). Exclusive: Doctor and "nothing else changed" read global state.
+- name: new-restricted-allow
+  vars:
+    allow_row: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny_row: "{{ rows | select('search', 'proof:deny-new_restricted_allow$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    matching: >-
+      {{ rules | selectattr('action', 'equalto', 'allow') | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src)
+      | selectattr('status', 'equalto', 'active') | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+  block:
+    - name: The Gateway reaches the port, app-prod does not, the control port works for both
+      ansible.builtin.include_tasks: probe.yml
+      tags: [probe]
+      vars: {probe: "{{ item }}"}
+      loop:
+        - {from: nested-gateway,  port: "{{ c.port }}",    expect: connect}
+        - {from: nested-app-prod, port: "{{ c.port }}",    expect: blocked}
+        - {from: nested-gateway,  port: "{{ c.control }}", expect: connect}
+        - {from: nested-app-prod, port: "{{ c.control }}", expect: connect}
+    - name: One active record, and the allow line sits above the test deny
+      ansible.builtin.assert:
+        that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]
+        quiet: true
+    - name: Doctor on app-dev, firewall family (a silent agent shows as unverifiable, not as drift; the agent reports at its next tick, so poll)
+      ansible.builtin.command:
+        argv: "{{ orbit + ['doctor', '--node=' ~ app_dev_id, '--family=firewall', '--json'] }}"
+        chdir: /
+      environment: "{{ cli_env }}"
+      register: doctor
+      failed_when: false
+      changed_when: false
+      until: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
+      retries: 14
+      delay: 5
+    - name: Doctor reports no drift
+      ansible.builtin.assert:
+        that: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
+        fail_msg: "doctor: exit {{ doctor.rc }}, {{ doctor.stdout | default('') | truncate(200) }}"
+        quiet: true
+    - name: Nothing else changed in UFW (rows without the port, numbers removed)
+      ansible.builtin.assert:
+        that: >-
+          (ufw_before.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.port | string) | list)
+          ==
+          (ufw_after.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.port | string) | list)
+        quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

@@ -1,0 +1,28 @@
+---
+# protocols[tcp] (changes-needed, succeeded). Independent.
+- name: protocols-tcp
+  vars:
+    allow_row: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny_row: "{{ rows | select('search', 'proof:deny-protocols_tcp$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    matching: >-
+      {{ rules | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src) | selectattr('status', 'equalto', 'active')
+      | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+  block:
+    - name: The Gateway reaches the port and app-prod does not
+      ansible.builtin.include_tasks: probe.yml
+      tags: [probe]
+      vars: {probe: "{{ item }}"}
+      loop:
+        - {from: nested-gateway,  port: "{{ c.port }}", expect: connect}
+        - {from: nested-app-prod, port: "{{ c.port }}", expect: blocked}
+    - name: One active tcp record, and the allow line sits above the deny
+      ansible.builtin.assert:
+        that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]
+        quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

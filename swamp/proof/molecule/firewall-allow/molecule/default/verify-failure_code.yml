@@ -1,0 +1,15 @@
+---
+# failure-code (missing Node, no terminal: firewall.node_id_invalid). Exclusive, like conflict.
+- name: failure-code
+  block:
+    - name: Nothing was requested, and UFW and the records did not change
+      ansible.builtin.assert:
+        that: [ops_before == ops_after, ufw_before == ufw_after, records_before == records_after]
+        quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

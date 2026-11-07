@@ -1,0 +1,21 @@
+---
+# conflict (refusal, no request). Exclusive: "no Operation was created" reads the Operation list of the whole Gateway.
+- name: conflict
+  block:
+    - name: No Operation was created, and UFW and the records did not change
+      ansible.builtin.assert:
+        that: [ops_before == ops_after, ufw_before == ufw_after, records_before == records_after]
+        quiet: true
+    - name: The Gateway is still blocked on the port
+      ansible.builtin.include_tasks: probe.yml
+      tags: [probe]
+      vars: {probe: "{{ item }}"}
+      loop:
+        - {from: nested-gateway, port: "{{ c.port }}", expect: blocked}
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"
