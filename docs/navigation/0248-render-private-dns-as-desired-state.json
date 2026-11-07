@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 248,
+      "pages": [
+        "decisions/0248-render-private-dns-as-desired-state"
+      ]
+    }
+  ]
+}
