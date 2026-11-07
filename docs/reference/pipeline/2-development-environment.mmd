@@ -27,7 +27,7 @@ sequenceDiagram
   %%> - the same run for a person, an agent or a CI proof
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), the identity and keys written in the same exec, `incus start`; the containers start with the VM
+  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), an identity volume with the identity and keys, `incus start`; the base's orbit-identity unit applies it at boot; the containers start with the VM
   SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
@@ -61,4 +61,4 @@ sequenceDiagram
   end
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - at the end of the group the VM and its seed clone go and the claim's model key is revoked (docs/cli/tasks/cancel.mmd); the identity stays
+  %%> - at the end of the group the VM, its seed clone and its identity volume go, the hub peer is removed, the claim's model key is revoked and the Gateway deletes the Node (docs/cli/tasks/cancel.mmd)

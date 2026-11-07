@@ -33,11 +33,12 @@ final readonly class TaskVmConvergeInput
         private RecipeImageBuilds $recipes, private TaskVmSlotWorkspace $workspace, private AgentDelivery $delivery) {}
 
     /**
-     * The converge of the VM `$vm` on `$host` to `$commit`; a task start names the task branch to start there.
+     * The converge of a VM on `$host` to `$commit`; a task start names the task branch to start there, and its `$guest` Node: the converge then
+     * reaches the VM over WireGuard with its pinned host key as soon as sshd answers, and reads nothing back from the host.
      *
      * @return array{converge:array<string,mixed>,recipe_identity:string}
      */
-    public function for(Node $host, string $commit, ?string $branch = null): array
+    public function for(Node $host, string $commit, ?string $branch = null, ?Node $guest = null): array
     {
         $location = $this->settings->host($host->id);
         $architecture = MachineRecipe::architecture($host->architecture)
@@ -48,10 +49,12 @@ final readonly class TaskVmConvergeInput
         $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
             ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
         $identity = $this->ssh->identity();
+        $target = $guest === null ? ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]
+            : array_intersect_key($this->ssh->forNode($guest)['target'], array_flip(['host', 'user', 'port', 'host_keys']));
 
         return ['recipe_identity' => $recipe->identity, 'converge' => [
             'project' => $location->project, 'jump' => $this->ssh->forNode($host),
-            'ssh' => ['identity_file' => $identity['identity_file'], 'target' => ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]],
+            'ssh' => ['identity_file' => $identity['identity_file'], 'target' => $target], ...$guest === null ? [] : ['direct' => true],
             'profile' => 'base', 'image' => true,
             'nested' => ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network],
             'recipe' => json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR),

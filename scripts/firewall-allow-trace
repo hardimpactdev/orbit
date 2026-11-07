@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# SPIKE, throwaway. Run by `orbit tasks:script` from the repository root of a task VM. Times three `orbit firewall:allow` calls against the nested
+# Gateway (a new rule, a repeat that only skips, and a partial apply that adds the UDP line) and prints each Operation's steps with their timestamps,
+# so the seconds of one call can be split into the CLI, the admission, the Swamp dispatch and each step.
+#
+#   scripts/firewall-allow-trace [PORT]     PORT is the first test port (default 47500); the calls use PORT, PORT+1 and PORT+2
+#
+# It changes the nested fleet by the firewall rules it creates and one UFW line on app-dev that it adds by hand, the starting state of the
+# partial-apply case (a TCP line without a record). Delete it after the spike.
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PORT=${1:-47500}
+ORBIT=(env PATH=/usr/local/bin:/usr/bin:/bin HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit php "$ROOT/apps/cli/orbit")
+orbit() { "${ORBIT[@]}" "$@" </dev/null; }
+now() { date +%s.%N; }
+since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.2f", b - a }'; }
+
+say() { printf '%s\n' "$*"; }
+
+# One call: seconds on the wall, then the Operation it started, step by step.
+traced() {
+  local label=$1; shift
+  local start out rc id
+  start=$(now)
+  out=$(orbit "$@" --json 2>/dev/null); rc=$?
+  say "== $label: rc $rc, $(since "$start") s on the wall"
+  id=$(printf '%s' "$out" | jq -r '(.data // .) | (.id // .operation.id // empty)' 2>/dev/null)
+  if [ -z "$id" ]; then say "no operation id in the answer: $(printf '%s' "$out" | head -c 200)"; return; fi
+  orbit operation:show "$id" --json 2>/dev/null | jq -r '
+    (.data // .) as $o
+    | "op \($o.id) \($o.kind) \($o.status) created \($o.created_at) started \($o.started_at) finished \($o.finished_at)",
+      ($o.steps[]? | "  \(.job // "-") | \(.name) | \(.status) | \(.started_at // "-") | \(.finished_at // "-")")' | cut -c1-170
+}
+
+say "== VM $(hostname) commit $(git -C "$ROOT" rev-parse --short HEAD)"
+start=$(now); "${ORBIT[@]}" --version </dev/null >/dev/null 2>&1; say "orbit --version (CLI start-up): $(since "$start") s"
+
+start=$(now); NODES=$(orbit node:list --json 2>/dev/null); say "node:list (one read call): $(since "$start") s"
+NODE=$(printf '%s' "$NODES" | jq -r '(.data // .) | (.nodes // .) | map(select(.name=="app-dev")) | .[0].id')
+APPDEV_IP=$(incus exec nested-app-dev -- sh -c "ip -4 -o addr show scope global | awk '\$2!=\"orbit\" && \$2!=\"docker0\" {print \$4}' | head -1 | cut -d/ -f1")
+SRC=$(incus exec nested-gateway -- sh -c "ip -4 route get $APPDEV_IP | grep -o 'src [0-9.]*' | cut -d' ' -f2")
+say "app-dev node $NODE at $APPDEV_IP, gateway source $SRC"
+[ "$NODE" -gt 0 ] 2>/dev/null || { say "no app-dev node in node:list"; exit 1; }
+
+start=$(now); orbit firewall:list --node="$NODE" --json >/dev/null 2>&1; say "firewall:list (one read call): $(since "$start") s"
+
+traced "new rule, tcp" firewall:allow "$PORT" --node="$NODE" --from="$SRC" --protocol=tcp
+traced "repeat (skips)" firewall:allow "$PORT" --node="$NODE" --from="$SRC" --protocol=tcp
+traced "second port, tcp" firewall:allow "$((PORT + 1))" --node="$NODE" --from="$SRC" --protocol=tcp
+# The starting state of the partial case: only the TCP line exists (a record would make the TCP+UDP rule an overlap).
+incus exec nested-app-dev -- ufw insert 1 allow proto tcp from "$SRC" to any port "$((PORT + 2))" comment proof:existing >/dev/null 2>&1
+traced "partial apply (adds udp)" firewall:allow "$((PORT + 2))" --node="$NODE" --from="$SRC"
+
+say "== Swamp workers on the nested Gateway"
+incus exec nested-gateway -- sh -c "systemctl list-units 'orbit-swamp*' 'swamp*' --no-legend 2>/dev/null | cut -c1-110; nproc" 2>&1 | head -8

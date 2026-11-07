@@ -5,7 +5,7 @@
   when: intent.image
   block:
     - name: Wait until SSH answers
-      ansible.builtin.wait_for_connection: { timeout: 300, sleep: 5 }
+      ansible.builtin.wait_for_connection: { timeout: 300, sleep: 1 }
     - name: Wait for cloud-init
       ansible.builtin.command: { argv: [timeout, "900", cloud-init, status, --wait, --long] }
       register: ready_cloud_init

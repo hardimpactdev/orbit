@@ -22,7 +22,7 @@ Each flow has its own trigger. The first three run for a task. The others keep a
 
 - **Task start.** `tasks:provision` runs for every task group. It takes a free slot under the host's `max_vms`, mints a new identity for it, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Release.** The end of a group deletes its VM and seed clone, removes its hub peer, revokes its model key and deletes its Node.
+- **Release.** The end of a group deletes its VM, seed clone and identity volume, removes its hub peer, revokes its model key and deletes its Node.
 - **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, and daily. A code-only release needs none. It converges the host's base VM, snapshots it and proves the snapshot with one task start.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 

@@ -95,7 +95,8 @@ jobs:
   - name: Converge and branch
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
+    # The model key is for Pi, which no converge step runs; the task is ready only once it is registered (Check ready).
+    dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: task-vm-image-ansible
@@ -132,7 +133,7 @@ jobs:
   # What every later step does (sync, check, turn, script): ssh from a Swamp worker to the VM over WireGuard, with its pinned host key.
   - name: Reach the VM by WireGuard
     labels: {role: swamp}
-    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}]
+    dependsOn: [{step: Converge and branch, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -148,7 +149,7 @@ jobs:
         timeoutSec: 30
   - name: Check ready
     labels: {role: swamp}
-    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}, {step: Reach the VM by WireGuard, condition: {type: succeeded}}]
+    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}, {step: Reach the VM by WireGuard, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
     task:
       type: assert
       expr: >-

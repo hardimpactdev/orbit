@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -272,4 +273,19 @@ it('lets a cancel admitted before a failed start\'s release still close the grou
     expect(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
     app(TaskGroupEnding::class)->failed($cancel->input, 'task_vm.slot_release_failed');
     expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed);
+});
+
+it('has a task start converge reach its VM over WireGuard with the pinned key of its admission, and the base VM through its host', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $commit = str_repeat('a', 40);
+
+    $start = app(TaskVmConvergeInput::class)->for($host, $commit, 'task-1', $slot->node)['converge'];
+    $base = app(TaskVmConvergeInput::class)->for($host, $commit)['converge'];
+
+    expect($start['direct'])->toBeTrue()
+        ->and($start['ssh']['target'])->toBe(['host' => $slot->wireguard_ip, 'user' => 'orbit', 'port' => 22,
+            'host_keys' => [$slot->node->ssh_host_key_type.' '.$slot->node->ssh_host_key]])
+        ->and($base)->not->toHaveKey('direct')->and($base['ssh']['target']['host'])->toBe('');
 });

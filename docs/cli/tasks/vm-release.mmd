@@ -15,6 +15,8 @@ sequenceDiagram
   Note over GW: Admit the release
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
   SW->>H: Delete the VM<br/>and its seed clone
+  %%> What it does:
+  %%> - `incus delete --force`, the seed clone and the identity volume
   SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:

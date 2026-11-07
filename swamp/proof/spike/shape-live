@@ -4,48 +4,117 @@
 #
 #   shape-live env               what the VM has: tools, the nested fleet, the checkout
 #   shape-live apply REF         put the files that origin/REF changed since main over the workspace (REF comes from tasks:sync)
+#   shape-live prep              install Ansible, Molecule and the collections in /tmp, and probe the nested app-dev
 #   shape-live unit              run the two Molecule `unit` scenarios and time them
+#   shape-live fw-before         firewall:allow through the nested Gateway, three new rules and one repeat (today's workflow; run before `apply`)
+#   shape-live fw-after          the firewall phase alone against nested-app-dev, three new rules, each run twice (after `apply`)
+#   shape-live destroy-before    the Route withdrawal of one Node with the old read, compose and apply, twice, on a synthetic Caddy state
+#   shape-live destroy-after     the same withdrawal with the one-phase playbook, twice
 #
-# The program reads and writes only the workspace, /tmp and its own Python venv. It prints no secret.
+# The "after" steps run the playbook with ansible-playbook over the `incus` connection, not over Swamp and SSH: they time the work on the
+# Node, and the Swamp step costs are counted separately. The program prints no secret and touches only the workspace, /tmp and the nested Nodes.
 set -euo pipefail
 
 step=${1:-}
 tools=/tmp/shape-live
-gate=$(find /opt/orbit-shape-gate -maxdepth 1 -type d -name 'venv-*' 2>/dev/null | head -1 || true)
+node=nested-app-dev
 
 now() { date +%s.%N; }
-took() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.1f s", b - a }'; }
+since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.1f", b - a }'; }
+took() { printf '%s s' "$(since "$1")"; }
+
+# Ansible and Molecule from PyPI, the collections from Galaxy; the pins are those of swamp/ansible/requirements.*.
+ensure_tools() {
+    local started
+    started=$(now)
+    mkdir -p "$tools/logs"
+    # Nothing outside the workspace and /tmp: the caches of pip, Ansible and Deno live here too.
+    export XDG_CACHE_HOME="$tools/cache" ANSIBLE_HOME="$tools/ansible" DENO_DIR="$tools/deno"
+    if [ ! -x "$tools/venv/bin/molecule" ]; then
+        python3 -m venv "$tools/venv"
+        "$tools/venv/bin/pip" install -q --disable-pip-version-check ansible-core==2.20.11 netaddr==1.3.0 molecule==26.11.0
+        echo "installed ansible and molecule in $(took "$started")"
+    fi
+    export PATH="$tools/venv/bin:$PATH" ANSIBLE_COLLECTIONS_PATH="$tools/collections"
+    if [ ! -d "$tools/collections/ansible_collections/ansible/utils" ]; then
+        cat >"$tools/requirements.yml" <<'EOF'
+collections:
+  - {name: ansible.posix, version: 2.2.2}
+  - {name: community.general, version: 12.0.1}
+  - {name: community.docker, version: 5.0.4}
+  - {name: ansible.utils, version: 6.1.1}
+EOF
+        ansible-galaxy collection install -r "$tools/requirements.yml" -p "$tools/collections" >/dev/null
+        echo "installed collections in $(took "$started")"
+    fi
+    [ -f "$tools/hostkey.pub" ] || ssh-keygen -q -t ed25519 -N '' -f "$tools/hostkey"
+}
+
+node_ip() {
+    incus exec "$node" -- ip -4 -o addr show scope global | awk '$2 == "eth0" { split($4, a, "/"); print a[1] }'
+}
+
+app_dev_id() {
+    php apps/cli/orbit node:list --json | python3 -c 'import json, sys; print(next(n["id"] for n in json.load(sys.stdin)["nodes"] if n["name"] == "app-dev"))'
+}
+
+# A run folder as the Swamp input step makes it: /tmp/orbit-ansible-<uuid>, with an inventory that reaches the nested Node over incus.
+new_run() {
+    local run group=$1
+    run=/tmp/orbit-ansible-$(python3 -c 'import uuid; print(uuid.uuid4())')
+    mkdir -p "$run"
+    chmod 700 "$run"
+    cat >"$run/inventory.yml" <<EOF
+all:
+  children:
+    $group:
+      hosts:
+        node:
+          ansible_connection: community.general.incus
+          ansible_incus_host: $node
+          ansible_python_interpreter: /usr/bin/python3
+EOF
+    printf '%s' "$run"
+}
+
+hostkey() { awk '{ print $1 " " $2 }' "$tools/hostkey.pub"; }
+
+# play RUN PLAYBOOK TAG: prints the seconds, the recap of the Node and the slowest tasks; returns the exit status of ansible-playbook.
+play() {
+    local run=$1 playbook=$2 tag=$3 started rc=0 log
+    # The log is kept outside the run folder: the old withdrawal removes that folder when it ends.
+    log=$tools/logs/$(basename "$run")-$tag.log
+    started=$(now)
+    (cd swamp/ansible && ORBIT_RUN=$run ANSIBLE_CONFIG=$PWD/ansible.cfg ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks \
+        ANSIBLE_NOCOLOR=1 ANSIBLE_DEPRECATION_WARNINGS=false \
+        ansible-playbook -i "$run/inventory.yml" -e ansible_user=root --tags "$tag" "$playbook") >"$log" 2>&1 || rc=$?
+    PLAY_SECS=$(since "$started")
+    echo "  $playbook --tags $tag: rc $rc, $PLAY_SECS s, $(grep -E '^node +:' "$log" | sed -E 's/ +/ /g')"
+    grep -E -- ' -{5,} [0-9]+\.[0-9]+s$' "$log" | head -4 | sed -E 's/^/      /' | cut -c1-120
+    [ "$rc" -eq 0 ] || tail -25 "$log" | cut -c1-220
+    return "$rc"
+}
 
 case "$step" in
 env)
+    gate=$(find /opt/orbit-shape-gate -maxdepth 1 -type d -name 'venv-*' 2>/dev/null | head -1 || true)
     echo "== who and where"
     date -u +%FT%TZ
     whoami
     uname -srm
     git rev-parse --short HEAD
     git branch --show-current || true
-    echo "== remote refs"
-    git for-each-ref --format='%(refname:short) %(objectname:short)' refs/remotes | head -10
     echo "== tools"
-    for tool in php deno python3 pip3 incus ansible-playbook molecule uuidgen; do
+    for tool in php deno python3 pip3 incus ssh-keygen ansible-playbook molecule; do
         printf '%s: ' "$tool"
         command -v "$tool" || echo "missing"
     done
     echo "gate venv: ${gate:-none}"
-    if [ -n "$gate" ]; then
-        "$gate/bin/ansible-playbook" --version | head -1
-        "$gate/bin/ansible-lint" --version 2>/dev/null | head -1 || true
-        find /opt/orbit-shape-gate -maxdepth 1 | head
-    fi
     echo "== nested fleet"
-    if command -v incus >/dev/null; then
-        incus list --format csv -c ns4 2>&1 | head -12 || true
-    fi
+    incus list --format csv -c ns4 2>&1 | head -12 || true
     echo "== CLI profile"
     # Names only: the profile file holds credentials, so it is never printed.
-    php apps/cli/orbit gateway:list --json 2>&1 | head -c 600 || true
-    echo
-    php apps/cli/orbit node:list --json 2>&1 | head -c 1500 || true
+    php apps/cli/orbit node:list --json 2>&1 | head -c 600 || true
     echo
     ;;
 apply)
@@ -60,27 +129,153 @@ apply)
     git checkout "origin/$ref" -- "${paths[@]}"
     git status --short | wc -l
     ;;
+prep)
+    ensure_tools
+    ansible --version | head -1
+    molecule --version | head -1
+    echo "== nested app-dev"
+    incus exec "$node" -- sh -c 'ls -ld /etc/caddy /etc/caddy/Caddyfile 2>&1; head -4 /etc/caddy/Caddyfile 2>&1; command -v caddy ufw python3 sudo; id caddy 2>&1; systemctl is-active caddy ufw 2>&1; ufw status | head -3' 2>&1 | head -24
+    echo "address $(node_ip), id $(app_dev_id)"
+    echo "== deno cache"
+    started=$(now)
+    deno cache swamp/proof/spike/withdraw.ts 2>&1 | tail -2
+    echo "cached in $(took "$started")"
+    echo "== preflight: the incus connection with become, as the playbooks use it"
+    run=$(new_run route_node)
+    ansible -i "$run/inventory.yml" node -b -m ansible.builtin.command -a id -e ansible_user=root 2>&1 | tail -4 | cut -c1-200 || true
+    rm -rf "$run"
+    ;;
 unit)
     started=$(now)
-    mkdir -p "$tools"
-    if [ ! -x "$tools/venv/bin/molecule" ]; then
-        python3 -m venv "$tools/venv"
-        "$tools/venv/bin/pip" install -q --disable-pip-version-check -r swamp/ansible/requirements.txt molecule
-        echo "installed molecule in $(took "$started")"
-    fi
-    export PATH="$tools/venv/bin:$PATH" ANSIBLE_COLLECTIONS_PATH="$tools/collections"
-    if [ ! -d "$tools/collections/ansible_collections" ]; then
-        ansible-galaxy collection install -r swamp/ansible/requirements.yml -p "$tools/collections" >/dev/null
-        echo "installed collections in $(took "$started")"
-    fi
+    ensure_tools
     for scenario in firewall-allow instance-destroy; do
         run=$(now)
-        (cd "swamp/proof/molecule/$scenario" && molecule test -s unit 2>&1 | grep -E "ok=|failed=|SCENARIO|unit  ")
+        (cd "swamp/proof/molecule/$scenario" && molecule test -s unit 2>&1 | grep -E "ok=|failed=|SCENARIO|unit  ") || echo "unit $scenario FAILED"
         echo "unit $scenario: $(took "$run")"
     done
+    echo "total $(took "$started")"
+    ;;
+fw-before)
+    id=$(app_dev_id)
+    for i in 1 2 3 4; do
+        # The fourth call repeats the third rule: the skipped path.
+        n=$i
+        [ "$i" -eq 4 ] && n=3
+        port=$((47200 + n))
+        started=$(now)
+        rc=0
+        out=$(php apps/cli/orbit firewall:allow "$port" --node="$id" --from="192.0.2.$n" --protocol=tcp --json 2>&1) || rc=$?
+        echo "run $i (port $port): rc $rc, $(took "$started")"
+        [ "$i" -eq 1 ] && printf '%s' "$out" | head -c 700 && echo
+        opid=$(printf '%s' "$out" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit()
+def find(o):
+    if isinstance(o, dict):
+        for k in ("operation_id", "id"):
+            if isinstance(o.get(k), int):
+                return o[k]
+        for v in o.values():
+            r = find(v)
+            if r:
+                return r
+print(find(d) or "")' || true)
+        if [ -n "$opid" ]; then
+            php apps/cli/orbit operation:show "$opid" --json 2>&1 | python3 -c '
+import json, sys
+from datetime import datetime
+d = json.load(sys.stdin)
+d = d.get("data", d.get("operation", d))
+def t(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+steps = [(s["name"], (t(s["finished_at"]) - t(s["started_at"])).total_seconds()) for s in d.get("steps", []) if s.get("started_at") and s.get("finished_at")]
+print("  operation", d.get("id"), d.get("status"), d.get("result"), "steps:", "; ".join(f"{n} {x:.1f}" for n, x in steps))' 2>&1 | cut -c1-600 || true
+        fi
+    done
+    incus exec "$node" -- ufw status numbered | grep -E "4720[1-3]" || true
+    ;;
+fw-after)
+    ensure_tools
+    ip=$(node_ip)
+    for i in 1 2 3; do
+        port=$((47300 + i))
+        run=$(new_run firewall_node)
+        printf '{"ssh":{"target":{"host":"%s","user":"orbit","port":22,"host_keys":["%s"]},"identity_file":"/dev/null"},"rule":{"action":"allow","port":"%s","protocol":"tcp","source":"192.0.2.%s","comment":"orbit shape-live","retain":false,"node_id":3},"ensure":"present"}' \
+            "$ip" "$(hostkey)" "$port" "$i" >"$run/intent.json"
+        echo "rule $i (port $port): first run"
+        play "$run" operation-firewall-direct.yml firewall || true
+        echo "  result: $(cat "$run/result.json" 2>/dev/null)"
+        rows=$(incus exec "$node" -- ufw status numbered)
+        echo "rule $i: second run, expect changed=0"
+        play "$run" operation-firewall-direct.yml firewall || true
+        [ "$rows" = "$(incus exec "$node" -- ufw status numbered)" ] && echo "  ufw rows identical after the second run" || echo "  ufw rows DIFFER after the second run"
+        echo "  result: $(cat "$run/result.json" 2>/dev/null)"
+        rm -rf "$run"
+    done
+    incus exec "$node" -- ufw status numbered | grep -E "4730[1-3]" || true
+    ;;
+destroy-before | destroy-after)
+    ensure_tools
+    ip=$(node_ip)
+    d=$tools/destroy
+    mkdir -p "$d"
+    incus exec "$node" -- cat /etc/caddy/Caddyfile >"$d/live.txt" 2>/dev/null || {
+        echo "SKIP: $node has no /etc/caddy/Caddyfile"
+        exit 0
+    }
+    # The first call saves the Caddyfile as it is; a later call finds it there, so a crash never makes the synthetic file the original.
+    [ -f "$d/orig.txt" ] || deno run -A swamp/proof/spike/withdraw.ts states "$d/live.txt" "$d" "$ip" || {
+        echo "SKIP: $node's Caddyfile is not managed by Orbit"
+        exit 0
+    }
+    put() {
+        incus exec "$node" -- sh -c 'cat > /etc/caddy/Caddyfile && chown root:caddy /etc/caddy/Caddyfile && chmod 640 /etc/caddy/Caddyfile' <"$d/$1"
+    }
+    sites() { incus exec "$node" -- grep -c "orbit: routes shape-" /etc/caddy/Caddyfile || true; }
+    # One withdrawal of the Route "shape-a" from the Node: the old form is read, compose, apply; the new form is one phase.
+    withdraw() {
+        local run started
+        run=$(new_run route_node)
+        started=$(now)
+        if [ "$step" = destroy-before ]; then
+            printf '{"node":{"host":"%s","user":"orbit","port":22,"identity_file":"/dev/null","host_keys":["%s"],"account":"orbit"},"serves_routes":true,"reads_dns":false}' \
+                "$ip" "$(hostkey)" >"$run/intent.json"
+            play "$run" route-withdraw.yml read || true
+            c=$(now)
+            deno run -A swamp/proof/spike/withdraw.ts compose "$run" "$ip" "$d/states.json" 2>&1 | tail -5 || true
+            echo "  compose (deno): $(took "$c")"
+            play "$run" route-withdraw.yml apply || true
+        else
+            python3 - "$run" "$ip" "$(hostkey)" "$d/states.json" <<'EOF'
+import json, sys
+run, ip, key, states = sys.argv[1:5]
+intent = {"node": {"host": ip, "user": "orbit", "port": 22, "identity_file": "/dev/null", "host_keys": [key], "account": "orbit"},
+          "php": {}, "caddy": json.load(open(states)), "dns": {}, "cleanup": []}
+json.dump(intent, open(run + "/intent.json", "w"))
+EOF
+            play "$run" route-withdraw-node.yml withdraw || true
+        fi
+        echo "  whole withdrawal: $(took "$started"); sites left on the Node: $(sites)"
+        rm -rf "$run"
+    }
+    put before.txt
+    restore() {
+        put orig.txt
+        incus exec "$node" -- systemctl reload caddy || true
+        echo "Caddyfile restored"
+    }
+    trap restore EXIT
+    echo "state before: $(sites) sites"
+    echo "== first withdrawal"
+    withdraw
+    echo "== second withdrawal, same states; the new form should change nothing"
+    withdraw
     ;;
 *)
-    echo "usage: shape-live env | apply REF | unit" >&2
+    echo "usage: shape-live env | apply REF | prep | unit | fw-before | fw-after | destroy-before | destroy-after" >&2
     exit 64
     ;;
 esac
