@@ -22,7 +22,8 @@
     converge_stamps_dir: /var/lib/orbit/converge
     # The parts of the checkout that the converge tracks, each with the Git object it compares (task-vm-checkout.yml).
     checkout_projects: >-
-      {%- set out = [{'manager': 'code', 'dir': '.', 'stamp': 'code', 'object': 'HEAD^{tree}'},
+      {%- set out = [{'manager': 'code', 'dir': 'apps/gateway', 'stamp': 'code', 'object': 'HEAD:apps/gateway'},
+                     {'manager': 'agent', 'dir': 'apps/gateway', 'stamp': 'agent', 'object': 'HEAD:apps/gateway/resources/agent/frozen-manifest.json'},
                      {'manager': 'migrations', 'dir': 'apps/gateway', 'stamp': 'migrations', 'object': 'HEAD:apps/gateway/database/migrations'}] -%}
       {%- for manager, lock in [['composer', 'composer.lock'], ['bun', 'bun.lock']] -%}
       {%- for dir in (intent.checkout | default({}))[manager] | default([]) -%}
@@ -96,10 +97,11 @@
     orbit_user: orbit
     orbit_home: "/home/orbit"
   tasks:
-    # `base` is the state a proof restores the containers to: plain container snapshots, no memory. It is retaken when the fleet changed.
+    # `base` is the state a proof restores the containers to: plain container snapshots, no memory. The refresh owns them and retakes them
+    # when the fleet changed; a task start (a direct converge) leaves them as the base holds them.
     - name: Take the base snapshots
       tags: [fleet]
-      when: fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens
+      when: not (intent.direct | default(false)) and (fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens)
       ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
       loop: "{{ intent.fleet.guests.values() | list }}"
       changed_when: true

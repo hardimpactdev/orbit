@@ -3,7 +3,7 @@
 # system containers on the seed pool, with the checkout as their disk device, migrated and running, and the outer VM joined as
 # operator. The containers live in the seed and start with the VM. Each part checks its state first: a container is made only when it
 # is missing, and the operator, the tokens, the code and the migrations are applied only when their digest changed, so a converge on a
-# current image changes nothing and restarts nothing. The `base` snapshots are retaken after the readiness wait when the fleet changed.
+# current image changes nothing and restarts nothing. The refresh retakes the `base` snapshots when the fleet changed; a task start leaves them.
 - name: Read the nested containers
   ansible.builtin.command: { argv: [incus, list, --format, json] }
   register: fleet_list
@@ -94,11 +94,13 @@
   ansible.builtin.import_tasks: task-vm-fleet-tokens.yml
   when: converge_due.tokens or fleet_new | length > 0
 
-# The code of the commit: the agent delivery manifest of the checkout and a restart of the long-running services, when the code changed.
+# The code of the nested Gateway (`apps/gateway` of the commit): a restart of the long-running services when it changed, and the agent
+# delivery manifest only when the agent build it pins changed. A commit that changes neither restarts and places nothing.
 - name: Take the new code
   when: "'code' not in checkout_current or fleet_new | length > 0"
   block:
     - name: Place the agent delivery
+      when: "'agent' not in checkout_current or fleet_new | length > 0"
       ansible.builtin.command:
         argv: [incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --, install, -D, -m, "0444",
                /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
@@ -116,10 +118,10 @@
           [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, orbit-gateway-horizon.service, orbit-gateway-schedule.service,
            orbit-agent-view.service]
       changed_when: true
-    - name: Record the code and the migrations
+    - name: Record the code, the agent build and the migrations
       ansible.builtin.command:
         argv: [install, -D, -m, "0644", /dev/stdin, "{{ converge_stamps_dir }}/{{ item }}"]
         stdin: "{{ checkout_now[item] }}"
         stdin_add_newline: false
-      loop: "{{ ['code', 'migrations'] | reject('in', checkout_current) | list }}"
+      loop: "{{ ['code', 'agent', 'migrations'] | reject('in', checkout_current) | list }}"
       changed_when: true

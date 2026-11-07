@@ -36,6 +36,25 @@ class TaskVmRoleTest(unittest.TestCase):
         self.assertEqual({task['name']: task['tags'] for task in image['tasks']},
                          {'Take the base snapshots': ['fleet'], 'Clean': ['clean'], 'Template': ['template']})
 
+    def test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed(self):
+        role = yaml.safe_load((ANSIBLE / 'task-vm-role.yml').read_text())
+        projects = role[0]['vars']['checkout_projects']
+        # The code stamp is the nested Gateway's tree, not the repository's; the agent build and the migrations have their own stamps.
+        for stamp, obj in [('code', 'HEAD:apps/gateway'), ('agent', 'HEAD:apps/gateway/resources/agent/frozen-manifest.json'),
+                           ('migrations', 'HEAD:apps/gateway/database/migrations')]:
+            self.assertIn(f"'stamp': '{stamp}', 'object': '{obj}'", projects)
+        self.assertNotIn('HEAD^{tree}', projects)
+        # A task start (a direct converge) leaves the containers' base snapshots to the refresh.
+        snapshots = role[1]['tasks'][0]
+        self.assertEqual(snapshots['name'], 'Take the base snapshots')
+        self.assertIn("not (intent.direct | default(false))", snapshots['when'])
+        # The agent delivery manifest is placed only when the agent build changed; the services restart when the code changed.
+        block = yaml.safe_load((ANSIBLE / 'tasks' / 'task-vm-fleet.yml').read_text())
+        take = next(task for task in block if task.get('name') == 'Take the new code')['block']
+        place = next(task for task in take if task['name'] == 'Place the agent delivery')
+        self.assertIn("'agent' not in checkout_current", place['when'])
+        self.assertNotIn('when', next(task for task in take if task['name'] == 'Restart the long-running services'))
+
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
             text = path.read_text()

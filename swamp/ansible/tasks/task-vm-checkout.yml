@@ -39,7 +39,8 @@
       become_user: "{{ orbit_user }}"
       ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", checkout, --force, --detach, "{{ intent.checkout.commit }}"] }
       changed_when: true
-# The Git object IDs of the code, of the migrations and of each lock file at the commit, in one read. The installs below and the
+# The Git object IDs of the nested Gateway's code (`apps/gateway`), of the agent build it pins, of the migrations and of each lock file at
+# the commit, in one read. The installs below and the
 # fleet compare them with the ones they converged to (task-vm-recipe.yml).
 - name: Read the digests of the commit
   become: true
