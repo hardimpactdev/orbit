@@ -1098,7 +1098,7 @@ First it checks the ZFS storage pool that the host's `pool` names. It creates a 
 - ACL egress drops private, link-local, CGNAT, and multicast ranges, and allows the rest.
 - ACL ingress allows TCP 22 from the bridge address and rejects the rest.
 - The project's `default` profile: `eth0` on the bridge with `security.port_isolation=true`, and the root disk on the host's pool.
-- The project restrictions `restricted=true`, `restricted.networks.access=<bridge>`, and `restricted.virtual-machines.lowlevel=allow`.
+- The project restrictions `restricted=true`, `restricted.networks.access=<bridge>`, and `restricted.virtual-machines.lowlevel=allow`. The first refresh adds `restricted.snapshots=allow`.
 - One host rule: `ufw route allow in on orbittask+ comment 'orbit-task-vms'`.
 
 Task VMs need nothing that the restrictions forbid, except low-level config: medium and large VMs set `raw.qemu.conf` for free page reporting. Only the Gateway sets instance config in the project.
@@ -1107,7 +1107,7 @@ The command takes these values from the host Node's typed `settings.task_vms`. S
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
-The restrictions forbid privileged and nested containers, host devices, backups, snapshots, and every network except the task bridge. Host disks are limited to the [read-only package-cache directory](#shared-package-cache). Low-level VM config is allowed for memory reporting.
+The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Host disks are limited to the [read-only package-cache directory](#shared-package-cache). Low-level VM config is allowed for memory reporting.
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
@@ -1247,7 +1247,6 @@ Image pruning deletes an image and its seeds together. The `-previous` alias and
 The chart lists what the run still lacks:
 
 - The converge of the nested Nodes through the nested Orbit. Stage 2 builds it.
-- The replacement of old ready slots. Ready slots do not exist yet.
 
 ##### Save the ready copies
 

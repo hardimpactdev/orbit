@@ -6,9 +6,9 @@
 # - `base-prune`: keep the new snapshot and the recorded one, which becomes `-previous`; remove the others.
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
 # A task start and a release (docs/cli/tasks/provision.mmd, docs/cli/tasks/cancel.mmd):
-# - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), start the copy, write the slot identity and the
+# - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), start the copy, write the identity the admission minted and the
 #   claim's keys, and start the services that use them. The containers start with the VM.
-# - `delete`: the task VM and its seed clone go. The identity stays with the Gateway.
+# - `delete`: the task VM and its seed clone go; the Gateway then deletes the Node and its keys.
 # Every part is idempotent: a rerun finds its work done. The intent comes from the Gateway; this file names no host or VM. Secrets come
 # from the environment, never from argv. The host is reached from the Swamp Node with its pinned host keys, never trusted on first use.
 - name: Reach the task VM host
@@ -45,6 +45,16 @@
     - name: Start the base VM
       tags: [base-start]
       block:
+        # The base is a snapshot, so the project must allow snapshots; `restricted=true` blocks them by default. Only a client of the
+        # host's Incus API can take one: a task VM reaches only its guest socket, which cannot, so this opens nothing to a task.
+        - name: Read the snapshot rule of the project
+          ansible.builtin.command: { argv: [incus, project, get, "{{ host.project }}", restricted.snapshots] }
+          register: base_snapshot_rule
+          changed_when: false
+        - name: Let the project keep snapshots
+          when: base_snapshot_rule.stdout | trim != 'allow'
+          ansible.builtin.command: { argv: [incus, project, set, "{{ host.project }}", restricted.snapshots=allow] }
+          changed_when: true
         - name: Read the base VM
           ansible.builtin.command: { argv: "{{ incus + ['list', '--format', 'json', '--', '^' ~ base.vm ~ '$'] }}" }
           register: base_read
@@ -169,7 +179,7 @@
     incus: [incus, --project, "{{ host.project }}"]
     in_vm: "{{ incus + ['exec', slot.name, '--'] }}"
   tasks:
-    - name: Start a VM with the slot's identity
+    - name: Start a VM with its identity
       tags: [start]
       block:
         # A release that failed can leave the slot's VM or seed clone; the start makes them new.

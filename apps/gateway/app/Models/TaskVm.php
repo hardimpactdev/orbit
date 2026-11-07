@@ -54,8 +54,8 @@ use Throwable;
  * @property string|null $model_key
  * @property int|null $slot_number the slot the task VM takes on its host, `<host>-tvm-<number>`
  * @property string|null $wireguard_private_key the WireGuard key a task start minted (docs/cli/tasks/provision.mmd)
- * @property string|null $ssh_host_private_key a slot's fixed SSH host key, an OpenSSH Ed25519 file
- * @property string|null $agent_secret a slot's fixed agent secret
+ * @property string|null $ssh_host_private_key the SSH host key a task start minted, an OpenSSH Ed25519 file
+ * @property string|null $agent_secret the agent secret a task start minted
  * @property bool $worker_stop_required
  * @property string|null $ai_router_origin
  * @property Carbon|null $claimed_at

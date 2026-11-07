@@ -22,6 +22,7 @@ use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /** Records independent host Operations. Swamp continues other hosts when one host fails. */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
@@ -57,6 +58,9 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                 app(TaskVmSlotRuns::class)->startRelease($vm, 'task-vm-sweep');
             } catch (ResourceOperationException $refused) {
                 Log::warning('A task VM release was not admitted.', ['task_vm_id' => $vm->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
+            } catch (Throwable $broken) {
+                // One row whose intent cannot be built, such as one without its keys, must not stop the sweep of the other rows and hosts.
+                report($broken);
             }
         }
     }
@@ -69,6 +73,8 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
             } catch (ResourceOperationException $refused) {
                 // Admission refused this row; the next sweep asks again. Other rows and the host sweeps still run.
                 Log::warning('A destroying task VM was not readmitted.', ['task_vm_id' => $retired->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
+            } catch (Throwable $broken) {
+                report($broken);
             }
         }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {

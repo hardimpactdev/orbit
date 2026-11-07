@@ -26,7 +26,7 @@ sequenceDiagram
   %%> What it does:
   %%> - one host exec: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones), the identity and the claim's keys written from the vault on stdin, then `incus start` and the services that use them
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
-  SW->>HUB: Add the hub peer<br/>wg set
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
   %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the claim's model key goes to the model router beside it

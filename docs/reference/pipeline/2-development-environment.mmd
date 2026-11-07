@@ -7,11 +7,13 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=hub tone=gray
   %% lane VM icon=server pill=task VM tone=purple
   %% lane NT icon=server pill=fleet tone=gray
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>provision run
   participant H as Task VM host<br/>Incus over ssh
+  participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>outer · operator
   participant NT as Nested fleet<br/>3 containers
   Note over GW: Take a slot<br/>mint its identity
@@ -26,7 +28,7 @@ sequenceDiagram
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
   %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), the identity and keys written in the same exec, `incus start`; the containers start with the VM
-  SW->>H: Add the hub peer<br/>one wg set on the VPN hub
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
   %%> - adds the new WireGuard key as a peer of the hub while the VM boots
