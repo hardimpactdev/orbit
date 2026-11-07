@@ -9,7 +9,7 @@ sequenceDiagram
   participant R as Reverb
   CLI->>GW: schedule:logs <schedule>
   alt bounded snapshot
-    Note over GW: Read bounded journal in UTC short-iso format<br/>Redact stored environment values
+    Note over GW: Read bounded journal<br/>UTC short-iso format<br/>Redact stored values
     GW-->>CLI: Snapshot and request ID
   else --follow (CLI or web viewer)
     CLI->>GW: Open viewer lease
