@@ -44,6 +44,8 @@
   ansible.builtin.group: { name: orbit-env, system: true }
 # What is the same for every task VM is in the base, so a start's identity unit only unpacks what is its own: the Orbit root CA that the
 # agent trusts, and the firewall on the WireGuard interface (SSH answers only the Swamp Node; Pi answers it and the Gateway; a workspace site 443).
+- name: Make the folder of the agent configuration
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, mode: "0755" }
 - name: Trust the Orbit root CA
   ansible.builtin.copy: { dest: "{{ item }}", content: "{{ intent.boot.trust.certificate }}", mode: "0644" }
   loop: [/etc/orbit/agent/ca.pem, /usr/local/share/ca-certificates/orbit-managed-root-ca.crt]
@@ -53,7 +55,7 @@
   register: boot_ca_store
   changed_when: "'0 added' not in boot_ca_store.stdout"
 - name: Close the WireGuard interface to all but the Swamp Node, the Gateway and the sites
-  ansible.builtin.command: { argv: "{{ [ufw] + item }}" }
+  ansible.builtin.command: { argv: "{{ ['ufw'] + item }}" }
   loop:
     - [prepend, deny, in, "on", orbit, proto, tcp, to, any, port, "22", comment, "orbit:task-vm-ssh-only"]
     - [prepend, allow, in, "on", orbit, proto, tcp, from, "{{ trust.control_ip }}", to, any, port, "22", comment, "orbit:task-vm-ssh-209"]
@@ -81,7 +83,16 @@
         case "$tags" in *config*) break ;; esac
         sleep 0.1
       done
-      case "$tags" in *incus_orbit-identity*) ;; *) exit 0 ;; esac
+      # The identity share can show a moment after the config share.
+      for i in 1 2 3 4 5; do
+        case "$tags" in *incus_orbit-identity*) break ;; esac
+        sleep 0.1
+        tags=$(cat /sys/fs/virtiofs/*/tag 2>/dev/null || true)
+      done
+      case "$tags" in
+        *incus_orbit-identity*) ;;
+        *) echo "orbit-identity: no identity share (virtiofs tags: ${tags:-none}); this is a base VM" >&2; exit 0 ;;
+      esac
       mkdir -p /run/orbit-identity
       mountpoint -q /run/orbit-identity || mount -t virtiofs -o ro incus_orbit-identity /run/orbit-identity
       install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
