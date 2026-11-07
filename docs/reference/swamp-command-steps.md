@@ -96,7 +96,9 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
-`ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute. When the event observer sees a run end, it queues `ProjectSwampOperation` for that Operation. That job is not unique, so a pass that already runs or waits cannot drop it. It reads the history again for a few seconds when serve has not written it yet, then leaves the Operation to the minute pass. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
+`ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
+
+When the event observer sees a run end, it queues `ProjectSwampOperation` for that Operation. That job is not unique, so a pass that already runs or waits cannot drop it. It reads the history again for a few seconds when serve has not written it yet, then leaves the Operation to the minute pass.
 
 Each pass reads every open Operation of a direct kind against Swamp:
 
