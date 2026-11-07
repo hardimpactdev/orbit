@@ -45,6 +45,8 @@ When parallelizing CI commands, bound their nested worker pools as well as the o
 
 Before you finish, add what you learned to the skill that owns it (this one, swamp-flow, ansible-phase or flow-tighten), in the same PR. Say what changed.
 
+For CI proof reports, distinguish admission capacity from assertions. Classify only explicit capacity refusals with no case rows and a known selection. Preserve a receipt and skip the assertion check; never label an unrun proof as passed.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.

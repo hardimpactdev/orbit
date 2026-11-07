@@ -21,9 +21,9 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## The proof CI
 
-The job `proof-run` is built but report-only. It is not part of `Required checks` until a run passes end to end. Not built yet: the receipt store and the label workflow. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch).
+The job `proof-run` is built but report-only. It is outside `Required checks`. One firewall proof has passed end to end; complete coverage and reliable admission still need review. Nick decides when proof becomes required. The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch).
 
-The job is `proof-run` (`Proof run (report-only)`), a job of the one CI. It will be part of the one CI result that the merge requires. Until then the merge does not wait for it. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
+The job is `proof-run` (`Proof request and report (optional)`), followed by `Proof assertions (optional)`. The merge does not wait for either job. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
 
 A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on a self-hosted runner, waits for the verdict, and passes or fails. The runner reaches the Gateway over the private network as an enrolled Node. The job adds no runner and no access.
 
@@ -38,7 +38,10 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 - The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
 - A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
-- The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
+- A report-only admission refusal with `tasks.capacity_unavailable`, no case rows and a known command selection records **not run: capacity unavailable**.
+- The request report succeeds and the assertion check skips. No proof passes.
+- Its artifact receipt names the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
+- Other errors and failed assertions stay red. The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
 - `Proofs` tests the pull request head, not its merge with `main`. It does not run again after the merge.
 
 **Triggers**
@@ -67,8 +70,8 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 
 **Required check**
 
-- `proof-run` is report-only for now. It is not in `Required checks`, because `proof:run` has no passing end-to-end run yet.
-- Once a run passes end to end, it joins `Required checks`, and the merge requires it.
+- Proof remains report-only and outside `Required checks`. One passing family does not establish complete coverage or reliable admission.
+- Nick decides the graduation rule before proof becomes required.
 - Only the scope step may skip it, and only for a change that needs no proof.
 
 ## Choose the cases

@@ -55,7 +55,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| Proof run (report-only) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
+| Proof request and assertions (optional) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
@@ -66,7 +66,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is **report-only**. It is not in the `needs` of `Required checks`, so a red proof run does not block a merge. It joins Required checks once a run passes end to end. `proof:run` has no such run yet.
+`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is **report-only**. It is not in the `needs` of `Required checks`, so a red proof run does not block a merge. One firewall run has passed end to end. Complete coverage and reliable admission still need review; Nick decides when proof becomes required.
 
 **When it runs**
 
@@ -88,7 +88,10 @@ The job follows these rules for pull requests:
 - The job checks out only `bin/ci-proof-run`.
 - The script passes the full SHA of the pull request head to `orbit proof:run --json`. It also passes the idempotency key `ci-proof.<run id>.<attempt>`. It chooses no cases.
 - The script follows the operation until it ends.
-- The job fails on a nonzero exit, a missing result, or any case verdict that is not `passed`.
+- Explicit report-only admission refusals for `tasks.capacity_unavailable`, with no case rows and a known command selection, record **not run: capacity unavailable**.
+- The request report succeeds and the separate optional assertion check skips. This is never a passing proof.
+- Other nonzero exits, missing results and case verdicts other than `passed` stay red.
+- The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
 - The job summary lists the cases, the uncovered paths and the receipt link. It holds no command output.
 
 **Where it runs**

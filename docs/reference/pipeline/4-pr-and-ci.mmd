@@ -73,11 +73,12 @@ sequenceDiagram
     %%> - the base images stay as they are; only the merge and the seed refresh (stage 6) change them
     %%> Built:
     %%> - the job `proof-run` runs only when a changed path selects a command in `selection.txt`, passes only the SHA and an idempotency key, and a new push cancels the run of the previous push; it follows the one `proof.run` record until the last command run ended
+    %%> - a report-only capacity admission refusal with no case rows records not run, retains selected commands in a receipt and skips the separate optional assertion check; it is never a passing proof
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
     %%> Built, not yet passed live:
     %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Not built:
-    %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and the job joins it once a run passes end to end
+    %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and Nick decides graduation after coverage and admission are reliable
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result
