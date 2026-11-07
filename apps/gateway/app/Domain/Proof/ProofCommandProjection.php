@@ -32,6 +32,9 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     /** The code of a run whose VM or fleet never got to run its cases. */
     public const string RunFailed = 'proof.run_failed';
 
+    /** The code of a run whose VM workspace was not at the commit under proof when the check ran, before any case. */
+    public const string WorkspaceCommitMismatch = 'proof.workspace_commit_mismatch';
+
     /** How long a failed run keeps its VM when `proof:run` is given `--keep-failed`. */
     public const int KeepMinutes = 60;
 
@@ -103,6 +106,11 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
                 $data['status'] = $passed ? 'succeeded' : 'failed';
                 $data['error_code'] = $passed ? null : ($verdicts['ran'] ? 'proof.cases_failed' : self::RunFailed);
             }
+            // The workspace of the VM was not at the commit under proof, so no case ran: the code and both commits say what to fix.
+            $workspace = $status === 'failed' ? self::workspace($input, $native) : null;
+            if ($workspace !== null) {
+                $data['error_code'] = self::WorkspaceCommitMismatch;
+            }
 
             // The run's own destroy step ends the group. A failed run that kept its VM (`keep_failed`) leaves the group open for 60 minutes; any other end leaves the VM to the normal cancel.
             $kept = null;
@@ -116,7 +124,8 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             }
 
             return app(DirectOperation::class)->project($operation, $data, ['commit' => $input['commit'], 'command' => $input['command'], 'file' => $input['file'],
-                'outcome' => ($data['status'] ?? null) === 'succeeded' ? 'passed' : 'failed', 'cases' => $verdicts['cases'], ...($kept === null ? [] : ['kept' => $kept])]);
+                'outcome' => ($data['status'] ?? null) === 'succeeded' ? 'passed' : 'failed', 'cases' => $verdicts['cases'], ...($workspace === null ? [] : ['workspace' => $workspace]),
+                ...($kept === null ? [] : ['kept' => $kept])]);
         });
         // After the commit, so that two runs which end together each see the other, and the last one closes the proof.
         DB::afterCommit(fn () => $this->settle($projected));
@@ -147,6 +156,26 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         }
 
         return ['vm' => $vm->name, 'group_id' => $groupId, 'keep_until' => now()->addMinutes(self::KeepMinutes)->utc()->format(ProofRunWatch::Time), 'cancel_requested_at' => null];
+    }
+
+    /**
+     * The commits of a run whose check of the workspace failed, or null when it did not fail. `found` is the commit the VM printed, and an
+     * empty string when it printed none that looks like one, so a message never carries text from the VM.
+     *
+     * @param  array<string,mixed>  $input  the input of the run
+     * @param  array<string,mixed>  $native  the native result of the run
+     * @return array{expected:string,found:string}|null
+     */
+    private static function workspace(array $input, array $native): ?array
+    {
+        if (NativeRunResult::stepStatus($native, 'Check the workspace commit') !== 'failed') {
+            return null;
+        }
+        $steps = ValidatedData::object($native['steps'] ?? []);
+        $read = is_array($steps['Read the workspace commit'] ?? null) ? $steps['Read the workspace commit'] : [];
+        $found = is_string($read['stdout'] ?? null) ? trim($read['stdout']) : '';
+
+        return ['expected' => ValidatedData::string($input['commit']), 'found' => preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $found) === 1 ? $found : ''];
     }
 
     private function settle(Operation $run): void
