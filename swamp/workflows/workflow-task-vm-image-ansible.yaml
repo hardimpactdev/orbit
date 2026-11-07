@@ -16,7 +16,7 @@ inputs:
   required: [operation_id, node_id, kind, intent, guest, tags, with_pi]
   additionalProperties: false
 jobs:
-- name: read
+- name: converge
   labels: {role: swamp}
   steps:
     # The guest's bridge address; Incus knows it, the Gateway cannot. A guest with Docker lists its docker0 address first, so the line of the NIC counts.
@@ -60,11 +60,6 @@ jobs:
         hosts: name:host
         sudo: true
         argv: [timeout, '30', incus, exec, --project, '${{ inputs.intent.project }}', '--', '${{ inputs.guest }}', cat, /etc/ssh/ssh_host_ed25519_key.pub]
-- name: input
-  labels: {role: swamp}
-  dependsOn:
-  - {job: read, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-  steps:
   - name: Write the intent
     labels: {role: swamp}
     writes: true
@@ -119,33 +114,16 @@ jobs:
         env:
           ORBIT_SHA: ${{ inputs.intent.pi.sha256 }}
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-  - name: Write the playbook input
+    # The playbook input and the run are one step: the inventory, the pinned host keys and the variables are built from the intent just before
+    # Ansible starts, and a failure of either ends in the check below.
+  - name: Run the Ansible phases
     labels: {role: swamp}
     writes: true
     dependsOn:
     - {step: Write the intent, condition: {type: succeeded}}
     - {step: Check the Pi server, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ ("task-vm-guest-input-" + inputs.guest).split(".").join("-") }}
-      methodName: execute
-      inputs:
-        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
-          ORBIT_KIND: ${{ inputs.kind }}
-          ORBIT_TARGET_HOST: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}'
-          ORBIT_TARGET_KEY: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest host key"].outputs.stdout }}'
-- name: run
-  labels: {role: swamp}
-  dependsOn:
-  - {job: input, condition: {type: succeeded}}
-  steps:
-  - name: Run the Ansible phases
-    labels: {role: swamp}
-    writes: true
+    - {step: Read the guest address, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Read the guest host key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -154,11 +132,14 @@ jobs:
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
         ignoreExitCode: true
-        run: timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-role.yml"
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-role.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
           ORBIT_TAGS: ${{ inputs.tags }}
+          ORBIT_KIND: ${{ inputs.kind }}
+          ORBIT_TARGET_HOST: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest address"].outputs.stdout.split("\n").filter(l, l.contains("(enp") || l.contains("(eth"))[0].split("(")[0].split("\"").join("").trim() }}'
+          ORBIT_TARGET_KEY: '${{ has(inputs.intent.direct) ? "" : steps["Read the guest host key"].outputs.stdout }}'
           ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
@@ -180,9 +161,7 @@ jobs:
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
-  - {job: read, condition: &settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
-  - {job: input, condition: *settled}
-  - {job: run, condition: *settled}
+  - {job: converge, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
   steps:
   - name: Remove the playbook input
     labels: {role: swamp}
