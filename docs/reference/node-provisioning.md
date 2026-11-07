@@ -422,7 +422,7 @@ Missing or damaged protected files require their approved recovery procedure and
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only. The [UpCloud template build](/reference/compute-drivers#build-the-upcloud-template) runs it to make the server ready for a template.
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
 
 The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
 
@@ -674,7 +674,7 @@ A Node that the Gateway reaches through a [jump Node](#enroll-through-a-jump-hos
 
 ## Public SSH
 
-The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An [UpCloud task VM](/reference/compute-drivers#create-and-reach-an-upcloud-server) boots with both from its template, so the bootstrap finds them in place. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
+The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
 
 - A Node without an active role stays reachable over public SSH.
 - A later `node:add` of such a Node connects over public SSH again. It finishes the WireGuard peer over the verified tunnel.

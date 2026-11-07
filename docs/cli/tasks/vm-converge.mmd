@@ -22,7 +22,7 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-converge
   SW->>VM: Install the software<br/>child task-vm-role-run
   %%> The child:
-  %%> - one child workflow, `task-vm-role-run`, runs phases of the task VM role on a guest; the base snapshot refresh and the UpCloud template build use it too, and the three steps of this chart call it once per phase
+  %%> - one child workflow, `task-vm-role-run`, runs phases of the task VM role on a guest; the base snapshot refresh uses it too, and the three steps of this chart call it once per phase
   %%> - it writes the intent to a private run folder, writes the inventory, the variables and `known_hosts` (the VM's host key is the recorded one), runs `ansible-playbook` for the phases it is given under one literal `timeout`, and removes the run folder whatever the result
   %%> Pi:
   %%> - this first call also copies the Pi server from the Gateway host to 209 and checks its SHA-256; Pi is an internal artifact, not a download, and the playbook copies it on to the VM only when the VM's copy differs from the pin

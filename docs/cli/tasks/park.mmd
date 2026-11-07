@@ -11,7 +11,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as VM provider<br/>Incus · UpCloud
+  participant N as VM provider<br/>Incus
   CLI->>GW: tasks:park 42
   %%> Command:
   %%> - `orbit tasks:park 42 --idempotency-key=park-1`
@@ -28,7 +28,7 @@ sequenceDiagram
   GW->>SW: Start one run<br/>operation-task-park
   %%> Inputs:
   %%> - the admitted group, Project, Instance, VM and provider identity
-  %%> - SSH host pins for Incus or the existing vault descriptor for UpCloud
+  %%> - SSH host pins for Incus
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
   %%> - follow the Operation while Swamp stops the owned VM

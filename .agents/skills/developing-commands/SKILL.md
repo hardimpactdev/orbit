@@ -47,6 +47,8 @@ Before you finish, add what you learned to the skill that owns it (this one, swa
 
 For CI proof reports, distinguish admission capacity from assertions. Classify only explicit capacity refusals with no case rows and a known selection. Preserve a receipt and skip the assertion check; never label an unrun proof as passed.
 
+A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.

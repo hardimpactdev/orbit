@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: swamp/workflows/workflow-operation-task-vm-resume.yaml (+ task-vm-provider-power for UpCloud), docs/reference/compute-drivers.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Target design: swamp/workflows/workflow-operation-task-vm-resume.yaml, docs/reference/compute-drivers.md, docs/reference/tasks.md, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02 (second pass), rules 22 (start and the agent wait are two commands, so two pinned exec steps; no provider-power child for Incus), 16 (no read before the start: a VM that already runs counts as started, and the agent wait proves it), 9 (one read of the agent and the Pi, one native `assert`), 14 (no `result` print; the Gateway reads the step statuses, and the recorded host key pin stays), 15 (no `eligible` assert: the Gateway refuses an ineligible VM at dispatch), 2 (resume no longer runs the SSH preparation child; package and host keys stay with provision).
   %% status: draft
   %% command: none · a workspace operation wakes the VM
@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - no other task holds `task_vm:333`; a repeated admission returns the same open task
   %%> Result:
   %%> - task #5181 records the host, the VM, guest Node 340, its recorded host key pin and mode `resume` or `converge`
-  %%> - clears the stop proof; for UpCloud, a vault copy of the API token
+  %%> - clears the stop proof
   Note over GW: open: Nick decides<br/>converge as its own kind?
   %%> Why:
   %%> - convergence of a running VM shares this kind today; it is not a resume
@@ -32,7 +32,6 @@ sequenceDiagram
   %%> Inputs:
   %%> - the intent and `execution_secrets` as vault key names
   %%> - the Gateway refuses a VM that left its admitted state at dispatch; no `eligible` assert re-checks it (rule 15)
-  alt Incus host
     SW->>H: Start the VM<br/>ssh exec · incus start
     %%> How:
     %%> - one pinned `@swamp/ssh exec` argv: `sudo timeout 60 incus start --project orbit-tasks -- tvm-333`
@@ -40,17 +39,12 @@ sequenceDiagram
     SW->>H: Wait for the guest agent<br/>ssh exec · incus wait
     %%> How:
     %%> - `sudo timeout 130 incus wait --project orbit-tasks tvm-333 agent --timeout 120`: Incus's own bounded wait
-  else UpCloud overflow
-    SW->>SW: Start the server<br/>start · task-vm-provider-power
-    %%> How:
-    %%> - the API start from 209 with the token from the vault, then one bounded observation
-  end
   opt VM was ready (converge)
     SW->>VM: Converge 209 SSH access<br/>ssh exec · forEach of 3
     %%> When:
     %%> - mode `converge`; a parked VM kept its SSH access on its disk, so a resume skips this (rule 1)
     %%> What it does:
-    %%> - one exec each, through `incus exec` on the host or the pinned guest SSH on UpCloud: 209's authorized key, the TCP 22 rule for 209 and `sshd`
+    %%> - one exec each, through `incus exec` on the host: 209's authorized key, the TCP 22 rule for 209 and `sshd`
   end
   SW->>VM: Read the guest state<br/>ssh exec · forEach of 2
   %%> What it does:

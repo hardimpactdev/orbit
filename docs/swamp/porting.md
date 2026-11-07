@@ -16,7 +16,7 @@ Four parties share the work of a command. Each has one job.
 | Who | Does | Does not |
 | --- | --- | --- |
 | **Gateway** | Admits the command, validates it, records the full intent, locks, starts one Swamp run, projects the result. | Run anything on a machine. |
-| **Swamp** | Runs the logical phases in order, with guards, `forEach`, `allowFailure` and cancellation. Calls the Gateway's mint and sign primitives and external APIs (GitHub, UpCloud). | Run a command on a Node, except through an Ansible phase. |
+| **Swamp** | Runs the logical phases in order, with guards, `forEach`, `allowFailure` and cancellation. Calls the Gateway's mint and sign primitives and external APIs (GitHub). | Run a command on a Node, except through an Ansible phase. |
 | **Ansible** | Does every action on a machine. One Swamp step runs one tagged part of a repository playbook. The playbook reads, changes and checks in one run. | Call the Gateway, or decide the order of phases. |
 | **Molecule** | Proves the command: it runs the real CLI with `--json` against a nested fleet and asserts the answer, the machine state and the Gateway records. | Prove it with a custom runner. |
 
@@ -256,7 +256,7 @@ State the net in the PR: lines of `swamp/` added and removed, per part. The part
 A Swamp step stays native when it is not machine work.
 
 - Calls to the Gateway's mint or sign primitive. They are the only two Gateway calls a step may make.
-- External APIs: GitHub with a minted token, and UpCloud with `curl` on 209.
+- External APIs: GitHub with a minted token.
 - The order of phases: `dependsOn`, `guard`, `forEach`, `allowFailure` and `condition: always`.
 - The `input`, result and `cleanup` steps of the run folder.
 - A hand-off to a child workflow.

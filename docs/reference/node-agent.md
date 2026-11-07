@@ -399,7 +399,6 @@ The runner picks the transport from the Node or build guest. Every adapter carri
 | The Gateway's own Node | A local process. Mutations still change the Node, because each runs in its own transient service outside the worker's read-only view |
 | A Node being admitted | Its pinned bootstrap SSH connection, until managed WireGuard SSH is ready |
 | An Incus build guest | `incus exec` through its managed host, before guest networking or SSH exists |
-| An UpCloud build guest | Guest SSH with the host identity that Orbit generated and pinned through user-data |
 
 Native bootstrap and image consumers receive typed public input from `orbit:node-recipe`: the Node account and roles, bootstrap input, stored machine recipe, and frozen observer delivery. Swamp supplies the system programs and runs their effects. The export contains no agent actions, executable programs or command fingerprints.
 

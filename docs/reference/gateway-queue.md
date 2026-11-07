@@ -33,15 +33,23 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
+<<<<<<< HEAD
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `builds-optional` | Shares the 2 build workers | No job: the UpCloud template refresh that used it is gone ([Refresh the UpCloud template](/reference/compute-drivers#refresh-the-upcloud-template)) |
+=======
+| `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
+>>>>>>> 5d3353c1d (docs: retire UpCloud task VM support)
 | `operations` | 1 | Jobs that record a Swamp run in its [Operation](/reference/operations): the minute reconciler pass, schedule fires and WebSocket registry closes. One job at a time |
 
 Image and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
+<<<<<<< HEAD
 Each build worker checks `builds` before `builds-optional`, with Horizon balancing disabled. These jobs admit image Operations. Swamp orders each run.
+=======
+The build workers consume `builds`, with Horizon balancing disabled. These jobs admit package cache Operations. Swamp orders each run.
+>>>>>>> 5d3353c1d (docs: retire UpCloud task VM support)
 
 ## Scheduled work
 
@@ -85,7 +93,7 @@ Doctor collects Activity and assistance signals from admitted redacted metadata,
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs.
 
@@ -229,7 +237,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:task-vms,gateway:builds,gateway:builds-optional,gateway:operations` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:task-vms,gateway:builds,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.

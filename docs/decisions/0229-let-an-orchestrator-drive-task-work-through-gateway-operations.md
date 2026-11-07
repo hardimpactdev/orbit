@@ -38,7 +38,7 @@ Only the WebSocket app routes accept `Idempotency-Key` today. Their key is scope
 
 ### A task stays in its VM
 
-A task VM holds everything its task needs, so the same VM runs on an Incus host or as [UpCloud overflow](/reference/compute-drivers#upcloud-overflow). A step that ran outside the VM would need a second path for each VM location.
+A task VM holds everything its task needs, so the same VM runs on an Incus host. A step that ran outside the VM would need a second path for each VM location.
 
 An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran beside the spike. Durable keeps one agent conversation through crashes and deduplicates a submission by its request ID. Nick chose to run it inside the task VM, behind the Pi server's current [API](/reference/pi-server#api).
 
@@ -234,7 +234,7 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 
 - **The orchestrator above whole task groups.** One work item would be one task group, and `tasks:tick` would keep the inner loop. That keeps the hand-rolled engine, so Orbit's scope does not shrink.
 - **The orchestrator as a second sender.** It would call Pi or the task drivers directly. That breaks the rule of one sender per group.
-- **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would not run unchanged on UpCloud overflow.
+- **A development Instance as the workspace for steps without an agent.** It is a second path outside the VM. A commit would move between the Instance and the VM, and the step would depend on that extra environment.
 - **Publish of any commit.** With a raw SHA, a caller would skip the check. Publish takes an eligible checked candidate, so it pushes only the commit that the check recorded, with passed hosted CI from its owning operation when required. The orchestrator owns the review gate.
 - **A long step as one blocking step.** A 15-minute test suite would hold the single `operations` worker and stall every deploy.
 - **Per-step jobs for every operation.** The target would be free between steps. Only a waiting step ends its job, and it keeps the target.

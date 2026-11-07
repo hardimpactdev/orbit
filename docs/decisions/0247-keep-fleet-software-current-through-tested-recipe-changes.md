@@ -69,7 +69,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 
 - One template set lives on one Incus host.
 - After a release that changes Node state, a refresh converges the templates and snapshots them. One refresh runs at a time, and the latest release wins.
-- The app-dev snapshot is the task VM image. It is copied to the other Incus hosts and to UpCloud.
+- The app-dev snapshot is the task VM image. It is copied to the other Incus hosts.
 - A nightly task builds the topology from stock Ubuntu in a task VM, runs every case, and compares the result with the templates through Doctor.
   - On a pass, the fresh build replaces the templates.
   - On a failure, Pi works in that VM, on Codex Sol 6.1 at High effort. It fixes an Orbit bug with a PR, pins and excludes a broken upstream version with a PR, or reruns once and then reports.
