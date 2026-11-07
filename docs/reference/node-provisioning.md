@@ -589,13 +589,13 @@ Another installer can put a plain file back at `/usr/local/bin/swamp`, such as t
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with one dispatch slot per CPU core each (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (`root` and the group of the swamp account, `0640`, in folders of `0750`) before adding the role.
 
-Swamp ends authenticated WebSockets after eight hours, even while a worker refreshes its separate 15-minute session credential. Workers keep persistent connections and `--concurrency auto`. The swamp role installs one renewal service for the pair. Its timer starts one minute after activation and checks hourly. A worker whose recorded enrollment is at least three hours old is renewed with the first SIGTERM's native drain: active dispatches finish before it disconnects. 
+Swamp ends authenticated WebSockets after eight hours, even while a worker refreshes its separate 15-minute session credential. Workers keep persistent connections and `--concurrency auto`. The swamp role installs one renewal service for the pair. Its timer starts one minute after activation and checks hourly. A worker whose recorded enrollment is at least three hours old is renewed with the first SIGTERM's native drain: active dispatches finish before it disconnects.
 
 The service renews `a` only while `b` accepts work, waits for a different enrolled instance of `a` and a native `worker verify` check, then renews `b`. systemd serializes starts of the single service; use that service for manual renewal too.
 
 The live check accepts a passed probe or Swamp's exact connected-but-full result; other probe failures or failed re-enrollment stop the sequence; a retry after five minutes skips freshly renewed connections.
 
-Each worker has `TimeoutStopSec=4500` and `KillMode=mixed`: only the main process receives SIGTERM, leaving its dispatch children to finish. The 75-minute allowance gives headroom over the observed cold refresh step of about 50 minutes. It is not a bound on arbitrary hung work; systemd can kill work beyond that allowance. 
+Each worker has `TimeoutStopSec=4500` and `KillMode=mixed`: only the main process receives SIGTERM, leaving its dispatch children to finish. The 75-minute allowance gives headroom over the observed cold refresh step of about 50 minutes. It is not a bound on arbitrary hung work; systemd can kill work beyond that allowance.
 
 Worker crashes retry after 30 seconds, with at most five starts in five minutes. A permanent startup failure hits that limit; maintenance can retry after five minutes instead of looping every second. An unhealthy peer, failed credentials or a prolonged scheduling failure can prevent safe renewal; the service reports failure rather than intentionally draining both workers.
 
