@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -22,7 +23,6 @@ use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
-use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
