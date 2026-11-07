@@ -1853,3 +1853,52 @@ it('schedules the idle release every five minutes', function (): void {
 
     expect(Artisan::output())->toMatch('/\*\/5\s+\* \* \* \*\s+'.preg_quote(ReleaseIdleTaskVms::class, '/').'/');
 });
+
+it('has a group cancel stop the group\'s running task start, then answer busy with it until it has ended', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $provision = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    $provision->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+    expect($provision->lock_key)->not->toBeNull();
+
+    // Swamp takes the cancel of the run; the run ends later, so the provision is still open when the cancel answers.
+    app()->instance(WebSocketClient::class, new class implements WebSocketClient
+    {
+        private ?array $last = null;
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->last = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            return $this->last === null ? [] : [['id' => $this->last['id'], 'type' => 'workflow.cancel',
+                'payload' => ['data' => ['runId' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'workflowName' => 'operation-task-provision', 'status' => 'cancellation_requested']]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    });
+    config(['swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
+
+    try {
+        app(TaskCancelIntent::class)->start($group, 'test', null);
+        $refused = null;
+    } catch (ResourceOperationException $error) {
+        $refused = $error;
+    }
+
+    expect($refused?->errorCode)->toBe('operation.target_busy')->and($refused?->details['operation_id'] ?? null)->toBe($provision->id)
+        ->and($provision->refresh()->cancel_requested_at)->not->toBeNull()
+        ->and($refused?->getMessage())->toContain('asked to stop');
+});
