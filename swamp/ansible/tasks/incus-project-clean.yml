@@ -1,8 +1,8 @@
 ---
 # One Incus project of a task VM host, `clean_entry.name`, loses its images; with `clean_entry.whole` also its instances, its custom
-# volumes on every pool, its own profiles but `default`, and then the project itself. Images and volumes go only when the project keeps its own: a project that shares
-# them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves the next project its turn.
-# A volume or image that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
+# volumes on every pool, its own profiles but `default`, and then the project itself. Images and volumes go only when the project keeps
+# its own: a project that shares them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves
+# the next project its turn. A volume or image that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
 - name: Empty the project
   vars:
     project: "{{ clean_entry.name }}"
