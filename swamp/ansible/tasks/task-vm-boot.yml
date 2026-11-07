@@ -39,7 +39,7 @@
       ExecStartPre=/usr/sbin/sshd -t
 # A task start puts the VM's identity on an identity volume, a virtiofs share of the VM (task-vm-host.yml). This unit mounts it and
 # applies it at boot, before sshd, WireGuard and the agent start, so the start never writes into a running VM. The base VM has no
-# identity share, and the unit ends as soon as the agent's config share shows that.
+# identity share, and the unit ends after a 1 s grace.
 - name: Make the group of the environment files
   ansible.builtin.group: { name: orbit-env, system: true }
 # What is the same for every task VM is in the base, so a start's identity unit only unpacks what is its own: the Orbit root CA that the
