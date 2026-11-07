@@ -25,7 +25,6 @@ Deno.test("the node phase gives an existing start cache to the swamp account, an
         path: "{{ swamp_start_cache }}",
         state: "file",
         owner: "{{ rt.swamp.user }}",
-        group: "{{ rt.swamp.user }}",
         mode: "0644",
     });
     assertEquals(
@@ -77,9 +76,13 @@ function* tasksOf(items: Item[], play: Item = {}): Generator<[Item, Item]> {
 
 const swampCall = /(^|[\s;&|(])(\/usr\/local\/bin\/)?swamp(\s|$)/m;
 
+const commandModules = ["command", "shell", "raw", "script"].flatMap((
+    name,
+) => [name, `ansible.builtin.${name}`]);
+
 function commandText(task: Item): string {
-    const body = task["ansible.builtin.command"] ??
-        task["ansible.builtin.shell"];
+    const module = commandModules.find((name) => name in task);
+    const body = module === undefined ? undefined : task[module];
     if (typeof body === "string") return body;
     if (body?.cmd) return String(body.cmd);
     if (Array.isArray(body?.argv)) return body.argv.join(" ");
@@ -99,7 +102,9 @@ Deno.test("no Ansible task runs the swamp binary without naming a user other tha
                 .map((f) => `tasks/${f.name}`),
         );
     for (const file of files) {
-        for (const [task, play] of tasksOf(load(file))) {
+        // A tasks file runs under the play that imports it, and every play that does escalates (`become: true`).
+        const inherited = file.startsWith("tasks/") ? { become: true } : {};
+        for (const [task, play] of tasksOf(load(file), inherited)) {
             if (!swampCall.test(commandText(task))) continue;
             const become = task.become ?? play.become ?? false;
             const user = task.become_user ?? play.become_user;
