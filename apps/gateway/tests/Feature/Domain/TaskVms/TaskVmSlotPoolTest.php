@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -252,4 +253,23 @@ it('unbinds a failed start\'s group from the workspace its release deletes, and 
     $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
     expect($cancel->input['instance_id'])->toBeNull()->and($cancel->input['release'])->toBeNull()
         ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+});
+
+it('lets a cancel admitted before a failed start\'s release still close the group the release unbound, and keeps the slot destroyed', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Failed])->save();
+    // The cancel is admitted while the release job has not started its Operation yet.
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+    app(TaskVmSlotReleaseProjection::class)->record($slot->refresh(), true, null, true);
+
+    expect(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+    app(TaskGroupEnding::class)->failed($cancel->input, 'task_vm.slot_release_failed');
+    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed);
 });

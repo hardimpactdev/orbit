@@ -175,8 +175,9 @@ final readonly class TaskCancelIntent
     {
         $group = Task::topLevel()->findOrFail($operation->target_id);
         self::eligible($group, $operation->kind);
+        // A release that ended after the admission may have deleted the workspace and unbound the group; then nothing is left to own.
         if (($operation->input['group_id'] ?? null) !== $group->id || ($operation->input['project_id'] ?? null) !== $group->project_id
-            || ($operation->input['instance_id'] ?? null) !== $group->taskable_id) {
+            || (($operation->input['instance_id'] ?? null) !== $group->taskable_id && $group->taskable_id !== null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Cancellation no longer owns its admitted group workspace.', 422);
         }
 
