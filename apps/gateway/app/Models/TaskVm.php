@@ -115,7 +115,7 @@ final class TaskVm extends Model
     }
 
     /**
-     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only where
+     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only when
      * a failed proof run kept it (`proof:run --keep-failed`): a kept VM holds the CPU and
      * memory of its host whatever its state says, until its group is cancelled and it is destroyed.
      *

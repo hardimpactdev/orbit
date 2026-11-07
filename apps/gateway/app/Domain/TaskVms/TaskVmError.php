@@ -56,7 +56,6 @@ enum TaskVmError: string
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageSyncFailed = 'task_vm.image_sync_failed';
 
-
     // The Gateway host's queue worker units.
     case WorkersFailed = 'task_vm.workers_failed';
 }
