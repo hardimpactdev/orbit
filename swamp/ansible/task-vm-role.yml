@@ -18,6 +18,19 @@
     orbit_home: "/home/orbit"
     vp_home: "/home/orbit/.local/share/vite-plus"
     apt_directory: /var/tmp/orbit-image-apt
+    # One file per converged part, holding the digest it converged to (task-vm-recipe.yml).
+    converge_stamps_dir: /var/lib/orbit/converge
+    # The parts of the checkout that the converge tracks, each with the Git object it compares (task-vm-checkout.yml).
+    checkout_projects: >-
+      {%- set out = [{'manager': 'code', 'dir': '.', 'stamp': 'code', 'object': 'HEAD^{tree}'},
+                     {'manager': 'migrations', 'dir': 'apps/gateway', 'stamp': 'migrations', 'object': 'HEAD:apps/gateway/database/migrations'}] -%}
+      {%- for manager, lock in [['composer', 'composer.lock'], ['bun', 'bun.lock']] -%}
+      {%- for dir in (intent.checkout | default({}))[manager] | default([]) -%}
+      {%- set _ = out.append({'manager': manager, 'dir': dir, 'stamp': manager ~ '-' ~ (dir | replace('/', '_')),
+                              'object': 'HEAD:' ~ (lock if dir == '.' else dir ~ '/' ~ lock)}) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ out }}
     # Package downloads retry on a transient error of the snapshot service: four retries, 30 seconds apart (swamp-shape rule 6).
     apt_retries: 4
     apt_delay: 30
@@ -33,12 +46,45 @@
   tasks:
     - { name: Wait for a new server, ansible.builtin.import_tasks: tasks/task-vm-ready.yml, tags: [always] }
     - { name: Resolve the recipe, ansible.builtin.import_tasks: tasks/task-vm-recipe.yml, tags: [always] }
-    - { name: Software, ansible.builtin.import_tasks: tasks/task-vm-software.yml, tags: [software] }
-    - { name: Tools, ansible.builtin.import_tasks: tasks/task-vm-tools.yml, tags: [tools] }
-    - { name: Boot, ansible.builtin.import_tasks: tasks/task-vm-boot.yml, tags: [boot] }
+    # A phase runs only when its digest changed; it records the new one when it ends.
+    - name: Software
+      ansible.builtin.import_tasks: tasks/task-vm-software.yml
+      tags: [software]
+      when: converge_due.software
+    - name: Record the software
+      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      vars: { stamp: software }
+      tags: [software]
+      when: converge_due.software
+    - name: Tools
+      ansible.builtin.import_tasks: tasks/task-vm-tools.yml
+      tags: [tools]
+      when: converge_due.tools
+    - name: Record the tools
+      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      vars: { stamp: tools }
+      tags: [tools]
+      when: converge_due.tools
+    - name: Boot
+      ansible.builtin.import_tasks: tasks/task-vm-boot.yml
+      tags: [boot]
+      when: converge_due.boot
+    - name: Record the boot
+      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      vars: { stamp: boot }
+      tags: [boot]
+      when: converge_due.boot
     - { name: Checkout, ansible.builtin.import_tasks: tasks/task-vm-checkout.yml, tags: [checkout] }
     - { name: Fleet, ansible.builtin.import_tasks: tasks/task-vm-fleet.yml, tags: [fleet] }
-    - { name: Check, ansible.builtin.import_tasks: tasks/task-vm-check.yml, tags: [check] }
+    - name: Check
+      ansible.builtin.import_tasks: tasks/task-vm-check.yml
+      tags: [check]
+      when: converge_due.check
+    - name: Record the check
+      ansible.builtin.import_tasks: tasks/task-vm-stamp.yml
+      vars: { stamp: check }
+      tags: [check]
+      when: converge_due.check
 
 # The nested fleet is ready when Doctor of the nested Gateway is healthy; the wait gives up after its delays (task-vm-fleet-wait.yml).
 - name: Wait for the nested fleet
@@ -54,9 +100,10 @@
     orbit_user: orbit
     orbit_home: "/home/orbit"
   tasks:
-    # `base` is the state a claim starts the containers from: plain container snapshots, no memory.
+    # `base` is the state a proof restores the containers to: plain container snapshots, no memory. It is retaken when the fleet changed.
     - name: Take the base snapshots
       tags: [fleet]
+      when: fleet_new | length > 0 or "code" not in checkout_current or converge_due.operator or converge_due.tokens
       ansible.builtin.command: { argv: [timeout, "180", incus, snapshot, create, --reuse, "{{ item }}", base] }
       loop: "{{ intent.fleet.guests.values() | list }}"
       changed_when: true

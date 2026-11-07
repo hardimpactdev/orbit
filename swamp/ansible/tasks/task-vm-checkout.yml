@@ -1,45 +1,87 @@
 ---
-# The warm checkout of a task image (docs/cli/tasks/vm-image-refresh.mmd): main at the release commit, with `vendor/` and
-# `node_modules/` of every project, at the fixed path that a slot's workspace Instance names. A claim fetches its task branch onto it
-# and installs only where a lock file differs. The repository is read without a credential: the slots serve a public repository.
-- name: Make the folder of the checkout
-  ansible.builtin.file: { path: "{{ intent.checkout.path | dirname }}", state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0755" }
+# The warm checkout of a task image (docs/cli/tasks/vm-image-refresh.mmd): main at the converged commit, with `vendor/` and
+# `node_modules/` of every project and their caches, at the fixed path that a task's workspace Instance names. Each step checks the
+# state first: the checkout moves only when HEAD differs, and a project installs only when its lock file differs from the one it
+# installed. The repository is read without a credential: the task VMs serve a public repository.
 - name: Look for the checkout
   ansible.builtin.stat: { path: "{{ intent.checkout.path }}/.git" }
   register: checkout_git
 - name: Clone the repository
   when: not checkout_git.stat.exists
+  block:
+    - name: Make the folder of the checkout
+      ansible.builtin.file:
+        { path: "{{ intent.checkout.path | dirname }}", state: directory, owner: "{{ orbit_user }}", group: "{{ orbit_user }}", mode: "0755" }
+    - name: Clone the repository
+      become: true
+      become_user: "{{ orbit_user }}"
+      ansible.builtin.command: { argv: [timeout, "600", git, clone, --no-checkout, "{{ intent.checkout.repository }}", "{{ intent.checkout.path }}"] }
+      changed_when: true
+- name: Read the checked out commit
   become: true
   become_user: "{{ orbit_user }}"
-  ansible.builtin.command: { argv: [timeout, "600", git, clone, --no-checkout, "{{ intent.checkout.repository }}", "{{ intent.checkout.path }}"] }
-  changed_when: true
-- name: Fetch the release commit
+  ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", rev-parse, --verify, "HEAD^{commit}"] }
+  register: checkout_head
+  changed_when: false
+- name: Move the checkout to the commit
+  when: checkout_head.stdout | trim != intent.checkout.commit
+  block:
+    - name: Fetch the commit
+      become: true
+      become_user: "{{ orbit_user }}"
+      ansible.builtin.command:
+        argv: [timeout, "300", git, -C, "{{ intent.checkout.path }}", fetch, --quiet, origin, "+refs/heads/main:refs/remotes/origin/main",
+               "{{ intent.checkout.commit }}"]
+      changed_when: true
+    # Ignored files stay: `vendor/`, `node_modules/` and the caches.
+    - name: Check out the commit
+      become: true
+      become_user: "{{ orbit_user }}"
+      ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", checkout, --force, --detach, "{{ intent.checkout.commit }}"] }
+      changed_when: true
+# The Git object IDs of the code, of the migrations and of each lock file at the commit, in one read. The installs below and the
+# fleet compare them with the ones they converged to (task-vm-recipe.yml).
+- name: Read the digests of the commit
   become: true
   become_user: "{{ orbit_user }}"
-  ansible.builtin.command:
-    argv:
-      [timeout, "300", git, -C, "{{ intent.checkout.path }}", fetch, --quiet, origin, "+refs/heads/main:refs/remotes/origin/main",
-       "{{ intent.checkout.commit }}"]
-  changed_when: true
-# Ignored files stay: `vendor/`, `node_modules/` and the caches. A claim checks out its branch the same way.
-- name: Check out the release commit
-  become: true
-  become_user: "{{ orbit_user }}"
-  ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", checkout, --force, --detach, "{{ intent.checkout.commit }}"] }
-  changed_when: true
+  ansible.builtin.command: { argv: "{{ ['git', '-C', intent.checkout.path, 'rev-parse'] + checkout_projects | map(attribute='object') | list }}" }
+  register: checkout_read
+  changed_when: false
+- name: Work out what changed
+  ansible.builtin.set_fact:
+    checkout_now: "{{ dict(checkout_projects | map(attribute='stamp') | zip(checkout_read.stdout_lines)) }}"
+# The tracked parts whose recorded digest equals the commit's: their install, migration or restart is done.
+- name: Work out what is current
+  ansible.builtin.set_fact:
+    checkout_current: >-
+      {%- set out = [] -%}
+      {%- for name, digest in checkout_now.items() if converge_stamps[name] | default('') == digest -%}
+      {%- set _ = out.append(name) -%}
+      {%- endfor -%}
+      {{ out }}
 - name: Install the Composer dependencies
   become: true
   become_user: "{{ orbit_user }}"
   ansible.builtin.command:
-    argv: [timeout, "600", /usr/bin/composer, install, --no-interaction, --no-progress, "--working-dir={{ intent.checkout.path }}/{{ item }}"]
-  loop: "{{ intent.checkout.composer }}"
+    argv: [timeout, "600", /usr/bin/composer, install, --no-interaction, --no-progress, "--working-dir={{ intent.checkout.path }}/{{ item.dir }}"]
+  loop: "{{ checkout_projects | selectattr('manager', 'eq', 'composer') | rejectattr('stamp', 'in', checkout_current) | list }}"
+  loop_control: { label: "{{ item.dir }}" }
   environment: { COMPOSER_HOME: "{{ orbit_home }}/.config/composer", HOME: "{{ orbit_home }}" }
   changed_when: true
 - name: Install the JavaScript dependencies
   become: true
   become_user: "{{ orbit_user }}"
   ansible.builtin.command:
-    argv: [timeout, "600", /usr/local/bin/bun, install, --frozen-lockfile, --cwd, "{{ intent.checkout.path }}/{{ item }}"]
-  loop: "{{ intent.checkout.bun }}"
+    argv: [timeout, "600", /usr/local/bin/bun, install, --frozen-lockfile, --cwd, "{{ intent.checkout.path }}/{{ item.dir }}"]
+  loop: "{{ checkout_projects | selectattr('manager', 'eq', 'bun') | rejectattr('stamp', 'in', checkout_current) | list }}"
+  loop_control: { label: "{{ item.dir }}" }
   environment: { HOME: "{{ orbit_home }}" }
+  changed_when: true
+- name: Record the installed lock files
+  ansible.builtin.command:
+    argv: [install, -D, -m, "0644", /dev/stdin, "{{ converge_stamps_dir }}/{{ item.stamp }}"]
+    stdin: "{{ checkout_now[item.stamp] }}"
+    stdin_add_newline: false
+  loop: "{{ checkout_projects | selectattr('manager', 'in', ['composer', 'bun']) | rejectattr('stamp', 'in', checkout_current) | list }}"
+  loop_control: { label: "{{ item.stamp }}" }
   changed_when: true

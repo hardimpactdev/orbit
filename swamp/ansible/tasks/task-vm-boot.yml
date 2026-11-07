@@ -1,8 +1,8 @@
 ---
-# How a VM from a refreshed task image boots (docs/cli/tasks/vm-image-refresh.mmd). A slot boots its `clean` snapshot at every
-# claim, so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd
-# makes its host keys only when none exist. A slot's enrol writes its own host keys onto its root disk before its `clean` snapshot (docs/cli/tasks/vm-
-# slot-enrol.mmd).
+# How a VM from a refreshed task image boots (docs/cli/tasks/vm-image-refresh.mmd). Every task start boots a new VM from the image,
+# so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd makes
+# its host keys only when none exist. A task start writes the host key of its slot identity before the first boot
+# (docs/cli/tasks/provision.mmd).
 - name: Turn cloud-init off
   ansible.builtin.copy: { dest: /etc/cloud/cloud-init.disabled, content: "", mode: "0644" }
 - name: Make the SSH folder of orbit

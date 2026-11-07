@@ -1,0 +1,44 @@
+---
+# The nested Gateway's Swamp tokens last 30 days. They are renewed when the last renewal is older than a week, so a converge on a current
+# image neither restarts serve nor waits for the Swamp Club.
+- name: Check the nested way out
+  block:
+    - name: Reach the Swamp Club from the nested Gateway
+      ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, curl, -sS, -o, /dev/null, -m, "15", "https://swamp-club.com/"] }
+      changed_when: false
+  rescue:
+    - name: Read how the VM routes the nested bridge
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop: [[sysctl, net.ipv4.ip_forward], [iptables, -S, FORWARD], [nft, list, tables], [ufw, status, verbose]]
+      register: fleet_route
+      changed_when: false
+      failed_when: false
+    - name: Stop with how the VM routes
+      ansible.builtin.fail:
+        msg: "The nested Gateway cannot reach the Swamp Club: {{ ansible_failed_result.stderr | default('') }}
+          {{ fleet_route.results | map(attribute='stdout', default='') | list }}"
+- name: Renew the nested Swamp tokens
+  block:
+    - name: Run the token renewal of the nested Gateway
+      ansible.builtin.command:
+        argv: [timeout, "900", incus, exec, "{{ fleet_guests.gateway }}", --, env, ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg,
+               ANSIBLE_DISPLAY_FAILED_STDERR=true, /opt/orbit/ansible/venv/bin/ansible-playbook, -i, "localhost,", -e, "@/opt/orbit/bootstrap/control.yml",
+               --tags, remint, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
+      changed_when: true
+  rescue:
+    - name: Read the journal of the nested Swamp serve
+      ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, journalctl, -u, orbit-swamp-serve.service, -n, "60", --no-pager] }
+      register: fleet_serve_journal
+      changed_when: false
+      failed_when: false
+    - name: Stop with the journal of serve
+      ansible.builtin.fail:
+        msg: >-
+          The nested Swamp tokens were not renewed: {{ (ansible_failed_result.stdout | default(''))[-1500:] }}
+          {{ (ansible_failed_result.stderr | default(''))[-1500:] }} serve: {{ fleet_serve_journal.stdout_lines | default([]) }}
+- name: Record the renewal
+  ansible.builtin.command:
+    argv: [install, -D, -m, "0644", /dev/stdin, "{{ converge_stamps_dir }}/tokens"]
+    stdin: "{{ now(utc=true).timestamp() | int }}"
+    stdin_add_newline: false
+  changed_when: true
