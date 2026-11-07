@@ -1070,7 +1070,7 @@ The board retains recorded lifecycle times, PR identity, token usage and line ch
 
 ### Tokens and line diff
 
-Thread observations retain usage and cost. Workspace observations retain line changes. Records remain available after a workspace is removed.
+Thread observations retain usage and cost. Task operations record those observations; showing a task aggregates the stored values without contacting agent sessions. Workspace observations retain line changes. Records remain available after a workspace is removed.
 
 ### Thread token metrics
 

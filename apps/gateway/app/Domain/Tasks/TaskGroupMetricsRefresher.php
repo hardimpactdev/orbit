@@ -9,13 +9,12 @@ use App\Models\Instance;
 use App\Models\Task;
 
 /**
- * Fills settle metrics on a top-level task and its subtasks from agent observations
- * and the shared checkout. A refused agent read keeps the last stored thread values.
+ * Fills settle metrics from recorded thread observations and the shared checkout.
+ * Task operations record thread usage; reading the board never contacts Pi.
  */
 final readonly class TaskGroupMetricsRefresher
 {
     public function __construct(
-        private AgentThreadObserver $threads,
         private TaskWorkspaceDiffReader $diff,
     ) {}
 
@@ -33,8 +32,6 @@ final readonly class TaskGroupMetricsRefresher
             if (str_starts_with($reviewer->external_id, AgentThread::PendingPrefix)) {
                 continue;
             }
-            $this->threads->observe($reviewer);
-            $reviewer->refresh();
             if ($reviewer->tokens !== null) {
                 $hasReviewerTokens = true;
                 $reviewerTokens += max(0, $reviewer->tokens);
@@ -85,7 +82,6 @@ final readonly class TaskGroupMetricsRefresher
     {
         $thread = $task->implementerThread;
         if ($thread !== null && ! str_starts_with($thread->external_id, AgentThread::PendingPrefix)) {
-            $this->threads->observe($thread);
             if ($thread->tokens !== null) {
                 $task->tokens = $thread->tokens;
             }
