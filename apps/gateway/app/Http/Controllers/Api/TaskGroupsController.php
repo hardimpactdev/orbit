@@ -253,7 +253,7 @@ final class TaskGroupsController extends Controller
         return response()->json([
             'data' => ($request->parentTask()?->tasks()
                 ->when($request->validated('status'), static fn ($query, $status) => $query->where('status', $status))
-                ->when($request->projectId(), static fn ($query, $project) => $query->where('project_id', $project))
+                ->when($request->projectId(), static fn ($query, $project) => $query->whereHas('parent', static fn ($parent) => $parent->where('project_id', $project)))
                 ->orderBy('position')->get() ?? $action->execute($request->projectId(), $request->status()))
                 ->map(static fn (Task $task): array => $request->boolean('compact')
                     ? ($task->parent_id === null ? TaskGroupData::fromModel($task) : TaskData::fromModel($task))->toCompactArray()

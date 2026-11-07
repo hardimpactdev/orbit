@@ -5,14 +5,15 @@ description: "List tasks with their title, Project, status, and number of comple
 ---
 
 ```bash
-orbit task:list [--project=ID] [--status=STATUS] [--json]
+orbit task:list [--parent=ID] [--project=ID] [--status=STATUS] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
+| `--parent=ID` | List the ordered subtasks of this parent instead of the board. |
 | `--project=ID` | Only tasks of this numeric Project ID. |
 | `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, `completed`, `failed`, or `cancelled`. |
 
 An invalid filter fails with `task.project_invalid` or `task.status_invalid` before the request. The CLI does not prompt for a filter.
 
-Use `--parent=ID` to list the ordered subtasks of that parent instead of the board.
+With `--parent=ID`, `--project=ID` filters by the parent's Project. A different Project returns an empty list.

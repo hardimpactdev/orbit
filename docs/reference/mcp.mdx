@@ -86,7 +86,7 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `database-create` accepts optional `locale` when creating a database on a PostgreSQL server: `C` or `C.UTF-8`. Send `slug`, `server`, and `locale` together. The API applies the same validation as the CLI; external registration, MySQL, and Valkey refuse `locale`. Without it, PostgreSQL uses the server image default.
 
-`task-update` and `task-update` accept a `status` for an external group. The API enforces the [allowed moves](/reference/tasks#tasks-and-subtasks); a refused move returns `tasks.status_move_refused`. Repeating the current status needs no key. `task-comment-create` records subtask-owned assistance and resolution comments. An external resolution clears assistance without sending a turn. `task-cancel` interrupts external work without starting a successor or settling its group.
+`task-update` selects a parent or child by `task`. Each level accepts its own update fields, including `status` for external work. The API enforces the [allowed moves](/reference/tasks#tasks-and-subtasks); a refused move returns `tasks.status_move_refused`. Repeating the current status needs no key. `task-comment-create` records subtask-owned assistance and resolution comments. An external resolution clears assistance without sending a turn. `task-cancel` interrupts external work without starting a successor or settling its group.
 
 
 ### Operations
@@ -152,7 +152,7 @@ Continuous integration and the local candidate gate run `bin/docs-openapi` and `
 
 These reasons explain the design. Check them before you propose a change.
 
-For a request with alternative object shapes, the manifest keeps the full `oneOf` branches. A field shared by branches accepts each distinct field schema through `anyOf`; the last branch must not replace earlier types or bounds. For example, `database-create` accepts a string database name when registering MySQL or PostgreSQL, and an integer database index when creating a Valkey ACL user. The full branches still reject a string index in Valkey user creation and an integer database name in registration.
+For a request with alternative object shapes, the manifest keeps the full `oneOf` or `anyOf` branches. Each flattened branch includes the operation's path, query, and header parameters, so a closed body shape accepts its selector. A field shared by branches accepts each distinct field schema through `anyOf`; the last branch must not replace earlier types or bounds. For example, `database-create` accepts a string database name when registering MySQL or PostgreSQL, and an integer database index when creating a Valkey ACL user. The full branches still reject a string index in Valkey user creation and an integer database name in registration.
 
 ### Tools generated from the API description
 

@@ -42,6 +42,15 @@ it('creates either level through the collection and inherits the parent project'
     expect(Operation::query()->count())->toBe(0);
 });
 
+it('filters children through their parent project', function (): void {
+    $otherProject = Project::query()->create(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://github.com/hardimpactdev/other.git', 'default_branch' => 'main', 'root' => 'public']);
+
+    $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&project_id='.$this->project->id)
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $this->child->id);
+    $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&project_id='.$otherProject->id)
+        ->assertOk()->assertJsonCount(0, 'data');
+});
+
 it('refuses deeper hierarchy and a contradictory project', function (): void {
     $this->postJson('/api/v1/tasks', ['parent_id' => $this->child->id, 'title' => 'Nested', 'brief' => 'Brief'])->assertUnprocessable();
     $this->postJson('/api/v1/tasks', ['parent_id' => $this->parent->id, 'project_id' => $this->project->id + 100, 'title' => 'Foreign', 'brief' => 'Brief'])->assertUnprocessable();
