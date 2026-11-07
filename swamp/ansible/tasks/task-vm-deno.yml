@@ -27,5 +27,7 @@
         dest: "{{ release }}"
         remote_src: true
         creates: "{{ release }}/deno"
+    - name: Make Deno executable
+      ansible.builtin.file: { path: "{{ release }}/deno", owner: root, group: root, mode: "0755" }
     - name: Publish Deno
       ansible.builtin.file: { src: "{{ release }}/deno", dest: /usr/local/bin/deno, state: link, force: true }
