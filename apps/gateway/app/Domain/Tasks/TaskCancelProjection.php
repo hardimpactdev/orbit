@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofKeptVms;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
