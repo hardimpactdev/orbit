@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
-  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
+  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedNodeFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -91,6 +91,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release cleanup command](/reference/gateway-recovery#release-as-a-swamp-run) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
+| `App\Infrastructure\Firewall\ContributedNodeFirewallRules` | The desired firewall of a Node: `firewall:list --managed` and the live match | `forNode()` returns the UFW rules the extension's own operation keeps on the Node |
 | `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()`, `order()`, and `certificateSlug()` |
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, and `digest()` |
 | `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
@@ -119,6 +120,8 @@ After the release switch restarts the scheduler, `gateway:release:cleanup` waits
 The Node Caddy build renders core's sources first, then each `ContributedCaddySiteSource` in provider order. Every source renders from stored state only. For an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`; the site renders only after its publisher records the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers the source and its dependencies, so template changes reach the Node at the next fleet rollout. The AI router contributes the collector site. Switching it off keeps the deployed site; teardown withdraws that site and certificate without changing other site blocks.
 
 A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
+
+A `ContributedNodeFirewallRules` contribution lists the UFW rules that the extension's own operation applies, so `firewall:list --managed` shows them and the live check matches them instead of reporting them as drift. It returns no rules for a Node it does not run on, or while its extension is off. The AI router contributes the two rules of its [task VM guard](/reference/ai-router#task-vm-guard).
 
 The Node footprint captures core's artifact digests first, then each contributed `NodeFootprintArtifact` in provider order. Native Swamp actions execute supported artifacts. An applicable artifact without a native action refuses before effects. Core owns the `php-runtime` artifact for [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits); it uses this existing interface and adds no plug-in point. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
 

@@ -60,6 +60,11 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - vpn1 and usexit18 run their steps through the SSH proxy workers on 209.
 8. **No agent actions.** Do not call orbit-agent action commands from a step. Implement the action as steps. The agent is frozen and will be stripped to an observer.
 9. **Swamp defaults.** Use the manual and CLI defaults for retention, GC, concurrency and tokens; `queueTimeout` follows rule 6. Any deviation needs a measured reason, recorded in PLAN.md.
+10. **A task VM holds only placeholder keys** (Nick, 2026-11-07). [Credentials in task VMs](/reference/tasks#credentials-in-task-vms) states the pattern.
+    - A guard proxy outside the VM, on the Node that holds the real key, accepts the placeholder only from the task VM WireGuard network and only on the paths the VM needs. It answers 403 to anything else, and swaps in the real key upstream.
+    - The real key never leaves its Node and the Gateway. Each further key is one more placeholder-to-real pair in a guard.
+    - The one exception: short-lived minted tokens that never stay on the VM, such as GitHub App tokens.
+    - First use: the model router guard, `ai_router.task_guard`, on `services` at `10.44.0.3:8318`.
 
 ## Checks on every PR
 

@@ -1,0 +1,36 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-07, one fixed model key for all task VMs, usable only inside the task VM network; the guard pattern of /reference/tasks#credentials-in-task-vms.
+  %% status: draft
+  %% command: none · `ai-router:task-guard` on the Gateway, after setup and on a key rotation
+  %% kind: ai_router.task_guard
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Router Node<br/>services, over ssh
+  Note over GW: Admit the guard<br/>the router's Node
+  %%> What it does:
+  %%> - renders the guard's Caddyfile and its two UFW rules from the task VM WireGuard range and the router's port
+  %%> - pushes vault copies of the task key and the anchor key; the intent holds neither
+  %%> Requirements:
+  %%> - the ai-router extension is set up on its Node
+  GW->>SW: Start run, full intent<br/>operation-ai-router-task-guard
+  SW->>N: Apply the guard<br/>Ansible
+  %%> What it does:
+  %%> - writes the two key files (0640, group caddy) and the Caddyfile into /etc/orbit/ai-router-guard, validated by `caddy validate`
+  %%> - runs its own Caddy, `orbit-ai-router-guard.service`, on 10.44.0.3:8318: no admin endpoint, no saved config
+  %%> - inserts the UFW pair above the WireGuard member trust: allow 8318 from the task VM range, deny it from every other member
+  %%> - from the Node itself, outside the range: the task key and the management API both get 403
+  SW->>N: Prove the refusal<br/>from Node 209
+  %%> What it does:
+  %%> - the swamp Node is a WireGuard member outside the task VM range; its connection to port 8318 must not open
+  alt the checks pass
+    SW-->>GW: Run succeeded
+    Note over GW: Record the origin<br/>http://10.44.0.3:8318
+    %%> Result:
+    %%> - Pi on every task VM calls this origin with the one task key; the guard swaps in the anchor key
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+  end

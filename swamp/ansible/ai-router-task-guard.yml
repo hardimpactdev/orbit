@@ -1,0 +1,118 @@
+---
+# The model router's task VM guard on the router's Node (docs/cli/ai-router/task-guard.mmd, /reference/tasks#credentials-in-task-vms):
+# its own Caddy on port 8318 of the WireGuard address, the two key files that Caddy reads, its unit and its two UFW rules.
+# The Gateway renders the Caddyfile and the rules; the two keys come from the environment, never from argv or the intent.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: guard_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Apply the guard
+  hosts: guard_node
+  become: true
+  gather_facts: false
+  tags: [apply]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    guard: "{{ intent.directory }}"
+    task_key: "{{ lookup('ansible.builtin.env', 'ORBIT_TASK_KEY') }}"
+    anchor_key: "{{ lookup('ansible.builtin.env', 'ORBIT_ANCHOR_KEY') }}"
+  tasks:
+    - name: Check the two keys
+      no_log: true
+      ansible.builtin.assert:
+        that:
+          - task_key is match('^[a-f0-9]{64}$')
+          - anchor_key is match('^[a-f0-9]{64}$')
+          - task_key != anchor_key
+    - name: Make the folder of the guard
+      ansible.builtin.file: { path: "{{ guard }}", state: directory, owner: root, group: caddy, mode: "0750" }
+    # Caddy reads each key per request through a file placeholder; no trailing newline, so the file is the key.
+    - name: Write the two keys
+      no_log: true
+      ansible.builtin.copy:
+        dest: "{{ guard }}/{{ item.name }}"
+        content: "{{ item.key }}"
+        owner: root
+        group: caddy
+        mode: "0640"
+      loop:
+        - { name: task.key, key: "{{ task_key }}" }
+        - { name: anchor.key, key: "{{ anchor_key }}" }
+      register: keys
+    - name: Write the Caddyfile
+      ansible.builtin.copy:
+        dest: "{{ guard }}/Caddyfile"
+        content: "{{ intent.caddyfile }}"
+        owner: root
+        group: caddy
+        mode: "0640"
+        validate: caddy validate --adapter caddyfile --config %s
+      register: caddyfile
+    # Its own Caddy, apart from the Node's Orbit-rendered one: no admin endpoint, no saved config, its state in its own folder.
+    - name: Write the unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-ai-router-guard.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit ai-router task VM guard
+          After=network-online.target wg-quick@orbit.service
+          Wants=network-online.target
+
+          [Service]
+          User=caddy
+          Group=caddy
+          ExecStart=/usr/bin/caddy run --adapter caddyfile --config {{ guard }}/Caddyfile
+          Restart=always
+          RestartSec=2
+          StateDirectory=orbit-ai-router-guard
+          Environment=XDG_DATA_HOME=/var/lib/orbit-ai-router-guard XDG_CONFIG_HOME=/var/lib/orbit-ai-router-guard
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+      register: unit
+    - name: Run the guard
+      ansible.builtin.systemd_service:
+        name: orbit-ai-router-guard.service
+        daemon_reload: "{{ unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if (unit.changed or caddyfile.changed or keys.changed) else 'started' }}"
+    - name: Wait for the guard
+      ansible.builtin.wait_for: { host: "{{ intent.origin | urlsplit('hostname') }}", port: "{{ intent.origin | urlsplit('port') }}", timeout: 15 }
+    # Deny first, then allow, each inserted at the top, above the WireGuard member trust that admits every port.
+    - name: Admit port 8318 from the task VM range only
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop: "{{ intent.firewall }}"
+      register: firewall
+      changed_when: "'Skipping' not in firewall.stdout"
+    # From the Node itself, a source outside the task VM range: even the task key gets 403, and so does the management API.
+    - name: Check that a source outside the range is refused
+      no_log: true
+      ansible.builtin.uri:
+        url: "{{ intent.origin }}{{ item.path }}"
+        method: "{{ item.method }}"
+        headers: { Authorization: "Bearer {{ task_key }}" }
+        status_code: 403
+        timeout: 5
+        use_proxy: false
+      loop:
+        - { method: POST, path: /v1/responses }
+        - { method: GET, path: /v0/management/config }

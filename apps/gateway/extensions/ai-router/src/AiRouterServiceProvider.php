@@ -7,16 +7,20 @@ namespace Orbit\Extensions\AiRouter;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
+use App\Infrastructure\Firewall\ContributedNodeFirewallRules;
 use App\Providers\ExtensionServiceProvider;
 use Orbit\Extensions\AiRouter\Actions\ReconvergeAiRouterConnectionAction;
+use Orbit\Extensions\AiRouter\Console\AiRouterTaskGuardCommand;
 use Orbit\Extensions\AiRouter\Console\ConvergeAiRouterCommand;
 use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
 use Orbit\Extensions\AiRouter\Domain\AiRouterCache;
 use Orbit\Extensions\AiRouter\Domain\AiRouterConnectionOwnership;
+use Orbit\Extensions\AiRouter\Domain\AiRouterDirectOperations;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcessOwnership;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
@@ -26,6 +30,7 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardFirewall;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
@@ -81,13 +86,15 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
         $this->contribute(ContributedCaddySiteSource::class, AiRouterCaddySiteSource::class);
         $this->contribute(NodeFootprintArtifact::class, AiRouterFootprintArtifact::class);
         $this->contribute(ContributedPrivateHostnames::class, AiRouterPrivateHostnames::class);
+        $this->contribute(DirectOperationContribution::class, AiRouterDirectOperations::class);
+        $this->contribute(ContributedNodeFirewallRules::class, AiRouterTaskGuardFirewall::class);
     }
 
     public function boot(): void
     {
         // No scheduled converge: its Caddy publication used the agent's caddy.publish, which #1901 removed, so the
         // tick failed every minute. The collector converges again once its publication runs in Swamp.
-        $this->commands([ConvergeAiRouterCommand::class]);
+        $this->commands([ConvergeAiRouterCommand::class, AiRouterTaskGuardCommand::class]);
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
     }
 }

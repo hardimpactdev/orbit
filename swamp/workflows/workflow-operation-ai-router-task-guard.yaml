@@ -1,0 +1,116 @@
+id: 6e1f4b0a-3c7d-4a52-9b8e-2f5d7c1a9e43
+name: operation-ai-router-task-guard
+description: "ai_router.task_guard: the model router's task VM guard on its Node, applied by Ansible, then proved to refuse a WireGuard member outside the task VM range."
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: ai_router.task_guard}
+    intent:
+      type: object
+      properties:
+        ssh: {type: object}
+        origin: {type: string, format: uri}
+        directory: {type: string}
+        caddyfile: {type: string}
+        firewall: {type: array, minItems: 2, maxItems: 2}
+      required: [ssh, origin, directory, caddyfile, firewall]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        task_key:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^ai-router-task-key-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        anchor_key:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^ai-router-anchor-key-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [task_key, anchor_key]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: guard
+  labels: {role: swamp}
+  steps:
+    # Input: the intent and the shipped playbooks, as the run folder the phase reads.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: '${{ ("ansible-input-ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # Apply: the key files, the Caddyfile, the unit and the two UFW rules; the phase ends by proving that a request from the Node
+    # itself, a source outside the task VM range, gets 403 with the task key and on the management API.
+  - name: 'Apply the guard'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'input', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/ai-router-task-guard.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_TASK_KEY: '${{ vault.get(inputs.execution_secrets.task_key.vault, inputs.execution_secrets.task_key.key) }}'
+          ORBIT_ANCHOR_KEY: '${{ vault.get(inputs.execution_secrets.anchor_key.vault, inputs.execution_secrets.anchor_key.key) }}'
+    # End check: the swamp Node is a WireGuard member outside the task VM range, so UFW drops its connection to port 8318.
+  - name: 'Check from outside the task VM range'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Apply the guard', condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: |-
+          code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 5 -X POST "$ORBIT_ORIGIN/v1/responses") && {
+            echo "ai_router.guard_open: port 8318 answered $code to a WireGuard member outside the task VM range" >&2; exit 1; }
+          echo '{"refused": true}'
+        env:
+          ORBIT_ORIGIN: '${{ inputs.intent.origin }}'
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: guard, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("ai-router-guard-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
