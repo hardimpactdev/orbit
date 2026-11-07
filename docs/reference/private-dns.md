@@ -113,7 +113,9 @@ The render reads stored rows only. A change stores its state before it asks for 
 
 ### Revision and parallel publications
 
-Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one. A publication admitted after that holds a newer revision still, and the Node then skips the restore as superseded. So after the Gateway stores the failure of a Router change or an Instance transfer, it queues one fresh publication, and the newest render holds the rolled-back rows.
+Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one.
+
+A publication admitted after that holds a newer revision still, and the Node then skips the restore as superseded. So after the Gateway stores the failure of a Router change or an Instance transfer, it queues one fresh publication, and the newest render holds the rolled-back rows.
 
 ### The phase
 
