@@ -1,4 +1,5 @@
 """The egress-log part of the task VM host playbook only records, takes the bridge from the intent and renders the same files every run."""
+import copy
 import json
 import os
 import re
@@ -15,7 +16,10 @@ ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 PLAYBOOK = ANSIBLE / 'task-vm-host.yml'
 AGENT_SETUP = Path(__file__).resolve().parents[2] / 'apps/agent/src/commands/incus/setup.rs'
 PRIVATE = '10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4'
-OURS = 'log-queries=extra\nlog-facility=/var/log/incus/dnsmasq.orbittask0.log'
+OURS = 'log-queries=extra\nlog-facility=/var/log/orbit/dnsmasq-orbittask0.log'
+# Only these two checks fail the part, and with it the image refresh. Every other check warns.
+SAFETY = {'egress.bridge_dual_stack', 'egress.acl_changed'}
+WARNINGS = {'egress.rules_missing', 'egress.dnsmasq_unset', 'egress.log_unreadable', 'egress.service_inactive', 'egress.setup_failed'}
 
 
 def command():
@@ -30,8 +34,21 @@ def egress_play():
     return next(play for play in yaml.safe_load(PLAYBOOK.read_text()) if play['name'] == 'Task VM egress log')
 
 
+def flat(tasks):
+    """The tasks of the play in order, the tasks of a block in place of the block."""
+    for task in tasks:
+        if 'block' in task:
+            yield from flat(task['block'])
+        else:
+            yield task
+
+
 def tasks_by_name(play):
-    return {task['name']: task for task in play['tasks']}
+    return {task['name']: task for task in flat(play['tasks'])}
+
+
+def module_of(task):
+    return next(key for key in task if key.startswith('ansible.builtin.'))
 
 
 def run_local(folder, tasks, variables):
@@ -52,14 +69,48 @@ def bridge_config(raw=None, **changes):
 
 def render(folder, raw=None, bridge='orbittask0'):
     """Render the files of the part through Ansible itself, from the vars of the play, a host intent and the bridge as it was before."""
-    names = ('nft_rules', 'rsyslog_rules', 'logrotate_rules', 'egress_unit', 'dnsmasq_raw', 'dnsmasq_missing')
-    return run_local(folder, [{'name': name, 'ansible.builtin.copy': {'dest': str(folder / name), 'content': '{{ ' + name + ' | to_json }}'
-                                                                      if name == 'dnsmasq_missing' else '{{ ' + name + ' }}', 'mode': '0644'}}
-                              for name in names], {'host': {'network': bridge}, 'bridge_before': {'stdout': bridge_config(raw)}})
+    texts = ('nft_rules', 'rsyslog_rules', 'logrotate_rules', 'egress_unit', 'dnsmasq_raw')
+    data = ('dnsmasq_missing', 'dnsmasq_taken')
+    tasks = [{'name': name, 'ansible.builtin.copy': {'dest': str(folder / name), 'content': '{{ ' + name + ' }}', 'mode': '0644'}} for name in texts]
+    tasks += [{'name': name, 'ansible.builtin.copy': {'dest': str(folder / name), 'content': '{{ ' + name + ' | to_json }}', 'mode': '0644'}}
+              for name in data]
+    return run_local(folder, tasks, {'host': {'network': bridge}, 'bridge_before': {'stdout': bridge_config(raw)}})
+
+
+def local_file_tasks(root):
+    """The file tasks of the part with every path moved below `root`, as an unprivileged user can run them twice.
+
+    Owners go (the test is not root), the tools that validate are replaced by a size check, and notifications go; what stays is the part's own
+    paths, modes, loops and contents, which is what a rerun must leave alone.
+    """
+    tasks = [{'name': 'Make the folders', 'ansible.builtin.file': {'path': str(root / 'etc' / name), 'state': 'directory', 'mode': '0755'}}
+             for name in ('rsyslog.d', 'systemd/system', 'logrotate.d')]
+    for source in flat(egress_play()['tasks']):
+        module = module_of(source)
+        if module not in ('ansible.builtin.file', 'ansible.builtin.copy'):
+            continue
+        task = copy.deepcopy(source)
+        args = task[module]
+        key = 'dest' if 'dest' in args else 'path'
+        if 'item.' not in args[key]:
+            args[key] = str(root) + args[key]
+        for gone in ('owner', 'group'):
+            args.pop(gone, None)
+        if 'validate' in args:
+            args['validate'] = 'test -s %s'
+        task.pop('notify', None)
+        for item in task.get('loop', []):
+            item['path'] = str(root) + item['path']
+        tasks.append(task)
+    return tasks
 
 
 TABLE = ('table inet orbit_egress {\n\tset seen {\n\t\ttype ipv4_addr . ipv4_addr . inet_proto . inet_service\n\t}\n\tchain forward {\n'
-         '\t\ttype filter hook forward priority filter + 10; policy accept;\n\t\tadd @seen { ip saddr . ip daddr } log prefix "orbit-egress "\n\t}\n}\n')
+         '\t\ttype filter hook forward priority filter + 10; policy accept;\n'
+         '\t\tiifname "orbittask0" oifname != "orbittask0" ct state new ip saddr . ip daddr . meta l4proto . th dport @seen return\n'
+         '\t\tiifname "orbittask0" oifname != "orbittask0" ct state new limit rate over 50/second burst 200 packets return\n'
+         '\t\tiifname "orbittask0" oifname != "orbittask0" ct state new log prefix "orbit-egress " flags ether add @seen { ip saddr . ip daddr }\n'
+         '\t}\n}\n')
 
 
 def files(**changes):
@@ -82,11 +133,14 @@ def end_state(**changes):
 
 
 class TaskVmHostEgressTest(unittest.TestCase):
-    def test_the_part_is_one_tag_and_takes_the_bridge_only_from_the_intent(self):
+    def test_the_part_is_one_tag_that_keeps_its_handlers_and_takes_the_bridge_only_from_the_intent(self):
         play = egress_play()
         self.assertEqual(play['tags'], ['egress-log'])
+        self.assertIs(play['force_handlers'], True)
         self.assertEqual(play['vars']['bridge'], '{{ host.network }}')
         self.assertNotRegex(yaml.safe_dump(play), r'orbittask[a-z0-9]')
+        # A handler that fails must not fail the part: the end checks report the state.
+        self.assertTrue(all(handler['failed_when'] is False for handler in play['handlers']))
 
     def test_the_ranges_the_log_skips_are_the_ranges_the_bridge_acl_drops(self):
         # One list in two places: the agent's `acl()` makes the ACL, this part reads it. Drift would log a private range or hide a public one.
@@ -98,46 +152,57 @@ class TaskVmHostEgressTest(unittest.TestCase):
 
     def test_it_changes_the_bridge_in_one_setting_and_nothing_else_of_incus(self):
         play = egress_play()
-        incus = [task['ansible.builtin.command']['argv'] for task in play['tasks'] if 'ansible.builtin.command' in task
-                 and isinstance(task['ansible.builtin.command']['argv'], list) and task['ansible.builtin.command']['argv'][0] == 'incus']
+        incus = [task[module_of(task)]['argv'] for task in flat(play['tasks']) if module_of(task) == 'ansible.builtin.command'
+                 and isinstance(task[module_of(task)]['argv'], list) and task[module_of(task)]['argv'][0] == 'incus']
         writes = [argv for argv in incus if argv[1] != 'query']
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][:3], ['incus', 'network', 'set'])
         self.assertEqual(writes[0][4], 'raw.dnsmasq={{ dnsmasq_raw }}')
-        # Only when a line is missing, so a rerun restarts no dnsmasq, and after the log files exist, so dnsmasq keeps their mode.
+        # Only when a line is missing and the operator's own log file is not in the way, so a rerun runs no bridge setup, and after the log
+        # file exists, so dnsmasq keeps its mode.
         tasks = tasks_by_name(play)
-        self.assertEqual(tasks['Log the DNS queries of the bridge']['when'], 'dnsmasq_missing | length > 0')
-        order = [task['name'] for task in play['tasks']]
+        self.assertEqual(tasks['Log the DNS queries of the bridge']['when'], '(dnsmasq_missing | length > 0) and not (dnsmasq_taken | bool)')
+        order = [task['name'] for task in flat(play['tasks'])]
         self.assertLess(order.index('Make the log files'), order.index('Log the DNS queries of the bridge'))
-        self.assertLess(order.index('Check that the DNS log is free'), order.index('Log the DNS queries of the bridge'))
         self.assertEqual(tasks['Make the log files']['ansible.builtin.file']['modification_time'], 'preserve')
+        self.assertNotIn('pgrep', yaml.safe_dump(play))
 
-    def test_each_file_is_checked_by_the_tool_that_reads_it_and_the_changes_notify_a_handler(self):
+    def test_only_the_rules_fail_the_part_and_the_rest_of_the_setup_warns(self):
         play = egress_play()
-        tasks = tasks_by_name(play)
-        handlers = {handler['name'] for handler in play['handlers']}
+        top = {task['name']: task for task in play['tasks']}
+        # The rules are checked by `nft -c` outside the block: a table that does not load fails the part.
+        self.assertEqual(top['Write the nftables rules']['ansible.builtin.copy']['validate'], '/usr/sbin/nft -c -f %s')
+        self.assertEqual(top['Write the nftables rules']['notify'], 'Reload the egress log rules')
+        block = top['Set up the logs']
+        self.assertEqual([task['name'] for task in block['rescue']], ['Warn that the log setup failed'])
+        self.assertIn('egress.setup_failed', block['rescue'][0]['ansible.builtin.debug']['msg'])
+        inside = {task['name']: task for task in block['block']}
         for name, validator, notify in (('Write the rsyslog rule', '/usr/sbin/rsyslogd -N1 -f %s', 'Restart rsyslog'),
-                                        ('Write the nftables rules', '/usr/sbin/nft -c -f %s', 'Reload the egress log rules'),
                                         ('Write the log rotation', '/usr/sbin/logrotate -d %s', None)):
-            copy = tasks[name]['ansible.builtin.copy']
-            self.assertEqual(copy['validate'], validator, name)
-            self.assertEqual(tasks[name].get('notify'), notify, name)
-            if notify:
-                self.assertIn(notify, handlers)
-        self.assertEqual(tasks['Apply the changed rules']['ansible.builtin.meta'], 'flush_handlers')
-        order = [task['name'] for task in play['tasks']]
-        self.assertLess(order.index('Apply the changed rules'), order.index('Check the rules'))
-
-    def test_the_end_state_asserts_the_log_and_the_safety_of_the_bridge_with_public_codes(self):
-        play = egress_play()
-        codes = {task['name']: task['ansible.builtin.assert']['fail_msg'] for task in play['tasks'] if 'ansible.builtin.assert' in task}
-        self.assertEqual(set(codes.values()), {'egress.dnsmasq_log_taken', 'egress.rules_missing', 'egress.dnsmasq_unset', 'egress.log_unreadable',
-                                               'egress.service_inactive', 'egress.bridge_dual_stack', 'egress.acl_changed'})
-        for code in codes.values():
+            self.assertEqual(inside[name]['ansible.builtin.copy']['validate'], validator, name)
+            self.assertEqual(inside[name].get('notify'), notify, name)
+        names = [task['name'] for task in play['tasks']]
+        # The handlers run right after the writes and before the end checks.
+        self.assertEqual(names.index('Apply the changed rules'), names.index('Set up the logs') + 1)
+        self.assertEqual(top['Apply the changed rules']['ansible.builtin.meta'], 'flush_handlers')
+        self.assertLess(names.index('Apply the changed rules'), names.index('Warn about the rules'))
+        # Two asserts, both safety checks; the observation checks are debug warnings, and none runs in check mode.
+        asserts = {task['name']: task['ansible.builtin.assert']['fail_msg'] for task in play['tasks'] if 'ansible.builtin.assert' in task}
+        self.assertEqual(set(asserts.values()), SAFETY)
+        for code in asserts.values():
             self.assertRegex(code, r'^[a-z]+\.[a-z_]+$')
-        asserted = yaml.safe_dump([task for task in play['tasks'] if 'ansible.builtin.assert' in task])
-        for needle in ('policy accept', 'ipv6.address', 'security.acls', 'private_ranges | difference(dropped)', 'dnsmasq_lines', 'roth', 'xoth'):
-            self.assertIn(needle, asserted)
+        warnings = [task for task in play['tasks'] if task['name'].startswith('Warn about')]
+        self.assertEqual(len(warnings), 4)
+        for task in warnings + [task for task in play['tasks'] if 'ansible.builtin.assert' in task]:
+            self.assertIn('not ansible_check_mode', json.dumps(task['when']))
+
+    def test_the_rate_limit_and_the_log_before_add_are_in_the_table_rules(self):
+        rules = egress_play()['vars']['nft_rules']
+        lines = [line.strip() for line in rules.splitlines() if 'outside_match' in line]
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].endswith('@seen return'))
+        self.assertTrue(lines[1].endswith('limit rate over 50/second burst 200 packets return'))
+        self.assertLess(lines[2].index(' log prefix '), lines[2].index(' add @seen '))
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_the_files_render_for_the_bridge_of_the_intent_and_log_without_a_verdict(self):
@@ -154,22 +219,23 @@ class TaskVmHostEgressTest(unittest.TestCase):
             self.assertIn('size 262144', rules)
             self.assertIn('type filter hook forward priority filter + 10; policy accept;', rules)
             self.assertIn(f'{match} ip saddr . ip daddr . meta l4proto . th dport @seen return', rules)
+            self.assertIn(f'{match} limit rate over 50/second burst 200 packets return', rules)
             # The flow is logged first and added to the set after: an add to a full set fails and skips what follows it in the rule.
             self.assertIn(f'{match} log prefix "orbit-egress " flags ether add @seen {{ ip saddr . ip daddr . meta l4proto . th dport }}', rules)
-            # Log only: no rule drops, rejects or accepts, and nothing marks, queues or changes a packet. Only new flows are logged.
+            # Log only: every rule returns or logs, and nothing drops, rejects, marks, queues or changes a packet. Only new flows are logged.
             lines = [line.strip() for line in rules.splitlines() if 'iifname' in line]
-            self.assertEqual(len(lines), 2)
-            self.assertTrue(lines[0].endswith(' @seen return'))
-            self.assertLess(lines[1].index(' log prefix '), lines[1].index(' add @seen '))
+            self.assertEqual(len(lines), 3)
             self.assertTrue(all('ct state new' in line for line in lines))
             self.assertNotRegex(rules, r'\b(drop|reject|queue|dnat|snat|masquerade|mark)\b')
-            self.assertEqual((folder / 'dnsmasq_raw').read_text(), 'log-queries=extra\nlog-facility=/var/log/incus/dnsmasq.orbittask7.log')
+            self.assertEqual((folder / 'dnsmasq_raw').read_text(), 'log-queries=extra\nlog-facility=/var/log/orbit/dnsmasq-orbittask7.log')
             rsyslog = (folder / 'rsyslog_rules').read_text()
-            self.assertIn('if $msg contains "orbit-egress " then {', rsyslog)
+            self.assertIn('if $syslogfacility-text == "kern" and $msg contains "orbit-egress " then {', rsyslog)
+            self.assertIn('%msg:::sp-if-no-1st-sp%%msg:::drop-last-lf%', rsyslog)
             self.assertIn('action(type="omfile" file="/var/log/orbit/task-egress.log" template="OrbitEgress" fileCreateMode="0644")', rsyslog)
             self.assertEqual(rsyslog.splitlines()[-2:], ['    stop', '}'])
             rotation = (folder / 'logrotate_rules').read_text()
-            self.assertIn('/var/log/incus/dnsmasq.orbittask7.log {', rotation)
+            self.assertIn('/var/log/orbit/dnsmasq-orbittask7.log {', rotation)
+            self.assertNotIn('/var/log/incus', rotation)
             self.assertIn('create 0644 syslog adm', rotation)
             self.assertIn('/usr/lib/rsyslog/rsyslog-rotate', rotation)
             self.assertEqual(rotation.count('rotate 7'), 2)
@@ -178,75 +244,121 @@ class TaskVmHostEgressTest(unittest.TestCase):
             self.assertIn('RemainAfterExit=yes', (folder / 'egress_unit').read_text())
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
-    def test_raw_dnsmasq_is_merged_never_overwritten(self):
+    def test_raw_dnsmasq_is_merged_never_overwritten_and_a_foreign_log_file_is_left_alone(self):
         ours = OURS.split('\n')
+        theirs = 'log-facility=/tmp/mine.log'
         cases = [
-            # (what the bridge holds, the lines to add, the value to set)
-            (None, ours, OURS),
-            ('', ours, OURS),
-            ('address=/lan.test/10.1.2.3', ours, 'address=/lan.test/10.1.2.3\n' + OURS),
-            ('address=/lan.test/10.1.2.3\nlog-queries=extra', ours[1:], 'address=/lan.test/10.1.2.3\nlog-queries=extra\n' + ours[1]),
-            (OURS, [], OURS),
-            ('log-facility=/var/log/incus/dnsmasq.orbittask0.log\n' + 'address=/x/1.1.1.1\n' + 'log-queries=extra', [], None),
+            # (what the bridge holds, the lines to add, the value to set, whether the operator logs elsewhere)
+            (None, ours, OURS, False),
+            ('', ours, OURS, False),
+            ('address=/lan.test/10.1.2.3', ours, 'address=/lan.test/10.1.2.3\n' + OURS, False),
+            ('address=/lan.test/10.1.2.3\nlog-queries=extra', ours[1:], 'address=/lan.test/10.1.2.3\nlog-queries=extra\n' + ours[1], False),
+            (OURS, [], OURS, False),
+            (ours[1] + '\naddress=/x/1.1.1.1\n' + ours[0], [], None, False),
+            (theirs, ours, None, True),
+            (theirs + '\n' + ours[0], ours[1:], None, True),
         ]
-        for raw, missing, value in cases:
+        for raw, missing, value, taken in cases:
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as folder:
                 folder = Path(folder)
                 result = render(folder, raw=raw)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(json.loads((folder / 'dnsmasq_missing').read_text()), missing)
+                self.assertEqual(json.loads((folder / 'dnsmasq_taken').read_text()), taken)
                 if value is not None:
                     self.assertEqual((folder / 'dnsmasq_raw').read_text(), value)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
-    def test_a_foreign_dnsmasq_log_file_is_refused_before_anything_changes(self):
-        play = egress_play()
-        order = [task['name'] for task in play['tasks']]
-        gate = tasks_by_name(play)['Check that the DNS log is free']
-        # It runs before the first task that changes the host, the folders.
-        self.assertLess(order.index('Check that the DNS log is free'), order.index('Make the folders'))
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            for raw, code in ((None, None), (OURS, None), ('log-facility=/tmp/mine.log', 'egress.dnsmasq_log_taken')):
-                with self.subTest(raw=raw):
-                    state = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(raw)}}
-                    result = run_local(folder, [gate], state)
-                    self.assertEqual(result.returncode == 0, code is None, result.stdout + result.stderr)
-                    if code:
-                        self.assertIn(code, result.stdout + result.stderr)
-
-    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
-    def test_the_checks_pass_on_the_expected_end_state_and_each_damage_fails_with_its_code(self):
-        checks = [task for task in egress_play()['tasks'] if 'ansible.builtin.assert' in task and task['name'] != 'Check that the DNS log is free']
+    def test_the_checks_pass_on_the_expected_end_state_safety_damage_fails_and_the_rest_warns(self):
+        checks = [task for task in egress_play()['tasks'] if task['name'].startswith(('Warn about', 'Check that'))]
         acl = json.loads(end_state()['egress_acl']['stdout'])
 
         def with_acl(rules):
             return {'stdout': json.dumps({'egress': rules})}
 
-        cases = [
-            ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('set seen', 'set other')})),
-            ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('policy accept', 'policy drop')})),
-            ('egress.rules_missing', end_state(egress_end_table={'stdout': ''})),
-            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config()})),
-            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config('log-queries=extra')})),
-            ('egress.log_unreadable', end_state(egress_files=files(folder={'xoth': False}))),
-            ('egress.log_unreadable', end_state(egress_files=files(dnsmasq={'roth': False}))),
-            ('egress.log_unreadable', end_state(egress_files=files(egress={'exists': False, 'roth': False}))),
-            ('egress.service_inactive', end_state(egress_units={'results': [{'status': {'ActiveState': 'active'}}, {'status': {'ActiveState': 'inactive'}}]})),
+        def without(text):
+            return end_state(egress_end_table={'stdout': TABLE.replace(text, 'x')})
+
+        safety = [
             ('egress.bridge_dual_stack', end_state(egress_bridge={'stdout': bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})})),
             ('egress.acl_changed', end_state(egress_bridge={'stdout': bridge_config(OURS, **{'security.acls': 'other'})})),
             ('egress.acl_changed', end_state(egress_acl=with_acl([{**acl['egress'][0], 'destination': '10.0.0.0/8'}, acl['egress'][1]]))),
             ('egress.acl_changed', end_state(egress_acl=with_acl([acl['egress'][1], acl['egress'][0]]))),
         ]
+        observation = [
+            ('egress.rules_missing', end_state(egress_end_table={'stdout': ''})),
+            ('egress.rules_missing', without('set seen')),
+            ('egress.rules_missing', without('hook forward')),
+            ('egress.rules_missing', without('policy accept')),
+            ('egress.rules_missing', without('ct state new')),
+            ('egress.rules_missing', without(' @seen return')),
+            ('egress.rules_missing', without('log prefix "orbit-egress "')),
+            ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('add @seen', 'drop')})),
+            ('egress.rules_missing', end_state(egress_end_table={'stdout': TABLE.replace('burst 200 packets return', 'burst 200 packets reject')})),
+            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config()})),
+            ('egress.dnsmasq_unset', end_state(egress_bridge={'stdout': bridge_config('log-queries=extra')})),
+            ('egress.dnsmasq_unset', end_state(bridge_before={'stdout': bridge_config('log-facility=/tmp/mine.log')},
+                                               egress_bridge={'stdout': bridge_config('log-facility=/tmp/mine.log')})),
+            ('egress.log_unreadable', end_state(egress_files=files(folder={'xoth': False}))),
+            ('egress.log_unreadable', end_state(egress_files=files(dnsmasq={'roth': False}))),
+            ('egress.log_unreadable', end_state(egress_files=files(egress={'exists': False, 'roth': False}))),
+            ('egress.service_inactive', end_state(egress_units={'results': [{'status': {'ActiveState': 'active'}}, {'status': {'ActiveState': 'inactive'}}]})),
+            ('egress.service_inactive', end_state(egress_units={'results': [{'msg': 'not found'}, {'status': {'ActiveState': 'active'}}]})),
+        ]
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             passed = run_local(folder, checks, end_state())
             self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
-            for code, state in cases:
+            self.assertNotIn('WARNING', passed.stdout)
+            for code, state in safety:
                 with self.subTest(code=code, state=state):
                     failed = run_local(folder, checks, state)
                     self.assertNotEqual(failed.returncode, 0)
                     self.assertIn(code, failed.stdout + failed.stderr)
+            for code, state in observation:
+                with self.subTest(code=code, state=state):
+                    warned = run_local(folder, checks, state)
+                    self.assertEqual(warned.returncode, 0, warned.stdout + warned.stderr)
+                    self.assertIn(f'WARNING {code}', warned.stdout)
+                    self.assertEqual(code in SAFETY, False)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_failed_setup_action_warns_and_the_part_goes_on(self):
+        block = next(task for task in egress_play()['tasks'] if task['name'] == 'Set up the logs')
+        broken = {'name': 'Write into a folder that is gone', 'ansible.builtin.copy': {'dest': '/nonexistent-egress-test/x/y', 'content': 'x'}}
+        tasks = [{'block': [broken], 'rescue': block['rescue']}, {'name': 'Next', 'ansible.builtin.debug': {'msg': 'went on'}}]
+        with tempfile.TemporaryDirectory() as folder:
+            result = run_local(Path(folder), tasks, {})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('WARNING egress.setup_failed: Write into a folder that is gone', result.stdout)
+            self.assertIn('went on', result.stdout)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_second_run_of_the_file_tasks_changes_nothing_and_leaves_the_logs_world_readable(self):
+        # The tasks that write files run for real below a temporary root, as an unprivileged user. The tasks that need Incus, systemd or root
+        # (owners, the bridge setting, the services) are in the end checks above and in the live runs on a host.
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            root = folder / 'root'
+            variables = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(OURS)}}
+            tasks = local_file_tasks(root)
+            first = run_local(folder, tasks, variables)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertNotRegex(first.stdout, r'changed=0\s')
+            expected = {'etc/orbit/egress-log.nft': 'nft_rules', 'etc/rsyslog.d/19-orbit-egress.conf': 'rsyslog_rules',
+                        'etc/logrotate.d/orbit-egress': 'logrotate_rules', 'etc/systemd/system/orbit-egress-log.service': 'egress_unit'}
+            for path in expected:
+                self.assertTrue((root / path).is_file(), path)
+            for path, mode in (('var/log/orbit', 0o755), ('var/log/orbit/task-egress.log', 0o644), ('var/log/orbit/dnsmasq-orbittask0.log', 0o644)):
+                self.assertEqual((root / path).stat().st_mode & 0o777, mode, path)
+            self.assertIn('table inet orbit_egress', (root / 'etc/orbit/egress-log.nft').read_text())
+            (root / 'var/log/orbit/dnsmasq-orbittask0.log').write_text('a query\n')
+            before = {path: (root / path).stat().st_mtime_ns for path in list(expected) + ['var/log/orbit/dnsmasq-orbittask0.log']}
+            second = run_local(folder, tasks, variables)
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertRegex(second.stdout, r'changed=0\s')
+            self.assertEqual((root / 'var/log/orbit/dnsmasq-orbittask0.log').read_text(), 'a query\n')
+            self.assertEqual({path: (root / path).stat().st_mtime_ns for path in before}, before)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_second_render_changes_nothing(self):

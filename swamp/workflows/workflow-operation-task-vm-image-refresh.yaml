@@ -40,8 +40,9 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-# The egress log of the host bridge (docs/reference/compute-drivers.md#log-task-vm-egress): log-only, and it runs before the base is
-# touched, so a failure here leaves the base as it was and starts no rollback.
+# The egress log of the host bridge (docs/reference/compute-drivers.md#log-task-vm-egress): log-only. Only a safety check of the part fails
+# it (rules that do not load, a bridge with IPv6, an ACL that lost its drop rule); it runs before the base is touched, so a failure here
+# leaves the base as it was and starts no rollback.
 - name: egress
   labels: {role: swamp}
   steps:

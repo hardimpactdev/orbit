@@ -24,7 +24,7 @@ sequenceDiagram
     SW->>H: Log egress<br/>host bridge, log only
     %%> What it does:
     %%> - sets up the egress log of the host bridge: an nftables rule, an rsyslog file and the DNS log of the bridge's dnsmasq; nothing is blocked
-    %%> - a change of the dnsmasq setting restarts the bridge's dnsmasq: running VMs lose DNS for about a second
+    %%> - the first run sets `raw.dnsmasq`, which runs the setup of the bridge again and restarts its dnsmasq: running VMs lose DNS for about a second, and Incus runs that dnsmasq without its AppArmor profile
     SW->>H: Start the base VM<br/>incus start
     %%> What it does:
     %%> - a new host has no base VM yet: it is made here, once, from the stock Ubuntu VM image and an empty seed volume, and the converge that follows builds everything else

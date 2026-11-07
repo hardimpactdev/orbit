@@ -1087,14 +1087,16 @@ The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed`
 
 Orbit records which outside hosts task VMs connect to. The log only records. It blocks nothing, and the [egress ACL](#prepare-an-incus-host) of the bridge stays as it is. Each task VM host sets it up on its own bridge, and the [base snapshot refresh](#refresh-the-base-snapshot) runs the setup as its first step, `Log egress`.
 
-The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge name from the host's intent (`settings.task_vms.network`). It sets up four things:
+The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge name from `host.network` of the refresh intent. It sets up four things:
 
 - The nftables table `inet orbit_egress` in `/etc/orbit/egress-log.nft`. The oneshot unit `orbit-egress-log.service` loads it at boot. A changed file reloads the rules.
-- The rsyslog rule `/etc/rsyslog.d/19-orbit-egress.conf`. It writes the lines of the table to `/var/log/orbit/task-egress.log` and keeps them out of syslog and `kern.log`.
-- The `raw.dnsmasq` setting of the bridge, which makes its dnsmasq write the DNS queries to `/var/log/incus/dnsmasq.<bridge>.log`.
+- The rsyslog rule `/etc/rsyslog.d/19-orbit-egress.conf`. It writes the kernel lines of the table to `/var/log/orbit/task-egress.log` and keeps them out of syslog and `kern.log`.
+- The `raw.dnsmasq` setting of the bridge, which makes its dnsmasq write the DNS queries to `/var/log/orbit/dnsmasq-<bridge>.log`.
 - The rotation file `/etc/logrotate.d/orbit-egress` for both logs: daily, seven files, and at most 200 MB.
 
-The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its two rules match a new connection from the bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The second rule logs the connection with `log prefix "orbit-egress " flags ether` and then adds it to the set. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
+The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its three rules match a new connection from the bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
+
+The second rule returns above 50 new connections a second, with a burst of 200. A VM that scans cannot flood the kernel log, rsyslog and the disk, so a flood loses log lines. It never loses traffic, because `return` ends the chain and the policy accepts. The third rule logs the connection with `log prefix "orbit-egress " flags ether` and then adds it to the set.
 
 Only new connections are logged (`ct state new`). A long-lived connection gives one line when it starts and no line after. The log comes before the add, so a full set repeats lines and loses no connection. The table never drops, rejects or changes a packet. The host has no `conntrack` tool and no connection table in `/proc`, so the log does not read the connection tracker.
 
@@ -1104,24 +1106,30 @@ A connection line is the raw kernel message with the time, the host name and the
 2026-11-07T20:31:02.123456+01:00 shark kernel: [12345.678901] orbit-egress IN=orbittask0 OUT=enp5s0 MAC=aa:aa:aa:aa:aa:aa:bb:bb:bb:bb:bb:bb:08:00 SRC=10.252.7.5 DST=93.184.216.34 LEN=60 PROTO=TCP SPT=41234 DPT=443
 ```
 
-The DNS log uses the `log-queries=extra` format of dnsmasq: the serial number of the query, the client address and port, the record type, the name and the answer.
+The DNS log uses the `log-queries=extra` format of dnsmasq: the serial number of the query, the client address and port, the record type, the name and the answer. It is our own file. The file `dnsmasq.<bridge>.log` in `/var/log/incus` holds the stderr of dnsmasq, and Incus truncates it at every start. dnsmasq appends to our file, so a restart of the bridge's dnsmasq loses nothing.
 
-The agent reads both logs as other users, without a capability, so the part makes them world-readable. The folder `/var/log/orbit` has mode 0755. The part creates `task-egress.log` and the dnsmasq log with mode 0644 before they are used, because rsyslog and dnsmasq keep the mode of a file that exists. The dnsmasq leases and host files are already readable and stay untouched.
+The agent reads both logs as other users, without a capability, so the part makes them world-readable. The folder `/var/log/orbit` has mode 0755. The part creates both log files with mode 0644 before they are used, because rsyslog and dnsmasq keep the mode of a file that exists. The dnsmasq leases and host files are already readable and stay untouched.
 
-The setting `raw.dnsmasq` is merged. The part keeps every line of the operator and adds `log-queries=extra` and `log-facility=<file>` only when a line is missing. It refuses a bridge that already logs to another file (`egress.dnsmasq_log_taken`) and changes nothing. The first set restarts the bridge's dnsmasq: run it when no provision is running, because running VMs lose DNS for about a second. A rerun finds the lines and restarts nothing. The part never restarts Incus.
+The `raw.dnsmasq` setting is the only way to switch on query logging, and it has a cost. While it is set, Incus starts the bridge's dnsmasq without its AppArmor profile. dnsmasq still runs as the unprivileged user `incus`. Incus shows the warning `AppArmorDisabledDueToRawDnsmasq` for the bridge, so `incus warning list` will show it. Unsetting `raw.dnsmasq` reverses the change.
 
-The end of the part asserts the state and its safety. Each failed check gives a public error code:
+The command `incus network set` runs the whole setup of the bridge again: the firewall rules of the network, then a kill and a start of dnsmasq. The first run of the part therefore reconfigures each bridge once, and running VMs lose DNS for about a second. Run it when no provision is running. A rerun finds the lines and sets nothing. The part never restarts Incus.
 
-| Check | Error code |
+The value is merged. The part keeps every line of the operator and adds `log-queries=extra` and `log-facility=<file>` only when a line is missing. When the operator already logs to another file, the part leaves the setting alone and warns.
+
+Only a safety check fails the part, and with it the refresh. An observation check prints a warning with its code, and the refresh goes on, because the missing agent fact shows the gap.
+
+| Check | Result |
 |---|---|
-| The table, its set and the accepting base chain exist | `egress.rules_missing` |
-| The `raw.dnsmasq` value holds both lines | `egress.dnsmasq_unset` |
-| rsyslog and `orbit-egress-log.service` are active | `egress.service_inactive` |
-| Others can read both logs and enter the folder | `egress.log_unreadable` |
-| The bridge still has `ipv6.address=none` | `egress.bridge_dual_stack` |
-| The bridge keeps its ACL, and its first rule drops the private ranges | `egress.acl_changed` |
+| The rules load (`nft -c` before the file is replaced) | Fails the part |
+| The bridge still has `ipv6.address=none` (`egress.bridge_dual_stack`) | Fails the part |
+| The bridge keeps its ACL, and its first rule drops the private ranges (`egress.acl_changed`) | Fails the part |
+| The table, its set, the dedupe return and the accepting base chain exist, with no verdict that drops or rewrites (`egress.rules_missing`) | Warns |
+| The `raw.dnsmasq` value holds both lines (`egress.dnsmasq_unset`, also for a foreign log file) | Warns |
+| rsyslog and `orbit-egress-log.service` are active (`egress.service_inactive`) | Warns |
+| Others can read both logs and enter the folder (`egress.log_unreadable`) | Warns |
+| An action of the log setup failed (`egress.setup_failed`) | Warns |
 
-The `Log egress` step runs before the base VM is touched. A failed check fails the refresh and starts no rollback. To run only this part, start the workflow `task-vm-host-phase` with `tags: egress-log` and the intent of a refresh.
+The `Log egress` step runs before the base VM is touched. A failed safety check fails the refresh and starts no rollback. To run only this part, start the workflow `task-vm-host-phase` with `tags: egress-log` and the intent of a refresh.
 
 #### Refresh the base snapshot
 
