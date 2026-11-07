@@ -53,8 +53,9 @@ it('hands the ready slots of the old pool to the destroy, and leaves group VMs a
 
 it('drops the columns of the deleted provision and destroy paths, and runs again where they are gone', function (): void {
     expect(Schema::hasColumn('task_vms', 'provider_bootstrap'))->toBeFalse()->and(Schema::hasColumn('task_vms', 'worker_stop_required'))->toBeFalse()
-        // What the UpCloud sweep, park and the slot pool read stays.
-        ->and(Schema::hasColumns('task_vms', ['provider_id', 'image_fingerprint', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'agent_secret']))->toBeTrue();
+        // What park and slot allocation still read stays. The later UpCloud retirement removes provider_id.
+        ->and(Schema::hasColumns('task_vms', ['image_fingerprint', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'agent_secret']))->toBeTrue()
+        ->and(Schema::hasColumn('task_vms', 'provider_id'))->toBeFalse();
 
     $migration = require database_path('migrations/2027_01_29_000000_drop_old_task_vm_columns.php');
     $migration->up();

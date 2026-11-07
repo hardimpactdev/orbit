@@ -1295,7 +1295,7 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries. The host cleanup job releases failed, unclaimed Incus task starts through `task_vm.slot_release`; it does not orchestrate task groups.
 
-`task:group:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
+`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 

@@ -53,6 +53,8 @@ A provider retirement needs its full resource inventory. An empty task VM sweep 
 
 Receipt redaction tests must inspect the persisted response. A numeric mask can also occur legitimately in an identity, digest or timestamp; searching the whole receipt creates clock-dependent false failures.
 
+Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.
