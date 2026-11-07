@@ -88,7 +88,7 @@ sequenceDiagram
     %%> What it does:
     %%> - writes the peer entry, applies the hub peers and checks that the hub key did not change
     %%> - the hub peer stays after a failure; it is harmless and a rerun reuses it
-    %%> Decided by the orchestrator, for Nick's review (2026-11-07): the hub's `orbit.conf` is the file the hub converge writes, with no peer in it; wg-quick loads every peer file in `orbit-peers.d` when the hub starts, so a peer that has only its file (the operator of a task VM's nested fleet) survives a restart. It no longer lists the known peers inline and drops the peer-file loader
+    %%> Decided by the orchestrator, for Nick's review (2026-11-07): the hub's `orbit.conf` (written here, or by the `tunnel` phase when the Node is the hub) is the file the hub converge writes: no peer inline, and the `PostUp` loader of `orbit-peers.d`. Every peer the hub knows also gets its own file, so a peer that has only its file (the operator of a task VM's nested fleet) survives a restart of the hub
   end
   SW->>N: Install the Node agent<br/>Ansible phase: agent
   %%> What it does:
