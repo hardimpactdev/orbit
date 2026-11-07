@@ -73,17 +73,19 @@ sequenceDiagram
     %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
     %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
     %%> - runs the planned commands one at a time; nothing is copied to the Node
+    SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+    %%> Why:
+    %%> - the rule only counts as done when ufw shows it after the changes
   else already applied
     Note over SW: Skipped — already applied<br/>firewall.rule_exists
     %%> Result:
     %%> - the plan contains no changes
-    %%> - the final read and check still run before the task can succeed
+    %%> - there is no second read of ufw: the check runs on the first read, which nothing has changed since
   end
-  SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
   Note over SW: Check the rules
   %%> What it does:
   %%> - checks every expected line is present, in narrow-first order
-  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
+  %%> - prints the public result; after changes, a line that ufw changed in between fails the check, and a rerun repairs it
   %%> Why:
   %%> - the rule only counts as active when ufw shows it
   alt rules present and ordered

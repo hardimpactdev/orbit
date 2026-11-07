@@ -73,6 +73,8 @@ jobs:
         argv: '${{ steps["Plan the changes"].outputs.commands[self.change] }}'
   - name: Read the result
     labels: {role: swamp}
+    # A plan without changes leaves ufw as the first read showed it: the check uses that read, and no second read runs.
+    guard: '${{ size(steps["Plan the changes"].outputs.commands) == 0 }}'
     dependsOn:
     - {step: Plan the changes, condition: {type: succeeded}}
     - {step: Change the rules, condition: {type: always}}
@@ -96,7 +98,9 @@ jobs:
         argv: [timeout, '30', /usr/sbin/ufw, status, numbered]
   - name: Check the rules
     labels: {role: swamp}
-    dependsOn: [{step: Read the result, condition: {type: succeeded}}]
+    dependsOn:
+    - {step: Plan the changes, condition: {type: succeeded}}
+    - {step: Read the result, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@nckrtl/firewall-plan'
@@ -104,7 +108,7 @@ jobs:
       methodName: check
       inputs:
         intent: '${{ inputs.intent }}'
-        stdout: '${{ steps["Read the result"].outputs.stdout }}'
+        stdout: '${{ size(steps["Plan the changes"].outputs.commands) == 0 ? steps["Read the rules"].outputs.stdout : steps["Read the result"].outputs.stdout }}'
         refusal: '${{ steps["Plan the changes"].outputs.stdout }}'
         changes: '${{ size(steps["Plan the changes"].outputs.commands) }}'
   - name: accepted

@@ -17,13 +17,15 @@ const intent = (ensure: string, changes: Changes) => ({
     ensure,
 });
 
-/** Read, run every planned argv, read again and check: the workflow's steps in order. */
+/** Read, run every planned argv, read again after changes and check: the workflow's steps in order. A plan without changes checks the first read. */
 function converge(ufw: UfwDouble, changes: Changes = {}, ensure = "present") {
-    const commands = plan(intent(ensure, changes), ufw.status());
+    const first = ufw.status();
+    const commands = plan(intent(ensure, changes), first);
     for (const argv of commands) ufw.apply(argv);
+    const last = commands.length === 0 ? first : ufw.status();
     return {
         commands,
-        result: check(intent(ensure, changes), ufw.status(), commands.length),
+        result: check(intent(ensure, changes), last, commands.length),
     };
 }
 
@@ -236,4 +238,26 @@ Deno.test("a line from one IPv6 address sits above the IPv6 deny and is found ag
         backend: "active",
         skipped: "firewall.rule_exists",
     });
+});
+
+Deno.test("a plan without changes reads ufw once, and changes are read back once", () => {
+    const ufw = new UfwDouble();
+    const created = converge(ufw);
+    assertEquals(created.result, { backend: "active" });
+    assertEquals(ufw.reads, 2);
+    ufw.reads = 0;
+    const repeated = converge(ufw);
+    assertEquals(repeated.commands, []);
+    assertEquals(repeated.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
+    assertEquals(ufw.reads, 1);
+    ufw.reads = 0;
+    const removed = converge(ufw, {}, "absent");
+    assertEquals(removed.result, { backend: "absent" });
+    assertEquals(ufw.reads, 2);
+    ufw.reads = 0;
+    assertEquals(converge(ufw, {}, "absent").result, { backend: "absent" });
+    assertEquals(ufw.reads, 1);
 });
