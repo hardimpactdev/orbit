@@ -36,6 +36,8 @@ sequenceDiagram
   %%> What it does:
   %%> - the same Ansible converge as the release refresh, over WireGuard with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
   %%> - with no delta every part is skipped, and it catches up a small delta when main moved since the last release
+  %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
+  %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
   %%> - then the new task branch on the checkout; it waits for no nested service
   SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
   %%> What it does:

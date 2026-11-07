@@ -27,6 +27,7 @@ sequenceDiagram
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container
+  %%> - the refresh owns the containers' `base` snapshots and retakes them when the fleet changed; the nested Gateway's services restart only when `apps/gateway` changed, and its agent delivery manifest is placed only when the pinned agent build changed
   %%> - no wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
   %%> - the boot phase bakes the Orbit root CA and the firewall into the base, and the `orbit-identity` unit that mounts a copy's identity share and applies it before sshd, WireGuard and the agent; a base VM has no share, so the unit skips
   SW->>H: Stop and snapshot<br/>VM and seed
