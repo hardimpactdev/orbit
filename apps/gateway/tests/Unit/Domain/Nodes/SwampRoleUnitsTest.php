@@ -21,3 +21,10 @@ it('gives a stopping worker the 5 minute drain of the Swamp daemon unit, never a
 it('asks each worker for one dispatch slot per CPU core', function (): void {
     expect(SwampRoleUnits::for('orbit', 209)['worker'])->toContain(' --concurrency auto ');
 });
+
+it('gives serve and each worker their own temp directory, so a root run can not replace their Swamp start cache', function (): void {
+    $units = SwampRoleUnits::for('orbit', 209);
+
+    expect($units['worker'])->toContain("StateDirectory=orbit-swamp-worker/%i orbit-swamp-worker/%i/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-worker/%i/tmp ')
+        ->and($units['serve'])->toContain("StateDirectory=orbit-swamp-serve orbit-swamp-serve/tmp\n", ' TMPDIR=/var/lib/orbit-swamp-serve/tmp ');
+});
