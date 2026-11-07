@@ -62,20 +62,20 @@
               - deny_row | length > 0
               - allow_row | first < deny_row | first
             quiet: true
-        - name: Doctor on app-dev (the agent reports at its next tick, so poll until it does)
+        - name: Doctor on app-dev, firewall family (a silent agent shows as unverifiable, not as drift; the agent reports at its next tick, so poll)
           ansible.builtin.command:
-            argv: "{{ orbit + ['doctor', '--node=' ~ app_dev_id, '--json'] }}"
+            argv: "{{ orbit + ['doctor', '--node=' ~ app_dev_id, '--family=firewall', '--json'] }}"
             chdir: /
           environment: "{{ cli_env }}"
           register: doctor
           failed_when: false
           changed_when: false
-          until: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0
+          until: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
           retries: 14
           delay: 5
         - name: Doctor reports no drift
           ansible.builtin.assert:
-            that: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0
+            that: doctor.stdout is search('^\\s*[{]') and (doctor.stdout | from_json).summary.drift == 0 and (doctor.stdout | from_json).summary.unverifiable == 0
             fail_msg: "doctor: exit {{ doctor.rc }}, {{ doctor.stdout | default('') | truncate(200) }}"
             quiet: true
         - name: Nothing else changed in UFW (rows without the port, numbers removed)
@@ -229,6 +229,13 @@
         - name: One active record for the range, and the allow line sits above the range deny
           ansible.builtin.assert:
             that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]
+            quiet: true
+        - name: Nothing else changed in UFW (rows without the range, numbers removed)
+          ansible.builtin.assert:
+            that: >-
+              (ufw_before.port_range.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.spec) | list)
+              ==
+              (ufw_after.port_range.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.spec) | list)
             quiet: true
       rescue:
         - name: Record the failed check of port-range
