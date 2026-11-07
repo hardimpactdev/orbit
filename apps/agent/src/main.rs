@@ -683,24 +683,67 @@ async fn report_facts(
     enum Due {
         Units,
         Host,
+        Egress,
         Retry,
     }
     let mut reporter = facts::Reporter::new(client, &gateway);
     let mut retry = facts::RetryTimer::default();
+    let mut egress = orbit_agent::egress::Runner::default();
     let mut units_tick = tokio::time::interval(facts::UNITS_INTERVAL);
     let mut host_tick = tokio::time::interval(facts::HOST_INTERVAL);
+    let mut egress_tick = tokio::time::interval(facts::EGRESS_INTERVAL);
     units_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    egress_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         let due = tokio::select! {
             _ = units_tick.tick() => Due::Units,
             // A new watch list changes which units are read, so the units fact follows it at once.
             Ok(()) = listed.changed() => Due::Units,
             _ = host_tick.tick() => Due::Host,
+            _ = egress_tick.tick() => Due::Egress,
             () = retry.due() => Due::Retry,
         };
         match due {
             Due::Retry => reporter.retry().await,
+            Due::Egress => {
+                // Only a task VM host's watch list names a bridge. Without one the agent reads no egress file.
+                let network = listed.borrow().egress.clone();
+                if network.is_some() || egress.active() {
+                    let mut runner = std::mem::take(&mut egress);
+                    let stepped = tokio::task::spawn_blocking(move || {
+                        let step = runner.step(
+                            network.as_deref(),
+                            std::time::Instant::now(),
+                            &facts::observed_at(),
+                        );
+                        (runner, step)
+                    })
+                    .await;
+                    match stepped {
+                        Ok((runner, step)) => {
+                            egress = runner;
+                            reporter.retain("egress", |subject| step.known.contains(subject));
+                            // A failed report stops the sending: the rest wait for the retry timer, so a Gateway
+                            // that does not answer holds this loop for one request, not for every fact.
+                            let mut waiting = step.facts.into_iter();
+                            while let Some((name, data)) = waiting.next() {
+                                reporter.report("egress", Some(&name), &data).await;
+                                if reporter.has_failed() {
+                                    for (name, data) in waiting.by_ref() {
+                                        reporter.defer("egress", Some(&name), data);
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            // The state went with the panicked read; the next read starts at the end of the files.
+                            eprintln!("orbit-agent: egress read failed: {error}");
+                            reporter.retain("egress", |_| false);
+                        }
+                    }
+                }
+            }
             Due::Units => {
                 let (names, markers) = {
                     let listed = listed.borrow();

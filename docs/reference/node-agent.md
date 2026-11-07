@@ -73,6 +73,7 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
 | `env_keys` | One Instance `.env`, named by its path in `subject`: its `kind`, its key names in `keys`, and `testing_tracked`. See [Environment key names](#environment-key-names). | every 60 seconds |
 | `accounts` | The local accounts of the Node: each `user`, `uid`, primary `group`, `home` and `shell`, as `/etc/passwd` and `/etc/group` hold them. See below. | every 60 seconds |
+| `egress` | One task VM's outside destinations, named by the VM in `subject`. See [Task VM egress](#task-vm-egress). | read every 5 seconds; sent on change, at most every 15 seconds |
 
 `ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
 
@@ -86,7 +87,7 @@ The agent sends a fact when it changed, and again every 10 minutes.
 
 A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read. The retry sends the data of the failed read and reads the Node again only at the next regular read. A new [watch list](#watch-list) makes the agent read and send `units` at once.
 
-The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout`, `packages`, `env_keys` and `egress` have a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 
 ### Packages
 
@@ -139,6 +140,62 @@ The agent finds checkouts two levels below the apps root and skips symlinks and 
 
 After the checkouts, the agent sends the `checkouts` index. The Gateway deletes the `checkout` rows whose path is missing from the new index, in the same short transaction.
 
+### Task VM egress
+
+On a task VM host, the [watch list](#watch-list) names the Incus bridge of the task VMs in `egress`. The agent then records which outside hosts each VM connects to and sends one `egress` fact per VM, named by the VM in `subject`. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
+
+| Source | Path | What the agent takes |
+| --- | --- | --- |
+| DNS log | `/var/log/orbit/dnsmasq-<network>.log` | The names a VM asked for (`query[A]`) and the IPv4 addresses answered, paired by dnsmasq's serial number. An address in a CNAME chain counts for the name the VM asked for. |
+| Connection log | `/var/log/orbit/task-egress.log` | The sender, destination, protocol and port of each new outbound TCP or UDP connection, from the kernel's `orbit-egress` log lines of this bridge. Private, reserved and multicast destinations are skipped. |
+| VM identity | `/var/lib/incus/networks/<network>/dnsmasq.hosts/*` and `dnsmasq.leases` | The MAC and name of each VM from the host files Incus writes. A lease only gives the MAC of an address. The DHCP host name is never trusted. |
+
+Every 5 seconds the agent reads the identity files, then the new part of the DNS log, then the new part of the connection log. It reads each log from a remembered byte offset, at most 4 MiB per file per read.
+
+A log that does not exist yet reads as empty, because rsyslog and dnsmasq create theirs when they first write. A file that is there when the agent first looks is read from its end, so history is not replayed, also after an agent restart. A file that appears later is read once from its start. When a file shrinks or its inode changes, as after log rotation, the agent reads the new file from the start.
+
+The agent keeps state per VM by MAC, so a reused VM name with a new MAC starts fresh. It tracks only the MACs that a host file names, and uses the leases only to find the MAC of an address. It drops the state of a MAC when its host file is gone. It tracks at most 64 VMs. With more host files, it keeps the 64 whose host files it saw appear last.
+
+A connection line names its VM by the source MAC in its `MAC=` field, which holds the 14 octets of the Ethernet header. Without a `MAC=` field, the agent finds the VM through the source address and the lease. A line with a `MAC=` field of another shape, or of a MAC that is no tracked VM, is dropped. So is a line without `IN=` of this bridge. A DNS line names its VM through the lease of its client address.
+
+A connection to address A by a VM gives one row for each name that VM resolved to A in the last 30 minutes, or one row with the address when it resolved none. A name's answer time is its latest answer. A DNS answer gives a row with no port or protocol for its name. The agent leaves that row out of the fact once the VM connects to the name.
+
+The agent ignores an answer that is private or reserved. Rows are unique by destination, port and protocol, and sorted by those three, so an unchanged set gives the same fact.
+
+```json
+{
+  "network": "orbittask0",
+  "mac": "10:66:6a:f0:65:d4",
+  "rows": [
+    {
+      "destination": "registry.npmjs.org", "kind": "name", "port": 443, "protocol": "tcp",
+      "addresses": ["104.16.1.34"], "sources": ["conn", "dns"], "flags": [],
+      "first_seen": "2026-11-07T19:00:05Z"
+    }
+  ],
+  "overflow": 0
+}
+```
+
+| Row field | Meaning |
+| --- | --- |
+| `destination`, `kind` | A lower-case name (`name`) or an IPv4 address (`address`). |
+| `port`, `protocol` | The port and `tcp` or `udp` of a connection. Both are null on a row that only a DNS answer made. |
+| `addresses` | The IPv4 addresses of the row in numeric order, at most 8. |
+| `sources` | `conn` for a logged connection, `dns` for a DNS answer. A row has one or both. |
+| `flags` | `dot` for port 853. `dns` for port 53 to an outside address. `doh` for port 443 to a well-known public resolver such as `1.1.1.1` or `8.8.8.8`. |
+| `first_seen` | The agent's UTC time, to the second, when it first saw the row. It never changes. |
+
+The agent keeps at most 1,500 rows per VM. That keeps a full fact below the 1 MiB the Gateway accepts. All VMs together share a budget of 32 MiB for rows, names and answers, so a host full of busy VMs stays well inside the agent's 128 MiB memory limit. A row that the row cap or the budget refuses is counted once in `overflow`, however often the VM repeats it, up to 1,024 distinct refused rows per VM.
+
+The agent also remembers at most 8,192 DNS questions, 1,024 name and address pairs per VM, and 8 names per address. A ninth name replaces the oldest name of its address, and the oldest pair goes first when a VM has too many.
+
+The agent reads every 5 seconds but sends a VM's fact only when it changed, at most once every 15 seconds, and again every 10 minutes. It hands at most 4 facts to the reporter per read, and the rest follow on the next reads. A fact that the Gateway refuses is not sent again before the next change or the 10-minute resync. State lives in memory only. When the watch list has no `egress`, the agent drops all state and reads no file.
+
+The agent runs as root without capabilities, so it reads only files that it owns or that others may read. A file it cannot open is not available, except a log that does not exist yet. While it cannot read one of the other files, the agent keeps its state and sends no `egress` fact. It logs the path and the kind of error, never content, at most once in 10 minutes per path.
+
+The fact holds no URL path, packet content or secret, and the agent never writes row contents to its log. Agents before 0.13.0 send no `egress` fact.
+
 ## Task workspaces
 
 The agent reports the Git state of each [task](/reference/tasks) checkout on its Node, so the Gateway can skip `git` over SSH. It reads only Git metadata, never file contents or file names, and it starts no program.
@@ -156,6 +213,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
     "applications": { "operator": "server/web" },
     "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
     "environments": ["/home/orbit/apps/operator/default/server/web/.env", "/home/orbit-app-16/.env"],
+    "egress": { "network": "orbittask0" },
     "workspaces": [
       {
         "instance_id": 31,
@@ -174,6 +232,8 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists every Tool Manager a Linux Node can run, recorded or not, with the candidate paths of its [package](#packages) state.
 
 `environments` names the `.env` of each Instance on the Node: the application directory of a development checkout, or the home of a production account; the agent reports their [key names](#environment-key-names). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+
+`egress` is absent or null on every Node except a task VM host. On a host it names the Incus bridge of the task VMs, such as `orbittask0`. The agent accepts only a name that is `orbittask` followed by 1 to 6 lower-case letters or digits, and ignores any other value. Without `egress` the agent reads none of the [egress](#task-vm-egress) files and holds no egress state.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 

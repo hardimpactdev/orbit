@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 pub const UNITS_INTERVAL: Duration = Duration::from_secs(10);
 /// How often the agent reads its host facts.
 pub const HOST_INTERVAL: Duration = Duration::from_secs(60);
+/// How often a task VM host's agent reads the egress sources.
+pub const EGRESS_INTERVAL: Duration = Duration::from_secs(5);
+/// A VM's `egress` fact is handed to the reporter at most once in this time.
+pub const EGRESS_DEBOUNCE: Duration = Duration::from_secs(15);
 /// An unchanged fact is sent again after this long.
 pub const RESYNC_INTERVAL: Duration = Duration::from_secs(600);
 /// The first wait before a failed report is sent again; each further wait doubles up to [`RETRY_MAX`].
@@ -404,6 +408,12 @@ impl Reporter {
                 }
             }
         }
+    }
+
+    /// Keeps a fact for [`Reporter::retry`] without sending it now, for a caller that stops sending after a failure.
+    pub fn defer(&mut self, kind: &str, subject: Option<&str>, data: Value) {
+        self.failed
+            .insert(key(kind, subject), (subject.map(str::to_owned), data));
     }
 
     /// Whether a report is waiting to be sent again.
