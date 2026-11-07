@@ -35,10 +35,9 @@ use Throwable;
  * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
  * owner is never a task workspace, whatever its name or branch.
  *
- * A workspace on a task VM goes with its VM. A workspace whose VM is already gone uses the generic forced Instance
- * remover, which runs the Project's teardown steps, then deletes the checkout and only then the Instance row. A
- * refused teardown or source check leaves both in place. The caller records assistance and returns the error, so
- * the checkout stays named by a record.
+ * A workspace on a task VM goes with its VM: the slot release deletes both. A workspace with no live task VM is
+ * refused with `operation.kind_unavailable` and stays, named by its record; the caller records assistance and returns
+ * the error.
  */
 final readonly class RemoveTaskWorkspaceAction
 {
@@ -73,8 +72,7 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
-     * The workspace goes with its task VM, or through the generic Instance remover when the VM is gone. The source
-     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
+     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
      * fails with `task_vm.parked` until it is ready.
      */
     public function remove(Task $group): null

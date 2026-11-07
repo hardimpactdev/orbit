@@ -103,7 +103,7 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 
 The base list explicitly contains the app-dev tools. It does not inherit a role. One pinned distribution can supply several binaries, such as npm and npx, or Rust and Cargo. Every fetched input must have a recorded digest. Production Nodes receive only their role tools.
 
-The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each pin is the newest version in that authenticated snapshot, identical on both architectures.
+The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and the 21 Chromium libraries that `resources/machine-software/recipe.json` lists for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each pin is the newest version in that authenticated snapshot, identical on both architectures.
 
 The base also holds the nested Incus packages, so a task VM can run a nested topology without an install:
 
@@ -1265,11 +1265,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
-| `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
-| `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
-| `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
-| `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
-| `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
+| `task_vm.release_unavailable` | 409 | A task workspace's VM has no slot, so no release can take it |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |
@@ -1353,15 +1349,9 @@ Before an UpCloud template is published, the `clean` phase of the task VM role a
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
-UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. The native provision step generates an ed25519 host key and stages the pair through the admitted `provider_bootstrap` private output before creating a server. The Gateway stores it encrypted on the owning Task VM and records its public pin. A retry reuses that pair; it cannot replace it or create a server before storage succeeds. Incus grants no reader or writer for this UpCloud-only field.
+No current kind creates an UpCloud task VM: the template build and the sweep remain, and `task-vm-provider-power` starts, stops, deletes and inspects a server.
 
-Swamp renders cloud-init from the staged pair and the admitted Gateway public key. No connection trusts a key on first use. Root login stays off. Swamp reads cloud-init over pinned SSH as `orbit` at the public address, and enrollment needs no jump Node.
-
-No UpCloud step ships a script. Each provider request in `task-vm-provider-power` is one inline `curl` on Node209. The API token and the bootstrap private key reach curl only from its environment, through `--variable`; they are never in argv or expanded by the shell. TypeScript on Node209 (`task-vm-lifecycle`) selects the server, builds each request body, and checks each answer.
-
-Create lists the servers labelled `orbit-task-vm` and the plans, then posts one create body. The body is public intent with one curl expansion, `{{ORBIT_BOOTSTRAP_PRIVATE_KEY:json:json}}`. curl escapes the key twice, because cloud-init's user data is JSON inside a JSON string. The Gateway's vault copy `task-vm-provider-bootstrap-<id>` therefore holds the private key alone.
-
-The create answer is discarded. The label list finds the server again, also after a lost answer. A server that is still missing then fails with `task_vm.upcloud_failed`. One server detail read checks the UUID, title, hostname, labels and the single public IPv4 address. A stopped server gets one start request and one more detail read.
+No UpCloud step ships a script. Each provider request in `task-vm-provider-power` is one inline `curl` on Node209. The API token reaches curl only from its environment, through `--variable`; it is never in argv or expanded by the shell.
 
 A power action reads the label list and then the server detail. curl prints the HTTP status on the last line of the detail read. `404` is absence. Any other failed status fails with `task_vm.upcloud_failed`, so a provider error never supplies a missing-VM observation. A server with an unknown UUID that the label list does not show is absent without a detail read.
 
