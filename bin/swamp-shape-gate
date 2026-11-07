@@ -72,7 +72,9 @@ def plan(base, reports, cache, collections):
              env=ansible_env),
         Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/task-vm-role.yml',
                                        'ansible/task-vm-model-key.yml', 'ansible/task-vm-fleet-wait.yml', 'ansible/task-vm-host.yml',
-                                       'ansible/task-vm-runtime.yml'], env=ansible_env),
+                                       'ansible/task-vm-runtime.yml', 'ansible/operation-firewall-direct.yml', 'ansible/route-withdraw-node.yml'], env=ansible_env),
+        Step('shape', 'rule logic cases', ['ansible-playbook', '-i', 'localhost,', '-c', 'local', 'proof/molecule/firewall-allow/molecule/unit/converge.yml'], env=ansible_env),
+        Step('shape', 'withdrawal logic cases', ['ansible-playbook', '-i', 'localhost,', '-c', 'local', 'proof/molecule/instance-destroy/molecule/unit/converge.yml'], env=ansible_env),
     ]
     steps += [Step('shape', test, ['python3', '-I', test]) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',

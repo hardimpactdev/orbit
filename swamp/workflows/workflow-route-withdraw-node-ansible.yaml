@@ -1,0 +1,86 @@
+id: d4f6a89c-5781-44cb-8c8f-0e2df68a8c8e
+name: route-withdraw-node-ansible
+description: "instance.destroy: one Node's Route withdrawal as one Ansible phase. Read what the Node holds, compose the withdrawal from the captured states and apply it, in one run."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent:
+      type: object
+      properties:
+        publication: {type: object}
+        php: {type: object}
+        caddy: {type: object}
+        dns: {type: object}
+        cleanup: {type: array}
+      required: [publication, php, caddy, dns, cleanup]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: withdraw
+  labels: {role: swamp}
+  steps:
+    # Input: the connection, the captured states and the shipped playbooks, as the run folder that the phase reads.
+  - name: 'input'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent:
+          node:
+            host: '${{ inputs.intent.publication.connection.nodeHost }}'
+            user: '${{ inputs.intent.publication.connection.nodeUser }}'
+            port: '${{ inputs.intent.publication.connection.nodePort }}'
+            identity_file: '${{ inputs.intent.publication.connection.nodeIdentityFile }}'
+            host_keys: '${{ inputs.intent.publication.host_keys }}'
+            account: '${{ inputs.intent.publication.user }}'
+          php: '${{ inputs.intent.php }}'
+          caddy: '${{ inputs.intent.caddy }}'
+          dns: '${{ inputs.intent.dns }}'
+          cleanup: '${{ inputs.intent.cleanup }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # The phase: pools, Caddyfile and certificate folders, each read, composed and written once.
+  - name: 'withdraw'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'input', condition: {type: succeeded}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-" + string(inputs.intent.publication.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags withdraw "$ORBIT_ANSIBLE/route-withdraw-node.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # The run folder goes whatever happened.
+  - name: 'cleanup'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'withdraw', condition: {type: always}}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-cleanup-" + string(inputs.intent.publication.node_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

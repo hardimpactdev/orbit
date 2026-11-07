@@ -1,0 +1,181 @@
+---
+# Cases of the rule logic. Each case is data: the ufw text, the rule, the ensure state and the changes the phase must plan.
+# `after` (optional) is the ufw text after the changes; the check of it must give `result`.
+- name: Plan and check the rule against fixed ufw states
+  hosts: localhost
+  gather_facts: false
+  vars:
+    template: "{{ playbook_dir }}/../../../../../ansible/templates/firewall-rule.j2"
+    head: "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n"
+    trust: "[ 1] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n"
+    ssh6: "22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+    base: "{{ head }}{{ trust }}[ 2] {{ ssh6 }}"
+    web: {action: allow, port: "443", protocol: any, source: any, comment: orbit web, retain: false}
+    cases:
+      # `any` writes one line per protocol and family above the managed lines of that family.
+      - name: any, both protocols
+        status: "{{ base }}"
+        rule: "{{ web }}"
+        ensure: present
+        changes:
+          - {op: insert, insert: 1, protocol: tcp, source: 0.0.0.0/0}
+          - {op: insert, insert: 3, protocol: tcp, source: "::/0"}
+          - {op: insert, insert: 2, protocol: udp, source: 0.0.0.0/0}
+          - {op: insert, insert: 5, protocol: udp, source: "::/0"}
+        after: "{{ head }}[ 1] 443/tcp                     ALLOW IN    Anywhere                   # orbit web\n[ 2] 443/udp                     ALLOW IN    Anywhere                   # orbit web\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 4] 443/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 5] 443/udp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 6] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        result: {backend: active}
+      # A repeat plans nothing and reports the skip.
+      - name: repeat of a placed rule
+        status: "{{ head }}[ 1] 443/tcp                     ALLOW IN    Anywhere                   # orbit web\n[ 2] 443/udp                     ALLOW IN    Anywhere                   # orbit web\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 4] 443/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 5] 443/udp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 6] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        rule: "{{ web }}"
+        ensure: present
+        changes: []
+        after: "{{ head }}[ 1] 443/tcp                     ALLOW IN    Anywhere                   # orbit web\n[ 2] 443/udp                     ALLOW IN    Anywhere                   # orbit web\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 4] 443/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 5] 443/udp (v6)                ALLOW IN    Anywhere (v6)              # orbit web\n[ 6] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        result: {backend: active, skipped: firewall.rule_exists}
+      # A deny sits above the trust line; an allowed source goes above the deny, whatever the action.
+      - name: deny above trust
+        status: "{{ base }}"
+        rule: {action: deny, port: "8080", protocol: tcp, source: any, comment: orbit block, retain: false}
+        ensure: present
+        changes:
+          - {op: insert, insert: 1, action: deny, protocol: tcp, source: 0.0.0.0/0}
+          - {op: insert, insert: 3, action: deny, protocol: tcp, source: "::/0"}
+      - name: allowed source above the deny
+        status: "{{ head }}[ 1] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n[ 2] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 3] 8080/tcp (v6)               DENY IN     Anywhere (v6)              # orbit block\n[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: false}
+        ensure: present
+        changes:
+          - {op: insert, insert: 1, protocol: tcp, source: 192.0.2.1}
+        after: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n[ 2] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 4] 8080/tcp (v6)               DENY IN     Anywhere (v6)              # orbit block\n[ 5] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        result: {backend: active}
+      # A CIDR between: the narrower of two broad rules goes first.
+      - name: a /24 sits above anywhere and below one address
+        status: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n[ 2] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.0/24, comment: orbit net, retain: false}
+        ensure: present
+        changes:
+          - {op: insert, insert: 2, protocol: tcp, source: 192.0.2.0/24}
+      # A misplaced line is deleted and put back where it belongs.
+      - name: a misplaced line moves
+        status: "{{ head }}[ 1] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n[ 2] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n[ 3] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: false}
+        ensure: present
+        changes:
+          - {op: delete, protocol: tcp, source: 192.0.2.1}
+          - {op: insert, insert: 1, protocol: tcp, source: 192.0.2.1}
+      # A line from one IPv6 address shows the address alone and sits above the IPv6 deny.
+      - name: one IPv6 address above the IPv6 deny
+        status: "{{ head }}[ 1] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 2] 8080/tcp (v6)               DENY IN     Anywhere (v6)              # orbit block\n[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: "fd00::5", comment: orbit six, retain: false}
+        ensure: present
+        changes:
+          - {op: insert, insert: 2, protocol: tcp, source: "fd00::5"}
+      # A port range overlaps a single port of the same protocol.
+      - name: a range above the deny of one of its ports
+        status: "{{ head }}[ 1] 8085/tcp                    DENY IN     Anywhere                   # orbit block\n[ 2] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n"
+        rule: {action: allow, port: "8080:8090", protocol: tcp, source: 192.0.2.1, comment: orbit range, retain: false}
+        ensure: present
+        changes:
+          - {op: insert, insert: 1, protocol: tcp, source: 192.0.2.1}
+      # Removal.
+      - name: removal deletes the tuple and keeps the others
+        status: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n[ 2] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: false}
+        ensure: absent
+        changes:
+          - {op: delete, protocol: tcp, source: 192.0.2.1}
+        after: "{{ head }}[ 1] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n"
+        result: {backend: absent}
+      - name: a retained removal leaves the line
+        status: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: true}
+        ensure: absent
+        changes: []
+        after: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n"
+        result: {backend: absent}
+    refusals:
+      - name: an inactive firewall refuses before any change
+        status: "Status: inactive\n"
+        rule: "{{ web }}"
+        ensure: present
+        mode: plan
+        error: firewall.backend_inactive
+      - name: a lost line fails the check
+        status: "{{ base }}"
+        rule: "{{ web }}"
+        ensure: present
+        mode: check
+        error: firewall.verify_failed
+      - name: a line in the wrong order fails the check
+        status: "{{ head }}[ 1] 8080/tcp                    DENY IN     Anywhere                   # orbit block\n[ 2] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: false}
+        ensure: present
+        mode: check
+        error: firewall.verify_failed
+      - name: a lost removal fails the check
+        status: "{{ head }}[ 1] 8080/tcp                    ALLOW IN    192.0.2.1                  # orbit one\n"
+        rule: {action: allow, port: "8080", protocol: tcp, source: 192.0.2.1, comment: orbit one, retain: false}
+        ensure: absent
+        mode: check
+        error: firewall.remove_verify_failed
+  tasks:
+    - name: Plan each case
+      ansible.builtin.set_fact:
+        planned: "{{ planned | default({}) | combine({c.name: lookup('ansible.builtin.template', template) | from_json}) }}"
+      vars:
+        fw_status: "{{ c.status }}"
+        fw_rule: "{{ c.rule }}"
+        fw_ensure: "{{ c.ensure }}"
+        fw_mode: plan
+      loop: "{{ cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The planned changes are the expected ones
+      ansible.builtin.assert:
+        that:
+          - planned[c.name].error is none
+          - got == want
+        fail_msg: "{{ c.name }}: planned {{ got }} but expected {{ want }}"
+        quiet: true
+      vars:
+        got: "{% for x in planned[c.name].changes %}{{ x.op }}/{{ x.insert | default('') }}/{{ x.protocol }}/{{ x.source }}; {% endfor %}"
+        want: "{% for x in c.changes %}{{ x.op }}/{{ x.insert | default('') }}/{{ x.protocol }}/{{ x.source }}; {% endfor %}"
+      loop: "{{ cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: Check the state after the changes
+      ansible.builtin.set_fact:
+        checked: "{{ checked | default({}) | combine({c.name: lookup('ansible.builtin.template', template) | from_json}) }}"
+      vars:
+        fw_status: "{{ c.after }}"
+        fw_rule: "{{ c.rule }}"
+        fw_ensure: "{{ c.ensure }}"
+        fw_mode: check
+        fw_changes: "{{ c.changes | length }}"
+      loop: "{{ cases | selectattr('after', 'defined') | list }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The check gives the expected result
+      ansible.builtin.assert:
+        that:
+          - checked[c.name].error is none
+          - checked[c.name].result == c.result
+        fail_msg: "{{ c.name }}: checked {{ checked[c.name] | to_json }}, expected {{ c.result | to_json }}"
+        quiet: true
+      loop: "{{ cases | selectattr('after', 'defined') | list }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: Refuse
+      ansible.builtin.set_fact:
+        refused: "{{ refused | default({}) | combine({c.name: lookup('ansible.builtin.template', template) | from_json}) }}"
+      vars:
+        fw_status: "{{ c.status }}"
+        fw_rule: "{{ c.rule }}"
+        fw_ensure: "{{ c.ensure }}"
+        fw_mode: "{{ c.mode }}"
+        fw_changes: 1
+      loop: "{{ refusals }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The refusals carry their code
+      ansible.builtin.assert:
+        that: refused[c.name].error == c.error
+        fail_msg: "{{ c.name }}: got {{ refused[c.name] | to_json }}, expected {{ c.error }}"
+        quiet: true
+      loop: "{{ refusals }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}

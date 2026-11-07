@@ -1,0 +1,118 @@
+---
+# firewall.allow, firewall.deny and firewall.remove on one Node: one Swamp phase, tag `firewall`.
+# The play reads the numbered rules, plans the changes (templates/firewall-rule.j2), applies them with the `ufw` module,
+# reads the rules again and checks the result. Every task is an end state, so a second run of a placed rule changes nothing.
+# The intent (the rule, `ensure` and the Node's connection) is in the run folder, read by a file lookup. The public result
+# (`{backend, skipped}` or `{error_code}`) goes to `result.json` in the run folder; the next Swamp step prints it.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: firewall_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Converge the rule on the Node
+  hosts: firewall_node
+  become: true
+  gather_facts: false
+  tags: [firewall]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    fw_rule: "{{ intent.rule }}"
+    fw_ensure: "{{ intent.ensure }}"
+  tasks:
+    - name: Converge
+      block:
+        - name: Read the rules
+          ansible.builtin.command:
+            argv: [timeout, "30", /usr/sbin/ufw, status, numbered]
+          register: rules_before
+          changed_when: false
+          check_mode: false
+        - name: Plan the changes
+          ansible.builtin.set_fact:
+            fw_plan: "{{ lookup('ansible.builtin.template', 'firewall-rule.j2') | from_json }}"
+          vars:
+            fw_status: "{{ rules_before.stdout }}"
+            fw_mode: plan
+        - name: Refuse before any change
+          ansible.builtin.assert:
+            that: fw_plan.error is none
+            fail_msg: "{{ fw_plan.error }}"
+            quiet: true
+        # One module call per change, in order. A delete names the tuple; an insert names the row number the plan counted.
+        - name: Delete the lines that move or go
+          community.general.ufw:
+            rule: "{{ item.action }}"
+            direction: in
+            proto: "{{ item.protocol }}"
+            from_ip: "{{ item.source }}"
+            to_port: "{{ item.port }}"
+            delete: true
+          loop: "{{ fw_plan.changes | selectattr('op', 'equalto', 'delete') | list }}"
+          loop_control: {label: "{{ item.action }} {{ item.port }}/{{ item.protocol }} from {{ item.source }}"}
+        - name: Add the lines
+          community.general.ufw:
+            rule: "{{ item.action }}"
+            direction: in
+            proto: "{{ item.protocol }}"
+            from_ip: "{{ item.source }}"
+            to_port: "{{ item.port }}"
+            comment: "{{ item.comment }}"
+            insert: "{{ item.insert | default(omit) }}"
+          loop: "{{ fw_plan.changes | rejectattr('op', 'equalto', 'delete') | list }}"
+          loop_control: {label: "{{ item.action }} {{ item.port }}/{{ item.protocol }} from {{ item.source }}"}
+        - name: Read the result
+          ansible.builtin.command:
+            argv: [timeout, "30", /usr/sbin/ufw, status, numbered]
+          register: rules_after
+          changed_when: false
+          check_mode: false
+        - name: Check the rules
+          ansible.builtin.set_fact:
+            fw_check: "{{ lookup('ansible.builtin.template', 'firewall-rule.j2') | from_json }}"
+          vars:
+            fw_status: "{{ rules_after.stdout }}"
+            fw_mode: check
+            fw_changes: "{{ fw_plan.changes | length }}"
+        - name: The rule converged
+          ansible.builtin.assert:
+            that: fw_check.error is none
+            fail_msg: "{{ fw_check.error }}"
+            quiet: true
+        - name: Keep the result
+          ansible.builtin.copy:
+            content: "{{ fw_check.result | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        # A refusal or a failed check carries its code; anything else is a failed apply. The phase still fails.
+        - name: Keep the failure
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': (ansible_failed_result.msg
+              if (ansible_failed_result.msg | default('') is match('^firewall\.[a-z_]+$'))
+              else 'firewall.apply_failed')} | to_json }}
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          vars: *local
+        - name: Fail the phase
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The rule did not converge.') }}"

@@ -54,7 +54,7 @@ Deno.test("every Ansible file ships with the ansible-input extension", async () 
         }).additionalFiles,
     );
     for await (
-        const path of expandGlob(`${ROOT}/ansible/**/*.{yml,py,txt,cfg}`)
+        const path of expandGlob(`${ROOT}/ansible/**/*.{yml,py,txt,cfg,j2}`)
     ) {
         const relative = path.path.slice(ROOT.length + 1);
         assert(
