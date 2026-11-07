@@ -1,0 +1,53 @@
+sequenceDiagram
+  %% Proposed design (2026-11-07, for Nick's review, nothing built): step 1 of the task VM egress allowlist. It records, log only, which outside hosts a task VM connects to during real task work, per VM and per task group. Nothing is blocked. Step 2 derives the allowlist from this data and enforces it through a proxy outside the VM. The page: docs/reference/task-vm-egress-log.md.
+  %% status: draft
+  %% command: task VM egress log
+  %% kind: task_vm.egress_log
+  autonumber
+  %% lane VM icon=server pill=task VM tone=purple
+  %% lane BR icon=server pill=task VM host tone=amber
+  %% lane AG icon=server pill=observer tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  participant VM as Task VM<br/>and its containers
+  participant BR as Host bridge<br/>orbittask0
+  participant AG as orbit-agent<br/>on the host
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>Ansible phase
+  SW->>BR: Turn on DNS logging<br/>once per host · a part
+  %%> What it does:
+  %%> - sets `raw.dnsmasq` on the bridge (`log-queries=extra`, a log file) and a logrotate drop-in, in one idempotent part of the host phase (`swamp/ansible/task-vm-host.yml`, tag `egress-log`)
+  %%> - nothing else changes on the host: the connection log needs no rule, because the kernel's conntrack table already holds every NAT'd connection
+  %%> - applied in a quiet window: a dnsmasq reload blinks DNS and DHCP of running VMs for a second
+  VM->>BR: Ask for a name<br/>DNS to the bridge address
+  %%> What it does:
+  %%> - the VM's resolver, and the DNS of its nested containers behind the VM's own NAT, all ask the bridge's dnsmasq
+  %%> - dnsmasq logs each query and its answers with a serial number, so a name pairs exactly with the addresses it returned
+  %%> What it misses:
+  %%> - a fixed IP, DNS over HTTPS, a resolver other than the bridge; the connection log below sees all three
+  VM->>BR: Open a connection<br/>forwarded and NAT'd
+  %%> What it does:
+  %%> - the kernel forwards the first packet and adds one conntrack entry: the VM's address, the outside address, port and protocol
+  %%> - the entry stays at least 10 s after the connection ends (30 s for UDP, 120 s for TCP in TIME_WAIT), so a 5 s read misses no connection
+  %%> What it misses:
+  %%> - traffic inside the WireGuard tunnel: it holds only private Orbit addresses, the host sees one UDP flow to the hub
+  AG->>BR: Read the records<br/>conntrack · DNS log · leases
+  %%> What it does:
+  %%> - every 5 s the agent reads `/proc/net/nf_conntrack` for sources in the bridge subnet, the new lines of the DNS log, and the bridge's leases
+  %%> - the VM is named by its MAC address: the lease gives MAC to IP, and the host's Incus config gives MAC to the VM name (`beast-tvm-3`); nothing the VM says about itself is trusted
+  AG->>AG: Roll up per VM<br/>one row per host and port
+  %%> What it does:
+  %%> - a connection to an address that the same VM resolved joins that name (name, port, protocol, first seen, sources `dns` and `conn`)
+  %%> - an address with no name stays an address (sources `conn` only); a connection to a public resolver on 443 or 853 is marked `doh`
+  %%> - a row that has not changed adds nothing, so the fact stays small and a quiet VM sends nothing
+  AG-->>GW: Send the egress fact<br/>on change · within 15 s
+  %%> What it does:
+  %%> - one `egress` fact per VM name on the host Node, over the existing `POST /api/v1/agent/facts`; the agent sends nothing else and opens no port
+  GW->>GW: Attribute to the group<br/>VM name and time
+  %%> What it does:
+  %%> - the Gateway holds the claim of each VM (VM name, group, start and end) and adds each row to the group that held the VM when the row was first seen
+  %%> - rows go to `task_group_egress`, unique per group, host or address, port and protocol; the group keeps them after its VM and Node are deleted
+  Note over GW: Read it: a table per group<br/>and a union per Project
+  %%> Result:
+  %%> - `orbit tasks:egress <group>` lists the outside hosts of one group; with `--project` it lists the union over the Project's groups, split by feature work and proofs
+  %%> - step 2 turns that union into the allowlist
