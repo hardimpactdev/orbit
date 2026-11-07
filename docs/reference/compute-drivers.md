@@ -432,7 +432,9 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run. Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, copies the agent transcripts to the Gateway, then admits the release and waits for it. A parked VM starts before preservation is attempted.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run.
+
+Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains the transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM starts before preservation is attempted.
 
 The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A failed push or a refused teardown keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 

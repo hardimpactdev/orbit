@@ -28,6 +28,58 @@ afterEach(() => {
     FakeSource.instances = [];
 });
 
+it("shows a recorded transcript after the task Node is deleted", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const app = await openApp();
+    const group = {
+        id: 7,
+        title: "Saved task",
+        brief: "Read recorded work",
+        status: "completed",
+        project_id: 999,
+        taskable_type: null,
+        tasks: [],
+    };
+    const session = {
+        id: 2,
+        task_group_id: 7,
+        task_id: null,
+        node_id: null,
+        role: "implementer",
+        external_id: "saved-session",
+        driver: "pi",
+        state: "done",
+    };
+    setTransport((method, path, body) =>
+        path.startsWith("/api/v1/task-groups/")
+            ? Promise.resolve({
+                  status: 200,
+                  payload: {
+                      data: path.endsWith("/agents")
+                          ? [session]
+                          : path.endsWith("/comments")
+                            ? []
+                            : group,
+                  },
+              })
+            : app.gateway.transport(method, path, body),
+    );
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "7" } });
+    await expect.poll(() => FakeSource.instances.length).toBe(1);
+    const source = FakeSource.instances[0]!;
+    expect(source.url).toBe("/api/v1/task-groups/7/agents/2/stream");
+    source.send({
+        kind: "snapshot",
+        thread_id: 2,
+        state: "done",
+        entries: [
+            { id: "saved", kind: "message", label: "assistant", text: "Saved answer", at: "" },
+        ],
+    });
+    await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Saved answer");
+    await expect.element(page.getByLabelText("Agent connection")).toMatchTextContent("Recorded");
+});
+
 it("shows only that subtask's reviewer and implementer, streams updates, and closes old subscriptions", async () => {
     vi.stubGlobal("EventSource", FakeSource);
     const app = await openApp();

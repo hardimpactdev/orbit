@@ -248,16 +248,14 @@ function SessionViewer({ session }: { session: AgentThread }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const viewport = useRef<HTMLDivElement>(null);
-    // Each open stream holds a Gateway PHP worker, so a background tab gives its streams back.
-    // A reopened stream resumes after the last cursor, or starts with a snapshot when the
-    // driver cannot resume, so nothing is lost while it is paused.
+    // Each connection reads a recorded Gateway snapshot, including after the Node is deleted.
+    // A background tab pauses these reads.
     const visible = usePageVisible();
     const cursor = useRef<string | null>(null);
     useEffect(() => {
         cursor.current = conversation.cursor;
     }, [conversation.cursor]);
     useEffect(() => {
-        if (session.node_id === null) return;
         if (!visible) {
             setConnection("Paused");
             return;
@@ -272,7 +270,7 @@ function SessionViewer({ session }: { session: AgentThread }) {
             try {
                 const data: unknown = JSON.parse(event.data);
                 setConversation((state) => applyAgentEvent(state, data, session.id));
-                setConnection("Live");
+                setConnection("Recorded");
             } catch {
                 setConnection("Unreadable update. Reconnecting…");
             }
