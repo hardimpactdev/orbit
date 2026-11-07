@@ -95,6 +95,8 @@
             content: "{{ fw_check.result | to_json }}"
             dest: "{{ run }}/result.json"
             mode: "0600"
+          # Bookkeeping in the run folder, not the Node's state: a rerun that changes nothing on the Node reports changed=0.
+          changed_when: false
           delegate_to: localhost
           become: false
           vars: &local
