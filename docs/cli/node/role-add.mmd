@@ -60,6 +60,10 @@ sequenceDiagram
   SW->>N: Apply the role<br/>Ansible phase: node
   %%> What it does:
   %%> - the role's files, units, ports and storage directory owner and mode; protected paths are refused before any host work
+  %%> On the swamp role:
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): a Swamp start cache that exists is given to the swamp account with mode `0644`
+  %%> - the cache is the 10 MB file `/tmp/deno-compile-swamp.cache`; the swamp account can not replace a file of another owner in sticky `/tmp`
+  %%> - an unreadable file makes every dispatch start about 0.35 s slower; no restart is needed to repair it
   opt Analytics
     SW->>N: Initialize Analytics<br/>native SSH argv · child
     %%> What it does:
@@ -97,6 +101,7 @@ sequenceDiagram
   SW->>N: Check the role<br/>Ansible phase: check
   %%> What it does:
   %%> - the one end check: the role's services, ports, sites and rules are in place
+  %%> - on the swamp role it also checks that the swamp account owns and can read its start cache
   alt every step passes
     N-->>SW: role services ready
     SW-->>GW: Run succeeded<br/>terminal event
