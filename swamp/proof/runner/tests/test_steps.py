@@ -45,7 +45,7 @@ class StepTest(unittest.TestCase):
         port = self.run.names['port']
         self.assertEqual(steps.ufw_rule(self.run, {'as': 'drifted', 'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': port, 'from': '10.98.0.9',
                                                    'comment': 'orbit drift probe', 'above': 'proof-network'}), [])
-        self.assertEqual(self.run.rules['drifted']['comment'], 'orbit drift probe')
+        self.assertEqual(self.run.rules['drifted']['tcp']['comment'], 'orbit drift probe')
         self.assertIn((f'{port}/tcp', 'ALLOW', '10.98.0.9', 'orbit drift probe'), self.fleet.ufw['app-dev'])
         with self.assertRaises(steps.Infra):
             steps.ufw_rule(self.run, {'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': port, 'comment': "it's"})
@@ -90,7 +90,7 @@ class StepTest(unittest.TestCase):
         rows = self.fleet.ufw['app-dev']
         self.assertEqual(rows[1], (f'{port}/tcp', 'DENY', 'Anywhere', 'proof:deny'))
         self.assertEqual(rows[2][3], 'proof-network')
-        self.assertEqual(self.run.rules['deny']['comment'], 'proof:deny')
+        self.assertEqual(self.run.rules['deny']['tcp']['comment'], 'proof:deny')
 
     def test_ufw_rule_below_a_bound_rule(self):
         port = self.blocked_port()
@@ -153,6 +153,15 @@ class StepTest(unittest.TestCase):
         deny = rows.index(('47002/tcp', 'DENY', 'Anywhere', 'proof:deny'))
         allow = rows.index(('47002/tcp', 'ALLOW', 'Anywhere', 'proof:misplaced'))
         self.assertEqual(allow, deny + 1)
+
+    def test_ufw_rule_refuses_an_anchor_bound_only_for_another_protocol(self):
+        self.assertEqual(steps.ufw_rule(self.run, {'as': 'deny', 'on': 'app-dev', 'action': 'deny', 'proto': 'udp', 'port': '47002', 'above': 'proof-network'}), [])
+        before = list(self.fleet.ufw['app-dev'])
+
+        with self.assertRaisesRegex(steps.Unrun, 'anchor deny has no tcp rule'):
+            steps.ufw_rule(self.run, {'as': 'existing', 'on': 'app-dev', 'action': 'allow', 'proto': 'tcp', 'port': '47002', 'above': 'deny'})
+
+        self.assertEqual(self.fleet.ufw['app-dev'], before)
 
     def test_ufw_rule_moves_the_ipv6_line_above_the_ipv6_anchor(self):
         self.fleet.dual_stack = True

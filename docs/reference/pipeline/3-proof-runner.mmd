@@ -46,7 +46,7 @@ sequenceDiagram
       VM->>NT: Set up the case<br/>listener · ufw_rule · probe
       %%> What it does:
       %%> - builds the starting state, then probes it, for example a blocked port and a working control port
-      %%> - a bound firewall anchor matches the current case's tuple and comment, so a repeated comment from an earlier case cannot select its rule
+      %%> - a bound firewall anchor matches the current case's tuple and comment for the same protocol, so a repeated comment from an earlier case or another protocol cannot select its rule
       %%> When:
       %%> - a failed setup step ends the case as `unrun`; it is not a pass
       VM->>NT: Run the real CLI<br/>built from the commit
