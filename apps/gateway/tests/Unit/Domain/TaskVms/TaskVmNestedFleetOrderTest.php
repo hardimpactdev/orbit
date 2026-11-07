@@ -48,7 +48,7 @@ it('runs a step that accepts a skipped step only when everything that step waite
 it('reads the nested CA through incus exec, not through the file transport that dropped after the apply', function (): void {
     $argv = workflowSteps('workflow-task-nested-fleet', 'fleet')['Pin the nested CA']['task']['inputs']['argv'];
 
-    expect(implode(' ', $argv))->toContain('incus exec "$0" -- cat /home/orbit/.orbit/ca/root.pem', 'BEGIN CERTIFICATE')
+    expect(implode(' ', $argv))->toContain('incus exec "$0" -- cat /home/orbit/.orbit/ca/root.pem', 'BEGIN CERTIFICATE', 'mv "$1.tmp" "$1"')
         ->and($argv)->not->toContain('pull')
         ->and(array_slice($argv, -1))->toBe(['/home/orbit/.orbit/nested-ca.pem']);
 });

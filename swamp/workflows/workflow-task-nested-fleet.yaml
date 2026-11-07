@@ -193,8 +193,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("nested-fleet-" + string(inputs.intent.guest_node_id) + "-make-the-cli-home").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['install', '-d', '-m', '0700', '/home/orbit/.orbit'], timeoutSec: 40}}
     dependsOn: [{step: 'Apply the checkout', condition: {type: succeeded}}]
-  # Read through `incus exec`, as every other step of the start reads the guests: the file transport of `incus file pull` dropped its
-  # connection after the apply (`error receiving version packet from server`) in 3 of 7 starts on 2026-11-07, and nothing else uses it.
+  # Read with `incus exec`: `incus file pull` dropped its connection after the apply in 3 of 7 starts on 2026-11-07.
   - name: 'Pin the nested CA'
     labels: {role: swamp}
     writes: true
