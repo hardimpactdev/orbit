@@ -4,16 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
-use App\Domain\Settings\SettingRepository;
-use App\Domain\Settings\SettingScope;
-use App\Domain\Settings\SettingScopeType;
-use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
+use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
 /** Supplies existing task VM model-router material from the CLIProxyAPI of the ai-router extension, with its management key and one anchor key. */
@@ -22,7 +19,7 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
     public function __construct(
         private TaskVmSettings $settings,
         private AiRouterState $proxy,
-        private SettingRepository $gatewaySettings,
+        private AiRouterSecrets $secrets,
     ) {}
 
     public function assertReady(): void
@@ -58,7 +55,7 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
             throw new ResourceOperationException('operation.execution_forbidden', 'The admitted Node does not own these model-router credentials.', 422);
         }
 
-        return ['management_key' => $this->managementKey(), 'anchor_key' => $this->anchor($origin)];
+        return ['management_key' => $this->managementKey(), 'anchor_key' => $this->secrets->anchor($origin)];
     }
 
     private function managementKey(): string
@@ -66,20 +63,6 @@ final readonly class AiRouterModelKeyIssuer implements ModelKeyIssuer
         $key = $this->proxy->managementKey();
         if ($key === null || $key === '') {
             throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Set up the ai-router extension: it holds the CLIProxyAPI management key.', 409);
-        }
-
-        return $key;
-    }
-
-    /** One random anchor key per origin keeps CLIProxyAPI's key list from ever becoming empty, which would open it. */
-    private function anchor(string $origin): string
-    {
-        $scope = new SettingScope(SettingScopeType::Gateway);
-        $name = 'ai_router.anchor.'.hash('sha256', $origin);
-        $key = $this->gatewaySettings->get($scope, $name);
-        if ($key === null) {
-            $key = bin2hex(random_bytes(32));
-            $this->gatewaySettings->put($scope, $name, $key, SettingValueProtection::Secret);
         }
 
         return $key;

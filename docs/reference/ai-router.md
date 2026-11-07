@@ -198,6 +198,39 @@ After setup, confirm that exactly one collector polls:
 | `GET https://collector.ai-router.orbit/v1/quota-stats` with the read token | Quota groups from the snapshot. |
 | The CLIProxyAPI access log | Quota `api-call` requests arrive only at the collector's schedule, not on a page refresh or an account toggle. |
 
+## Task VM guard
+
+Task VMs reach the router only through its guard. This follows the rule in [Credentials in task VMs](/reference/tasks#credentials-in-task-vms).
+
+The guard is its own Caddy on the router's Node, `orbit-ai-router-guard.service`. It listens on the Node's WireGuard address at port 8318 and serves this table:
+
+| Request | Answer |
+| --- | --- |
+| From the task VM range, a `POST` to exactly `/v1/responses`, `/v1/chat/completions` or `/v1/messages`, with no query and with the task key | Passed to CLIProxyAPI on loopback, with the anchor key in place of the task key and no `X-Api-Key` or `X-Goog-Api-Key` header |
+| Anything else, the management API included | 403 |
+
+The guard matches the path as the client sent it, so `/v1//responses` or a path with `..` does not pass.
+
+The Gateway keeps both keys as secret settings:
+
+- `ai_router.anchor.<sha256(origin)>` is the anchor key. It also keeps the router's key list from ever being empty.
+- `ai_router.task_vm_key` is the task key. CLIProxyAPI never holds it.
+
+On the Node, both keys are root-only files in `/etc/orbit/ai-router-guard`. The unit runs as a dynamic user and loads them with `LoadCredential`, so no other user reads them, the Node's own Caddy included.
+
+Two UFW rules sit above the WireGuard member trust. They admit port 8318 from the task VM range and deny it to every other member. Task VMs cannot reach the router's own port: the hub's task VM filter lets them reach only the guard's address and port.
+
+### Apply or remove the guard
+
+Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a key changes. It admits `ai_router.task_guard`, which applies the guard with Ansible. The run ends with two checks, both from sources outside the range:
+
+- On the router's Node, the task key gets 403.
+- From the swamp Node, the router's Node answers on SSH and port 8318 does not answer.
+
+`php artisan ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown. `firewall:list --managed` lists the two rules while the last succeeded run applied the guard.
+
+Rotate the task key only on an incident. Delete the setting, run the command again, and start new task VMs.
+
 ## Teardown
 
 Tear down the collector when collection should stop for the whole fleet.

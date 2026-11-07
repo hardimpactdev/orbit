@@ -816,6 +816,23 @@ Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` an
 
 The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
 
+## Credentials in task VMs
+
+A task VM holds only placeholder keys. Nick set this as the rule for every key a task VM needs (2026-11-07).
+
+A guard proxy runs outside the VM, on the Node that holds the real key. It answers as this table shows:
+
+| Request | Answer |
+| --- | --- |
+| From the task VM WireGuard network (`task_vms.wireguard_range`), on a path the VM needs, with the placeholder | Passed upstream with the real key in place of the placeholder |
+| Anything else | 403 |
+
+So the real key never leaves its Node and the Gateway, and a leaked placeholder is useless outside a task VM. Each further key is one more placeholder-to-real pair in a guard.
+
+The one exception is a short-lived minted token that never stays on the VM, such as a GitHub App token that a step mints for one push.
+
+The first use is the model router guard on `services`, at `10.44.0.3:8318`. All task VMs share one placeholder model key, which changes only on an incident. The guard passes only a `POST` to the inference routes Pi uses, and swaps in the router's anchor key. [Task VM guard](/reference/ai-router#task-vm-guard) describes it.
+
 ## Task workspace
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.

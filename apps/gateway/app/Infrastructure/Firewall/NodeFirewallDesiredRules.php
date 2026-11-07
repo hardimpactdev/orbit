@@ -10,17 +10,20 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use Illuminate\Container\Attributes\Tag;
 
 final readonly class NodeFirewallDesiredRules
 {
     public function __construct(
         private NodeFirewallRuleCatalog $catalog,
         private MetricsFirewallExpectationProvider $metrics,
+        /** @var iterable<ContributedNodeFirewallRules> */
+        #[Tag(ContributedNodeFirewallRules::class)] private iterable $contributions,
     ) {}
 
     /**
      * The rules role and Metrics converge keep on the Node: baseline, each active role, the task VM image
-     * peers that `task-vms:prepare-host` keeps, then Metrics.
+     * peers that `task-vms:prepare-host` keeps, then Metrics, then the rules extensions contribute.
      *
      * @return list<DesiredFirewallRule>
      */
@@ -61,6 +64,11 @@ final readonly class NodeFirewallDesiredRules
             }
         } catch (FirewallOperationException|ResourceOperationException) {
             // Metrics rules need WireGuard addresses; skip them until those exist.
+        }
+        foreach ($this->contributions as $contribution) {
+            foreach ($contribution->forNode($node) as $rule) {
+                $rows[] = new DesiredFirewallRule($rule->shape->comment, null, $rule->shape);
+            }
         }
 
         return $rows;
