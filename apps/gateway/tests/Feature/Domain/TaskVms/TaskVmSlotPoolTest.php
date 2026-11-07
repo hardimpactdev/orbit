@@ -17,6 +17,7 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSlotSetting;
 use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -26,6 +27,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -174,15 +176,43 @@ it('takes an identity whose enrol ended without a projection as failed, and wait
     expect($pool->next($host->id)['slot']->id)->toBe($slot->id);
 });
 
-it('fails the identity of an enrol whose start was refused, without starting the rule at once', function (): void {
+it('releases a stale identity that holds a model key before it enrols it again, and holds while a refresh proves with it', function (): void {
     [$host, $project, $build] = slotPoolHost(1);
-    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning]);
-    $enrol = Operation::query()->create(['kind' => 'task_vm.slot_enrol', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Provisioning, 'model_key' => str_repeat('c', 64)]);
+    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->next($host->id))->toBeNull();
+    // The refresh ended without its projection: its identity still holds the claim's model key, so a release comes first.
+    $refresh->update(['status' => OperationStatus::Failed]);
+    expect($pool->next($host->id)['slot']->id)->toBe($slot->id)
+        ->and(TaskVmSlotPool::repair($slot->refresh()))->toBe(TaskVmSlotPool::ReleaseKind);
+    $slot->update(['model_key' => null]);
+    expect(TaskVmSlotPool::repair($slot->refresh()))->toBe(TaskVmSlotPool::EnrolKind);
+});
+
+it('fails an identity whose enrol or release start was refused; a refused release keeps the model key to revoke', function (string $kind, string $state, ?string $key): void {
+    [$host, $project, $build] = slotPoolHost(1);
+    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => $state, 'model_key' => $key]);
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
         'status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid', 'input' => [], 'triggered_by' => 'test']);
 
-    Queue::fake();
-    app(TaskVmSlotEnrolProjection::class)->refused($enrol);
+    app($kind === 'task_vm.slot_enrol' ? TaskVmSlotEnrolProjection::class : TaskVmSlotReleaseProjection::class)->refused($operation);
 
-    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('operation.execution_secrets_invalid');
-    Queue::assertNothingPushed();
-});
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('operation.execution_secrets_invalid')
+        ->and($slot->model_key)->toBe($key);
+})->with([
+    'enrol' => ['task_vm.slot_enrol', 'provisioning', null],
+    'release' => ['task_vm.slot_release', 'releasing', str_repeat('c', 64)],
+]);
+
+it('starts the rule at once after a passed release, and leaves a failed one to the sweep so that it does not loop', function (bool $passed): void {
+    [$host, $project, $build] = slotPoolHost(1);
+    $slot = slotPoolSlot($host, $project, $build, 1, ['state' => TaskVmState::Releasing, 'model_key' => str_repeat('c', 64)]);
+    Queue::fake();
+
+    DB::transaction(fn () => app(TaskVmSlotReleaseProjection::class)->record($slot, $passed, $passed ? null : 'task_vm.slot_release_failed', false));
+
+    $passed ? Queue::assertPushed(RefillTaskVmSlots::class) : Queue::assertNotPushed(RefillTaskVmSlots::class);
+})->with(['passed' => [true], 'failed' => [false]]);

@@ -55,12 +55,17 @@ final readonly class TaskVmSlotPool
             }
             $slot = $next['slot'];
 
-            // A release that failed or never ran can leave a VM and a model key that the router still accepts: a release removes both before the
-            // identity is enrolled again. A free identity holds a model key only then.
-            return is_string($slot->model_key)
-                ? $this->runs->startRelease($slot, 'task-vm-slots')
-                : $this->startEnrol($slot);
+            return self::repair($slot) === self::ReleaseKind ? $this->runs->startRelease($slot, 'task-vm-slots') : $this->startEnrol($slot);
         }));
+    }
+
+    /**
+     * How the rule repairs a free identity: a release that failed or never ran can leave a VM and a model key that the router still accepts,
+     * so an identity that holds a model key is released before it is enrolled again. A free identity holds a model key only then.
+     */
+    public static function repair(TaskVm $slot): string
+    {
+        return is_string($slot->model_key) ? self::ReleaseKind : self::EnrolKind;
     }
 
     /**
