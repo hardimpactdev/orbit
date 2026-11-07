@@ -94,6 +94,24 @@ describe('ListFirewallRulesAction', function (): void {
             ->and(array_column($entry['live']['unmatched'], 'match', 'port'))->toBe(['9999' => 'unmanaged']);
     });
 
+    it('keeps both recorded rules exact when their label is reused on another port', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+        list_rule($node, 'allow', '47869', '10.232.2.11', 'office web');
+        list_rule($node, 'allow', '47870', '10.232.2.11', 'office web');
+        NodeFact::query()->create([
+            'node_id' => $node->id, 'kind' => NodeFactKind::Ufw, 'digest' => 'a', 'observed_at' => now(), 'received_at' => now(),
+            'data' => ['installed' => true, 'enabled' => true, 'rules' => array_map(static fn (string $port): array => [
+                'action' => 'allow', 'direction' => 'in', 'protocol' => 'tcp', 'port' => $port, 'source' => '10.232.2.11',
+                'destination' => '0.0.0.0/0', 'comment' => 'orbit office web', 'family' => 'v4', 'in_interface' => null, 'out_interface' => null,
+            ], ['47869', '47870'])],
+        ]);
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: false, live: true)[0];
+
+        expect(array_column($entry['rules'], 'match', 'port'))->toBe([47869 => 'exact', 47870 => 'exact'])
+            ->and($entry['live']['unmatched'])->toBe([]);
+    });
+
     it('projects same-label drift onto the recorded rule instead of calling it exact or missing', function (): void {
         $node = list_node('app-dev', '10.44.0.2');
         list_rule($node, 'allow', '5432', '10.99.1.7', 'office');

@@ -394,11 +394,31 @@ Deno.test("a both-protocol allow keeps the existing TCP line below unrelated man
         comment: "proof:existing",
     };
     const ufw = new UfwDouble([
-        { to: "22/tcp", action: "allow", source: "Anywhere", comment: "orbit:public-ssh" },
-        { to: "51820/udp", action: "allow", source: "Anywhere", comment: "orbit:wireguard" },
+        {
+            to: "22/tcp",
+            action: "allow",
+            source: "Anywhere",
+            comment: "orbit:public-ssh",
+        },
+        {
+            to: "51820/udp",
+            action: "allow",
+            source: "Anywhere",
+            comment: "orbit:wireguard",
+        },
         existing,
-        { to: "47443/tcp", action: "deny", source: "Anywhere", comment: "proof:deny" },
-        { to: "47443/udp", action: "deny", source: "Anywhere", comment: "proof:deny" },
+        {
+            to: "47443/tcp",
+            action: "deny",
+            source: "Anywhere",
+            comment: "proof:deny",
+        },
+        {
+            to: "47443/udp",
+            action: "deny",
+            source: "Anywhere",
+            comment: "proof:deny",
+        },
         ...new UfwDouble().rows,
     ]);
     const before = structuredClone(ufw.rows);
@@ -406,12 +426,93 @@ Deno.test("a both-protocol allow keeps the existing TCP line below unrelated man
     const applied = converge(ufw, request);
 
     assertEquals(applied.commands, [[
-        "timeout", "60", "/usr/sbin/ufw", "insert", "5", "allow", "in", "proto", "udp",
-        "from", "192.0.2.1", "to", "any", "port", "47443", "comment", "orbit web",
+        "timeout",
+        "60",
+        "/usr/sbin/ufw",
+        "insert",
+        "5",
+        "allow",
+        "in",
+        "proto",
+        "udp",
+        "from",
+        "192.0.2.1",
+        "to",
+        "any",
+        "port",
+        "47443",
+        "comment",
+        "orbit web",
     ]]);
     assertEquals(applied.result, { backend: "active" });
-    assertEquals(ufw.rows.filter((row) => row.to !== "47443/udp" || row.action !== "allow"), before);
-    assertEquals(ufw.rows.filter((row) => row.comment === existing.comment), [existing]);
+    assertEquals(
+        ufw.rows.filter((row) =>
+            row.to !== "47443/udp" || row.action !== "allow"
+        ),
+        before,
+    );
+    assertEquals(ufw.rows.filter((row) => row.comment === existing.comment), [
+        existing,
+    ]);
+    assertEquals(converge(ufw, request).commands, []);
+});
+
+Deno.test("an equal TCP line below source-disjoint managed trust keeps its comment and only UDP is added", () => {
+    const existing = {
+        to: "47443/tcp",
+        action: "allow",
+        source: "10.232.2.11",
+        comment: "proof:existing",
+    };
+    const ufw = new UfwDouble([
+        ...new UfwDouble().rows.filter((row) => !row.to.includes("(v6)")),
+        existing,
+        {
+            to: "47443/tcp",
+            action: "deny",
+            source: "Anywhere",
+            comment: "proof:deny",
+        },
+        {
+            to: "47443/udp",
+            action: "deny",
+            source: "Anywhere",
+            comment: "proof:deny",
+        },
+    ]);
+    const before = structuredClone(ufw.rows);
+    const request = { port: "47443", protocol: "any", source: existing.source };
+    const applied = converge(ufw, request);
+
+    assertEquals(applied.commands, [[
+        "timeout",
+        "60",
+        "/usr/sbin/ufw",
+        "insert",
+        "1",
+        "allow",
+        "in",
+        "proto",
+        "udp",
+        "from",
+        existing.source,
+        "to",
+        "any",
+        "port",
+        "47443",
+        "comment",
+        "orbit web",
+    ]]);
+    assertEquals(applied.result, { backend: "active" });
+    assertEquals(
+        ufw.rows.filter((row) =>
+            row.to !== "47443/udp" || row.action !== "allow"
+        ),
+        before,
+    );
+    assertEquals(ufw.rows.filter((row) => row.comment === existing.comment), [
+        existing,
+    ]);
     assertEquals(converge(ufw, request).commands, []);
 });
 
@@ -423,13 +524,19 @@ Deno.test("a failed second allow keeps TCP and a retry adds only UDP for the sam
     ufw.apply(commands[0]);
     const tcp = structuredClone(ufw.rows[0]);
     ufw.fail = true;
-    assertEquals(refusal(() => ufw.apply(commands[1])), "firewall.apply_failed");
+    assertEquals(
+        refusal(() => ufw.apply(commands[1])),
+        "firewall.apply_failed",
+    );
     assertEquals(ufw.tuples("443"), [["443/tcp", "allow", "192.0.2.1"]]);
 
     ufw.fail = false;
     const retry = converge(ufw, { protocol: "any" });
     assertEquals(retry.commands.length, 1);
-    assertEquals(retry.commands[0][retry.commands[0].indexOf("proto") + 1], "udp");
+    assertEquals(
+        retry.commands[0][retry.commands[0].indexOf("proto") + 1],
+        "udp",
+    );
     assertEquals(ufw.rows[0], tcp);
     assertEquals(retry.result, { backend: "active" });
     assertEquals(converge(ufw, { protocol: "any" }).commands, []);
@@ -464,13 +571,14 @@ Deno.test("a partial apply is not rolled back and a repeat repairs only the miss
 
 Deno.test("an interrupted move can leave the line absent and a repeat restores it", () => {
     const ufw = new UfwDouble();
+    const source = "10.44.0.9";
     ufw.rows.push({
         to: "443/tcp",
         action: "allow",
-        source: "192.0.2.1",
+        source,
         comment: "orbit web",
     });
-    const request = intent("present", {});
+    const request = intent("present", { source });
     const commands = plan(request, ufw.status());
     assertEquals(commands[0].slice(3, 5), ["--force", "delete"]);
     ufw.apply(commands[0]);
@@ -478,14 +586,14 @@ Deno.test("an interrupted move can leave the line absent and a repeat restores i
         refusal(() => check(request, ufw.status())),
         "firewall.verify_failed",
     );
-    assertEquals(converge(ufw).commands.length, 1);
-    assertEquals(converge(ufw).commands, []);
+    assertEquals(converge(ufw, { source }).commands.length, 1);
+    assertEquals(converge(ufw, { source }).commands, []);
 });
 
 Deno.test("the typed native steps publish bounded inactive and verify-failed results", async () => {
     const context = {
-        writeResource: async (_spec: string, _name: string, value: unknown) =>
-            value,
+        writeResource: (_spec: string, _name: string, value: unknown) =>
+            Promise.resolve(value),
     };
     const request = intent("present", {});
     const planned = await behavior.methods.plan.execute({

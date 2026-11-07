@@ -69,12 +69,7 @@ final readonly class ListLiveFirewallRulesAction
 
                     continue;
                 }
-                $snapshot = LiveFirewallSnapshot::compare($fact->data, $this->desired->forRule($rule));
-                $matches[$rule->id] = match (true) {
-                    $snapshot['missing'] !== [] => 'missing',
-                    array_any($snapshot['live'], static fn (array $row): bool => $row['match'] === 'drift') => 'drift',
-                    default => 'exact',
-                };
+                $matches[$rule->id] = LiveFirewallSnapshot::comparison($fact->data, $this->desired->forRule($rule));
             } catch (UnexpectedValueException) {
                 $matches[$rule->id] = 'unverifiable';
             }

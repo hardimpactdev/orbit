@@ -42,10 +42,12 @@ A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a
 | Match | Meaning |
 | --- | --- |
 | `exact` | The Node has the rule as recorded. |
-| `drift` | The Node has a rule with the same label, but it differs. |
+| `drift` | The Node lacks the exact tuple but has a different rule with the same label. |
 | `missing` | The Node lacks the rule. A rule counts as missing on a Node whose UFW is inactive or not installed. |
 | `unmanaged` | The Node has a rule that no recorded rule explains. It shows as a row with the status `live only`. |
 | `unverifiable` | The agent has not reported UFW, or reported a rule Orbit cannot compare. |
+
+Exact tuples match before labels. Reusing a label on another rule does not turn an exact rule into drift.
 
 For each Node, the list prints the backend status (`active`, `inactive` or `absent`) and when the agent observed it. The agent reports on change and every 10 minutes, so a new rule can take up to a minute to show.
 

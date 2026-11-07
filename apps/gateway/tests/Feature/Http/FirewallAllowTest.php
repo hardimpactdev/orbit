@@ -286,6 +286,7 @@ it('projects the native allow result, retains failed intent, and releases the lo
         ->and($operation->result)->toBe($result)->and($operation->error_code)->toBe($code)
         ->and($operation->lock_key)->toBeNull()->and($operation->finished_at)->not->toBeNull()
         ->and($rule->status)->toBe($status === 'succeeded' ? LifecycleStatus::Active : LifecycleStatus::Failed)
+        ->and($rule->protocol)->toBe('any')
         ->and($rule->error_code)->toBe($code);
     $this->postJson($this->url, ['port' => '443', 'label' => 'retry'])->assertAccepted();
     expect(FirewallRule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(2)

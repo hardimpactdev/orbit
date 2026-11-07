@@ -50,6 +50,19 @@ class FixtureFileTest(unittest.TestCase):
         self.assertIn('node-access-required', [case.id for case in loaded.cases])
         self.assertIn('no-grant', [item['batch'] for item in spec.plan(loaded)])
 
+    def test_failed_list_rule_can_fail_after_its_first_allow(self):
+        case = spec.load(PROOF / 'firewall' / 'list.cases.yaml', BATCHES).case('failed-rule')
+        self.assertEqual([step.name for step in case.setup], ['listener', 'ufw_rule', 'fault', 'cli'])
+        self.assertEqual(case.setup[0].args['proto'], ['tcp', 'udp'])
+        self.assertEqual(case.setup[1].args['proto'], ['tcp', 'udp'])
+        self.assertEqual(case.setup[2].args['fail_after'], {'match': 'allow', 'count': 1})
+        # Omitting --protocol selects both transports, so the second native allow reaches the fault.
+        self.assertEqual(case.setup[3].args['run'],
+                         ['firewall:allow', '${port}', '--node=${app-dev.id}', '--from=${gateway.src}'])
+        self.assertEqual(case.setup[3].args['expect'], {'status': 'failed'})
+        self.assertEqual(case.stages[0].expect[0].args['where'],
+                         {'port': '${port}', 'status': 'failed', 'failed_step': 'present', 'error_code': 'present'})
+
     def test_batches_run_in_the_order_of_the_batch_file(self):
         plan = spec.plan(self.spec)
         self.assertEqual([item['batch'] for item in plan], ['fresh-fleet', 'dual-stack'])

@@ -219,9 +219,11 @@ function scope(source: string): Network {
     return network(text);
 }
 
-/** `row` must sit below `other`: an overlapping managed line, or a broader overlapping operator line. */
+/** Prefer `row` below `other`: a managed line, or a broader overlapping operator line. */
 function below(row: Row, other: Row): boolean {
-    if (!incoming(row) || !incoming(other) || v6(row) !== v6(other)) return false;
+    if (!incoming(row) || !incoming(other) || v6(row) !== v6(other)) {
+        return false;
+    }
     const a = ports(row.to), b = ports(other.to);
     if (
         a && b &&
@@ -240,10 +242,15 @@ function below(row: Row, other: Row): boolean {
 function ordered(rows: Row[], mine: Set<string>) {
     return rows.every((row, index) =>
         !mine.has(key(row)) ||
-        rows.every((other, position) =>
-            !((position < index && below(other, row)) ||
-                (position > index && below(row, other)))
-        )
+        rows.every((other, position) => {
+            if (
+                !((position < index && below(other, row)) ||
+                    (position > index && below(row, other)))
+            ) return true;
+            // A placement preference requires a move only when both sources can match the same packet.
+            const a = scope(row.source), b = scope(other.source);
+            return !contains(a, b) && !contains(b, a);
+        })
     );
 }
 
@@ -370,7 +377,7 @@ const Result = z.object({
 
 export const behavior = {
     type: "@nckrtl/firewall-plan",
-    version: "2026.11.07.1",
+    version: "2026.11.07.2",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

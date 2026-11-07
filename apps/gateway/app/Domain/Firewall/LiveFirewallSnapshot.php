@@ -27,6 +27,35 @@ final readonly class LiveFirewallSnapshot
      */
     public static function compare(array $ufw, array $intended): array
     {
+        return self::inspect($ufw, $intended)['snapshot'];
+    }
+
+    /**
+     * Compare an intended rule by tuple before using shared labels as evidence of drift.
+     *
+     * @param  array<string, mixed>  $ufw
+     * @param  list<array{name: string, shape: array<string, mixed>}>  $intended
+     */
+    public static function comparison(array $ufw, array $intended): string
+    {
+        ['snapshot' => $snapshot, 'complete' => $complete] = self::inspect($ufw, $intended);
+
+        return match (true) {
+            $snapshot['backend'] !== 'active' => 'missing',
+            $complete => 'exact',
+            $snapshot['missing'] !== [] => 'missing',
+            array_any($snapshot['live'], static fn (array $row): bool => $row['match'] === 'drift') => 'drift',
+            default => 'exact',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $ufw
+     * @param  list<array{name: string, shape: array<string, mixed>}>  $intended
+     * @return array{snapshot: array{backend: string, live: list<Row>, missing: list<Row>}, complete: bool}
+     */
+    private static function inspect(array $ufw, array $intended): array
+    {
         if (($ufw['installed'] ?? false) !== true) {
             throw new UnexpectedValueException('UFW is not installed.');
         }
@@ -67,20 +96,35 @@ final readonly class LiveFirewallSnapshot
                 if (! self::named($e['shape'])) {
                     return ! array_any($live, static fn (array $rule): bool => $rule['comment'] === $e['shape']['comment']);
                 }
-                if (array_any($classified, static fn (array $row): bool => $row['match'] === 'drift' && $row['comment'] === $e['shape']['comment'])
-                    || array_any($live, static fn (array $rule): bool => self::matches($rule, $e['shape']))) {
-                    return false;
-                }
-                if ($e['shape']['port'] === 'any') {
-                    return true;
-                }
-                [$start, $end] = self::bounds($e['shape']['port']);
 
-                return array_any(range($start, $end), static fn (int $port): bool => ! array_any($live, static fn (array $rule): bool => self::matches($rule, $e['shape'], (string) $port)));
+                return ! array_any($classified, static fn (array $row): bool => $row['match'] === 'drift' && $row['comment'] === $e['shape']['comment'])
+                    && ! self::covered($e['shape'], $live);
             }),
         ));
 
-        return ['backend' => $backend, 'live' => $classified, 'missing' => $missing];
+        return [
+            'snapshot' => ['backend' => $backend, 'live' => $classified, 'missing' => $missing],
+            'complete' => array_all($expected, static fn (array $e): bool => self::covered($e['shape'], $live)),
+        ];
+    }
+
+    /**
+     * Every port of this intended tuple exists, regardless of other lines with the same label.
+     *
+     * @param  Shape  $intended
+     * @param  list<Shape>  $live
+     */
+    private static function covered(array $intended, array $live): bool
+    {
+        if (array_any($live, static fn (array $rule): bool => self::matches($rule, $intended))) {
+            return true;
+        }
+        if ($intended['port'] === 'any') {
+            return false;
+        }
+        [$start, $end] = self::bounds($intended['port']);
+
+        return array_all(range($start, $end), static fn (int $port): bool => array_any($live, static fn (array $rule): bool => self::matches($rule, $intended, (string) $port)));
     }
 
     /**

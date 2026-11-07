@@ -52,8 +52,9 @@ sequenceDiagram
     %%> - inactive UFW fails with `firewall.backend_inactive` before mutation; never enables the firewall
     Note over SW: Plan the changes
     %%> What it does:
-    %%> - plans missing lines and moves misplaced lines; leaves identical, well-placed lines untouched
-    %%> - narrower sources go first, and operator lines sit above Orbit's broad managed rules; each address family is ordered separately
+    %%> - plans missing lines and moves misplaced lines; leaves identical, well-placed lines and their comments untouched
+    %%> - only overlapping ports, protocols and source networks can make an existing line misplaced; unrelated managed trust does not force a move
+    %%> - places new operator lines above Orbit's broad managed rules and narrower sources above broader ones; each address family is ordered separately
     %%> - plans one allow per selected protocol and applicable address family; a port range stays a range
     %%> - numbered positions account for earlier planned changes
     %%> Why native:
