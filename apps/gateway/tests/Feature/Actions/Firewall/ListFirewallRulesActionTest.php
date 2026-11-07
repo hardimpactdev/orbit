@@ -94,6 +94,23 @@ describe('ListFirewallRulesAction', function (): void {
             ->and(array_column($entry['live']['unmatched'], 'match', 'port'))->toBe(['9999' => 'unmanaged']);
     });
 
+    it('projects same-label drift onto the recorded rule instead of calling it exact or missing', function (): void {
+        $node = list_node('app-dev', '10.44.0.2');
+        list_rule($node, 'allow', '5432', '10.99.1.7', 'office');
+        NodeFact::query()->create([
+            'node_id' => $node->id, 'kind' => NodeFactKind::Ufw, 'digest' => 'a', 'observed_at' => now(), 'received_at' => now(),
+            'data' => ['installed' => true, 'enabled' => true, 'rules' => [[
+                'action' => 'allow', 'direction' => 'in', 'protocol' => 'tcp', 'port' => '5432', 'source' => '10.98.0.9',
+                'destination' => 'any', 'comment' => 'orbit office', 'family' => 'v4', 'in_interface' => null, 'out_interface' => null,
+            ]]],
+        ]);
+
+        $entry = app(ListFirewallRulesAction::class)->execute([$node->id], managed: false, live: true)[0];
+
+        expect($entry['rules'][0]['match'])->toBe('drift');
+        expect($entry['live']['unmatched'][0])->toMatchArray(['source' => '10.98.0.9', 'match' => 'drift']);
+    });
+
     it('counts every rule as missing while UFW is off', function (): void {
         $node = list_node('app-dev', '10.44.0.2');
         list_rule($node, 'allow', '5432');

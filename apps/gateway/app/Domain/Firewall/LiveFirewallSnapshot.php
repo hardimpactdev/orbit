@@ -8,7 +8,7 @@ use UnexpectedValueException;
 
 /**
  * Compares the `ufw` fact a Node's agent reported with the rules Orbit intends there. Orbit's own rules carry the
- * comment `orbit` or `orbit <label>` and match by tuple, never by comment; an operator rule matches by its comment.
+ * comment `orbit` or `orbit <label>` and match by tuple first, then by label to detect drift. Other rules match by comment.
  * IPv6 rules are left out, as Orbit intends only IPv4 rules.
  *
  * @phpstan-type Shape array{comment: string, action: string, direction: string, source: string, destination: string, port: string, protocol: string, in_interface: ?string, out_interface: ?string, family: ?string}
@@ -51,8 +51,9 @@ final readonly class LiveFirewallSnapshot
         }
 
         $classified = array_map(static function (array $rule) use ($expected): array {
-            $owners = self::named($rule) ? [] : array_values(array_filter($expected, static fn (array $e): bool => $e['shape']['comment'] === $rule['comment']));
-            $candidates = $owners !== [] ? $owners : array_values(array_filter($expected, static fn (array $e): bool => self::named($e['shape']) && self::exact($rule, $e['shape'])));
+            $owners = array_values(array_filter($expected, static fn (array $e): bool => self::sameLabel($rule, $e['shape'])));
+            $tuples = array_values(array_filter($expected, static fn (array $e): bool => self::named($e['shape']) && self::exact($rule, $e['shape'])));
+            $candidates = self::named($rule) ? ($tuples !== [] ? $tuples : $owners) : ($owners !== [] ? $owners : $tuples);
 
             return self::row($rule, $expected, match (true) {
                 $candidates === [] => 'unmanaged',
@@ -62,11 +63,12 @@ final readonly class LiveFirewallSnapshot
         }, $live);
         $missing = $backend !== 'active' ? [] : array_values(array_map(
             static fn (array $e): array => self::row([...$e['shape'], 'family' => 'v4'], $expected, 'missing'),
-            array_filter($expected, static function (array $e) use ($live): bool {
+            array_filter($expected, static function (array $e) use ($live, $classified): bool {
                 if (! self::named($e['shape'])) {
                     return ! array_any($live, static fn (array $rule): bool => $rule['comment'] === $e['shape']['comment']);
                 }
-                if (array_any($live, static fn (array $rule): bool => self::matches($rule, $e['shape']))) {
+                if (array_any($classified, static fn (array $row): bool => $row['match'] === 'drift' && $row['comment'] === $e['shape']['comment'])
+                    || array_any($live, static fn (array $rule): bool => self::matches($rule, $e['shape']))) {
                     return false;
                 }
                 if ($e['shape']['port'] === 'any') {
@@ -174,6 +176,17 @@ final readonly class LiveFirewallSnapshot
     private static function named(array $shape): bool
     {
         return preg_match('/\Aorbit( |\z)/', $shape['comment']) === 1;
+    }
+
+    /**
+     * The bare `orbit` comment is shared by unlabelled rules, so it cannot identify a rule with drift.
+     *
+     * @param  Shape  $actual
+     * @param  Shape  $intended
+     */
+    private static function sameLabel(array $actual, array $intended): bool
+    {
+        return $intended['comment'] !== 'orbit' && $actual['comment'] === $intended['comment'];
     }
 
     /** @return array{int, int} */

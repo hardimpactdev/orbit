@@ -51,7 +51,7 @@ final readonly class ListLiveFirewallRulesAction
     }
 
     /**
-     * Whether each operator rule has all its lines in the UFW report: `exact`, or `missing` when a line is absent.
+     * Whether each operator rule has all its lines in the UFW report: `exact`, `drift`, or `missing` when a line is absent.
      * Only an active firewall can be compared; call it when `execute()` reported `active`.
      *
      * @param  iterable<FirewallRule>  $rules
@@ -64,8 +64,17 @@ final readonly class ListLiveFirewallRulesAction
 
         foreach ($rules as $rule) {
             try {
-                $matches[$rule->id] = $fact === null ? 'unverifiable'
-                    : (LiveFirewallSnapshot::compare($fact->data, $this->desired->forRule($rule))['missing'] === [] ? 'exact' : 'missing');
+                if ($fact === null) {
+                    $matches[$rule->id] = 'unverifiable';
+
+                    continue;
+                }
+                $snapshot = LiveFirewallSnapshot::compare($fact->data, $this->desired->forRule($rule));
+                $matches[$rule->id] = match (true) {
+                    $snapshot['missing'] !== [] => 'missing',
+                    array_any($snapshot['live'], static fn (array $row): bool => $row['match'] === 'drift') => 'drift',
+                    default => 'exact',
+                };
             } catch (UnexpectedValueException) {
                 $matches[$rule->id] = 'unverifiable';
             }
