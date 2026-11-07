@@ -44,6 +44,7 @@ final readonly class TaskVmIdentity
             'wireguard_config' => ValidatedData::string($peer['config']), 'dns_marker' => ValidatedData::string($peer['dns_marker']),
             'ssh_host_public_key' => TaskVmSlotIdentity::sshPublicKey(ValidatedData::string($vm->ssh_host_private_key)),
             'agent_config' => ValidatedData::string($files['agent']['configuration']), 'agent_unit' => ValidatedData::string($files['agent']['unit']),
+            // A base from before the boot phase reads these four; old-paths.md drops them once both bases are refreshed.
             'certificate' => ValidatedData::string($files['agent']['certificate']),
             'pi_unit' => $files['unit'], 'pi_unit_name' => $files['unit_name'], 'pi_unit_path' => $files['unit_path'], 'pi_port' => (string) $this->pi->port(),
             'control_ip' => ValidatedData::string($control->wireguard_ip), 'gateway_ip' => ValidatedData::string($gateway->wireguard_ip),

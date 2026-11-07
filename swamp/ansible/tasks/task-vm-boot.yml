@@ -37,11 +37,34 @@
       ExecStartPre=
       ExecStartPre=/usr/bin/ssh-keygen -A
       ExecStartPre=/usr/sbin/sshd -t
-# A task start puts the VM's identity on an identity volume, which the Incus agent mounts at /run/orbit-identity (task-vm-host.yml). This
-# unit applies it at boot, before sshd, WireGuard and the agent start, so the start never writes into a running VM. The base VM has no
-# identity volume; the agent's mount list says so, and the unit ends at once.
+# A task start puts the VM's identity on an identity volume, a virtiofs share of the VM (task-vm-host.yml). This unit mounts it and
+# applies it at boot, before sshd, WireGuard and the agent start, so the start never writes into a running VM. The base VM has no
+# identity share, and the unit ends as soon as the agent's config share shows that.
 - name: Make the group of the environment files
   ansible.builtin.group: { name: orbit-env, system: true }
+# What is the same for every task VM is in the base, so a start's identity unit only unpacks what is its own: the Orbit root CA that the
+# agent trusts, and the firewall on the WireGuard interface (SSH answers only the Swamp Node; Pi answers it and the Gateway; a workspace site 443).
+- name: Make the folder of the agent configuration
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, mode: "0755" }
+- name: Trust the Orbit root CA
+  ansible.builtin.copy: { dest: "{{ item }}", content: "{{ intent.boot.trust.certificate }}", mode: "0644" }
+  loop: [/etc/orbit/agent/ca.pem, /usr/local/share/ca-certificates/orbit-managed-root-ca.crt]
+# The boot phase runs only when its digest changed, so reading the store again each time costs nothing in a start.
+- name: Read the CA store again
+  ansible.builtin.command: { argv: [update-ca-certificates] }
+  register: boot_ca_store
+  changed_when: "'0 added' not in boot_ca_store.stdout"
+- name: Close the WireGuard interface to all but the Swamp Node, the Gateway and the sites
+  ansible.builtin.command: { argv: "{{ ['ufw'] + item }}" }
+  loop:
+    - [prepend, deny, in, "on", orbit, proto, tcp, to, any, port, "22", comment, "orbit:task-vm-ssh-only"]
+    - [prepend, allow, in, "on", orbit, proto, tcp, from, "{{ trust.control_ip }}", to, any, port, "22", comment, "orbit:task-vm-ssh-209"]
+    - [allow, in, "on", orbit, proto, tcp, from, "{{ trust.control_ip }}", to, any, port, "{{ trust.pi_port }}", comment, "orbit:task-vm-pi-209"]
+    - [allow, in, "on", orbit, proto, tcp, from, "{{ trust.gateway_ip }}", to, any, port, "{{ trust.pi_port }}", comment, "orbit:task-vm-pi-gateway"]
+    - [allow, in, "on", orbit, proto, tcp, to, any, port, "443", comment, "orbit:task-vm-site"]
+  vars: { trust: "{{ intent.boot.trust }}" }
+  register: boot_ufw
+  changed_when: "'Skipping' not in boot_ufw.stdout"
 - name: Install the identity script
   ansible.builtin.copy:
     dest: /usr/local/sbin/orbit-identity
@@ -52,24 +75,32 @@
       # A VM applies its identity once; a parked VM that starts again keeps what it has.
       applied=/var/lib/orbit/identity-applied
       [ -e "$applied" ] && exit 0
-      mounts=/run/incus_agent/agent-mounts.json
-      for i in $(seq 300); do [ -e "$mounts" ] && break; sleep 0.1; done
-      grep -q '"/run/orbit-identity"' "$mounts" 2>/dev/null || exit 0
-      for i in $(seq 300); do mountpoint -q /run/orbit-identity && break; sleep 0.1; done
-      mountpoint -q /run/orbit-identity
+      # The agent's config share and a task VM's identity share are virtiofs devices that come up together, early in the boot; the unit
+      # mounts its share itself rather than wait for the agent. The base VM has only the config share and ends here.
+      tags=
+      for i in $(seq 50); do
+        tags=$(cat /sys/fs/virtiofs/*/tag 2>/dev/null || true)
+        case "$tags" in *config*) break ;; esac
+        sleep 0.1
+      done
+      # The identity share can show a moment after the config share.
+      for i in 1 2 3 4 5; do
+        case "$tags" in *incus_orbit-identity*) break ;; esac
+        sleep 0.1
+        tags=$(cat /sys/fs/virtiofs/*/tag 2>/dev/null || true)
+      done
+      case "$tags" in
+        *incus_orbit-identity*) ;;
+        *) echo "orbit-identity: no identity share (virtiofs tags: ${tags:-none}); this is a base VM" >&2; exit 0 ;;
+      esac
+      mkdir -p /run/orbit-identity
+      mountpoint -q /run/orbit-identity || mount -t virtiofs -o ro incus_orbit-identity /run/orbit-identity
       install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
       # Files keep the owner and mode the start gave them; directories that exist keep theirs.
       tar -C /run/orbit-identity -cf - . | tar -C / -xpf - --no-overwrite-dir --numeric-owner
       umount /run/orbit-identity
       . /etc/orbit/identity.env
       hostname "$ORBIT_HOSTNAME"
-      update-ca-certificates > /dev/null
-      # SSH over WireGuard answers only the Swamp Node; Pi answers it and the Gateway; a served workspace answers on 443.
-      ufw prepend deny in on orbit proto tcp to any port 22 comment orbit:task-vm-ssh-only > /dev/null
-      ufw prepend allow in on orbit proto tcp from "$ORBIT_CONTROL_IP" to any port 22 comment orbit:task-vm-ssh-209 > /dev/null
-      ufw allow in on orbit proto tcp from "$ORBIT_CONTROL_IP" to any port "$ORBIT_PI_PORT" comment orbit:task-vm-pi-209 > /dev/null
-      ufw allow in on orbit proto tcp from "$ORBIT_GATEWAY_IP" to any port "$ORBIT_PI_PORT" comment orbit:task-vm-pi-gateway > /dev/null
-      ufw allow in on orbit proto tcp to any port 443 comment orbit:task-vm-site > /dev/null
       systemctl daemon-reload
       # They are ordered after this unit, so they start when it ends.
       systemctl --no-block enable --now wg-quick@orbit.service orbit-agent.service "$ORBIT_PI_UNIT"
@@ -83,7 +114,7 @@
       Description=Apply the task VM identity of its start
       # Early boot: before ssh.socket, which sockets.target and basic.target need, so no default dependency on basic.target.
       DefaultDependencies=no
-      After=sysinit.target local-fs.target ufw.service incus-agent.service
+      After=sysinit.target local-fs.target ufw.service
       Before=ssh.socket ssh.service wg-quick@orbit.service orbit-agent.service shutdown.target
       Conflicts=shutdown.target
 

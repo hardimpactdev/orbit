@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
@@ -24,6 +25,7 @@ use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
+use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -280,6 +282,7 @@ it('has a task start converge reach its VM over WireGuard with the pinned key of
     slotPoolSweepWorld();
     $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
     $commit = str_repeat('a', 40);
+    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
 
     $start = app(TaskVmConvergeInput::class)->for($host, $commit, 'task-1', $slot->node)['converge'];
     $base = app(TaskVmConvergeInput::class)->for($host, $commit)['converge'];
@@ -287,5 +290,8 @@ it('has a task start converge reach its VM over WireGuard with the pinned key of
     expect($start['direct'])->toBeTrue()
         ->and($start['ssh']['target'])->toBe(['host' => $slot->wireguard_ip, 'user' => 'orbit', 'port' => 22,
             'host_keys' => [$slot->node->ssh_host_key_type.' '.$slot->node->ssh_host_key]])
-        ->and($base)->not->toHaveKey('direct')->and($base['ssh']['target']['host'])->toBe('');
+        ->and($base)->not->toHaveKey('direct')->and($base['ssh']['target']['host'])->toBe('')
+        // What every task VM shares goes into the base, not into each start's identity.
+        ->and($base['boot']['trust'])->toBe(['certificate' => "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n",
+            'control_ip' => '10.44.0.1', 'gateway_ip' => '10.44.0.1', 'pi_port' => app(PiConnection::class)->port()]);
 });
