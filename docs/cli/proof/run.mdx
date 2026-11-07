@@ -58,7 +58,7 @@ No step of a run calls the Gateway. Each run is recorded once, from its terminal
 
 ## The execution switch
 
-`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is off by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `false`. While it is off, a commit that selects cases ends with `proof.execution_disabled`, and the proof Operation holds the selected cases and the uncovered paths. The command then works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
+`proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is on by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `true`. Set it to `false` and a commit that selects cases ends with `proof.execution_disabled`, and the proof Operation holds the selected cases and the uncovered paths. While it is off, the command works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
 
 ## Verdicts
 
