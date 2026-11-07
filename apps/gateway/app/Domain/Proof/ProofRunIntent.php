@@ -18,6 +18,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmSeedFloor;
@@ -91,6 +92,7 @@ final readonly class ProofRunIntent
         $commit = ValidatedData::string($input['commit']);
         $reportOnly = ($input['report_only'] ?? false) === true;
         $uncovered = [];
+        $fresh = null;
         try {
             $this->trust->assert($commit);
             $selection = $this->select($commit, ($input['all'] ?? false) === true);
@@ -136,7 +138,7 @@ final readonly class ProofRunIntent
                 return $runs;
             }), ProofRunWatch::lockOwner($proof->id)));
         } catch (Throwable $exception) {
-            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForKeptVms($proof, $reportOnly)) {
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForKeptVms($proof, $reportOnly || ($fresh === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
                 return;
             }
             $this->fail($proof, $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
@@ -164,13 +166,14 @@ final readonly class ProofRunIntent
 
     /**
      * A proof that cannot be placed releases the VMs that failed runs kept (`--keep-failed`), and tries again in a few seconds. A report-only
-     * proof does not: it yields capacity, and the report-only job of every pull request would destroy the VM somebody is reading.
+     * proof does not: it yields capacity, and the report-only job of every pull request would destroy the VM somebody is reading. Nor does a
+     * proof for which hosts exist but none has fresh enough copies: a freed slot would not help it.
      *
      * @return bool whether the admission goes on: a kept VM is on its way out, the proof is young enough to wait, and the new try is queued
      */
-    private function waitForKeptVms(Operation $proof, bool $reportOnly): bool
+    private function waitForKeptVms(Operation $proof, bool $yields): bool
     {
-        if ($reportOnly || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds))) {
+        if ($yields || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds))) {
             return false;
         }
         try {

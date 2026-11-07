@@ -489,6 +489,20 @@ describe('proof:run admission', function (): void {
         'no recorded provenance' => [null, false, true],
     ]);
 
+    it('does not release a kept VM when no host has fresh enough copies, because a freed slot would not help', function (): void {
+        $source = proofSource();
+        $commit = 'aaaaaaaaaaaa0000000000000000000000000000';
+        $base = proofHostWithCopies($source, $commit);
+        $source->fresh = [$commit => false];
+        [$kept] = proofKeptRun();
+
+        $proof = proofAdmitted();
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
     it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
