@@ -10,7 +10,11 @@ const hasAnsible =
 const playbook =
   new URL("../ansible/task-vm-host.yml", import.meta.url).pathname;
 
-const own = { "features.images": "true", "features.storage.volumes": "true" };
+const own = {
+  "features.images": "true",
+  "features.storage.volumes": "true",
+  "features.profiles": "true",
+};
 const projects = [
   { name: "default", config: {} },
   { name: "orbit-tasks", config: own },
@@ -232,6 +236,28 @@ Deno.test({
       assertEquals(passed, false);
       assertStringIncludes(output, "task_vm.host_clean_refused");
       assertEquals(deletes(log), []);
+    } finally {
+      listings["project list --format json"] = projects;
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a retired project that shares its profiles with default loses none of them",
+  ignore: !hasAnsible,
+  fn() {
+    // Its profile list is that of `default`, so deleting from it would delete the host's own profiles.
+    listings["project list --format json"] = projects.map((project) =>
+      project.name === "orbit-baselines"
+        ? { ...project, config: { ...own, "features.profiles": "false" } }
+        : project
+    );
+    try {
+      const { log, passed, output } = run("host-clean", host);
+      assert(passed, output);
+      assert(!log.some((call) => / profile delete /.test(` ${call} `)));
+      assert(log.includes("project delete orbit-baselines"));
     } finally {
       listings["project list --format json"] = projects;
     }
