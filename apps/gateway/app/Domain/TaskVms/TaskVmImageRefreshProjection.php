@@ -7,6 +7,7 @@ namespace App\Domain\TaskVms;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Operation;
@@ -22,7 +23,7 @@ use Throwable;
  * passed, the Gateway promotes its snapshot of the host's base VM: it becomes the host's latest build, and task starts copy it. A failed run
  * records nothing, so the host keeps the snapshot it had.
  */
-final readonly class TaskVmImageRefreshProjection implements DirectOperationProjection
+final readonly class TaskVmImageRefreshProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The last step: the old snapshots go once the new one is proven. */
     public const string EndCheck = 'Prune old snapshots';
@@ -76,6 +77,15 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** A start the Gateway refused never ran: the slot that was to prove the candidate is failed, so it stops counting against the host's capacity. */
+    public function refused(Operation $operation): void
+    {
+        $slot = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($operation->input)['task_vm_id']));
+        if ($slot instanceof TaskVm) {
+            app(TaskVmSlotReleaseProjection::class)->record($slot, false, $operation->error_code ?? 'task_vm.image_refresh_failed');
+        }
     }
 
     /**

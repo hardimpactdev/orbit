@@ -13,6 +13,7 @@ use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Sleep;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -69,4 +70,29 @@ it('asks one host for a queued commit, and refuses a host that is none', functio
 it('validates the commit of the refresh command', function (): void {
     $this->artisan('task-vms:refresh-images', ['--commit' => 'main'])->expectsOutputToContain('full lowercase SHA')->assertExitCode(Command::INVALID);
     $this->artisan('task-vms:refresh-images', ['--commit' => str_repeat('d', 40)])->assertSuccessful();
+});
+
+it('asks a host again when Swamp could not take its execution copy, a bounded number of rounds, and leaves the other hosts alone', function (): void {
+    Sleep::fake();
+    $calls = [];
+    $hosts = [Node::make(['name' => 'beast']), Node::make(['name' => 'shark']), Node::make(['name' => 'mini'])];
+    $answers = ['beast' => ['swamp.vault_sync_unavailable', 'swamp.vault_sync_unavailable', 'operation:7'], 'shark' => ['operation:8'],
+        'mini' => ['task_vm.image_refresh_unavailable']];
+
+    $results = TaskVmImageRefreshTrigger::rounds($hosts, function (Node $host) use (&$calls, &$answers): string {
+        $calls[] = $host->name;
+
+        return array_shift($answers[$host->name]);
+    }, 5);
+
+    // Round 1 asks all three, round 2 and 3 only the host Swamp could not serve; the one that refused for another reason is not asked again.
+    expect($results)->toBe(['beast' => 'operation:7', 'shark' => 'operation:8', 'mini' => 'task_vm.image_refresh_unavailable'])
+        ->and($calls)->toBe(['beast', 'shark', 'mini', 'beast', 'beast']);
+    Sleep::assertSleptTimes(2);
+
+    // The bound holds: a Swamp that never answers ends the loop with its refusal.
+    Sleep::fake();
+    $never = TaskVmImageRefreshTrigger::rounds([$hosts[0]], static fn (): string => 'swamp.vault_sync_unavailable', 3);
+    expect($never)->toBe(['beast' => 'swamp.vault_sync_unavailable']);
+    Sleep::assertSleptTimes(2);
 });

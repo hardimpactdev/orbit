@@ -55,6 +55,7 @@ sequenceDiagram
   %%> What it does:
   %%> - runs `task-vms:refresh-images --commit <sha>` from the new release: one `task_vm.image_refresh` run per task VM host, admitted by the new commit's code, started on the workflows the load installed, and running while the release goes on to switch (docs/cli/tasks/vm-image-refresh.mmd)
   %%> - every release refreshes, code-only ones too: the base holds the warm checkout and the nested Gateway agent of the commit
+  %%> - Swamp has only just reloaded, so a host whose run Swamp cannot take yet (`swamp.vault_sync_unavailable`) is asked again, up to 6 rounds 5 s apart; the other hosts are not held
   %%> On failure:
   %%> - best effort: the release never fails for it, and the hand-over waits only for the admission, a few seconds
   %%> - it runs before the switch, so a release that later fails or switches back has refreshed the base to its commit; the next release refreshes again

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -131,6 +132,19 @@ it('queues the newest release commit behind the open refresh, and admits it when
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
 
     Queue::assertPushed(RefreshTaskVmImages::class, static fn (RefreshTaskVmImages $job): bool => $job->hostId === $host->id && $job->commit === $newest);
+});
+
+it('fails the proof slot of a refresh that Swamp refused to start, so the retry finds the capacity it left', function (): void {
+    $host = imageRefreshHost();
+    $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+        'name' => 'beast-tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.201']);
+    $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Failed, 'triggered_by' => 'test', 'error_code' => 'swamp.vault_sync_unavailable', 'input' => ['task_vm_id' => $slot->id]]);
+
+    expect(app(TaskVmImageRefreshProjection::class))->toBeInstanceOf(DirectOperationStartRefusal::class);
+    app(TaskVmImageRefreshProjection::class)->refused($operation);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('swamp.vault_sync_unavailable');
 });
 
 it('promotes the proven snapshot of the base VM as the host\'s latest build and releases the slot that proved it; nothing for a failed run', function (): void {
