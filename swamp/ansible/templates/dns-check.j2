@@ -27,7 +27,10 @@
 {%- else -%}
 {%- set ns = namespace(index={}, errors=[]) -%}
 {#- One block per question: its status, and the A and AAAA data of its answer section. -#}
-{%- for block in dig_text.split(';; Got answer:')[1:] -%}
+{#- Ansible strips the trailing newline of a stdout, so a line that dig prints first in the next batch (";; communications error ... timed out" of a
+    forwarded child that never answered) can follow the last answer line directly. Every dig comment starts a line. -#}
+{%- set text = dig_text | regex_replace('([^\\n]);;', '\\1\n;;') -%}
+{%- for block in text.split(';; Got answer:')[1:] -%}
 {%- set status = block | regex_findall('status: ([A-Z]+)') -%}
 {%- set question = block | regex_findall('(?m)^;([^\\s;]+)[ \\t]+IN[ \\t]+(\\S+)[ \\t]*$') -%}
 {%- if status | length > 0 and question | length > 0 -%}

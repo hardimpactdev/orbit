@@ -330,6 +330,11 @@
       ;; ANSWER SECTION:
       orbit-check.test.	30	IN	A	10.44.0.7
 
+    # The last answer line of the record questions has no newline (Ansible strips it from the stdout), and dig prints the first line of
+    # the child questions right after it: the timeout of a child that the upstream never answered.
+    real_dig_timeout: |-
+      {{ real_dig | trim }};; communications error to 10.44.0.1#53: timed out
+
   tasks:
     - name: Render the files
       ansible.builtin.set_fact:
@@ -468,4 +473,19 @@
         that:
           - real_verdict.errors == []
         fail_msg: "real dig output: got {{ real_verdict | to_json }}, expected no error"
+        quiet: true
+
+    - name: Check the answers when the last answer line is followed by a timeout message
+      ansible.builtin.set_fact:
+        timeout_verdict: "{{ lookup('ansible.builtin.template', templates ~ '/dns-check.j2') | from_json }}"
+      vars:
+        dns: "{{ verify_dns }}"
+        dns_mode: verify
+        dig_text: "{{ real_dig_timeout }}"
+    - name: The timeout message does not hide the answer before it
+      ansible.builtin.assert:
+        that:
+          - real_dig_timeout is search('10[.]44[.]0[.]7;; communications error')
+          - timeout_verdict.errors == []
+        fail_msg: "timeout after the last answer: got {{ timeout_verdict | to_json }}, expected no error"
         quiet: true

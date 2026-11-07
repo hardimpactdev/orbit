@@ -358,7 +358,7 @@
                 dns_check: "{{ lookup('ansible.builtin.template', 'dns-check.j2') | from_json }}"
               vars:
                 dns_mode: verify
-                dig_text: "{{ dns_dig_records.stdout | default('') ~ dns_dig_children.stdout | default('') }}"
+                dig_text: "{{ dns_dig_records.stdout | default('') ~ '\\n' ~ dns_dig_children.stdout | default('') }}"
             - name: Say what dnsmasq answers wrongly
               ansible.builtin.debug:
                 var: dns_check.errors
