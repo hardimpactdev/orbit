@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\SwampNode;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
@@ -84,6 +85,10 @@ final readonly class NativeRouteMutationInput
                 || $afterSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true));
             $restoreConnection = $forward['host_keys'] === null ? $forward['connection']
                 : app(NativeCaddyPublicationInput::class)->connectionForNode($node)['connection'];
+            // The restore publishes this render after the forward ones, so it takes a newer revision than all of them.
+            if (is_array($before['dns'])) {
+                $before['dns'] = app(PrivateDnsPublication::class)->restamp($before['dns']);
+            }
             $publications[] = ['index' => $index, 'node_id' => $nodeId, 'user' => ValidatedData::string(ValidatedData::object($forward['connection'])['nodeUser']), 'serves_routes' => $serves,
                 ...$forward, 'before' => $before, 'restore_connection' => $restoreConnection];
         }

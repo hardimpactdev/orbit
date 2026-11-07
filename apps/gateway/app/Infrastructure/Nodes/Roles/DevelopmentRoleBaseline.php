@@ -43,7 +43,7 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             $account,
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
-        $this->dns->converge($node);
+        $this->dns->converge();
         // Task VM enrollment trusts the software in its image.
         $this->prerequisites->converge(
             $node,

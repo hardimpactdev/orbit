@@ -13,9 +13,6 @@ use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
-use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
@@ -24,11 +21,8 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppDev\RemoteVitePortRuntime;
+use App\Infrastructure\AppDev\SwampPrivateDnsManager;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -54,19 +48,7 @@ final class AppDevServiceProvider extends ServiceProvider
             ),
         );
 
-        $this->app->singleton(
-            DnsmasqPrivateDnsManager::class,
-            static fn (): DnsmasqPrivateDnsManager => new DnsmasqPrivateDnsManager(
-                processes: app(ProcessRunner::class),
-                renderer: app(DevelopmentDnsConfigRenderer::class),
-                activateListener: true,
-                vpnSettings: app(VpnSettings::class),
-                ssh: app(SshExecutor::class),
-                keys: app(SshKeyProvider::class),
-                knownHosts: app(KnownHostsStore::class),
-            ),
-        );
-        $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
+        $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(SwampPrivateDnsManager::class));
         $this->app->singleton(
             AppDevSourceOperationLock::class,
             static fn (): AppDevSourceOperationLock => new NativeAppDevSourceOperationLock(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -44,12 +45,11 @@ final readonly class NativeClusterRouterSteps
             if (is_string($after) && $after !== $prepared && ($unset || in_array($nodeId, $oldIds, true))) {
                 $retireCaddy[] = ['node_id' => $nodeId, 'content' => $after];
             }
-            if (is_array($render) && is_array($render['dns'] ?? null) && $render['dns'] != ($render['dns_before'] ?? null)) {
-                $records = ValidatedData::object($render['dns']);
-                $dns[] = ['node_id' => $nodeId, 'records' => $records['records'], 'catalog' => $records['catalog']];
+            if (is_array($render) && is_array($render['dns'] ?? null) && ! PrivateDnsPublication::same($render['dns'], is_array($render['dns_before'] ?? null) ? $render['dns_before'] : null)) {
+                $dns[] = ['node_id' => $nodeId, 'dns' => ValidatedData::object($render['dns'])];
                 if (is_array($render['dns_before'] ?? null)) {
-                    $previous = ValidatedData::object($render['dns_before']);
-                    $dnsBefore[] = ['node_id' => $nodeId, 'records' => $previous['records'], 'catalog' => $previous['catalog']];
+                    // The restore runs after the forward publication, so its render takes a newer revision.
+                    $dnsBefore[] = ['node_id' => $nodeId, 'dns' => app(PrivateDnsPublication::class)->restamp(ValidatedData::object($render['dns_before']))];
                 }
             }
         }

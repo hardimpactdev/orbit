@@ -19,7 +19,6 @@ use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
@@ -76,12 +75,6 @@ final readonly class NativeNodeRoleAddInput
             foreach (['/var/cache/orbit/role-bun', '/opt/orbit/bun', '/opt/orbit/bun/bin', '/opt/orbit/bun/releases', $bunRoot] as $path) {
                 $directories[] = ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
             }
-        }
-        if ($role === RoleName::Vpn) {
-            $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
-                extras: 'keep', fpm: 'none', opentelemetry: false);
-            $phpPackages = $this->phpPackages($build);
-            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
         }
         if ($role === RoleName::AppDev) {
             $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(

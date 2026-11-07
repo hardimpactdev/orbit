@@ -21,7 +21,7 @@ final readonly class NativeAppDevTldConverger implements AppDevTldConverger
     public function converge(Node $node): void
     {
         $this->caddy->converge($node);
-        $this->dns->converge($node);
+        $this->dns->converge();
         $this->routes->converge($node);
     }
 }

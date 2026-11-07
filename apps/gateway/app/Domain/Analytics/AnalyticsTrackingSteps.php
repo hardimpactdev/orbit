@@ -9,6 +9,7 @@ use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Routes\NativeRouteTargetPlan;
 use App\Domain\Routes\RouteRenderContext;
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -31,9 +32,8 @@ final readonly class AnalyticsTrackingSteps
         $rows = array_map(NativeRouteCreatePlan::leaf(...), $leaves);
         $records = [];
         foreach ($dns as $row) {
-            if (is_array($row['after']) && $row['after'] != $row['before']) {
-                $after = ValidatedData::object($row['after']);
-                $records[] = ['node_id' => $row['node_id'], 'records' => $after['records'], 'catalog' => $after['catalog']];
+            if (is_array($row['after']) && ! PrivateDnsPublication::same($row['after'], is_array($row['before']) ? $row['before'] : null)) {
+                $records[] = ['node_id' => $row['node_id'], 'dns' => ValidatedData::object($row['after'])];
             }
         }
         $ids = array_values(array_unique([...array_column($caddy, 'node_id'), ...array_column($cleanup, 'node_id'), ...array_column($records, 'node_id'), ...array_column($rows, 'node_id')]));

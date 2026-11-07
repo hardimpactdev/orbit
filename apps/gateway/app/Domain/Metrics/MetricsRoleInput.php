@@ -45,7 +45,7 @@ final readonly class MetricsRoleInput
         $dns = [];
         foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
             $dns[] = ['node_id' => $dnsNode->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($dnsNode),
-                'before' => $beforeDns[$dnsNode->id], 'after' => app(NativeRoutePublicationInput::class)->dns($dnsNode), 'alternatives' => []];
+                'before' => $beforeDns[$dnsNode->id], 'after' => app(NativeRoutePublicationInput::class)->dns(), 'alternatives' => []];
         }
         $dirs = array_values(array_unique(array_map(dirname(...), array_keys($files))));
         usort($dirs, static fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));

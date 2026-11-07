@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Routes;
 
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -13,7 +14,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
-use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
@@ -27,7 +27,7 @@ use Illuminate\Support\Collection;
 final readonly class NativeRouteRemovalProjector implements RouteRemovalProjector
 {
     public function __construct(
-        private DnsmasqPrivateDnsManager $dns,
+        private PrivateDnsManager $dns,
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevRouteFirewallManager $firewall,

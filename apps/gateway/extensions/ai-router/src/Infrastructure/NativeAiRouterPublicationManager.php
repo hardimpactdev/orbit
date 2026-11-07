@@ -41,14 +41,14 @@ final readonly class NativeAiRouterPublicationManager implements AiRouterPublica
 
         if (! $takeover instanceof Route) {
             $this->build($node);
-            $this->dns->converge($node);
+            $this->dns->converge();
 
             return;
         }
 
         $routes = $this->takeover ?? app(AiRouterRouteTakeover::class);
         $routes->publish($takeover, $node, fn () => $this->build($node));
-        $this->dns->converge($node);
+        $this->dns->converge();
         $routes->remove($takeover);
     }
 

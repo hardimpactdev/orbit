@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
@@ -14,7 +15,6 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
@@ -29,7 +29,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         private RemoteAppDevPhpFpmManager $php,
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevCaddyManager $caddy,
-        private DnsmasqPrivateDnsManager $dns,
+        private PrivateDnsManager $dns,
         private AgentCommandRunner $agents,
         private DevelopmentSourceAccess $sourceAccess,
         private ?PublicRouteEdgeProjector $publicEdge = null,

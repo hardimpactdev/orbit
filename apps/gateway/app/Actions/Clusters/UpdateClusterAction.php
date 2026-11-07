@@ -79,13 +79,10 @@ final readonly class UpdateClusterAction
 
         try {
             if ($selectionChanging) {
-                $this->dnsSelection()->expand(
-                    clusterOverrides: [$clusterId => [
-                        'tld' => $proposedTld,
-                        'state' => $proposedState,
-                    ]],
-                    clusterIds: [$clusterId],
-                );
+                $this->dnsSelection()->expand([$clusterId => [
+                    'tld' => $proposedTld,
+                    'state' => $proposedState,
+                ]]);
             }
         } catch (Throwable $exception) {
             if ($stateChanging) {
@@ -139,7 +136,7 @@ final readonly class UpdateClusterAction
             });
         } catch (Throwable $exception) {
             if ($selectionChanging) {
-                $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+                $this->dnsSelection()->prune([$clusterId]);
             }
 
             if ($stateChanging) {
@@ -150,7 +147,7 @@ final readonly class UpdateClusterAction
         }
 
         if ($selectionChanging) {
-            $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+            $this->dnsSelection()->prune([$clusterId]);
         }
 
         if ($stateChanging) {

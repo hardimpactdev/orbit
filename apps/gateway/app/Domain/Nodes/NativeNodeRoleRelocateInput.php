@@ -39,7 +39,7 @@ final readonly class NativeNodeRoleRelocateInput
         $dns = [];
         if ($role === RoleName::Metrics) {
             foreach (PrivateDnsPublicationNodes::query()->get() as $node) {
-                $dns[$node->id] = app(NativeRoutePublicationInput::class)->dns($node);
+                $dns[$node->id] = app(NativeRoutePublicationInput::class)->dns();
             }
         }
 

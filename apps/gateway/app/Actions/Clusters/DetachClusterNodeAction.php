@@ -44,17 +44,6 @@ final readonly class DetachClusterNodeAction
         );
 
         try {
-            $this->dnsSelection()->expand(
-                nodeOverrides: [$node->id => ['cluster_id' => null]],
-                clusterIds: [$cluster->id],
-            );
-        } catch (Throwable $exception) {
-            $this->lanIngress()->prune(clusterIds: [$cluster->id]);
-
-            throw $exception;
-        }
-
-        try {
             $this->assertDetachable($cluster, $node);
             $this->convergeMembership([$node->id => ['cluster_id' => null]]);
 
@@ -83,16 +72,13 @@ final readonly class DetachClusterNodeAction
                 return $lockedCluster->refresh();
             });
         } catch (Throwable $exception) {
-            $this->dnsSelection()->prune(clusterIds: [$cluster->id]);
             $this->lanIngress()->prune(clusterIds: [$cluster->id]);
 
             throw $exception;
         }
 
-        $this->dnsSelection()->prune(
-            nodeOverrides: [$node->id => ['cluster_id' => null]],
-            clusterIds: [$cluster->id],
-        );
+        // A detached Router leaves its Cluster without an answer for the TLD, so the stored state is published again.
+        $this->dnsSelection()->prune(clusterIds: [$cluster->id]);
         $this->lanIngress()->prune(
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],

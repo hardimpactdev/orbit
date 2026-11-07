@@ -8,7 +8,6 @@ use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -71,7 +70,6 @@ final readonly class ProvisionNodeAction
         private ?RouteMutationReconciler $routes = null,
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
-        private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?VpnConfigurationRepository $vpnConfiguration = null,
     ) {}
@@ -420,13 +418,6 @@ final readonly class ProvisionNodeAction
         $clock->step('router-lan-ingress');
 
         try {
-            $this->expandDnsSelection($node, $lanClusterIds);
-        } catch (Throwable $exception) {
-            $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
-        }
-        $clock->step('dns-selection');
-
-        try {
             DB::transaction(function () use ($node, $managedUser): void {
                 $node->update([
                     'user' => $managedUser,
@@ -447,7 +438,6 @@ final readonly class ProvisionNodeAction
             throw $exception;
         }
 
-        $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
         $clock->step('activate');
 
@@ -729,34 +719,10 @@ final readonly class ProvisionNodeAction
         return $this->lanIngress ?? app(RouterLanIngressReconciler::class);
     }
 
-    private function dnsSelection(): ClusterRouterDnsSelectionReconciler
-    {
-        return $this->dnsSelection ?? app(ClusterRouterDnsSelectionReconciler::class);
-    }
-
     /** @param list<int> $clusterIds */
     private function expandRouterLanIngress(Node $node, array $clusterIds): void
     {
         $this->lanIngress()->expand(
-            nodeOverrides: [
-                $node->id => [
-                    'status' => LifecycleStatus::Active,
-                    'cluster_id' => $node->cluster_id,
-                    'lan_ip' => is_string($node->lan_ip) ? $node->lan_ip : null,
-                    'wireguard_ip' => is_string($node->wireguard_ip) ? $node->wireguard_ip : null,
-                    'wireguard_public_key' => is_string($node->wireguard_public_key)
-                        ? $node->wireguard_public_key
-                        : null,
-                ],
-            ],
-            clusterIds: $clusterIds,
-        );
-    }
-
-    /** @param list<int> $clusterIds */
-    private function expandDnsSelection(Node $node, array $clusterIds): void
-    {
-        $this->dnsSelection()->expand(
             nodeOverrides: [
                 $node->id => [
                     'status' => LifecycleStatus::Active,
@@ -791,21 +757,11 @@ final readonly class ProvisionNodeAction
             $this->lanIngress()->expand(clusterIds: $clusterIds);
         } catch (Throwable) {
         }
-
-        try {
-            $this->dnsSelection()->expand(clusterIds: $clusterIds);
-        } catch (Throwable) {
-        }
     }
 
     /** @param list<int> $clusterIds */
     private function bestEffortPruneNetwork(array $clusterIds): void
     {
-        try {
-            $this->dnsSelection()->prune(clusterIds: $clusterIds);
-        } catch (Throwable) {
-        }
-
         try {
             $this->lanIngress()->prune(clusterIds: $clusterIds);
         } catch (Throwable) {
@@ -842,28 +798,6 @@ final readonly class ProvisionNodeAction
      * @param  list<int>  $clusterIds
      * @param  ?array<string, mixed>  $priorActiveState
      */
-    private function failDnsSelection(
-        Node $node,
-        Throwable $exception,
-        ?array $priorActiveState,
-        array $clusterIds,
-    ): never {
-        $this->bestEffortPruneNetwork($clusterIds);
-
-        $failure = new NodeProvisioningException(
-            step: 'private-dns',
-            errorCode: $exception instanceof RuntimeConvergenceException
-                ? $exception->errorCode
-                : 'app-dev.dns_config_failed',
-            message: "Could not reconcile Cluster Router DNS selection for node [{$node->name}].",
-            previous: $exception,
-            result: $exception instanceof RuntimeConvergenceException ? $exception->result : null,
-        );
-        $this->handleFailure($node, $failure, $priorActiveState);
-
-        throw $failure;
-    }
-
     private function enrollsMacOs(Node $node, ProvisionNodeData $data): bool
     {
         if ($data->platform === 'macos') {

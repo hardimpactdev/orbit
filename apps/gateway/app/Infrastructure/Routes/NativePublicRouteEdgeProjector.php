@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Routes;
 
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
@@ -13,7 +14,6 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRoutePrivateOverride;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
-use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Models\Node;
@@ -98,7 +98,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         $ingress = $this->sites->ingressNode($route);
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
         if ($route->isCustomProxy()) {
-            app(DnsmasqPrivateDnsManager::class)->converge();
+            app(PrivateDnsManager::class)->converge();
         }
     }
 

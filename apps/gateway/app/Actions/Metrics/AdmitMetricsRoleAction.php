@@ -52,7 +52,7 @@ final readonly class AdmitMetricsRoleAction
             }
             $before = [];
             foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
-                $before[$dnsNode->id] = app(NativeRoutePublicationInput::class)->dns($dnsNode);
+                $before[$dnsNode->id] = app(NativeRoutePublicationInput::class)->dns();
             }
             $assignment = $enabled ? app(AssignRoleAction::class)->execute($node, RoleName::Metrics) : $assignments->sole();
             if ($enabled) {
