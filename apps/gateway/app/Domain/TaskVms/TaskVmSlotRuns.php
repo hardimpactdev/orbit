@@ -131,7 +131,7 @@ final readonly class TaskVmSlotRuns
 
         return [
             'host' => ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool],
-            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'identity_volume' => $slot->name.'-identity', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
+            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
                 'pi_unit' => $this->systemd->unitName($pi)],
         ];
     }

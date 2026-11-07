@@ -177,6 +177,8 @@
   gather_facts: false
   vars:
     incus: [incus, --project, "{{ host.project }}"]
+    # Named from the VM, so the playbook needs nothing more in the intent than the VM's name.
+    identity_volume: "{{ slot.name }}-identity"
   tasks:
     # The identity is on the VM's disk before it boots: a small volume of its own holds the files, and the base's orbit-identity unit
     # applies them before sshd, WireGuard and the agent start (docs/cli/tasks/provision.mmd). The start waits for nothing in the guest.
@@ -189,7 +191,7 @@
           loop:
             - [delete, --force, --, "{{ slot.name }}"]
             - [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]
-            - [storage, volume, delete, "{{ host.pool }}", "{{ slot.identity_volume }}"]
+            - [storage, volume, delete, "{{ host.pool }}", "{{ identity_volume }}"]
           register: slot_leftover
           changed_when: slot_leftover.rc == 0
           failed_when: slot_leftover.rc != 0 and 'not found' not in slot_leftover.stderr
@@ -202,14 +204,14 @@
                       + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ slot.base.seed ~ '/' ~ slot.base.snapshot, host.pool ~ '/' ~ slot.seed_clone] }}"
           changed_when: true
         - name: Make the identity volume
-          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'create', host.pool, slot.identity_volume, 'size=16MiB'] }}" }
+          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'create', host.pool, identity_volume, 'size=16MiB'] }}" }
           changed_when: true
         # Each file goes from standard input into the volume at its path in the VM, with its owner and mode; no secret touches the host's disk.
         - name: Write the secret files
           no_log: true
           ansible.builtin.command:
             argv: "{{ incus + ['storage', 'volume', 'file', 'push', '--create-dirs', '--mode', '0600', '--uid', item.owner, '--gid', item.owner, '-',
-                   host.pool, slot.identity_volume ~ item.path] }}"
+                   host.pool, identity_volume ~ item.path] }}"
             stdin: "{{ item.content }}"
             stdin_add_newline: false
           loop:
@@ -225,7 +227,7 @@
         - name: Write the public files
           ansible.builtin.command:
             argv: "{{ incus + ['storage', 'volume', 'file', 'push', '--create-dirs', '--mode', item.mode, '--uid', '0', '--gid', '0', '-',
-                   host.pool, slot.identity_volume ~ item.path] }}"
+                   host.pool, identity_volume ~ item.path] }}"
             stdin: "{{ item.content }}"
             stdin_add_newline: false
           loop:
@@ -249,7 +251,7 @@
           ansible.builtin.command: { argv: "{{ incus + item }}" }
           loop:
             - [config, device, set, "{{ slot.name }}", topology-seed, "source={{ slot.seed_clone }}"]
-            - [config, device, add, "{{ slot.name }}", orbit-identity, disk, "pool={{ host.pool }}", "source={{ slot.identity_volume }}",
+            - [config, device, add, "{{ slot.name }}", orbit-identity, disk, "pool={{ host.pool }}", "source={{ identity_volume }}",
                path=/run/orbit-identity, readonly=true]
             - [config, set, "{{ slot.name }}", "limits.cpu={{ slot.cpus }}", "limits.memory={{ slot.memory }}"]
           changed_when: true
@@ -263,7 +265,7 @@
       loop:
         - [delete, --force, --, "{{ slot.name }}"]
         - [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]
-        - [storage, volume, delete, "{{ host.pool }}", "{{ slot.identity_volume }}"]
+        - [storage, volume, delete, "{{ host.pool }}", "{{ identity_volume }}"]
       register: slot_delete
       changed_when: slot_delete.rc == 0
       failed_when: slot_delete.rc != 0 and 'not found' not in slot_delete.stderr

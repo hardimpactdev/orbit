@@ -94,7 +94,7 @@
 
       [Install]
       WantedBy=multi-user.target
-# An ordering cycle would make systemd drop a unit at boot without a word; the refresh fails here instead.
+# systemd-analyze checks the unit loads and its ExecStart runs; it does not check ordering against units outside its own start job.
 - name: Check the identity unit
   ansible.builtin.command: { argv: [systemd-analyze, verify, /etc/systemd/system/orbit-identity.service] }
   changed_when: false
