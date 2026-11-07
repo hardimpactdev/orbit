@@ -105,11 +105,12 @@ cases:
       - probe: {from: gateway, to: app-dev, proto: tcp, port: "${port}", expect: connect}
       - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: blocked}
     act:
-      - cli: {run: [firewall:allow, "@rule"], expect: {exit: 0, status: succeeded}}
+      - cli: {run: [firewall:allow, "@rule"], expect: {exit: 0, status: succeeded, steps: {name: "Change the rules", count: 1}}}
     expect:
       - probe: {id: gateway-connects, from: gateway, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
       - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
-      - ufw: {on: app-dev, family: 4, rows: [{ref: existing}, {to: "${port}/udp", action: ALLOW, from: "${gateway.src}"}, {ref: deny}]}
+      - ufw: {on: app-dev, family: 4, rows: [{ref: existing}, {ref: deny}]}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/udp", action: ALLOW, from: "${gateway.src}"}, {ref: deny}]}
       - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: allow, protocol: any, status: active}, count: 1}
       - unchanged: {since: act, except: {port: "${port}"}}
     negative:

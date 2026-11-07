@@ -36,6 +36,7 @@ class FakeFleet:
         self.dual_stack = False         # True: a rule for any source also gets an IPv6 line at the end of the table
         self.prompts = None             # the lines a terminal run prints; set by a test
         self.human_status = 'succeeded'
+        self.operation_steps = []
         self.records, self.commands, self.cli_calls = [], [], []
         self.allow_effect = True        # False: the command reports success but changes no UFW row
         self.allow_status = 'succeeded'
@@ -180,7 +181,7 @@ class FakeFleet:
         elif args[0] == 'operation:list':
             document = {'operations': [{'id': number} for number in range(1, self.next_id)]}
         elif args[0] == 'operation:show':
-            document = {'id': int(args[1]), 'status': self.human_status}
+            document = {'id': int(args[1]), 'status': self.human_status, 'steps': self.operation_steps}
         elif args[0] == 'firewall:allow':
             document, code = self.allow(args)
         elif args[0] == 'doctor':
