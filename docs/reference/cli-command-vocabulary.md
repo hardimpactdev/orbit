@@ -96,7 +96,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny`, `inspect` | The CLI writes an allow or deny firewall rule. Inspection records a fresh native snapshot. |
-| `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy and roll back the Gateway itself, and resume paused automatic releases. |
+| `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` and `gateway:auto-release` commands deploy and roll back the Gateway itself, and resume paused automatic releases. |
 | `github` | `sync` | The Gateway reads the [GitHub App installations](/cli/github/app-sync) from GitHub now; no Operation. |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `resolve`, `rollback`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs and runs setup. Rename records the checked-out branch. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
