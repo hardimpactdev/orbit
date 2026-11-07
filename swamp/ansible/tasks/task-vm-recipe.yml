@@ -61,6 +61,9 @@
       | map('regex_replace', '^', playbook_dir ~ '/') | list }}
     code: "{{ query('ansible.builtin.file', *(files + (query('ansible.builtin.fileglob', playbook_dir ~ '/tasks/*.yml') | sort))) | join | hash('sha256') }}"
     tools_input: "{{ code ~ (recipe | to_json) ~ profile ~ (intent.fleet.network | default('')) }}"
+    # The operator join reads only the operator end and the container names; what the fleet is built from does not redo it.
+    fleet_intent: "{{ intent.fleet | default({}) }}"
+    operator_input: "{{ code ~ (fleet_intent.operator | default({}) | to_json) ~ (fleet_intent.guests | default({}) | to_json) }}"
   ansible.builtin.set_fact:
     converge_stamps: "{{ dict(converge_read.stdout_lines | map('regex_replace', '^.*/([^/:]+):.*$', '\\1')
       | zip(converge_read.stdout_lines | map('regex_replace', '^[^:]*:', ''))) }}"
@@ -69,7 +72,7 @@
       tools: "{{ tools_input | hash('sha256') }}"
       boot: "{{ (code ~ (intent.boot | default({}) | to_json)) | hash('sha256') }}"
       check: "{{ (tools_input ~ 'check') | hash('sha256') }}"
-      operator: "{{ (code ~ (intent.fleet | default({}) | to_json)) | hash('sha256') }}"
+      operator: "{{ operator_input | hash('sha256') }}"
 # A part is due when its recorded digest differs. The nested Swamp tokens last 30 days, so their renewal is due a week after the last one.
 - name: Work out which parts are due
   ansible.builtin.set_fact:

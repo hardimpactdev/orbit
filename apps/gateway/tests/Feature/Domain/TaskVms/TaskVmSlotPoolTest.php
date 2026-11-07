@@ -19,6 +19,7 @@ use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -362,6 +363,33 @@ it('has a task start converge reach its VM over WireGuard with the pinned key of
         // What every task VM shares goes into the base, not into each start's identity.
         ->and($base['boot']['trust'])->toBe(['certificate' => "-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n",
             'control_ip' => '10.44.0.1', 'gateway_ip' => '10.44.0.1', 'pi_port' => app(PiConnection::class)->port()]);
+});
+
+it('gives every converge what a base VM without a nested fleet builds it from', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $this->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
+
+    $converge = app(TaskVmConvergeInput::class)->for($host, str_repeat('a', 40))['converge'];
+    $fleet = $converge['fleet'];
+
+    expect($converge['nested'])->toBe(['subnet' => '10.232.2.0/24', 'interface' => 'oe-nested'])
+        ->and(array_keys($fleet))->toBe(['guests', 'network', 'operator', 'layout', 'proof_network', 'checkout', 'bootstrap'])
+        ->and($fleet['guests'])->toBe(['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'])
+        ->and($fleet['network'])->toBe($converge['nested']['interface'])
+        ->and($fleet['operator'])->toBe(['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24'])
+        ->and($fleet['layout'])->toBe(TaskVmNestedFleet::Layout)
+        ->and($fleet['proof_network'])->toBe($converge['nested']['subnet'])
+        ->and($fleet['checkout']['path'])->toBe('/home/orbit/orbit')
+        ->and($fleet['checkout']['binds']['app-dev'])->toBe(['home-orbit-orbit-apps-gateway-.env.mount', 'home-orbit-orbit-apps-gateway-storage.mount', 'home-orbit-orbit-apps-gateway-bootstrap-cache.mount'])
+        ->and(collect($fleet['checkout']['units'])->groupBy('guest')->map->count()->all())->toBe(['nested-gateway' => 6, 'nested-app-dev' => 3]);
+    // The run adds the Swamp pin of the recipe, the machine with its host key and the release; the Gateway sends the rest.
+    expect(array_keys($fleet['bootstrap']))->toBe(['apt_proxy', 'gateway', 'operator', 'agent_delivery'])
+        ->and($fleet['bootstrap']['apt_proxy'])->toBe('http://10.232.2.1:3142')
+        ->and($fleet['bootstrap']['gateway'])->toBe(['url' => 'https://10.45.0.1', 'wireguard_ip' => '10.45.0.1', 'wireguard_subnet' => '10.45.0.0/24'])
+        ->and($fleet['bootstrap']['operator'])->toBe(['checkout' => $converge['checkout']['path'], 'wireguard_ip' => '10.45.0.10'])
+        ->and(json_decode($fleet['bootstrap']['agent_delivery'], true, flags: JSON_THROW_ON_ERROR))->toHaveKeys(['commit', 'version', 'artifacts'])
+        ->and(json_encode($fleet))->not->toContain('club');
 });
 
 it('writes the guard origin and the one fixed model key into every claim, and a start or release carries no model intent or secret', function (): void {

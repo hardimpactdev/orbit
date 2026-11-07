@@ -1,0 +1,257 @@
+---
+# The nested fleet from stock Ubuntu (docs/cli/tasks/vm-image-refresh.mmd), part of the fleet phase: task-vm-fleet.yml imports it only when
+# a container of the fleet is missing, which is a base VM that never held a fleet, or one whose first build stopped half way. A converge
+# on a built fleet skips every task here. The nested network and the seed pool `topology-seed` come from the tools phase
+# (task-vm-incus.yml). A half-made fleet starts from nothing, so a rerun builds it whole. The nested Gateway is prepared by one local run
+# of the workflow `gateway-bootstrap` on this VM, the fleet's operator, and then does the rest through its own Orbit: its own Node and
+# roles, and the Nodes app-dev and app-prod. Every wait is one import of task-vm-nested-wait.yml. The checkout of this VM then becomes
+# the checkout of the Gateway and app-dev, and the build ends when Doctor of the nested Gateway is healthy.
+- name: Remove a half-made fleet
+  when: fleet_guests.values() | select('in', fleet_present) | list | length > 0
+  ansible.builtin.command: { argv: "{{ ['timeout', '180', 'incus', 'delete', '--force'] + (fleet_guests.values() | select('in', fleet_present) | list) }}" }
+  changed_when: true
+
+# The operator's SSH key reaches the containers for the local bootstrap run. It belongs to the nested network only and stays in the base.
+# Its folder is the one the boot phase made.
+- name: Make the operator SSH key
+  become: true
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command:
+    argv: [ssh-keygen, -q, -t, ed25519, -N, "", -f, "{{ orbit_home }}/.ssh/id_ed25519"]
+    creates: "{{ orbit_home }}/.ssh/id_ed25519"
+- name: Read the operator SSH key
+  ansible.builtin.slurp: { src: "{{ orbit_home }}/.ssh/id_ed25519.pub" }
+  register: fleet_operator_ssh
+# An earlier Gateway at the same address had another host key; the bootstrap's SSH steps trust the operator's known_hosts.
+- name: Forget the earlier Gateway host key
+  become: true
+  become_user: "{{ orbit_user }}"
+  ansible.builtin.command: { argv: [ssh-keygen, -f, "{{ orbit_home }}/.ssh/known_hosts", -R, "{{ intent.fleet.layout.gateway.address }}"] }
+  register: fleet_forget
+  changed_when: "'updated' in fleet_forget.stdout"
+  # A VM without known_hosts exits 255.
+  failed_when: fleet_forget.rc not in [0, 255]
+
+# Stock Ubuntu with cloud-init: the orbit account with the operator key. System containers that nest (`security.nesting`), with a memory
+# limit, no root size, a fixed address and MAC, and a start with the VM. Ubuntu's `wg-quick` AppArmor profile kills `wg-quick` with SEGV in
+# a nested container, so cloud-init disables the profiles at boot, before the role installs WireGuard. One at a time: parallel `incus init`
+# calls of one remote image race on the client's image cache.
+- name: Create the containers
+  vars:
+    fleet_cloud_config:
+      package_update: true
+      packages: [openssh-server]
+      bootcmd:
+        - mkdir -p /etc/apparmor.d/disable
+        - ln -sf /etc/apparmor.d/wg /etc/apparmor.d/disable/wg
+        - ln -sf /etc/apparmor.d/wg-quick /etc/apparmor.d/disable/wg-quick
+      users:
+        - name: orbit
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          ssh_authorized_keys: ["{{ fleet_operator_ssh.content | b64decode | trim }}"]
+  ansible.builtin.command:
+    argv: [timeout, "600", incus, init, images:ubuntu/resolute/cloud, "{{ fleet_guests[item] }}", --storage, topology-seed, --network,
+           "{{ intent.fleet.network }}", -c, security.nesting=true, -c, limits.cpu=2, -c, "limits.memory={{ intent.fleet.layout[item].memory }}",
+           -c, boot.autostart=true, -c, "cloud-init.user-data=#cloud-config\n{{ fleet_cloud_config | to_nice_yaml(width=4096) }}"]
+  loop: "{{ fleet_guests.keys() | list }}"
+  changed_when: true
+- name: Set the addresses
+  ansible.builtin.command:
+    argv: [incus, config, device, set, "{{ fleet_guests[item] }}", eth0, "ipv4.address={{ intent.fleet.layout[item].address }}",
+           "hwaddr={{ intent.fleet.layout[item].hwaddr }}"]
+  loop: "{{ fleet_guests.keys() | list }}"
+  changed_when: true
+- name: Start the new containers
+  ansible.builtin.command: { argv: "{{ ['timeout', '300', 'incus', 'start'] + (fleet_guests.values() | list) }}" }
+  changed_when: true
+# A container has no guest agent: `cloud-init status --wait` blocks from the first moment of the boot. It exits 2 when cloud-init finished
+# with a recoverable warning; both are a finished boot. Cloud-init never runs again.
+- name: Let cloud-init finish
+  ansible.builtin.command: { argv: [timeout, "400", incus, exec, "{{ item }}", --, cloud-init, status, --wait] }
+  loop: "{{ fleet_guests.values() | list }}"
+  register: fleet_cloud_init
+  changed_when: false
+  failed_when: fleet_cloud_init.rc not in [0, 2]
+- name: Turn cloud-init off in the containers
+  ansible.builtin.command: { argv: [incus, exec, "{{ item }}", --, touch, /etc/cloud/cloud-init.disabled] }
+  loop: "{{ fleet_guests.values() | list }}"
+  changed_when: true
+
+# The nested Gateway's Swamp runs with the proof Swamp Club key that the base VM holds, through a disk device. Its folder is made as orbit
+# first: a device under /home/orbit makes the folders it lacks root-owned.
+- name: Make the Swamp folder of the nested Gateway
+  ansible.builtin.command:
+    argv: [incus, exec, "{{ fleet_guests.gateway }}", --, install, -d, -o, orbit, -g, orbit, -m, "0700", /home/orbit/.config, /home/orbit/.config/swamp]
+  changed_when: true
+- name: Attach the Club key
+  ansible.builtin.command:
+    argv: [incus, config, device, add, "{{ fleet_guests.gateway }}", club-key, disk, "source={{ fleet_club_key }}",
+           path=/home/orbit/.config/swamp/api-key, required=false, shift=true]
+  changed_when: true
+- name: Read the Gateway host key
+  ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, cat, /etc/ssh/ssh_host_ed25519_key.pub] }
+  register: fleet_gateway_host_key
+  changed_when: false
+# One local run: its steps request no worker, so the Swamp binary of this VM runs them itself, over SSH to the container. The Gateway sent
+# what it knows (`intent.fleet.bootstrap`); the run adds the Swamp pin of the recipe, the machine with its host key, and the release.
+- name: Prepare the Gateway
+  become: true
+  become_user: "{{ orbit_user }}"
+  vars:
+    fleet_bootstrap:
+      intent: >-
+        {{ intent.fleet.bootstrap | combine({
+             'swamp': {'url': recipe.tools.swamp.artifacts.amd64.url, 'sha256': recipe.tools.swamp.artifacts.amd64.sha256},
+             'ssh': {'host': intent.fleet.layout.gateway.address, 'port': 22, 'user': 'orbit', 'identity_file': orbit_home ~ '/.ssh/id_ed25519',
+                     'host_keys': [fleet_gateway_host_key.stdout.split()[:2] | join(' ')]},
+             'release': {'repository': intent.checkout.repository, 'commit': intent.checkout.commit}}) }}
+  ansible.builtin.command:
+    argv: [timeout, "1500", swamp, workflow, run, gateway-bootstrap, --repo-dir, "{{ intent.checkout.path }}/swamp", --input,
+           "{{ fleet_bootstrap | to_json }}"]
+  environment: { HOME: "{{ orbit_home }}", SWAMP_API_KEY_FILE: "{{ fleet_club_key }}" }
+  changed_when: true
+
+# The new Gateway does the rest through its own Orbit. Each command admits an Operation of the nested Gateway and prints `#<id>`, and a
+# wait for that Operation follows it; a command that names no Operation fails.
+- name: Admit the Gateway Node
+  ansible.builtin.command: { argv: "{{ fleet_artisan + ['orbit:node-converge', 'gateway'] }}" }
+  register: fleet_gateway_node
+  changed_when: true
+  failed_when: fleet_gateway_node.rc != 0 or '#' not in fleet_gateway_node.stdout
+- name: Wait for the Gateway Node
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_node.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 900 }
+- name: Admit the Gateway role
+  ansible.builtin.command: { argv: "{{ fleet_artisan + ['orbit:role-add', 'gateway', 'gateway', '--converge'] }}" }
+  register: fleet_gateway_role
+  changed_when: true
+  failed_when: fleet_gateway_role.rc != 0 or '#' not in fleet_gateway_role.stdout
+- name: Wait for the Gateway role
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_gateway_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 600 }
+- name: Admit the websocket role
+  ansible.builtin.command: { argv: "{{ fleet_artisan + ['orbit:role-add', 'gateway', 'websocket'] }}" }
+  register: fleet_websocket_role
+  changed_when: true
+  failed_when: fleet_websocket_role.rc != 0 or '#' not in fleet_websocket_role.stdout
+- name: Wait for the websocket role
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_websocket_role.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 900 }
+# The Gateway reaches the Nodes with its own key, which they accept before they are added; their host keys are pinned by fingerprint.
+- name: Read the Gateway key
+  ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, cat, /home/orbit/.orbit/ssh/id_ed25519.pub] }
+  register: fleet_gateway_key
+  changed_when: false
+- name: Let the Gateway in
+  ansible.builtin.command:
+    argv: [incus, file, push, --uid, "1000", --gid, "1000", --mode, "0600", "-", "{{ fleet_guests[item] }}/home/orbit/.ssh/authorized_keys"]
+    stdin: "{{ fleet_operator_ssh.content | b64decode | trim }}\n{{ fleet_gateway_key.stdout | trim }}"
+  loop: [app-dev, app-prod]
+  changed_when: true
+- name: Read the Node host keys
+  ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests[item] }}", --, ssh-keygen, -lf, /etc/ssh/ssh_host_ed25519_key.pub] }
+  loop: [app-dev, app-prod]
+  register: fleet_node_host_keys
+  changed_when: false
+- name: Admit app-dev
+  ansible.builtin.command:
+    argv: "{{ fleet_artisan + ['orbit:node-add', 'app-dev', intent.fleet.layout['app-dev'].address, '--role=app-dev',
+           '--wireguard-ip=' ~ intent.fleet.layout['app-dev'].wireguard, '--tld=' ~ intent.fleet.layout['app-dev'].tld,
+           '--host-key-fingerprint=' ~ fleet_node_host_keys.results[0].stdout.split()[1]] }}"
+  register: fleet_app_dev
+  changed_when: true
+  failed_when: fleet_app_dev.rc != 0 or '#' not in fleet_app_dev.stdout
+- name: Wait for app-dev
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_dev.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 1200 }
+- name: Admit app-prod
+  ansible.builtin.command:
+    argv: "{{ fleet_artisan + ['orbit:node-add', 'app-prod', intent.fleet.layout['app-prod'].address, '--role=app-prod',
+           '--wireguard-ip=' ~ intent.fleet.layout['app-prod'].wireguard, '--tld=' ~ intent.fleet.layout['app-prod'].tld,
+           '--host-key-fingerprint=' ~ fleet_node_host_keys.results[1].stdout.split()[1]] }}"
+  register: fleet_app_prod
+  changed_when: true
+  failed_when: fleet_app_prod.rc != 0 or '#' not in fleet_app_prod.stdout
+- name: Wait for app-prod
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: operation, wait_operation: "{{ fleet_app_prod.stdout | regex_findall('#([0-9]+)') | first }}", wait_seconds: 1200 }
+# A proof starts from a fleet where only Orbit's own rules and the proof-network allowance exist: each container admits the nested subnet,
+# and a case places its test rules above that row.
+- name: Open the proof network
+  ansible.builtin.command:
+    argv: [timeout, "60", incus, exec, "{{ item }}", --, ufw, allow, from, "{{ intent.fleet.proof_network }}", comment, proof-network]
+  loop: "{{ fleet_guests.values() | list }}"
+  changed_when: true
+
+# The checkout of this VM becomes the checkout of the Gateway and app-dev. The Gateway's services hold files of the checkout it built, so
+# they stop first. Its state stays on its own disk (`.env`, `storage`, `bootstrap/cache` and the Swamp repository state), and the checkout
+# it built goes. app-dev gets empty state.
+- name: Stop the Gateway services
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120', 'incus', 'exec', fleet_guests.gateway, '--', 'systemctl', 'stop'] + (fleet_gateway_services | reverse | list) }}"
+  changed_when: true
+- name: Move the state
+  ansible.builtin.command:
+    argv: [timeout, "300", incus, exec, "{{ fleet_guests.gateway }}", --, sh, -c,
+           'set -eu; s=$0; c=$1; mkdir -p "$s/apps/gateway/bootstrap" "$s/swamp"; mv "$c/apps/gateway/.env" "$s/apps/gateway/.env";
+            mv "$c/apps/gateway/storage" "$s/apps/gateway/storage"; mv "$c/apps/gateway/bootstrap/cache" "$s/apps/gateway/bootstrap/cache";
+            for d in .swamp vaults grants; do mv "$c/swamp/$d" "$s/swamp/$d"; done; chown -R orbit:orbit "$s"; rm -rf "$c"; install -d -o orbit -g orbit "$c"',
+           "{{ intent.fleet.checkout.state }}", "{{ intent.fleet.checkout.path }}"]
+  changed_when: true
+- name: Make the state
+  ansible.builtin.command:
+    argv: [timeout, "60", incus, exec, "{{ fleet_guests['app-dev'] }}", --, sh, -c,
+           'set -eu; s=$0; mkdir -p "$s/apps/gateway/storage" "$s/apps/gateway/bootstrap/cache"; : > "$s/apps/gateway/.env"; chown -R orbit:orbit "$s";
+            install -d -o orbit -g orbit "$1"',
+           "{{ intent.fleet.checkout.state }}", "{{ intent.fleet.checkout.path }}"]
+  changed_when: true
+# The checkout is an Incus disk device, attached after cloud-init made the `orbit` account: a device under /home/orbit that exists earlier
+# makes the folder root-owned. The ID shift gives the container's orbit the rights of this VM's orbit on it.
+- name: Attach the checkout
+  ansible.builtin.command:
+    argv: [timeout, "60", incus, config, device, add, "{{ fleet_guests[item] }}", checkout, disk, "source={{ intent.checkout.path }}",
+           "path={{ intent.fleet.checkout.path }}", shift=true]
+  loop: [gateway, app-dev]
+  changed_when: true
+- name: Write the mount units
+  ansible.builtin.command:
+    argv: [incus, file, push, --mode, "0644", "-", "{{ item.guest }}/etc/systemd/system/{{ item.name }}"]
+    stdin: "{{ item.content }}"
+    stdin_add_newline: false
+  loop: "{{ intent.fleet.checkout.units }}"
+  loop_control: { label: "{{ item.guest }}/{{ item.name }}" }
+  changed_when: true
+- name: Load the mount units
+  ansible.builtin.command: { argv: [timeout, "60", incus, exec, "{{ fleet_guests[item] }}", --, systemctl, daemon-reload] }
+  loop: [gateway, app-dev]
+  changed_when: true
+- name: Enable the mounts
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120', 'incus', 'exec', fleet_guests[item], '--', 'systemctl', 'enable'] + intent.fleet.checkout.binds[item] }}"
+  loop: [gateway, app-dev]
+  changed_when: true
+# The mount points of the state are in the shared checkout; the ones it lacks are made as the orbit user.
+- name: Make the mount points
+  ansible.builtin.command:
+    argv: [timeout, "120", incus, exec, "{{ fleet_guests[item] }}", --user, "1000", --, sh, -c,
+           'set -eu; cd "$0"; touch apps/gateway/.env; if [ "$1" = gateway ]; then mkdir -p swamp/.swamp swamp/vaults swamp/grants; fi',
+           "{{ intent.fleet.checkout.path }}", "{{ item }}"]
+  loop: [gateway, app-dev]
+  changed_when: true
+# The units start by name with `--job-mode=ignore-requirements`: their requirement on the checkout's mount pulls a start job for the device
+# behind it, which no udev confirms in a container, so a normal start waits 90 s for that device and fails. The ordering still holds.
+- name: Mount the state
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120', 'incus', 'exec', fleet_guests[item], '--', 'systemctl', 'start', '--job-mode=ignore-requirements']
+              + intent.fleet.checkout.binds[item] }}"
+  loop: [gateway, app-dev]
+  changed_when: true
+- name: Start the Gateway services
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '180', 'incus', 'exec', fleet_guests.gateway, '--', 'systemctl', 'start'] + fleet_gateway_services }}"
+  changed_when: true
+# Every agent online, the Swamp workers enrolled, Doctor without a finding. The agents report a few minutes after they start.
+- name: Check the nested fleet
+  ansible.builtin.import_tasks: task-vm-nested-wait.yml
+  vars: { wait_kind: doctor, wait_seconds: 900, wait_delay: 15 }

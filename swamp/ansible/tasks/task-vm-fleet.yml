@@ -1,9 +1,10 @@
 ---
-# The nested fleet of a task image (docs/cli/tasks/vm-image-refresh.mmd): the Gateway with Swamp, app-dev and app-prod as Incus
-# system containers on the seed pool, with the checkout as their disk device, migrated and running, and the outer VM joined as
-# operator. The containers live in the seed and start with the VM. Each part checks its state first: a container is made only when it
-# is missing, and the operator, the tokens, the code and the migrations are applied only when their digest changed, so a converge on a
-# current image changes nothing and restarts nothing. The refresh retakes the `base` snapshots when the fleet changed; a task start leaves them.
+# The nested fleet of a task VM (docs/cli/tasks/vm-image-refresh.mmd): the Gateway with Swamp, app-dev and app-prod as Incus system
+# containers on the seed pool, with the checkout as their disk device, migrated and running, and the outer VM joined as operator. The
+# containers live in the seed and start with the VM. Each part checks its state first: the fleet is built from stock Ubuntu only when a
+# container of it is missing (task-vm-fleet-build.yml), and the operator, the tokens, the code and the migrations are applied only when
+# their digest changed, so a converge on a current base changes nothing and restarts nothing. The refresh retakes the `base` snapshots
+# when the fleet changed; a task start leaves them.
 - name: Read the nested containers
   ansible.builtin.command: { argv: [incus, list, --format, json] }
   register: fleet_list
@@ -12,60 +13,28 @@
   ansible.builtin.set_fact:
     fleet_guests: "{{ intent.fleet.guests }}"
     fleet_present: "{{ fleet_list.stdout | from_json | map(attribute='name') | list }}"
-    fleet_ready: "{{ fleet_list.stdout | from_json | selectattr('name', 'match', '^fleet-ready-') | items2dict(key_name='name', value_name='config') }}"
-# A seed of the earlier format holds key-free ready copies and no fleet: each missing container is made once from its copy, with the
-# MAC and address the copy stores, so the Orbit records inside it stay true. A seed this phase saved already holds the containers.
-- name: Make the missing containers
-  when: fleet_guests.values() | reject('in', fleet_present) | list | length > 0
-  block:
-    - name: Make the missing containers from their ready copies
-      ansible.builtin.command: { argv: [timeout, "300", incus, copy, --instance-only, "fleet-ready-{{ item.key }}", "{{ item.value }}"] }
-      loop: "{{ fleet_guests | dict2items | rejectattr('value', 'in', fleet_present) | list }}"
-      changed_when: true
-    - name: Give the new containers their NIC
-      ansible.builtin.command:
-        argv: [incus, config, device, add, "{{ item.value }}", eth0, nic, "network={{ intent.fleet.network }}",
-               "hwaddr={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.hwaddr'] }}",
-               "ipv4.address={{ fleet_ready['fleet-ready-' ~ item.key]['user.ready.ipv4'] }}"]
-      loop: "{{ fleet_guests | dict2items | rejectattr('value', 'in', fleet_present) | list }}"
-      changed_when: true
-    - name: Read the nested containers again
-      ansible.builtin.command: { argv: [incus, list, --format, json] }
-      register: fleet_again
-      changed_when: false
+    fleet_new: "{{ intent.fleet.guests.values() | reject('in', fleet_list.stdout | from_json | map(attribute='name') | list) | list }}"
+- name: Build the fleet from stock Ubuntu
+  ansible.builtin.import_tasks: task-vm-fleet-build.yml
+  when: fleet_new | length > 0
+  vars:
+    # A command of the nested Gateway's Orbit, as its orbit user in its own checkout.
+    fleet_artisan: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --env, HOME=/home/orbit, --cwd,
+                    /home/orbit/orbit/apps/gateway, --, php, artisan]
+    # The services of the nested Gateway, in the order they start.
+    fleet_gateway_services: [php8.5-fpm.service, caddy.service, orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service,
+                             orbit-gateway-horizon.service, orbit-gateway-schedule.service, orbit-agent-view.service]
+    # The waits ask Doctor of the nested Gateway at its address in the fleet's network.
+    wait_hub: "{{ intent.fleet.operator.hub }}"
+- name: Read the nested containers again
+  when: fleet_new | length > 0
+  ansible.builtin.command: { argv: [incus, list, --format, json] }
+  register: fleet_again
+  changed_when: false
 - name: Work out the containers
   ansible.builtin.set_fact:
-    fleet_new: "{{ fleet_guests.values() | reject('in', fleet_present) | list }}"
     fleet_now: "{{ (fleet_again.stdout | default(fleet_list.stdout)) | from_json | selectattr('name', 'in', fleet_guests.values() | list) | list }}"
-- name: Work out the devices
-  ansible.builtin.set_fact:
-    fleet_devices: "{{ fleet_now | items2dict(key_name='name', value_name='devices') }}"
-    fleet_config: "{{ fleet_now | items2dict(key_name='name', value_name='config') }}"
-# The checkout device gives the Gateway and app-dev the outer VM's checkout; the ID shift gives their orbit the rights of this VM's orbit.
-- name: Attach the checkout
-  when: "'checkout' not in fleet_devices[fleet_guests[item]]"
-  ansible.builtin.command:
-    argv: [incus, config, device, add, "{{ fleet_guests[item] }}", checkout, disk, "source={{ intent.checkout.path }}", path=/home/orbit/orbit, shift=true]
-  loop: [gateway, app-dev]
-  changed_when: true
-# The proof Swamp Club key: a refresh gives it to the base VM, so every task VM copied from it has it, and the nested Gateway's Swamp reads
-# it through this device. A container starts without it when the file is absent.
-- name: Attach the Club key
-  when: "'club-key' not in fleet_devices[fleet_guests.gateway]"
-  ansible.builtin.command:
-    argv: [incus, config, device, add, "{{ fleet_guests.gateway }}", club-key, disk, "source={{ fleet_club_key }}",
-           path=/home/orbit/.config/swamp/api-key, required=false, shift=true]
-  changed_when: true
-# The containers start with the VM, so a task start waits for none of them.
-- name: Start the containers with the VM
-  when: fleet_config[item]['boot.autostart'] | default('') != 'true'
-  ansible.builtin.command: { argv: [incus, config, set, "{{ item }}", boot.autostart=true] }
-  loop: "{{ fleet_guests.values() | list }}"
-  changed_when: true
-- name: Remove the ready copies and the VM template of the earlier format
-  ansible.builtin.command: { argv: [incus, delete, --force, "{{ item }}"] }
-  loop: "{{ fleet_present | select('match', '^(fleet-ready-.*|node-template)$') | list }}"
-  changed_when: true
+# The containers start with the VM; one that has not started yet starts here.
 - name: Start the containers
   ansible.builtin.command: { argv: [timeout, "120", incus, start, "{{ item }}"] }
   loop: "{{ fleet_now | rejectattr('status', 'eq', 'Running') | map(attribute='name') | list }}"
@@ -73,20 +42,6 @@
   # A container the VM's boot started since the read is running already.
   changed_when: fleet_start.rc == 0
   failed_when: fleet_start.rc != 0 and 'already running' not in fleet_start.stderr
-# A container made from a ready copy runs cloud-init once; it never runs again (exit 2 is a finished boot with a warning).
-- name: Finish the first boot of new containers
-  when: fleet_new | length > 0
-  block:
-    - name: Let cloud-init finish
-      ansible.builtin.command: { argv: [timeout, "130", incus, exec, "{{ item }}", --, cloud-init, status, --wait] }
-      loop: "{{ fleet_new }}"
-      register: fleet_cloud_init
-      changed_when: false
-      failed_when: fleet_cloud_init.rc not in [0, 2]
-    - name: Turn cloud-init off in the containers
-      ansible.builtin.command: { argv: [incus, exec, "{{ item }}", --, touch, /etc/cloud/cloud-init.disabled] }
-      loop: "{{ fleet_new }}"
-      changed_when: true
 - name: Join the outer VM as operator
   ansible.builtin.import_tasks: task-vm-fleet-operator.yml
   when: converge_due.operator or fleet_new | length > 0

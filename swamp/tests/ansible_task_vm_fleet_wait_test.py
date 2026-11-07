@@ -14,6 +14,8 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 PLAYBOOK = ANSIBLE / 'task-vm-fleet-wait.yml'
+# The wait itself: the playbook imports it, and so does the fleet build of the converge.
+WAIT = ANSIBLE / 'tasks/task-vm-nested-wait.yml'
 spec = importlib.util.spec_from_file_location('build_vars', ANSIBLE / 'build_vars.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
@@ -35,7 +37,7 @@ NEEDS_ANSIBLE = unittest.skipUnless(shutil.which('ansible-playbook') or (Path(sy
 
 class TaskVmFleetWaitTest(unittest.TestCase):
     def test_the_waits_use_the_tools_own_retry_and_no_shell(self):
-        tasks = {task['name']: task for task in yaml.safe_load(PLAYBOOK.read_text())[0]['tasks']}
+        tasks = {task['name']: task for task in yaml.safe_load(WAIT.read_text())[0]['block']}
         for name in ('Wait for the Operation of the nested Gateway to end', 'Wait for Doctor of the nested Gateway'):
             task = tasks[name]
             self.assertEqual({'until', 'retries', 'delay'} <= set(task), True, name)
@@ -74,7 +76,7 @@ class TaskVmFleetWaitTest(unittest.TestCase):
             return result.returncode, result.stdout + result.stderr, count
 
     def test_the_reason_query_reads_the_failed_step_and_error_code_of_the_operation(self):
-        tasks = {task['name']: task for task in yaml.safe_load(PLAYBOOK.read_text())[0]['tasks']}
+        tasks = {task['name']: task for task in yaml.safe_load(WAIT.read_text())[0]['block']}
         query = tasks['Read why the Operation did not succeed']['ansible.builtin.command']['argv'][-1].replace('{{ wait_operation | int }}', '7')
         database = sqlite3.connect(':memory:')
         database.execute('create table operations (id integer, status text, failed_step text, error_code text)')

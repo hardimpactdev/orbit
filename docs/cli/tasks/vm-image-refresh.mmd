@@ -36,7 +36,9 @@ sequenceDiagram
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container
   %%> - the refresh owns the containers' `base` snapshots and retakes them when the fleet changed; the nested Gateway's services restart only when `apps/gateway` changed, and its agent delivery manifest is placed only when the pinned agent build changed
-  %%> - no wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
+  %%> - a base VM without a nested fleet builds it here, once, in the fleet phase: three system containers from stock Ubuntu on the nested network, the nested Gateway prepared by one local `gateway-bootstrap` run, its own Node, `gateway` and `websocket` converges, app-dev and app-prod added through its own Orbit, the checkout as their disk device, a Doctor wait, then the operator join
+  %%> - the build runs only when a container is missing; a half-made fleet is removed first and built whole. A base VM with its fleet skips it and restarts no container
+  %%> - no other wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
   %%> - the boot phase bakes the Orbit root CA and the firewall into the base, and the `orbit-identity` unit that mounts a copy's identity share and applies it before sshd, WireGuard and the agent; a base VM has no share, so the unit skips
   SW->>H: Stop and snapshot<br/>VM and seed
   %%> What it does:
@@ -58,7 +60,7 @@ sequenceDiagram
     Note over GW: Promote<br/>record the new snapshot
     %%> Result:
     %%> - task starts copy the new snapshot; the one before it is `-previous`
-    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s); the first refresh of a new host builds the whole base, so it takes much longer
+    %%> - target: about 25 s for a no-op refresh before the proof (boot 10 s, converge 8 s, stop 5 s, snapshot 1 s); the first refresh of a new host builds the whole base, so it takes much longer: about 30 min of it is the fleet build
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:

@@ -65,10 +65,10 @@ final class OperationBudgetTable
         // the readiness wait, plus margin. A wait ends when its Operation ends or a nested VM is not running; the literal timeouts of the
         // waits only guard a hung connection, so this budget is the bound of the run. Replace with the 14-day p95 after the first successes.
         'task_vm.fleet_build' => 3600,
-        // Provisional. Basis: the provision of a task VM (tasks.provision, 3,900 s), the fleet build when the seed has no ready copies
-        // (3,600 s at its bound, about 25 min in practice), the ready copies (3,600 s at their bound, about 10 min in practice), the clean
-        // builder with its phases (3,300 s at their bound; a VM at its pins takes a minute), the publication, the boot check and the
-        // enrollment and converge of the check VM (a few minutes each), plus margin. Replace with the 14-day p95 after the first successes.
+        // Provisional. Basis: the first refresh of a new host, the longest: the first boot of its base VM (600 s at its bound), the
+        // converge from stock with the build of the nested fleet (5,400 s at its bound; the fleet build took 1,840 s as op 11816), the
+        // snapshot and the task start that proves it (tasks.provision, 3,900 s at its bound), plus margin. A refresh of a built base takes
+        // about two minutes (ops 13052, 13053). Replace with the 14-day p95 after the first successes.
         'task_vm.image_refresh' => 10800,
         'task_vm.sweep_host' => 600,
         // No run yet. Basis: the VM step of tasks.provision (about 160 s, op 11752), "Converge once" (about 60 s at the pins, 3,300 s at

@@ -15,7 +15,7 @@ use RuntimeException;
 final readonly class HostCapacity
 {
     /**
-     * The slot of `10.232.2.0/24`, the nested network of every task VM (the Gateway's TaskVmReadyCopiesIntent::Subnet). The Gateway reads the
+     * The slot of `10.232.2.0/24`, the nested network of every task VM (the Gateway's TaskVmNestedFleet::Subnet). The Gateway reads the
      * package cache of a Node inside that subnet from the task VM, so no topology gets it.
      */
     private const int TaskVmSlot = 2;
