@@ -17,7 +17,7 @@
             "cli/database/server-list",
             "cli/database/server-show",
             "cli/database/server-destroy",
-            "cli/database/server-close",
+            "cli/database/server-update",
             "cli/database/user-create",
             "cli/database/user-list",
             "cli/database/destroy",
