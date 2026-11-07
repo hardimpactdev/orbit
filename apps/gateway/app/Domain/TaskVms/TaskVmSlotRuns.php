@@ -52,7 +52,7 @@ final readonly class TaskVmSlotRuns
         // A refresh proves its new snapshot before the Gateway records it; any other start copies the recorded one.
         $current = $snapshot === null ? $this->images->snapshot($host, $location)
             : ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'snapshot' => $snapshot, 'recipe_identity' => null];
-        $converge = $this->converge->for($host, $commit, $branch);
+        $converge = $this->converge->for($host, $commit, $branch, $slot->node);
         $resources = $slot->size->resources();
         $target = $this->target($slot);
 
@@ -131,7 +131,7 @@ final readonly class TaskVmSlotRuns
 
         return [
             'host' => ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool],
-            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
+            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'identity_volume' => $slot->name.'-identity', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
                 'pi_unit' => $this->systemd->unitName($pi)],
         ];
     }

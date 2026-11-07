@@ -6,9 +6,9 @@
 # - `base-prune`: keep the new snapshot and the recorded one, which becomes `-previous`; remove the others.
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
 # A task start and a release (docs/cli/tasks/provision.mmd, docs/cli/tasks/cancel.mmd):
-# - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), start the copy, write the identity the admission minted and the
-#   claim's keys, and start the services that use them. The containers start with the VM.
-# - `delete`: the task VM and its seed clone go; the Gateway then deletes the Node and its keys.
+# - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), put the identity the admission minted and the claim's keys
+#   on an identity volume of the VM, and start it. The base's orbit-identity unit applies them at boot. The containers start with the VM.
+# - `delete`: the task VM, its seed clone and its identity volume go; the Gateway then deletes the Node and its keys.
 # Every part is idempotent: a rerun finds its work done. The intent comes from the Gateway; this file names no host or VM. Secrets come
 # from the environment, never from argv. The host is reached from the Swamp Node with its pinned host keys, never trusted on first use.
 - name: Reach the task VM host
@@ -177,15 +177,19 @@
   gather_facts: false
   vars:
     incus: [incus, --project, "{{ host.project }}"]
-    in_vm: "{{ incus + ['exec', slot.name, '--'] }}"
   tasks:
+    # The identity is on the VM's disk before it boots: a small volume of its own holds the files, and the base's orbit-identity unit
+    # applies them before sshd, WireGuard and the agent start (docs/cli/tasks/provision.mmd). The start waits for nothing in the guest.
     - name: Start a VM with its identity
       tags: [start]
       block:
-        # A release that failed can leave the slot's VM or seed clone; the start makes them new.
+        # A release that failed can leave the slot's VM, seed clone or identity volume; the start makes them new.
         - name: Remove what a failed release left
           ansible.builtin.command: { argv: "{{ incus + item }}" }
-          loop: [[delete, --force, --, "{{ slot.name }}"], [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]]
+          loop:
+            - [delete, --force, --, "{{ slot.name }}"]
+            - [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]
+            - [storage, volume, delete, "{{ host.pool }}", "{{ slot.identity_volume }}"]
           register: slot_leftover
           changed_when: slot_leftover.rc == 0
           failed_when: slot_leftover.rc != 0 and 'not found' not in slot_leftover.stderr
@@ -197,33 +201,21 @@
             argv: "{{ ['flock', '--wait', '600', '/run/lock/orbit-task-vm-seed.lock'] + incus
                       + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ slot.base.seed ~ '/' ~ slot.base.snapshot, host.pool ~ '/' ~ slot.seed_clone] }}"
           changed_when: true
-        - name: Give the VM its seed clone and its size
-          ansible.builtin.command: { argv: "{{ incus + item }}" }
-          loop:
-            - [config, device, set, "{{ slot.name }}", topology-seed, "source={{ slot.seed_clone }}"]
-            - [config, set, "{{ slot.name }}", "limits.cpu={{ slot.cpus }}", "limits.memory={{ slot.memory }}"]
+        - name: Make the identity volume
+          ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'create', host.pool, slot.identity_volume, 'size=16MiB'] }}" }
           changed_when: true
-        - name: Start the VM
-          ansible.builtin.command: { argv: "{{ incus + ['start', '--', slot.name] }}" }
-          changed_when: true
-        - name: Wait for its guest agent
-          ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', slot.name, 'agent'] }}" }
-          changed_when: false
-        # Pi runs as orbit and keeps its sessions next to the claim's token and model file.
-        - name: Make the folders of Pi
-          ansible.builtin.command: { argv: "{{ in_vm + ['install', '-d', '-m', '0700', '-o', '1000', '-g', '1000', item] }}" }
-          loop: ["{{ slot.pi_home }}/.pi", "{{ slot.pi_home }}/.pi/agent"]
-          changed_when: true
+        # Each file goes from standard input into the volume at its path in the VM, with its owner and mode; no secret touches the host's disk.
         - name: Write the secret files
           no_log: true
           ansible.builtin.command:
-            argv: "{{ in_vm + ['install', '-D', '-m', '0600', '-o', item.owner, '-g', item.owner, '/dev/stdin', item.path] }}"
+            argv: "{{ incus + ['storage', 'volume', 'file', 'push', '--create-dirs', '--mode', '0600', '--uid', item.owner, '--gid', item.owner, '-',
+                   host.pool, slot.identity_volume ~ item.path] }}"
             stdin: "{{ item.content }}"
             stdin_add_newline: false
           loop:
-            - { path: /etc/wireguard/orbit.key, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_WIREGUARD_KEY') }}", owner: root }
-            - { path: /etc/ssh/ssh_host_ed25519_key, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_SSH_HOST_KEY') }}", owner: root }
-            - { path: /etc/orbit/agent/secret, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_AGENT_SECRET') }}", owner: root }
+            - { path: /etc/wireguard/orbit.key, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_WIREGUARD_KEY') }}", owner: "0" }
+            - { path: /etc/ssh/ssh_host_ed25519_key, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_SSH_HOST_KEY') }}", owner: "0" }
+            - { path: /etc/orbit/agent/secret, content: "{{ lookup('ansible.builtin.env', 'ORBIT_SLOT_AGENT_SECRET') }}", owner: "0" }
             # The claim's own Pi token and model file, minted at its admission: the first line, then models.json.
             - { path: "{{ slot.pi_home }}/.pi/agent/orbit-token", content: "{{ claim[0] }}", owner: "1000" }
             - { path: "{{ slot.pi_home }}/.pi/agent/models.json", content: "{{ claim[1] }}", owner: "1000" }
@@ -232,7 +224,8 @@
           changed_when: true
         - name: Write the public files
           ansible.builtin.command:
-            argv: "{{ in_vm + ['install', '-D', '-m', item.mode, '/dev/stdin', item.path] }}"
+            argv: "{{ incus + ['storage', 'volume', 'file', 'push', '--create-dirs', '--mode', item.mode, '--uid', '0', '--gid', '0', '-',
+                   host.pool, slot.identity_volume ~ item.path] }}"
             stdin: "{{ item.content }}"
             stdin_add_newline: false
           loop:
@@ -245,35 +238,32 @@
             - { path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt, content: "{{ slot.identity.certificate }}", mode: "0644" }
             - { path: /etc/systemd/system/orbit-agent.service, content: "{{ slot.identity.agent_unit }}", mode: "0644" }
             - { path: "{{ slot.identity.pi_unit_path }}", content: "{{ slot.identity.pi_unit }}", mode: "0644" }
+            # What the orbit-identity unit sets from the files: the name, the firewall and the services (task-vm-boot.yml).
+            - path: /etc/orbit/identity.env
+              mode: "0644"
+              content: "ORBIT_HOSTNAME={{ slot.name }}\nORBIT_PI_UNIT={{ slot.identity.pi_unit_name }}\nORBIT_PI_PORT={{ slot.identity.pi_port }}\n\
+                ORBIT_CONTROL_IP={{ slot.identity.control_ip }}\nORBIT_GATEWAY_IP={{ slot.identity.gateway_ip }}\n"
           loop_control: { label: "{{ item.path }}" }
           changed_when: true
-        # SSH over WireGuard answers only 209; the bridge, which port isolation keeps to the host, carries the converge. Pi answers 209 and
-        # the Gateway; a served workspace answers on 443.
-        - name: Close the firewall to the slot's own peers
-          ansible.builtin.command: { argv: "{{ in_vm + item }}" }
+        - name: Give the VM its seed clone, its identity and its size
+          ansible.builtin.command: { argv: "{{ incus + item }}" }
           loop:
-            - [ufw, prepend, deny, in, "on", orbit, proto, tcp, to, any, port, "22", comment, "orbit:task-vm-ssh-only"]
-            - [ufw, prepend, allow, in, "on", orbit, proto, tcp, from, "{{ ids.control_ip }}", to, any, port, "22", comment, "orbit:task-vm-ssh-209"]
-            - [ufw, allow, in, "on", orbit, proto, tcp, from, "{{ ids.control_ip }}", to, any, port, "{{ ids.pi_port }}", comment, "orbit:task-vm-pi-209"]
-            - [ufw, allow, in, "on", orbit, proto, tcp, from, "{{ ids.gateway_ip }}", to, any, port, "{{ ids.pi_port }}", comment, "orbit:task-vm-pi-gateway"]
-            - [ufw, allow, in, "on", orbit, proto, tcp, to, any, port, "443", comment, "orbit:task-vm-site"]
-          vars: { ids: "{{ slot.identity }}" }
+            - [config, device, set, "{{ slot.name }}", topology-seed, "source={{ slot.seed_clone }}"]
+            - [config, device, add, "{{ slot.name }}", orbit-identity, disk, "pool={{ host.pool }}", "source={{ slot.identity_volume }}",
+               path=/run/orbit-identity, readonly=true]
+            - [config, set, "{{ slot.name }}", "limits.cpu={{ slot.cpus }}", "limits.memory={{ slot.memory }}"]
           changed_when: true
-        - name: Start the services of the identity
-          ansible.builtin.command: { argv: "{{ in_vm + item }}" }
-          loop:
-            - [groupadd, -f, --system, orbit-env]
-            - [hostname, "{{ slot.name }}"]
-            - [update-ca-certificates]
-            - [systemctl, daemon-reload]
-            - [systemctl, restart, ssh.service]
-            - [systemctl, enable, --now, wg-quick@orbit.service, orbit-agent.service, "{{ slot.identity.pi_unit_name }}"]
+        - name: Start the VM
+          ansible.builtin.command: { argv: "{{ incus + ['start', '--', slot.name] }}" }
           changed_when: true
 
     - name: Delete the VM
       tags: [delete]
       ansible.builtin.command: { argv: "{{ incus + item }}" }
-      loop: [[delete, --force, --, "{{ slot.name }}"], [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]]
+      loop:
+        - [delete, --force, --, "{{ slot.name }}"]
+        - [storage, volume, delete, "{{ host.pool }}", "{{ slot.seed_clone }}"]
+        - [storage, volume, delete, "{{ host.pool }}", "{{ slot.identity_volume }}"]
       register: slot_delete
       changed_when: slot_delete.rc == 0
       failed_when: slot_delete.rc != 0 and 'not found' not in slot_delete.stderr

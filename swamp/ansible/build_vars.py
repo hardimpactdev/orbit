@@ -38,7 +38,8 @@ def build_task_vm(folder, kind):
     known = set(known_host_lines(target))
     host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
             'ansible_ssh_private_key_file': ssh['identity_file']}
-    jump = intent.get('jump')
+    # A task VM with its identity is reached over WireGuard; only the base VM, which has none, is reached through its host.
+    jump = None if intent.get('direct') else intent.get('jump')
     if jump:
         known.update(known_host_lines(jump['target']))
         # The jump asks the same pinned host keys as the build, so it never trusts a key on first use.
