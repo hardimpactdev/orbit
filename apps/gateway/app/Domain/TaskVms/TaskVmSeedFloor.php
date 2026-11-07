@@ -8,8 +8,8 @@ use Closure;
 use Illuminate\Container\Attributes\Scoped;
 
 /**
- * The hosts whose ready copies a placement may use, while a proof is admitted: only those whose copies were built from a release at or
- * after the merge base of the commit under proof (docs/reference/pipeline/2-development-environment.mmd). Outside {@see self::during()}
+ * The hosts whose ready copies a placement may use, while a proof is admitted: only those whose copies include every change of what the
+ * image carries up to the merge base of the commit under proof (docs/reference/pipeline/2-development-environment.mmd). Outside {@see self::during()}
  * there is no floor and any host with usable copies serves. GitHub is asked before the admission transaction, so the transaction reads
  * only this list.
  */

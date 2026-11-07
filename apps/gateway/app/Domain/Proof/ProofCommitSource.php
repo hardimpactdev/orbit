@@ -31,8 +31,8 @@ interface ProofCommitSource
     /** The diff of the commit against its merge base with the base branch. */
     public function changes(string $sha): ProofChangedFiles;
 
-    /** Whether `$sha` is `$base` or comes after it on its history; false when GitHub does not know `$sha`. */
-    public function atOrAfter(string $base, string $sha): bool;
+    /** How `$to` stands to `$from` and the files that differ between them; null when GitHub knows neither of them or one of them. */
+    public function range(string $from, string $to): ?ProofCommitRange;
 
     /** The text of one file at the commit, or null when the commit has no such file. */
     public function file(string $sha, string $path): ?string;

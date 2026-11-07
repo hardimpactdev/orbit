@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -11,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
@@ -116,12 +118,12 @@ function proofSource(): object
             return $this->paths;
         }
 
-        /** @var array<string,bool> release commit => whether it is at or after the merge base; an unknown commit is not */
-        public array $fresh = [];
+        /** @var array<string,ProofCommitRange|null> release commit => how the merge base stands to it; an unknown commit is null */
+        public array $ranges = [];
 
-        public function atOrAfter(string $base, string $sha): bool
+        public function range(string $from, string $to): ?ProofCommitRange
         {
-            return $this->fresh[$sha] ?? false;
+            return $this->ranges[$from] ?? null;
         }
     };
 }
@@ -468,32 +470,40 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and(proofFailureDetail($proof))->toContain('A report-only proof leaves 3 slots free');
     });
 
-    it('places the proof on a host only when its ready copies come from a release at or after the merge base', function (?string $copies, bool $atOrAfter, bool $skipped): void {
+    it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, $copies);
-        $source->fresh = $copies === null ? [] : [$copies => $atOrAfter];
+        if ($copies !== null) {
+            $source->ranges[$copies] = $range === null ? null : new ProofCommitRange(GitHubComparisonStatus::from($range[0]), new ProofChangedFiles(str_repeat('f', 40),
+                array_map(static fn (string $path): ProofChangedFile => new ProofChangedFile($path, 'modified'), $range[1]), $range[2] ?? true));
+        }
 
         $proof = proofAdmitted();
 
         Process::run(['rm', '-rf', $base]);
         $detail = proofFailureDetail($proof) ?? '';
         expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
-            ->and(str_contains($detail, 'merge base of its commit'))->toBe($skipped);
+            ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped);
         if ($skipped) {
             expect($proof->error_code)->toBe('tasks.capacity_unavailable');
         }
     })->with([
-        'newer copies' => ['dddddddddddd0000000000000000000000000000', true, false],
-        'older copies' => ['aaaaaaaaaaaa0000000000000000000000000000', false, true],
-        'a release GitHub does not know' => ['bbbbbbbbbbbb0000000000000000000000000000', false, true],
-        'no recorded provenance' => [null, false, true],
+        'main moved by documents and Gateway PHP only' => ['dddddddddddd0000000000000000000000000000', ['ahead', ['docs/a.md', 'apps/gateway/app/Domain/Proof/ProofRunIntent.php']], false],
+        'the copies are the merge base' => ['dddddddddddd0000000000000000000000000000', ['identical', []], false],
+        'the copies are after the merge base' => ['dddddddddddd0000000000000000000000000000', ['behind', []], false],
+        'main moved by a playbook' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['docs/a.md', 'swamp/ansible/task-vm-role.yml']], true],
+        'main moved by a pin' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['apps/gateway/resources/machine-software/recipe.json']], true],
+        'main moved by a lock file' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['apps/gateway/composer.lock']], true],
+        'a list of files that GitHub cut' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['docs/a.md'], false], true],
+        'a release GitHub does not know' => ['bbbbbbbbbbbb0000000000000000000000000000', null, true],
+        'no recorded provenance' => [null, null, true],
     ]);
 
     it('does not release a kept VM when no host has fresh enough copies, because a freed slot would not help', function (): void {
         $source = proofSource();
         $commit = 'aaaaaaaaaaaa0000000000000000000000000000';
         $base = proofHostWithCopies($source, $commit);
-        $source->fresh = [$commit => false];
+        $source->ranges[$commit] = new ProofCommitRange(GitHubComparisonStatus::Ahead, new ProofChangedFiles(str_repeat('f', 40), [new ProofChangedFile('swamp/ansible/task-vm-role.yml', 'modified')], true));
         [$kept] = proofKeptRun();
 
         $proof = proofAdmitted();
@@ -503,6 +513,7 @@ describe('proof:run admission', function (): void {
             ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
         Queue::assertNotPushed(CancelProofGroup::class);
     });
+
     it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
@@ -510,7 +521,7 @@ describe('proof:run admission', function (): void {
             foreach (['commitExists', 'branchesWithHead', 'pullRequestsWithHead', 'canWrite', 'reviews', 'changes', 'file', 'proofPaths'] as $method) {
                 $mock->shouldReceive($method)->andReturnUsing(static fn (...$arguments) => $source->{$method}(...$arguments));
             }
-            $mock->shouldReceive('atOrAfter')->andThrow(GitHubApiException::unavailable());
+            $mock->shouldReceive('range')->andThrow(GitHubApiException::unavailable());
         }));
 
         $proof = proofAdmitted();
