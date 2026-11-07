@@ -53,6 +53,8 @@ jobs:
       behaviorName: ${{ "task-vm-host-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
+        # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
+        ignoreExitCode: true
         run: timeout 2400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" -e "run_dir=$ORBIT_RUN" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-host.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
@@ -61,6 +63,9 @@ jobs:
           ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
+          # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
           ORBIT_CLUB_KEY: ${{ vault.get(inputs.execution_secrets.club.vault, inputs.execution_secrets.club.key) }}
   - name: Read the aliases
     labels: {role: swamp}
@@ -77,6 +82,15 @@ jobs:
         transport: {kind: ssh, user: '${{ inputs.intent.host.ssh.target.user }}', port: '${{ inputs.intent.host.ssh.target.port }}', identityFile: '${{ inputs.intent.host.ssh.identity_file }}'}
         hosts: [{name: host, address: '${{ inputs.intent.host.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.host.ssh.target.host_keys }}'}}]
       inputs: {hosts: 'name:host', sudo: true, argv: [timeout, '30', incus, --project, '${{ inputs.intent.host.project }}', image, alias, list, --format, json], timeoutSec: 40}
+  - name: Check the host phase
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Run the host phase, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: 'steps["Run the host phase"].outputs.exitCode == 0'
+      severity: high
+      message: '${{ "Ansible exited with " + string(steps["Run the host phase"].outputs.exitCode) + ": " + (size(steps["Run the host phase"].outputs.stderr) > 3500 ? steps["Run the host phase"].outputs.stderr.substring(size(steps["Run the host phase"].outputs.stderr) - 3500) : steps["Run the host phase"].outputs.stderr) }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
