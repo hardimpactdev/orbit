@@ -211,7 +211,7 @@ Then [run a release](/reference/gateway-recovery#release-as-a-swamp-run) of the 
 orbit gateway:release:deploy <SHA>
 ```
 
-The command follows the release, which must end `verified`. The run drains Horizon, then starts it as `gateway-queue` after the switch ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:release:auto:resume`](/cli/gateway/release-auto-resume).
+The command follows the release, which must end `verified`. The run drains Horizon, then starts it as `gateway-queue` after the switch ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:auto-release:resume`](/cli/gateway/auto-release-resume).
 
 ### Check the queue user
 

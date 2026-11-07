@@ -18,10 +18,10 @@
             "cli/gateway/release-show",
             "cli/gateway/release-deploy",
             "cli/gateway/release-rollback",
-            "cli/gateway/release-auto-status",
-            "cli/gateway/release-auto-enable",
-            "cli/gateway/release-auto-disable",
-            "cli/gateway/release-auto-resume"
+            "cli/gateway/auto-release-status",
+            "cli/gateway/auto-release-enable",
+            "cli/gateway/auto-release-disable",
+            "cli/gateway/auto-release-resume"
           ]
         }
       ]

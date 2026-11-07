@@ -8,10 +8,10 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\GatewayReleases\EnableGatewayReleaseAutomationRequest;
 
-final class EnableGatewayReleaseAutomationCommand extends GatewayReleaseAutomationCommand
+final class EnableGatewayAutoReleaseCommand extends GatewayReleaseAutomationCommand
 {
     #[\Override]
-    protected $signature = 'gateway:release:auto:enable
+    protected $signature = 'gateway:auto-release:enable
         {--json : Return machine-readable JSON}';
 
     #[\Override]

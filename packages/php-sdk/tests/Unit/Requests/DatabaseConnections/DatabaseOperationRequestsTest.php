@@ -8,9 +8,9 @@ use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DestroyedDatabaseConnectionResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -32,7 +32,7 @@ it('preserves the start key and decodes the accepted database Operation', functi
 })->with([
     'server-create' => [new CreateDatabaseServerRequest('dev-db', 2, idempotencyKey: 'same-start-key')],
     'server-destroy' => [new DestroyDatabaseServerRequest('dev-db', 'same-start-key')],
-    'server-close' => [new CloseDatabaseServerRequest('dev-db', 'same-start-key')],
+    'server-update' => [new UpdateDatabaseServerRequest('dev-db', true, 'same-start-key')],
     'database-create' => [new CreateDatabaseConnectionRequest('throwaway', server: 'dev-db', idempotencyKey: 'same-start-key')],
     'database-user-create' => [new CreateDatabaseUserRequest('throwaway', 'reader', 'synthetic-password', idempotencyKey: 'same-start-key')],
     'database-destroy' => [new DestroyDatabaseConnectionRequest('throwaway', 'same-start-key')],

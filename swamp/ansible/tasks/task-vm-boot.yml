@@ -14,6 +14,46 @@
     owner: "{{ orbit_user }}"
     group: "{{ orbit_user }}"
     mode: "0600"
+# The uplink by its type and name, not its MAC: a stock first boot leaves netplan bound to the base VM's MAC, and every copy gets its own
+# MAC, so a copy came up with no address (refresh 13137). networkd reads `/etc` before netplan's generated files, so this file wins.
+- name: Configure the uplink for every copy
+  ansible.builtin.copy:
+    dest: /etc/systemd/network/00-orbit-task-vm.network
+    mode: "0644"
+    content: |
+      [Match]
+      Type=ether
+      Name=en*
+
+      [Network]
+      DHCP=ipv4
+      LinkLocalAddressing=no
+
+      [DHCP]
+      RouteMetric=100
+      UseMTU=true
+# Boot waits only for an IPv4 route, not for IPv6 or every link.
+- name: Make the folder of the wait-online drop-ins
+  ansible.builtin.file: { path: /etc/systemd/system/systemd-networkd-wait-online.service.d, state: directory, mode: "0755" }
+- name: Wait online for IPv4 only
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/systemd-networkd-wait-online.service.d/zz-orbit-ipv4.conf
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --ipv4 --dns --operational-state=routable
+# A copy lives for one task: no first-boot wizard, no apt timers, no news.
+- name: Mask what a short-lived copy never needs
+  ansible.builtin.systemd_service: { name: "{{ item }}", masked: true }
+  loop: [systemd-firstboot.service, apt-daily.timer, apt-daily-upgrade.timer, motd-news.timer, unattended-upgrades.service]
+# Docker starts on its first use, through its socket, not at boot.
+- name: Start Docker on its first use
+  ansible.builtin.systemd_service: { name: "{{ item.name }}", enabled: "{{ item.enabled }}" }
+  loop:
+    - { name: docker.service, enabled: false }
+    - { name: containerd.service, enabled: false }
+    - { name: docker.socket, enabled: true }
 # Every copy of the base has the base's machine-id, from which networkd makes its DHCP client ID, so copies started at once got one address
 # (provision 12863). Incus gives each copy its own MAC, so the client ID is the MAC. It takes effect at the next boot, which is how copies start.
 - name: Make the folder of the network drop-ins
