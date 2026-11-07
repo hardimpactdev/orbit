@@ -55,7 +55,7 @@
 - name: Work out what changed
   vars:
     # Every file the role reads: its tasks, the shared task files they include and the pins of the shape gate, in a fixed order.
-    files: "{{ ['task-vm-role.yml', 'requirements.txt', 'requirements.yml', 'shape-gate-requirements.txt']
+    files: "{{ ['task-vm-role.yml', 'requirements.txt', 'requirements.yml', 'shape-gate-requirements.txt', 'transport-exit-codes.json', 'library/orbit_artifact.py']
       | map('regex_replace', '^', playbook_dir ~ '/') | list }}"
     code: "{{ query('ansible.builtin.file', *(files + (query('ansible.builtin.fileglob', playbook_dir ~ '/tasks/*.yml') | sort))) | join | hash('sha256') }}"
     tools_input: "{{ code ~ (recipe | to_json) ~ profile ~ (intent.fleet.network | default('')) }}"
