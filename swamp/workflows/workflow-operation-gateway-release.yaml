@@ -185,7 +185,7 @@ jobs:
         hosts: name:target
         timeoutSec: 960
         # The output and the exit code are the step's stdout: a failed exec keeps no output, so the check below decides and the record shows why.
-        argv: [/usr/bin/timeout, '900', /bin/sh, -c, 'out=$(cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan migrate --force --isolated --no-interaction 2>&1); code=$?; printf "%s\n" "$out" | tail -c 3500; echo "migrate-exit=$code"', sh, '${{ inputs.intent.id }}']
+        argv: [/usr/bin/timeout, '900', /bin/sh, -c, 'out=$(cd "/home/orbit/releases/$1/apps/gateway" && php8.5 artisan migrate --force --isolated --no-interaction 2>&1); code=$?; printf "%s\n" "$out" | tail -c 1500; echo "migrate-exit=$code"', sh, '${{ inputs.intent.id }}']
   - name: Check the migration
     labels: {role: swamp}
     dependsOn: [{step: Migrate, condition: {type: succeeded}}]

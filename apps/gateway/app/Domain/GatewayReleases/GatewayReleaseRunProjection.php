@@ -7,6 +7,7 @@ namespace App\Domain\GatewayReleases;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
@@ -174,8 +175,10 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         if ($phase !== 'migrate' || ! is_string($output) || trim($output) === '') {
             return '';
         }
-        $text = preg_replace('/[\x00-\x08\x0b-\x1f\x7f]/u', '', trim($output)) ?? '';
+        // The output can carry SQL with its values, and the message reaches the release alert: it is redacted like any native failure.
+        $text = preg_replace('/\e\[[0-9;]*m|[\x00-\x08\x0b-\x1f\x7f]/u', '', mb_scrub(trim($output), 'UTF-8')) ?? '';
+        $text = app(LogRedactor::class)->redact(Str::substr($text, -1500), []);
 
-        return $text === '' ? '' : "\n".Str::substr($text, -2000);
+        return trim($text) === '' ? '' : "\n".trim($text);
     }
 }
