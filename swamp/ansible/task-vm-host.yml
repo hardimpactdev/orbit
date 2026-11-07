@@ -602,7 +602,7 @@
       loop: [/etc/rsyslog.d/19-orbit-egress.conf, /etc/logrotate.d/orbit-egress]
       register: egress_config_files
       check_mode: false
-    # Observation: a failed check records a warning with its code, and the refresh goes on. The agent fact shows the same gap.
+    # Observation: a failed check records a warning with its code, and the refresh goes on. The warning shows only in the Swamp run log.
     - name: Warn about the rules
       when: [not ansible_check_mode, "not (table_ok | bool)"]
       ansible.builtin.set_fact:
@@ -644,7 +644,7 @@
       ansible.builtin.set_fact:
         egress_warnings: "{{ egress_warnings | default([]) + ['WARNING egress.service_inactive: rsyslog or orbit-egress-log.service is not active'] }}"
     # The warnings are printed in Ansible's log, before the safety checks so that a failed part shows them too. An operation does not carry
-    # the log of a step, so the lasting signs are the end checks above and the missing `egress` fact of the agent.
+    # the log of a step, so a warning shows only in the Swamp run log. A missing rule leaves the agent fact in place with no rows.
     - name: Print the warnings
       when: egress_warnings | default([]) | length > 0
       ansible.builtin.debug: { msg: "{{ egress_warnings }}" }
