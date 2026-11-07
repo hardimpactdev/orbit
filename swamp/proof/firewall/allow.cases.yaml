@@ -528,7 +528,7 @@ cases:
     act:
       - cli:
           run: [firewall:allow, "${port}"]
-          tty: [{see: Node}, {see: ID}, {see: Name}, {see: 'Press / to search', choose: app-dev}]
+          tty: [{see: Node}, {see: / Search}, {see: ID}, {see: Name, choose: app-dev}]
           expect: {exit: 0, status: succeeded}
     expect:
       - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: allow, source: any, protocol: any, status: active}, count: 1}
