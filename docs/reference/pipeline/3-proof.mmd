@@ -19,6 +19,9 @@ sequenceDiagram
   %%> - runs the command's cases on the author's own development VM; no new VM
   %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): a proof child claims a ready large slot of Project 46 on shark when one is parked, as any task provision does; a report-only proof still clones (its reserve skips the claim)
+  %%> - the slot replaces "Create and prepare the VM" (median 209 s over the proof children 12202–12366) with slot start, agent wait and boot (about 20 s); "Converge once" (median about 62 s) is skipped while no release changed the task image inputs since the enrol
+  %%> - still per proof: the workspace at the PR head (105–131 s), the nested fleet reset from the seed's ready copies (110–167 s) and the re-mint; a slot holds no source, so a move of main does not make it stale
   %%> Built, not yet passed live:
   %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify`, `proof-fleet-verify-batch` and `proof-fleet-verify-case`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, checks readiness and applies the checkout before every batch but the first and after every case that did not pass and is not the last of its batch
