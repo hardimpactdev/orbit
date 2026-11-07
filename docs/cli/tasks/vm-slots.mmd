@@ -23,8 +23,10 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06), pool size:
   %%> - a stopped slot holds disk (a ZFS clone), not memory, so it takes no capacity, and stopped slots never block a claim or a clone
   %%> - a pool holds at most as many slots as the host can run at once: `max_vms` ÷ the units of the slot size (beast 6 ÷ 3 = 2 large, shark 12 ÷ 3 = 4); a larger `count` is cut to that
-  %%> Decided by the orchestrator, for Nick's review (2026-11-07): shark keeps `{count 2, project_id 46, size large}` for proof children; parked slots hold no `max_vms` units, only disk, and each claim's refill enrol (about 4 min: VM 136 s, converge 96 s) starts only in 3 idle units, so it waits through proof peaks
   %%> - an enrol runs a VM for a few minutes, so it starts only in capacity that no task, refresh or proof uses, one at a time; a provision that arrives meanwhile waits for capacity as for any VM, at most one enrol long
+  %%> Decided by the orchestrator, for Nick's review (2026-11-07): shark keeps `{count 2, project_id 46, size large}` for proof children
+  %%> - a proof child claims one only while Project 46 is in `task_vms.large_projects`, so its group's size matches the slot's (it is today)
+  %%> - parked slots hold no `max_vms` units, only disk; each claim's refill enrol (about 4 min: VM 136 s, converge 96 s) starts only in 3 idle units, so it waits through proof peaks
   GW->>SW: Enrol a slot<br/>today's tasks:provision, no task
   %%> Exactly today's path: clone the current task image, boot, enrol (keys, WireGuard, observer), model key, Pi. Runs in the background whenever the pool is below its size.
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
