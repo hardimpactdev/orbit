@@ -136,3 +136,20 @@ Deno.test("the steps that cannot run twice declare writes, so a dispatch that a 
         assertEquals(source.find((step) => step.name === name)?.writes, true, `${name} must declare writes: true`);
     }
 });
+
+Deno.test("a failed checkout step still removes and revokes the dependency token", async () => {
+    const source = await steps("workflow-task-workspace-source.yaml");
+    // A Project with a setup step: the token is minted and cleared before the checkout, and the guards of the dependency steps are false only for the writes.
+    const guarded = SOURCE_GUARDED.filter((name) => !["deps_mint", "deps_clear", "setup-${{ self._index }}"].includes(name));
+    for (const failing of ["clone", "import", "branch", "access-${{ self._index }}", "inspect"]) {
+        const withRows = guarded.filter((name) => name !== "access-${{ self._index }}");
+        const status = run(source, [failing], withRows);
+        assertEquals(status.get(failing), "failed");
+        assert(failedJob(source, status));
+        for (const name of ["deps_remove_files", "deps_revoke", "result", "cleanup", "cleanup_remote"]) {
+            assertEquals(status.get(name), "succeeded", `${failing}: ${name} must still run`);
+        }
+        // The Project setup does not start on a checkout that failed.
+        assertEquals(status.get("setup-${{ self._index }}"), "skipped");
+    }
+});

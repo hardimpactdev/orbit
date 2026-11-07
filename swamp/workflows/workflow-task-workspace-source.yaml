@@ -50,7 +50,6 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         vm: ${{ inputs.vm }}
-    # Every failure lands in the receipt; this workspace run itself always ends with it.
   - name: prepare
     labels: {role: swamp}
     task:
