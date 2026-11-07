@@ -237,3 +237,68 @@ Deno.test("a line from one IPv6 address sits above the IPv6 deny and is found ag
         skipped: "firewall.rule_exists",
     });
 });
+
+Deno.test("deny defaults cover both families and protocols, and a partial retry only repairs missing lines", () => {
+    const ufw = new UfwDouble();
+    const changes = { action: "deny", port: "8000:8100", protocol: "any", source: "any" };
+    const commands = plan(intent("present", changes), ufw.status());
+    assertEquals(commands.length, 4);
+    ufw.apply(commands[0]);
+    const applied = structuredClone(ufw.rows[0]);
+    const repaired = converge(ufw, changes);
+    assertEquals(repaired.commands.length, 3);
+    assertEquals(ufw.rows[0], applied);
+    assertEquals(ufw.tuples("8000:8100"), [
+        ["8000:8100/tcp", "deny", "Anywhere"],
+        ["8000:8100/udp", "deny", "Anywhere"],
+        ["8000:8100/tcp (v6)", "deny", "Anywhere (v6)"],
+        ["8000:8100/udp (v6)", "deny", "Anywhere (v6)"],
+    ]);
+    const before = structuredClone(ufw.rows);
+    const repeat = converge(ufw, changes);
+    assertEquals(repeat.commands, []);
+    assertEquals(repeat.result, {
+        backend: "active",
+        skipped: "firewall.rule_exists",
+    });
+    assertEquals(converge(ufw, { ...changes, comment: "orbit new-label" }).commands, []);
+    assertEquals(ufw.rows, before);
+});
+
+Deno.test("an IPv6-only deny repairs an interrupted reorder without touching IPv4", () => {
+    const ufw = new UfwDouble();
+    converge(ufw, { port: "8080", source: "any" });
+    const changes = { action: "deny", port: "8080", protocol: "udp", source: "fd42::/64" };
+    converge(ufw, changes);
+    const target = ufw.rows.findIndex((row) => row.source === "fd42::/64");
+    const [row] = ufw.rows.splice(target, 1);
+    ufw.rows.push(row);
+    const before = structuredClone(ufw.rows.filter((row) => !row.source.includes(":")));
+    const commands = plan(intent("present", changes), ufw.status());
+    assertEquals(commands.length, 2);
+    ufw.apply(commands[0]); // The worker is interrupted after removing the misplaced line.
+    assertEquals(converge(ufw, changes).commands.length, 1);
+    assertEquals(ufw.rows.filter((row) => !row.source.includes(":")), before);
+    assertEquals(converge(ufw, changes).commands, []);
+});
+
+Deno.test("deny positions count unrelated reject, limit, outbound and routed UFW rows", () => {
+    const ufw = new UfwDouble();
+    const unrelated = [
+        { to: "9000/tcp", action: "reject", source: "Anywhere", comment: "operator reject" },
+        { to: "9001/tcp", action: "limit", source: "Anywhere", comment: "operator limit" },
+        { to: "8080/tcp", action: "deny", source: "Anywhere", comment: "outbound", direction: "out" as const },
+        { to: "Anywhere on orbitci0", action: "allow", source: "Anywhere", comment: "orbit-ci-runners", direction: "fwd" as const },
+    ];
+    ufw.rows.unshift(...unrelated);
+    const changes = { action: "deny", port: "8080", source: "any" };
+    assertEquals(refusal(() => check(intent("present", changes), ufw.status())), "firewall.verify_failed");
+    const result = converge(ufw, changes);
+    assertEquals(result.result, { backend: "active" });
+    assertEquals(ufw.rows.filter((row) => unrelated.some((other) => row.comment === other.comment)), unrelated);
+    assertEquals(ufw.rows.findIndex((row) => row.comment === "orbit:wireguard-members"), 5);
+    assertEquals(converge(ufw, changes).commands, []);
+    converge(ufw, changes, "absent");
+    assertEquals(ufw.rows.filter((row) => unrelated.some((other) => row.comment === other.comment)), unrelated);
+    assertEquals(ufw.rows.filter((row) => row.action === "deny" && (row.direction ?? "in") === "in"), []);
+});

@@ -1,7 +1,6 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity).
-  %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions, Lab #4334).
-  %% status: reviewed
+  %% Target design: docs/cli/firewall/index.mdx; docs/reference/cli-ux.md; ADR 0244 and ADR 0241; Swamp shape; command development pipeline stage 1.
+  %% status: draft
   %% command: firewall:deny
   %% kind: firewall.deny
   autonumber
@@ -9,118 +8,81 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant CLI as Caller<br/>CLI · MCP · API
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
   CLI->>GW: firewall:deny PORT<br/>--node=NODE
-  %%> Command:
-  %%> - `orbit firewall:deny PORT --node=NODE`
-  %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp] [--label=TEXT]`
-  %%> Input:
-  %%> - the destination port or port range
-  %%> - the Node, and optionally the source address and the protocol
-  %%> - optionally a label or short description
-  %%> Not accepted:
-  %%> - service names such as `smtp` as the port
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
+  %% path: main
+  %%> Intent:
+  %%> - deny inbound traffic for one port or range on one Node
   Note over GW: Validate, record the rule
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
-  %%> - the target is an active Linux Node
-  %%> - the port and source are valid
-  %%> - the port or range includes no protected port, with any `--from`: SSH 22, the recovery SSH port, the WireGuard port or a port one of the target's roles needs (`firewall.protected_port`), so a deny can never cut the Node off
-  %%> - no opposite rule for the same port, protocol and source; an allow and a deny for exactly the same scope is refused (`firewall.rule_conflict`)
-  %%> - no other firewall change runs on the target; the Gateway holds one lock per Node
+  %%> - the calling Node has an access grant to the target Node (`node_access.required`); the target is a Linux Node (`firewall.platform_unsupported` for another platform)
+  %%> - the port or range includes no protected port, regardless of source or protocol: SSH 22, recovery SSH, WireGuard, or a port needed by a role on the target (`firewall.protected_port`)
+  %%> - no opposite action for the same port, protocol and normalized source (`firewall.rule_conflict`)
+  %%> - no both-protocol rule overlapping a single-protocol rule on the same port and source, in either direction (`firewall.rule_overlap`)
+  %%> - no other firewall change runs on the target (`operation.target_busy`); one lock per Node
   %%> Allowed:
-  %%> - repeat an active or failed deny rule: reuse its record and check the Node in a new task
-  %%> - overlapping rules with a different scope, such as a broad allow with a deny for one source
+  %%> - different source scopes may overlap: a narrow allow overrides a broad deny, and a narrow deny overrides a broad allow
+  %%> - repeat an active or failed deny: reuse its identity record and check the Node in a new Operation
   %%> Result:
-  %%> - the new or reused rule is recorded with status provisioning
-  %%> - a task is recorded with the full intent
-  %%> - nothing has happened on the Node yet
+  %%> - a refusal creates no Operation or rule and changes nothing on the Node
+  %%> - an admitted new start records the rule as provisioning and captures the full non-secret intent; no Node work has happened yet
   GW->>SW: Start run, full intent<br/>operation-firewall-direct
-  %%> What it does:
-  %%> - starts one Swamp run
   %%> Inputs:
-  %%> - the rule as exact ufw lines: port, protocol, source, direction
-  %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task ID
-  %%> What you get:
-  %%> - the task ID, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
+  %%> - the exact rule tuple and comment, target address and pinned SSH host keys
+  %%> - the shared SSH identity comes from the worker's swamp role; no step calls the Gateway
+  GW-->>CLI: 202 Accepted<br/>Operation ID
+  %%> Result:
+  %%> - the caller receives the admitted Operation's ID
   SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
-  %%> How:
-  %%> - a Swamp worker reaches the target over SSH with the official `@swamp/ssh` behavior
-  %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
+  %%> What it does:
+  %%> - reads numbered UFW rows over official SSH; needed to plan insert positions and detect drift on a repeat
+  %%> - inactive UFW fails with `firewall.backend_inactive` before mutation; never enables the firewall
   Note over SW: Plan the changes
   %%> What it does:
-  %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
-  %%> - an insert position counts the rows as they will be after the earlier commands
-  %%> - plans no changes when every expected line already exists in the correct position
-  %%> Order:
-  %%> - narrower rules go above broader ones, allow or deny, so an exception such as one IP wins over a rule for anywhere
-  %%> - ufw stops at the first match, so Orbit sets this order on every change
-  %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
-  %%> Why typed, not cfgmgmt:
-  %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
+  %%> - plans exact missing lines and moves misplaced lines; an identical, well-placed line is left untouched
+  %%> - narrower sources go first: one address, then CIDRs by prefix length, then anywhere; operator lines go above Orbit's broad managed rules
+  %%> - plans one deny per protocol and applicable address family; a port range stays a range
+  %%> - numbered positions account for earlier planned changes
+  %%> Why native:
+  %%> - official cfgmgmt firewall cannot insert at a position or express a range; each mutation is one UFW argv over official SSH, with no copied script
   alt changes needed
+    %% path: changes-needed
     SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
     %%> What it does:
-    %%> - adds one ufw deny line per port, protocol and family, commented with its label
-    %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
-    %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
-    %%> - runs the planned commands one at a time; nothing is copied to the Node
+    %%> - executes planned changes sequentially; a native guard skips entries requiring no work
+    %%> - moves a misplaced line by deleting and reinserting it; preserves unrelated rules
   else already applied
+    %% path: already-applied
     Note over SW: Skipped — already applied<br/>firewall.rule_exists
     %%> Result:
-    %%> - the plan contains no changes
-    %%> - the final read and check still run before the task can succeed
+    %%> - no mutation; the final read and check must still pass before reporting a successful skip
   end
   SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+  %%> What it does:
+  %%> - collects the final rows for the one end-state check
   Note over SW: Check the rules
   %%> What it does:
-  %%> - checks every expected line is present, in narrow-first order
-  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
-  %%> Why:
-  %%> - the rule only counts as active when ufw shows it
+  %%> - a typed check compares every expected line and its narrow-first position; native assert requires the check to pass
+  %%> - the public result comes from the check, not a separate report step
+  %%> Failure:
+  %%> - a missing or misplaced line fails with `firewall.verify_failed`, including a change made between mutation and this read
   alt rules present and ordered
-    N-->>SW: ufw lines in order
-    %%> Returns:
-    %%> - the check passed for every line and its narrow-first order
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result
+    %% path: succeeded
+    SW-->>GW: Run succeeded<br/>terminal result
     %%> Result:
-    %%> - the rule becomes active
-    %%> - the task succeeds
-    %%> - if no changes were needed, reports `Skipped — already applied (firewall.rule_exists)`
-    %%> - the skip reason is part of the successful result in human and machine output, not an error
-  else adding or checking fails
-    N--xSW: exit ≠ 0
-    %%> When:
-    %%> - ufw refuses the line, SSH fails, or a line is missing after the add
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the rule failed
+    %%> - the Gateway's shared reader marks the rule active and the Operation succeeded
+    %%> - only a no-change plan reports the successful skip `firewall.rule_exists`
+  else read, apply or check fails
+    %% path: failed
+    SW--xGW: Run failed<br/>error_code · failed step
     %%> Result:
-    %%> - the rule is marked failed, so you can see it
-    %%> - the task fails
+    %%> - the rule stays visible as failed; the Operation fails
+    %%> - SSH, UFW mutation or another native step stopping before a public check result is `operation.native_failed`
     %%> On the Node:
-    %%> - lines added before the failure stay; there is no rollback
-    %%> - that is safe: the rule is marked failed, and a rerun skips lines that already exist
+    %%> - previously added lines remain, and a line deleted for reordering may be absent; there is no rollback
     %%> Retry:
-    %%> - run the same command again after fixing the cause; it is a new task
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
+    %%> - fix the cause and repeat the same command as a new start; reuse the record, keep correct lines and repair missing or misplaced ones without duplicates
   end

@@ -10,7 +10,6 @@ use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
-use Laravel\Prompts\SelectPrompt;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -95,7 +94,7 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
     private function askForPort(): string
     {
         while (true) {
-            $port = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt('Destination port or range', placeholder: '8000:8100', required: true));
+            $port = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt('Port (destination port or range)', placeholder: '8000:8100', required: true));
 
             if (is_string($port) && preg_match('/\A(\d{1,5})(?::(\d{1,5}))?\z/D', $port, $parts) === 1
                 && (int) $parts[1] >= 1 && (int) $parts[1] <= (int) ($parts[2] ?? $parts[1]) && (int) ($parts[2] ?? $parts[1]) <= 65_535) {
@@ -115,22 +114,20 @@ abstract class StoreFirewallRuleCommand extends FirewallCommand
             return null;
         }
 
-        $options = [];
+        $rows = [];
 
         foreach ($nodes->nodes as $node) {
             if ($node->status === 'active' && $node->platform === 'linux') {
-                $options[$node->id] = $node->name;
+                $rows[$node->id] = [(string) $node->id, $node->name];
             }
         }
 
-        if ($options === []) {
+        if ($rows === []) {
             $this->renderGatewayFailure('firewall.node_id_invalid', 'No active Linux Node is available.');
 
             return null;
         }
 
-        $selected = $this->commandPrompts()->run(static fn (): SelectPrompt => new SelectPrompt('Node', $options));
-
-        return is_int($selected) || is_string($selected) ? (int) $selected : null;
+        return (int) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
     }
 }

@@ -2,20 +2,31 @@
 
 declare(strict_types=1);
 
+use App\Commands\Firewall\DenyFirewallRuleCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\CommandPrompts;
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\PromptAborted;
+use App\Support\Console\PromptContext;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Laravel\Prompts\Key;
+use Laravel\Prompts\Prompt;
+use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -490,13 +501,140 @@ it('reports a repeat of an applied rule as skipped, not as an error', function (
     expect(Artisan::output())->toContain('Skipped — already applied (firewall.rule_exists)')->not->toContain('Firewall rule succeeded.');
 });
 
-it('refuses a missing Node or port without a request when it cannot prompt', function (array $arguments, string $code): void {
-    $mock = firewall_cli_mock([AllowFirewallRuleRequest::class => firewall_cli_response('allow', 'active', 202)]);
+it('refuses a missing Node or port without a request when it cannot prompt', function (string $action, array $arguments, string $code, bool $json): void {
+    $mock = MockClient::global();
 
-    expect(Artisan::call('firewall:allow', [...$arguments, '--json' => true]))->toBe(1);
-    expect(Artisan::output())->toContain($code);
-    $mock->assertNotSent(AllowFirewallRuleRequest::class);
-})->with([
+    expect(Artisan::call('firewall:'.$action, [...$arguments, '--json' => $json, '--no-interaction' => true]))->toBe(1);
+    expect(Artisan::output())->toContain($json ? $code : match ($code) {
+        'firewall.node_id_invalid' => 'Node ID must be a positive integer.',
+        'firewall.port_invalid' => 'Firewall port must be from 1 to 65535 or an ordered range.',
+    });
+    $mock->assertNothingSent();
+})->with(['allow', 'deny'])->with([
     'no Node' => [['port' => '443'], 'firewall.node_id_invalid'],
     'no port' => [['--node' => '7'], 'firewall.port_invalid'],
-]);
+])->with(['human' => false, 'JSON' => true]);
+
+/** @param list<string> $keys
+ * @param  array<string, string>  $arguments
+ * @return array{int, string}
+ */
+function firewall_deny_prompt(array $keys, array $arguments = []): array
+{
+    $command = new FirewallDenyPromptsCommand(new FirewallDenyPromptsTerminal($keys));
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    return PromptContext::preserve(function () use ($tester, $arguments): array {
+        Prompt::fallbackWhen(false);
+
+        return [$tester->execute($arguments), $tester->getDisplay()];
+    });
+}
+
+function firewall_prompt_nodes(): MockResponse
+{
+    return MockResponse::make(['data' => [
+        ['id' => 1, 'name' => 'mac', 'status' => 'active', 'platform' => 'darwin'],
+        ['id' => 2, 'name' => 'inactive', 'status' => 'inactive', 'platform' => 'linux'],
+        ['id' => 7, 'name' => 'app-dev', 'status' => 'active', 'platform' => 'linux'],
+    ]]);
+}
+
+describe('firewall:deny prompts', function (): void {
+    it('asks again for an invalid port and selects a Node from a data list before admitting once', function (): void {
+        $mock = firewall_cli_mock([
+            ListNodesRequest::class => firewall_prompt_nodes(),
+            DenyFirewallRuleRequest::class => firewall_cli_response('deny', 'active', 202),
+        ]);
+
+        [$status, $display] = firewall_deny_prompt(['abc', Key::ENTER, '8080', Key::ENTER, Key::ENTER]);
+
+        expect($status)->toBe(0)->and($display)
+            ->toContain('Port (destination port or range)', 'ordered range', 'Node', 'ID', 'Name', 'app-dev')
+            ->not->toMatch('/Platform|Status|mac|inactive/');
+        $mock->assertSentCount(1, DenyFirewallRuleRequest::class);
+        $mock->assertSent(fn ($request): bool => $request instanceof DenyFirewallRuleRequest
+            && $request->resolveEndpoint() === '/api/v1/nodes/7/firewall-rules/deny'
+            && $request->body()->all() === ['port' => '8080']);
+    });
+
+    it('prompts only for an omitted Node when the port is supplied', function (): void {
+        $mock = firewall_cli_mock([
+            ListNodesRequest::class => firewall_prompt_nodes(),
+            DenyFirewallRuleRequest::class => firewall_cli_response('deny', 'active', 202),
+        ]);
+
+        [$status, $display] = firewall_deny_prompt([Key::ENTER], ['port' => '8080']);
+
+        expect($status)->toBe(0)->and($display)
+            ->toContain('Node', 'ID', 'Name', 'app-dev')
+            ->not->toContain('Port (destination port or range)')
+            ->not->toMatch('/Platform|Status|mac|inactive/');
+        $mock->assertSentCount(1, DenyFirewallRuleRequest::class);
+    });
+
+    it('cancels either required prompt without admitting a rule', function (array $arguments): void {
+        $mock = firewall_cli_mock([ListNodesRequest::class => firewall_prompt_nodes()]);
+
+        [$status, $display] = firewall_deny_prompt([Key::CTRL_C], $arguments);
+
+        expect($status)->toBe(1)->and($display)->toContain('input.cancelled');
+        $mock->assertNotSent(DenyFirewallRuleRequest::class);
+    })->with(['port prompt' => [['--node' => '7']], 'Node prompt' => [['port' => '8080']]]);
+
+    it('refuses an empty eligible Node selection instead of inferring a target', function (): void {
+        $mock = firewall_cli_mock([ListNodesRequest::class => MockResponse::make(['data' => []])]);
+
+        [$status, $display] = firewall_deny_prompt([], ['port' => '8080']);
+
+        expect($status)->toBe(1)->and($display)->toContain('No active Linux Node is available.');
+        $mock->assertNotSent(DenyFirewallRuleRequest::class);
+    });
+});
+
+final class FirewallDenyPromptsCommand extends DenyFirewallRuleCommand
+{
+    public function __construct(private readonly Terminal $terminal)
+    {
+        parent::__construct();
+    }
+
+    protected function consoleMode(?OutputInterface $output = null): ConsoleMode
+    {
+        return new ConsoleMode(false, true, false, false, 100);
+    }
+
+    protected function commandPrompts(): CommandPrompts
+    {
+        return new CommandPrompts($this->consoleMode(), $this->output, $this->terminal);
+    }
+}
+
+final class FirewallDenyPromptsTerminal extends Terminal
+{
+    /** @param list<string> $keys */
+    public function __construct(private array $keys)
+    {
+        parent::__construct();
+    }
+
+    public function read(): string
+    {
+        return array_shift($this->keys) ?? throw new PromptAborted('Input ended.');
+    }
+
+    public function setTty(string $mode): void {}
+
+    public function restoreTty(): void {}
+
+    public function cols(): int
+    {
+        return 100;
+    }
+
+    public function lines(): int
+    {
+        return 40;
+    }
+}

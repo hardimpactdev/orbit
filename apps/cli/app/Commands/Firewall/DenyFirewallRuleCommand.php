@@ -7,11 +7,11 @@ namespace App\Commands\Firewall;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 
-final class DenyFirewallRuleCommand extends StoreFirewallRuleCommand
+class DenyFirewallRuleCommand extends StoreFirewallRuleCommand
 {
     #[\Override]
     protected $signature = 'firewall:deny
-        {port : Destination port or ordered range, such as 443 or 8000:8100}
+        {port? : Destination port or ordered range, such as 443 or 8000:8100}
         {--node= : Numeric target node ID}
         {--from= : Optional source IPv4/IPv6 address, CIDR, or any}
         {--protocol= : Optional tcp or udp protocol; both when omitted}
@@ -21,6 +21,12 @@ final class DenyFirewallRuleCommand extends StoreFirewallRuleCommand
 
     #[\Override]
     protected $description = 'Deny traffic to one Node port through the gateway.';
+
+    #[\Override]
+    protected function promptsForMissingInput(): bool
+    {
+        return true;
+    }
 
     protected function request(int $nodeId, string $port, ?string $source, ?string $protocol): GatewayRequest
     {

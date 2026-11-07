@@ -1,0 +1,462 @@
+# Stage 1 spec, derived from docs/cli/firewall/deny.{mmd,mdx}, starting with allow.cases.yaml.
+# A deny effect starts with a reachable listener and control, not the blocked-port fixture of allow.
+# New runner capabilities are requests under uncovered, not invented steps or weakened assertions.
+command: firewall:deny
+chart: firewall/deny
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [ufw, firewall_records, operations, listeners]
+
+vars:
+  main_rule: ["${port}", "--node=${app-dev.id}"]
+  rule: ["@main_rule", "--from=${gateway.src}"]
+  tcp_rule: ["@rule", "--protocol=tcp"]
+
+fixtures:
+  open-port:
+    summary: Healthy listeners reachable from both sources through proof-network, with an unaffected control.
+    params: {proto: [tcp, udp], family: 4}
+    steps:
+      - listener: {on: app-dev, proto: "${proto}", family: "${family}", ports: [port, control]}
+      - probe: {from: "${sources}", to: app-dev, family: "${family}", proto: "${proto}", port: ["${port}", "${control}"], expect: connect}
+  broad-allow:
+    summary: A reachable TCP port with a broader allowance that a source-specific deny must precede.
+    steps:
+      - use: {fixture: open-port, proto: [tcp]}
+      - ufw_rule: {as: allowance, on: app-dev, action: allow, proto: tcp, port: "${port}", above: proof-network}
+      - probe: {from: "${sources}", to: app-dev, port: "${port}", expect: connect}
+
+# Capability requests, not scheduled cases or passes; runner and batch changes are out of scope.
+uncovered:
+  "code:firewall.backend_inactive": "Add a UFW-disable setup step and an isolated batch to check firewall.backend_inactive, a failed record and no mutation or automatic activation. Reactivate UFW and repeat to check repair."
+  "code:firewall.verify_failed": "Add a final-read fault that omits or misorders an expected line; the current shim only fails writes. Check firewall.verify_failed, a failed record with partial lines, and repair on a repeat."
+  "code:firewall.platform_unsupported": "Add a non-Linux recorded target fixture and batch; all fleet Nodes are Linux. Check firewall.platform_unsupported before rule storage or SSH, with unchanged records and Operations."
+  "guard:inactive-target": "An inactive-target refusal is not implemented or exercised here. Add a recorded inactive Node fixture and an isolated batch to specify and check admission and selection, rather than substituting unreachable SSH."
+  "guard:protected-catalog": "Add bindings for configured recovery SSH, WireGuard and role-owned ports or ranges, with a role assignment. Repeat protected-port variants for these bindings in an isolated batch, including protocols different from the managed rule."
+  "guard:empty-node-selection": "Add a batch with no eligible Linux Nodes to check firewall.node_id_invalid from the Node selector and no new rule or Operation."
+  "source:non-host-cidr": "Add source-network bindings and inside/outside probes for non-host IPv4 and IPv6 CIDRs, without hard-coded fleet addresses."
+  "render:channels": "Add separate stdout/stderr, ANSI and bounded-detail assertions to check the shared CLI standard; forms and PTY prompts do not prove these properties or the Node data-list primitive."
+  "prompt:end-of-input": "Add EOF support to the PTY driver and repeat both prompt-cancel variants, checking input.cancelled, exit 1 and no rule or Operation."
+  "flag:--idempotency-key": "Generic keyed starts belong to the Operations contract linked from the option table, not command-specific replay cases."
+  "guard:repair-misplaced-record": "Restore repair-misplaced-record when the runner accepts ufw_delete in setup, not only negative controls. Move an active recorded deny below an allow, then check a repeat restores its order and connectivity without duplicating the record."
+  "guard:node-down": "Restore node-down when the runner accepts and implements node_down setup in its isolated batch. Check operation.native_failed and one failed rule without claiming deny success."
+  "code:node_access.required": "Restore node-access-required when cli.as and the no-grant batch's node_access_remove setup are implemented. Check node_access.required and unchanged UFW, records and Operations for a caller without access."
+
+cases:
+  - id: required-only
+    batch: fresh-fleet
+    covers: [main, changes-needed, succeeded]
+    summary: Required inputs alone deny both protocols from both sources and produce IPv4 and IPv6 lines above broad trust.
+    setup:
+      - use: open-port
+    act:
+      - cli: {run: [firewall:deny, "@main_rule"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {id: denied, from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, protocol: any, source: any, status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: Anywhere}, {to: "${port}/udp", action: DENY, from: Anywhere}]}
+      - ufw: {on: app-dev, family: 6, rows: [{to: "${port}/tcp (v6)", action: DENY, from: "Anywhere (v6)"}, {to: "${port}/udp (v6)", action: DENY, from: "Anywhere (v6)"}]}
+      - unchanged: {since: act, except: {port: "${port}"}}
+      - doctor: {node: app-dev, drift: 0}
+    negative:
+      after: act
+      do:
+        - ufw_delete: {on: app-dev, to: "${port}/tcp", from: Anywhere}
+      must_fail: [denied]
+
+  - id: source-specific
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: An address or host CIDR denies just that source, ahead of a broad allow; matching uses the normalized source.
+    variants:
+      - {name: address, source: "${gateway.src}"}
+      - {name: host-cidr, source: "${gateway.src}/32"}
+    setup:
+      - use: broad-allow
+    act:
+      - cli: {run: [firewall:deny, "@main_rule", "--from=${source}", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+      - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
+      - probe: {from: "${sources}", to: app-dev, port: "${control}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, source: "${gateway.src}", protocol: tcp, status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {ref: allowance}]}
+      - unchanged: {since: act, except: {port: "${port}"}}
+
+  - id: protocol-selection
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: Selecting TCP or UDP denies only that transport and leaves the other transport reachable.
+    variants:
+      - {name: tcp, denied: tcp, allowed: udp}
+      - {name: udp, denied: udp, allowed: tcp}
+    setup:
+      - use: open-port
+    act:
+      - cli: {run: [firewall:deny, "@rule", "--protocol=${denied}"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, proto: "${denied}", port: "${port}", expect: blocked}
+      - probe: {from: gateway, to: app-dev, proto: "${allowed}", port: "${port}", expect: connect}
+      - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", protocol: "${denied}", status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/${denied}", action: DENY, from: "${gateway.src}"}], absent: [{to: "${port}/${allowed}", action: DENY, from: "${gateway.src}"}]}
+
+  - id: broad-deny-keeps-narrow-allow
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: An explicit any-source deny blocks other sources while preserving an existing narrower allow.
+    setup:
+      - use: {fixture: open-port, proto: [tcp]}
+      - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+      - probe: {from: "${sources}", to: app-dev, port: "${port}", expect: connect}
+    act:
+      - cli: {run: [firewall:deny, "@main_rule", "--from=any", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: connect}
+      - probe: {from: app-prod, to: app-dev, port: "${port}", expect: blocked}
+      - probe: {from: "${sources}", to: app-dev, port: "${control}", expect: connect}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: ALLOW, from: "${gateway.src}"}, {to: "${port}/tcp", action: DENY, from: Anywhere}]}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, source: any, status: active}, count: 1}
+
+  - id: label
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: A label is recorded verbatim and new UFW comments use the sanitized label, not rule identity.
+    setup:
+      - use: {fixture: open-port, proto: [tcp]}
+    act:
+      - cli: {run: [firewall:deny, "@tcp_rule", "--label=scanner's port"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+      - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", label: "scanner's port", status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}", comment: orbit scanners port}]}
+
+  - id: label-independent-repeat
+    batch: fresh-fleet
+    covers: [already-applied, succeeded]
+    summary: Changing only the label reuses one rule and skips correct UFW lines without changing their comments or order.
+    setup:
+      - use: {fixture: open-port, proto: [tcp]}
+      - cli: {run: [firewall:deny, "@tcp_rule", "--label=original"], expect: {exit: 0, status: succeeded}}
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+    act:
+      - cli:
+          run: [firewall:deny, "@tcp_rule", "--label=revised"]
+          forms: [json, human]
+          expect: {exit: 0, status: succeeded, skipped: firewall.rule_exists, human: "Skipped — already applied (firewall.rule_exists)"}
+    expect:
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}"}, count: 1}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, protocol: tcp, source: "${gateway.src}", label: revised, status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}", comment: orbit original}]}
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+      - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
+      - unchanged: {since: act, what: [ufw]}
+
+  - id: already-applied
+    batch: fresh-fleet
+    covers: [already-applied, succeeded]
+    summary: A repeat checks the Node, succeeds as skipped in both renderings, and changes no rule or UFW line.
+    setup:
+      - use: {fixture: open-port, proto: [tcp]}
+      - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+    act:
+      - cli:
+          run: [firewall:deny, "@tcp_rule"]
+          forms: [json, human]
+          expect: {exit: 0, status: succeeded, skipped: firewall.rule_exists, human: "Skipped — already applied (firewall.rule_exists)"}
+    expect:
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}]}
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+      - unchanged: {since: act, what: [ufw, firewall_records]}
+
+  - id: partial-application
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: An existing TCP deny is kept and the missing UDP deny is added instead of reporting a skip.
+    setup:
+      - use: open-port
+      - ufw_rule: {as: existing, on: app-dev, action: deny, proto: tcp, port: "${port}", from: "${gateway.src}", above: proof-network}
+      - probe: {from: gateway, to: app-dev, proto: tcp, port: "${port}", expect: blocked}
+      - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: connect}
+    act:
+      - cli: {run: [firewall:deny, "@rule"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
+      - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
+      - ufw: {on: app-dev, family: 4, rows: [{ref: existing}, {to: "${port}/udp", action: DENY, from: "${gateway.src}"}]}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, protocol: any, status: active}, count: 1}
+      - unchanged: {since: act, except: {port: "${port}"}}
+
+  - id: interrupted-reorder
+    batch: fresh-fleet
+    covers: [changes-needed, failed, succeeded]
+    summary: A failure after deleting a misplaced deny stays visible; a repeat restores it above the allowance without duplicates.
+    setup:
+      - use: broad-allow
+      - ufw_rule: {as: misplaced, on: app-dev, action: deny, proto: tcp, port: "${port}", from: "${gateway.src}", below: allowance}
+      - probe: {from: gateway, to: app-dev, port: "${port}", expect: connect}
+      - fault: {on: app-dev, command: ufw, fail_after: {match: delete, count: 1}}
+    stages:
+      - act:
+          - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: failed}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{ref: allowance}], absent: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}]}
+          - probe: {from: gateway, to: app-dev, port: "${port}", expect: connect}
+          - unchanged: {since: act, except: {port: "${port}"}}
+      - act:
+          - fault: {clear: true}
+          - cli: {run: [firewall:deny, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: deny, status: active}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {ref: allowance}]}
+          - probe: {from: gateway, to: app-dev, port: "${port}", expect: blocked}
+          - probe: {from: app-prod, to: app-dev, port: "${port}", expect: connect}
+          - probe: {from: "${sources}", to: app-dev, port: "${control}", expect: connect}
+          - unchanged: {since: act, except: {port: "${port}"}}
+
+  - id: busy-target
+    batch: fresh-fleet
+    covers: []
+    summary: A held firewall write refuses another deny without changing traffic, rules or Operations.
+    setup:
+      - use: open-port
+      - busy_node: {on: app-dev}
+    act:
+      - cli: {run: [firewall:deny, "@main_rule"], expect: {exit: 1, code: operation.target_busy, request: none}}
+    expect:
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: port-range
+    batch: fresh-fleet
+    covers: [changes-needed, succeeded]
+    summary: Both endpoints and the middle of a range are denied; a listener outside it and the other source stay reachable.
+    setup:
+      - listener: {on: app-dev, proto: tcp, block: {as: range, size: 5}}
+      - listener: {on: app-dev, proto: tcp, ports: [control]}
+      - probe: {from: "${sources}", to: app-dev, port: ["${range.lo}", "${range.mid}", "${range.hi}", "${control}"], expect: connect}
+    act:
+      - cli: {run: [firewall:deny, "${range.spec}", "--node=${app-dev.id}", "--from=${gateway.src}", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, port: ["${range.lo}", "${range.mid}", "${range.hi}"], expect: blocked}
+      - probe: {from: gateway, to: app-dev, port: "${control}", expect: connect}
+      - probe: {from: app-prod, to: app-dev, port: ["${range.lo}", "${range.mid}", "${range.hi}"], expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${range.spec}", status: active}, count: 1}
+      - ufw: {on: app-dev, family: 4, rows: [{to: "${range.spec}/tcp", action: DENY, from: "${gateway.src}"}]}
+      - unchanged: {since: act, except: {port: "${range.spec}"}}
+
+  - id: family-ipv6
+    batch: dual-stack
+    covers: [changes-needed, succeeded]
+    summary: An IPv6 address or host CIDR denies that IPv6 source only and creates no IPv4 deny.
+    variants:
+      - {name: address, source: "${gateway.src6}"}
+      - {name: host-cidr, source: "${gateway.src6}/128"}
+    setup:
+      - use: {fixture: open-port, proto: [tcp], family: 6}
+    act:
+      - cli: {run: [firewall:deny, "@main_rule", "--from=${source}", "--protocol=tcp"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: gateway, to: app-dev, family: 6, port: "${port}", expect: blocked}
+      - probe: {from: app-prod, to: app-dev, family: 6, port: "${port}", expect: connect}
+      - probe: {from: "${sources}", to: app-dev, family: 6, port: "${control}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", source: "${gateway.src6}", status: active}, count: 1}
+      - ufw: {on: app-dev, family: 6, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src6}"}]}
+      - ufw: {on: app-dev, family: 4, rows: [], absent: [{to: "${port}/tcp", action: DENY, from: Anywhere}]}
+
+  - id: any-source-ipv6
+    batch: dual-stack
+    covers: [main, changes-needed, succeeded]
+    summary: Omitting the source also blocks real IPv6 traffic for both protocols, not only IPv4 or recorded rows.
+    setup:
+      - use: {fixture: open-port, family: 6}
+    act:
+      - cli: {run: [firewall:deny, "@main_rule"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - probe: {from: "${sources}", to: app-dev, family: 6, proto: [tcp, udp], port: "${port}", expect: blocked}
+      - probe: {from: "${sources}", to: app-dev, family: 6, proto: [tcp, udp], port: "${control}", expect: connect}
+      - ufw: {on: app-dev, family: 6, rows: [{to: "${port}/tcp (v6)", action: DENY, from: "Anywhere (v6)"}, {to: "${port}/udp (v6)", action: DENY, from: "Anywhere (v6)"}]}
+
+  - id: failure-after-partial-change
+    batch: ufw-fault
+    covers: [changes-needed, failed, succeeded]
+    summary: A partial failure keeps its failed record and written line; a repeat completes the same record without duplicates.
+    setup:
+      - use: open-port
+      - fault: {on: app-dev, command: ufw, fail_after: {match: deny, count: 1}}
+    stages:
+      - act:
+          - cli: {run: [firewall:deny, "@rule"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: failed}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}], absent: [{to: "${port}/udp", action: DENY, from: "${gateway.src}"}]}
+          - probe: {from: gateway, to: app-dev, proto: tcp, port: "${port}", expect: blocked}
+          - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: connect}
+      - act:
+          - fault: {clear: true}
+          - cli: {run: [firewall:deny, "@rule"], expect: {exit: 0, status: succeeded}}
+        expect:
+          - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: active}, count: 1}
+          - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: DENY, from: "${gateway.src}"}, {to: "${port}/udp", action: DENY, from: "${gateway.src}"}]}
+          - probe: {from: gateway, to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
+          - probe: {from: app-prod, to: app-dev, proto: [tcp, udp], port: "${port}", expect: connect}
+          - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+
+  - id: protected-port
+    batch: fresh-fleet
+    covers: []
+    summary: Protection cannot be bypassed with a source, a different protocol, or a range touching either boundary of SSH 22.
+    variants:
+      - {name: default, port_spec: '22', flags: []}
+      - {name: ipv4-source, port_spec: '22', flags: ["--from=${gateway.src}"]}
+      - {name: udp, port_spec: '22', flags: [--protocol=udp]}
+      - {name: range-start, port_spec: '22:23', flags: []}
+      - {name: range-end, port_spec: '21:22', flags: ["--from=${app-prod.src}", --protocol=tcp]}
+      - {name: range-interior, port_spec: '21:23', flags: []}
+    act:
+      - cli:
+          run: [firewall:deny, "${port_spec}", "--node=${app-dev.id}", "@flags"]
+          forms: [json, human]
+          expect: {exit: 1, code: firewall.protected_port, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: protected-port-ipv6
+    batch: dual-stack
+    covers: []
+    summary: An IPv6 host CIDR and UDP cannot bypass protected-port refusal.
+    act:
+      - cli: {run: [firewall:deny, '22', "--node=${app-dev.id}", "--from=${gateway.src6}/128", --protocol=udp], expect: {exit: 1, code: firewall.protected_port, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: conflict
+    batch: fresh-fleet
+    covers: []
+    summary: An allow with exactly the same normalized scope refuses the deny without a new record or Operation.
+    setup:
+      - use: {fixture: open-port, proto: [tcp]}
+      - cli: {run: [firewall:allow, "@tcp_rule"], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli: {run: [firewall:deny, "@main_rule", "--from=${gateway.src}/32", --protocol=tcp], expect: {exit: 1, code: firewall.rule_conflict, request: none}}
+    expect:
+      - probe: {from: "${sources}", to: app-dev, port: "${port}", expect: connect}
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: protocol-overlap
+    batch: fresh-fleet
+    covers: []
+    summary: Both versus single protocol overlaps are refused for either action and in both creation orders.
+    variants:
+      - {name: allow-both-deny-tcp, action: firewall:allow, before: [], after: [--protocol=tcp]}
+      - {name: allow-tcp-deny-both, action: firewall:allow, before: [--protocol=tcp], after: []}
+      - {name: deny-both-deny-udp, action: firewall:deny, before: [], after: [--protocol=udp]}
+      - {name: deny-udp-deny-both, action: firewall:deny, before: [--protocol=udp], after: []}
+    setup:
+      - use: open-port
+      - cli: {run: ["${action}", "@rule", "@before"], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli: {run: [firewall:deny, "@rule", "@after"], expect: {exit: 1, code: firewall.rule_overlap, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: invalid-input
+    batch: fresh-fleet
+    covers: []
+    summary: Invalid supplied input is refused locally in human and JSON forms without a rule or Operation.
+    variants:
+      - {name: node-zero, args: ['25', --node=0], code: firewall.node_id_invalid}
+      - {name: node-text, args: ['25', --node=abc], code: firewall.node_id_invalid}
+      - {name: port-zero, args: ['0', "--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: port-high, args: ['65536', "--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: range-reversed, args: ['8100:8000', "--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: range-high, args: ['65535:65536', "--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: service-name, args: [smtp, "--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: source-text, args: ['25', "--node=${app-dev.id}", --from=not-an-address], code: firewall.source_invalid}
+      - {name: cidr-v4, args: ['25', "--node=${app-dev.id}", "--from=${gateway.src}/33"], code: firewall.source_invalid}
+      - {name: cidr-v6, args: ['25', "--node=${app-dev.id}", '--from=::/129'], code: firewall.source_invalid}
+      - {name: protocol, args: ['25', "--node=${app-dev.id}", --protocol=icmp], code: firewall.protocol_invalid}
+      - {name: explicit-any-protocol, args: ['25', "--node=${app-dev.id}", --protocol=any], code: firewall.protocol_invalid}
+    act:
+      - cli: {run: [firewall:deny, "@args"], forms: [human, json], expect: {exit: 1, code: "${code}", request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: invalid-request-input
+    batch: fresh-fleet
+    covers: []
+    summary: A label over 255 characters is refused before storing a rule.
+    variants:
+      - name: long-label
+        flags: ["--label=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    setup:
+      - use: open-port
+    act:
+      - cli: {run: [firewall:deny, "@main_rule", "@flags"], expect: {exit: 1, code: validation.failed, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: missing-input-noninteractive
+    batch: fresh-fleet
+    covers: []
+    summary: Omitted required values fail in both noninteractive forms instead of a parser error or target fallback.
+    variants:
+      - {name: port, args: ["--node=${app-dev.id}"], code: firewall.port_invalid}
+      - {name: node, args: ['25'], code: firewall.node_id_invalid}
+    act:
+      - cli: {run: [firewall:deny, "@args"], forms: [human, json], expect: {exit: 1, code: "${code}", request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}
+
+  - id: missing-input-prompts
+    batch: fresh-fleet
+    covers: [main, changes-needed, succeeded]
+    summary: A terminal asks again for an invalid port and selects an omitted Node before denying traffic.
+    setup:
+      - use: open-port
+    act:
+      - cli:
+          run: [firewall:deny]
+          tty: [{see: Port, send: abc}, {see: Port, send: "${port}"}, {see: Node, choose: app-dev}]
+          expect: {exit: 0, status: succeeded}
+    expect:
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+      - record: {list: firewall:list, node: app-dev, where: {port: "${port}", status: active}, count: 1}
+
+  - id: missing-node-prompt
+    batch: fresh-fleet
+    covers: [main, changes-needed, succeeded]
+    summary: Supplying the port but no Node prompts for the target instead of inferring it or refusing.
+    setup:
+      - use: open-port
+    act:
+      - cli:
+          run: [firewall:deny, "${port}"]
+          tty: [{see: Node, choose: app-dev}]
+          expect: {exit: 0, status: succeeded}
+    expect:
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${port}", expect: blocked}
+      - probe: {from: "${sources}", to: app-dev, proto: [tcp, udp], port: "${control}", expect: connect}
+
+  - id: prompt-cancel
+    batch: fresh-fleet
+    covers: []
+    summary: Cancelling either missing-input prompt creates no rule or Operation.
+    variants:
+      - {name: port, args: ["--node=${app-dev.id}"], prompt: Port}
+      - {name: node, args: ['25'], prompt: Node}
+    act:
+      - cli:
+          run: [firewall:deny, "@args"]
+          tty: [{see: "${prompt}", send: '^C'}]
+          expect: {exit: 1, code: input.cancelled, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, firewall_records, operations]}

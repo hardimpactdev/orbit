@@ -4,37 +4,72 @@ sidebarTitle: "firewall:deny"
 description: "Deny traffic to one destination port or port range, optionally from one source."
 ---
 
+Deny incoming traffic on one Linux Node. Without a source or protocol, the rule denies both TCP and UDP from anywhere. It does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
+
+## Usage
+
 ```bash
-orbit firewall:deny <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT] [--json]
+orbit firewall:deny <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `port` | yes | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
+| `port` | yes | Destination port from 1 through 65535, or an inclusive ordered range such as `8000:8100`. Service names are not accepted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--node=ID` | required | Numeric target Node ID. |
-| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, a CIDR such as `10.6.0.0/24`, or `any`. |
-| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both. |
-| `--label=TEXT` | none | Free text that describes the rule. |
-| `--json` | off | Print the result as JSON. |
+| `--node=ID` | required | Positive numeric target Node ID. The calling Node needs an access grant to it. |
+| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, CIDR, or `any`. An address or CIDR affects its address family only; `any` affects both. |
+| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both; `any` is not an accepted value. |
+| `--label=TEXT` | none | Description of at most 255 characters. See [labels and comments](/cli/firewall#rule-identity). |
+| `--idempotency-key=KEY` | none | Global [keyed-start option](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit firewall:deny 25 --node=7 --from=203.0.113.9 --label=scanner
-orbit firewall:deny 5432 --node=7 --protocol=tcp
+orbit firewall:deny 6000:6100 --node=7 --protocol=udp
 ```
 
+Required inputs, prompts, cancellation and output modes follow the [CLI standard](/reference/cli-ux#input-and-output-modes). Missing noninteractive values use `firewall.port_invalid` for the port and `firewall.node_id_invalid` for the Node.
+
 <Warning>
-A deny can never cut a Node off. Orbit refuses a deny, with any `--from`, whose port or range includes SSH port 22, the recovery SSH port, the WireGuard port, or a port that one of the Node's roles needs. The error is `firewall.protected_port`. A source range can cover the Gateway or other Nodes, so no source is safe to deny.
+Orbit refuses a deny whose port or range includes SSH port 22, the recovery SSH port, the WireGuard port, or a port needed by one of the target Node's roles (`firewall.protected_port`). This applies to every source and protocol, even a single unrelated address: a source range can cover the Gateway or another Node. Protection is based on the port, not an assumption about which source is safe to block.
 </Warning>
 
-Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
+Only one firewall change can run on a Node at a time (`operation.target_busy`). An allow with the same port, protocol and normalized source conflicts with the deny (`firewall.rule_conflict`). A both-protocol rule and a single-protocol rule on the same port and source also conflict (`firewall.rule_overlap`), with either action and in either creation order. To change the scope or action of a recorded rule, remove it and create it again. Changing only the label leaves the comments on correct UFW lines untouched.
 
-A deny without `--from` also blocks WireGuard peers. Narrower rules take precedence, so an allow for one source can override a broader deny. To restrict a port without an exposure window, add the allows first, then the deny. See [rule ordering](/cli/firewall#order-on-the-node).
+Narrower sources take precedence over broader sources, regardless of action. An allow for one source can override a broad deny; a deny for one source can override a broad allow. Operator rules sit above Orbit's broad managed rules, so a deny without `--from` also blocks WireGuard peers. To restrict a port without an exposure window, add the allows first, then the deny. See [rule ordering](/cli/firewall#order-on-the-node).
 
-Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
+Orbit records the rule and follows its [Operation](/reference/operations#read-an-operation) to the final outcome.
+
+Repeating the same rule reuses its record and checks the Node in a new Operation. Correct lines are left untouched; missing or misplaced lines are repaired. Only a fully correct rule succeeds with `Skipped — already applied (firewall.rule_exists)`. UFW must still be active and the final check must pass. An inactive firewall is refused, not enabled.
+
+A failure keeps the rule visible as failed. Lines added before the failure remain, and a line deleted for reordering may be absent. Nothing is rolled back. After fixing the cause, repeat the command to repair the rule without duplicates.
 
 ## How it works
 
 <div className="flow-at" data-chart="firewall/deny"></div>
+
+## Errors
+
+Input and admission refusals create no Operation or rule and change nothing on the Node. Execution failures keep the failed rule and any partial changes. Shared response details are defined by [Operations](/reference/operations#start-an-operation) and the [firewall family](/cli/firewall#error-codes).
+
+| Code | Meaning |
+| --- | --- |
+| `input.cancelled` | See [prompt cancellation](/reference/cli-ux#input-and-output-modes). |
+| `firewall.node_id_invalid` | Missing noninteractive Node, invalid positive numeric ID, or an empty Node selection. |
+| `firewall.port_invalid` | Missing noninteractive port, a service name, an out-of-bounds port, or an invalid or reversed range. |
+| `firewall.source_invalid` | The source is not `any`, an IP address, or a valid CIDR. |
+| `firewall.protocol_invalid` | The supplied protocol is not `tcp` or `udp`. |
+| `validation.failed` | Invalid request input, such as a label longer than 255 characters. |
+| `node_access.required` | The calling Node has no access grant to the target; the response identifies the serving Node. |
+| `firewall.platform_unsupported` | The target is not Linux; refused before storing a rule or contacting the Node. |
+| `firewall.protected_port` | The port or range intersects a protected port, with any source or protocol. |
+| `firewall.rule_conflict` | An allow already has the same port, protocol and source. |
+| `firewall.rule_overlap` | A both-protocol rule overlaps a single-protocol rule on the same port and source. |
+| `operation.target_busy` | Another firewall change holds the Node. |
+| `firewall.backend_inactive` | UFW is inactive; no rule is applied on the Node. |
+| `firewall.verify_failed` | The final check does not find every expected line in the required order. |
+| `operation.native_failed` | SSH, a UFW mutation, or another execution step fails before returning a public check result. |
+
+`firewall.rule_exists` is a successful skip reason, not an error.
