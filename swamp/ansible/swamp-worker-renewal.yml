@@ -1,0 +1,39 @@
+---
+- name: Renew persistent Swamp workers one at a time
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    renewal_swamp_binary: /usr/local/bin/swamp
+    renewal_accepting: [idle, busy]
+    renewal_name: "swamp-role-{{ orbit_node_id }}-{{ renewal_slot }}"
+    renewal_peer_name: "swamp-role-{{ orbit_node_id }}-{{ renewal_peer }}"
+  tasks:
+    - name: Find the worker account home
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ orbit_user }}"
+    - name: Set the official CLI environment
+      ansible.builtin.set_fact:
+        renewal_home: "{{ ansible_facts.getent_passwd[orbit_user][4] }}"
+    - name: Use the existing worker account credentials
+      ansible.builtin.set_fact:
+        renewal_remote:
+          - --server
+          - http://127.0.0.1:9418
+          - --token-file
+          - "{{ renewal_home }}/.config/swamp/serve-driver-token"
+          - --json
+        renewal_environment:
+          HOME: "{{ renewal_home }}"
+          SWAMP_HOME: "{{ renewal_home }}/.swamp"
+          SWAMP_CONFIG_DIR: "{{ renewal_home }}/.config/swamp"
+          SWAMP_API_KEY_FILE: "{{ renewal_home }}/.config/swamp/api-key"
+          SWAMP_NO_UPDATE_CHECK: '1'
+          SWAMP_NO_TELEMETRY: '1'
+    - name: Renew a before touching b
+      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
+      vars: {renewal_slot: a, renewal_peer: b}
+    - name: Renew b only after a accepts work
+      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
+      vars: {renewal_slot: b, renewal_peer: a}

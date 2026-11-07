@@ -1,0 +1,102 @@
+---
+- name: Read recorded enrollment times
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
+  become: true
+  become_user: "{{ orbit_user }}"
+  environment: "{{ renewal_environment }}"
+  register: renewal_list
+  changed_when: false
+  no_log: true
+- name: Read the current time
+  ansible.builtin.setup:
+    gather_subset: ["!all", "!min", date_time]
+    filter: ansible_date_time
+- name: Select this worker and its peer
+  ansible.builtin.set_fact:
+    renewal_current: >-
+      {{ (renewal_list.stdout | from_json).workers
+        | selectattr('name', 'equalto', renewal_name) | first | default({}) }}
+    renewal_other: >-
+      {{ (renewal_list.stdout | from_json).workers
+        | selectattr('name', 'equalto', renewal_peer_name) | first | default({}) }}
+- name: Renew only an old or unavailable worker
+  when: >-
+    renewal_current.status | default('') not in renewal_accepting or
+    renewal_current.instanceUuid | default('') | length == 0 or
+    ((ansible_date_time.epoch | int) -
+    (renewal_current.enrolledAt | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp()) >= 10800 or
+    ((ansible_date_time.epoch | int) -
+    (renewal_current.enrolledAt | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp()) < 0
+  block:
+    - name: Require an accepting peer before starting a drain
+      ansible.builtin.assert:
+        that:
+          - renewal_other.status | default('') in renewal_accepting
+          - renewal_other.instanceUuid | default('') | length > 0
+        fail_msg: "Cannot renew {{ renewal_slot }} because {{ renewal_peer }} is unavailable"
+    - name: Check the connected peer through the native dispatch path
+      ansible.builtin.import_tasks: swamp-worker-renew-verify.yml
+      vars:
+        renewal_verify_slot: "{{ renewal_peer }}"
+    - name: Read the effective worker stop allowance
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - '10'
+          - busctl
+          - get-property
+          - org.freedesktop.systemd1
+          - "/org/freedesktop/systemd1/unit/orbit_2dswamp_2dworker_40{{ renewal_slot }}_2eservice"
+          - org.freedesktop.systemd1.Service
+          - TimeoutStopUSec
+      register: renewal_stop
+      changed_when: false
+    - name: Require the converged 75 minute drain allowance
+      ansible.builtin.assert:
+        that:
+          - renewal_stop.stdout.split() | length == 2
+          - renewal_stop.stdout.split()[0] == 't'
+          - renewal_stop.stdout.split()[1] | int >= 4500000000
+        fail_msg: The worker unit must converge before renewal can start
+    # KillMode=mixed sends SIGTERM to the CLI only. The pinned CLI drains its runners.
+    - name: Drain active dispatches and restart this worker
+      ansible.builtin.systemd_service:
+        name: "orbit-swamp-worker@{{ renewal_slot }}.service"
+        state: restarted
+    - name: Wait for a different accepting instance without stopping the peer
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '3', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
+      become: true
+      become_user: "{{ orbit_user }}"
+      environment: "{{ renewal_environment }}"
+      register: renewal_wait
+      changed_when: false
+      no_log: true
+      retries: 20
+      delay: 2
+      until: >-
+        renewal_wait.rc == 0 and
+        (((renewal_wait.stdout | from_json).workers
+        | selectattr('name', 'equalto', renewal_peer_name)
+        | selectattr('status', 'in', renewal_accepting) | list | length == 0) or
+        ((renewal_wait.stdout | from_json).workers
+        | selectattr('name', 'equalto', renewal_name)
+        | selectattr('status', 'in', renewal_accepting)
+        | rejectattr('instanceUuid', 'equalto', renewal_current.instanceUuid | default(''))
+        | selectattr('instanceUuid') | list | length == 1))
+    - name: Require the peer to remain accepting
+      ansible.builtin.assert:
+        that:
+          - >-
+            (renewal_wait.stdout | from_json).workers
+            | selectattr('name', 'equalto', renewal_peer_name)
+            | selectattr('status', 'in', renewal_accepting) | list | length == 1
+        fail_msg: "Peer {{ renewal_peer }} became unavailable; no further worker will be stopped"
+    - name: Prove the new worker accepts dispatches before proceeding
+      ansible.builtin.import_tasks: swamp-worker-renew-verify.yml
+      vars:
+        renewal_verify_slot: "{{ renewal_slot }}"
+    - name: Record successful sequential renewal
+      ansible.builtin.debug:
+        msg: "Renewed {{ renewal_slot }}; its new instance accepts dispatches"

@@ -70,7 +70,9 @@ additionalFiles:
   - ansible/tasks/task-vm-nested-route.yml
   - ansible/tasks/task-vm-shape-gate.yml
   - ansible/tasks/task-vm-check.yml
-  - ansible/files/swamp-worker-renewal.py
+  - ansible/swamp-worker-renewal.yml
+  - ansible/tasks/swamp-worker-renew-slot.yml
+  - ansible/tasks/swamp-worker-renew-verify.yml
   - ansible/tasks/swamp-worker-renewal.yml
   - ansible/tasks/swamp-start-cache.yml
   - ansible/requirements.txt

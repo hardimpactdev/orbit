@@ -68,7 +68,7 @@ final class SwampRoleUnits
         return "[Unit]\nDescription=Renew Orbit swamp worker connections sequentially\n"
             ."After=orbit-swamp-serve.service\nStartLimitIntervalSec=0\n\n"
             ."[Service]\nType=oneshot\n"
-            ."ExecStart=/usr/bin/python3 -I /usr/local/lib/orbit-swamp/worker-renewal.py {$user} {$nodeId}\n"
+            ."ExecStart=/usr/bin/timeout 10500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user={$user} -e orbit_node_id={$nodeId}\n"
             ."TimeoutStartSec=3h\nRestart=on-failure\nRestartSec=5min\nUMask=0077\n";
     }
 
