@@ -108,7 +108,9 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     await app.router.navigate({ to: "/tasks/$id", params: { id: "12" } });
     await expect.element(pane("Subtasks")).toBeVisible();
     await expect.element(page.getByRole("region", { name: "Comments" })).toBeVisible();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks/12/comments")).toBe(true);
+    expect(
+        app.gateway.requests.some((request) => request.path === "/api/v1/tasks/12/comments"),
+    ).toBe(true);
 });
 
 it("shows the role before the comment type and collapses a long comment to three lines", async () => {
