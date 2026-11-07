@@ -51,6 +51,11 @@
   vars:
     incus: [incus, --project, "{{ host.project }}"]
     base: "{{ host.base }}"
+    # OVMF rewrites Timeout from QEMU at each boot; efibootmgr -t 0 in the guest does not persist.
+    base_qemu_config: |
+      [boot-opts]
+      menu = "on"
+      splash-time = "0"
   tasks:
     - name: Start the base VM
       tags: [base-start]
@@ -107,6 +112,12 @@
         - name: Let the project keep snapshots
           when: base_snapshot_rule.stdout | trim != 'allow'
           ansible.builtin.command: { argv: [incus, project, set, "{{ host.project }}", restricted.snapshots=allow] }
+          changed_when: true
+        # Converge existing bases as well as new ones. Snapshots and task copies inherit this config.
+        - name: Skip the firmware boot menu wait
+          when: (base_read.stdout | from_json | first | default({})).get('config', {}).get('raw.qemu.conf', '') != base_qemu_config
+          ansible.builtin.command:
+            argv: "{{ incus + ['config', 'set', base.vm, 'raw.qemu.conf=' ~ base_qemu_config] }}"
           changed_when: true
         - name: Start the base VM
           when: (base_read.stdout | from_json | map(attribute='status') | first | default('Stopped')) != 'Running'
