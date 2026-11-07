@@ -73,32 +73,6 @@
   loop: "{{ fleet_guests.values() | list }}"
   changed_when: true
 
-# The code of the release: the agent delivery manifest of the checkout, fresh nested Swamp tokens, migrations and a restart of the
-# long-running services. The tokens last 30 days; the daily refresh renews them.
-- name: Place the agent delivery
-  ansible.builtin.command:
-    argv: [incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --, install, -D, -m, "0444",
-           /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
-           /home/orbit/orbit/apps/agent/delivery/manifest.json]
-  changed_when: true
-- name: Renew the nested Swamp tokens
-  ansible.builtin.command:
-    argv: [timeout, "900", incus, exec, "{{ fleet_guests.gateway }}", --, env, ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg,
-           ANSIBLE_DISPLAY_FAILED_STDERR=true,
-           /opt/orbit/ansible/venv/bin/ansible-playbook, -i, "localhost,", -e, "@/opt/orbit/bootstrap/control.yml",
-           --tags, remint, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
-  changed_when: true
-- name: Migrate the nested Gateway
-  ansible.builtin.command:
-    argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --, php, artisan, migrate, --force]
-  changed_when: true
-- name: Restart the long-running services
-  ansible.builtin.command:
-    argv:
-      [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, orbit-gateway-horizon.service, orbit-gateway-schedule.service,
-       orbit-agent-view.service]
-  changed_when: true
-
 # The outer VM is the operator of its nested fleet, at `intent.fleet.operator.address`. The key belongs to the nested network only and stays in the image:
 # every VM from it has its own fleet, so the key reaches nothing else. The tunnel is a wg-quick unit, so it comes up at every boot.
 - name: Look for the operator key
@@ -170,6 +144,44 @@
 - name: Check the operator tunnel
   ansible.builtin.command: { argv: [timeout, "30", ping, -c, "1", -w, "20", "{{ intent.fleet.operator.hub }}"] }
   changed_when: false
+
+# The code of the release: the agent delivery manifest of the checkout, fresh nested Swamp tokens, migrations and a restart of the
+# long-running services. The tokens last 30 days; the daily refresh renews them.
+- name: Place the agent delivery
+  ansible.builtin.command:
+    argv: [incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --, install, -D, -m, "0444",
+           /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
+           /home/orbit/orbit/apps/agent/delivery/manifest.json]
+  changed_when: true
+- name: Renew the nested Swamp tokens
+  block:
+    - name: Run the token renewal of the nested Gateway
+      ansible.builtin.command:
+        argv: [timeout, "900", incus, exec, "{{ fleet_guests.gateway }}", --, env, ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg,
+               ANSIBLE_DISPLAY_FAILED_STDERR=true, /opt/orbit/ansible/venv/bin/ansible-playbook, -i, "localhost,", -e, "@/opt/orbit/bootstrap/control.yml",
+               --tags, remint, /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml]
+      changed_when: true
+  rescue:
+    - name: Read the journal of the nested Swamp serve
+      ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, journalctl, -u, orbit-swamp-serve.service, -n, "60", --no-pager] }
+      register: fleet_serve_journal
+      changed_when: false
+      failed_when: false
+    - name: Stop with the journal of serve
+      ansible.builtin.fail:
+        msg: >-
+          The nested Swamp tokens were not renewed: {{ (ansible_failed_result.stdout | default(''))[-1500:] }}
+          {{ (ansible_failed_result.stderr | default(''))[-1500:] }} serve: {{ fleet_serve_journal.stdout_lines | default([]) }}
+- name: Migrate the nested Gateway
+  ansible.builtin.command:
+    argv: [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --user, "1000", --cwd, /home/orbit/orbit/apps/gateway, --, php, artisan, migrate, --force]
+  changed_when: true
+- name: Restart the long-running services
+  ansible.builtin.command:
+    argv:
+      [timeout, "120", incus, exec, "{{ fleet_guests.gateway }}", --, systemctl, restart, orbit-gateway-horizon.service, orbit-gateway-schedule.service,
+       orbit-agent-view.service]
+  changed_when: true
 
 # The candidate CLI on the outer VM talks to the nested Gateway as the operator, through the profile `nested`.
 - name: Make the CLI home
