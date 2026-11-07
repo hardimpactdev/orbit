@@ -18,6 +18,15 @@ ORBIT = ['php', str(Path(__file__).resolve().parents[3] / 'apps/cli/orbit')]
 CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
 NODE_HOME = '/home/orbit'
 NODE_USER = '1000'   # the managed user `orbit` of a Node
+# The tested checkout, where the nested Nodes see it (the fleet start mounts it on the Gateway and the app-dev Node; a case that runs the CLI
+# on another Node mounts it there). Nothing installs an `orbit` binary on a nested Node: the Gateway's CLI converge does that for the real fleet only.
+CHECKOUT = Path(__file__).resolve().parents[3]
+NODE_CHECKOUT = NODE_HOME + '/orbit'
+NODE_ORBIT = ['php', NODE_CHECKOUT + '/apps/cli/orbit']
+NESTED_GATEWAY = '10.45.0.1'   # the hub address of the nested Gateway on the nested network
+OUTER_CA = NODE_HOME + '/.orbit/nested-ca.pem'   # the nested CA, which the fleet start pins on the outer VM (the outer user is `orbit` too)
+NESTED_CA = OUTER_CA                              # and the path where a Node keeps its copy
+PROFILE = 'nested'
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
 GUEST_PREFIX = 'nested-'
@@ -47,8 +56,8 @@ class Fleet:
         started = time.time()
         words = [*args, '--json'] if form == 'json' else list(args)
         if node:
-            command = ['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--', 'orbit', *words]
-            completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+            self.prepare_node_cli(node)
+            completed = self.incus_exec(node, [*NODE_ORBIT, *words], timeout)
         else:
             completed = subprocess.run([*ORBIT, *words], capture_output=True, text=True, timeout=timeout, env=CLI_ENV, cwd='/',
                                        stdin=subprocess.DEVNULL)
@@ -58,6 +67,37 @@ class Fleet:
             parsed = None
         return {'rc': completed.returncode, 'json': parsed, 'stdout': completed.stdout, 'stderr': completed.stderr,
                 'secs': round(time.time() - started, 2), 'args': ['orbit', *words]}
+
+    def incus_exec(self, node, argv, timeout=60):
+        """A program on a Node as its managed user, with the home of that user."""
+        return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--', *argv],
+                              capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+
+    def prepare_node_cli(self, node):
+        """Make the tested CLI run on `node` as that Node: the checkout mounted, and a profile that names the nested Gateway.
+
+        A restore of `base` takes both back when the Node had neither at the time, so this runs before each call and leaves a Node that is
+        ready alone. A step that cannot be done is a `FleetError` that names it, and not the exit status 127 of a missing program.
+        """
+        guest = self.nodes[node]['instance']
+        mounted = subprocess.run(['incus', 'config', 'device', 'get', guest, 'checkout', 'source'], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        if mounted.returncode != 0 or mounted.stdout.strip() != str(CHECKOUT):
+            self.must(['incus', 'config', 'device', 'add', guest, 'checkout', 'disk', f'source={CHECKOUT}', f'path={NODE_CHECKOUT}', 'shift=true'], f'{node}: cannot mount the tested checkout')
+        # The CLI keeps its profiles in config.json under the home it is given; the call reads the file, which a restore of `base` may have taken away.
+        if self.incus_exec(node, ['grep', '-q', f'"{PROFILE}"', NODE_HOME + '/.orbit/config.json']).returncode == 0:
+            return
+        self.must(['incus', 'exec', guest, '--user', NODE_USER, '--', 'install', '-d', '-m', '0700', NODE_HOME + '/.orbit'], f'{node}: cannot make the CLI home')
+        self.must(['incus', 'file', 'push', OUTER_CA, f'{guest}{NESTED_CA}', '--uid', NODE_USER, '--gid', NODE_USER, '--mode', '0644'],
+                  f'{node}: cannot give the nested CA')
+        added = self.incus_exec(node, [*NODE_ORBIT, 'gateway:add', NESTED_GATEWAY, f'--name={PROFILE}', '--use', '--accept-ca-change', f'--ca={NESTED_CA}', '--json'], 120)
+        if added.returncode != 0:
+            raise FleetError(f'{node}: the tested CLI cannot add the profile {PROFILE}: exit {added.returncode}, {(added.stderr or added.stdout).strip()[-200:]}')
+
+    @staticmethod
+    def must(argv, what):
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        if done.returncode != 0:
+            raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
 
     def cli_background(self, args):
         """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""

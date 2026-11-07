@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet
 import runner
 import spec
 import steps
@@ -311,6 +312,14 @@ class StepTest(unittest.TestCase):
             steps.cli(self.run, {'run': ['node:list'], 'as': 'nowhere'})
         with self.assertRaises(steps.NotBuilt):
             steps.cli(self.run, {'run': ['node:list'], 'as': 'app-prod', 'tty': [{'see': 'x', 'send': '1'}]})
+
+    def test_a_case_whose_node_cannot_run_the_cli_fails_with_cause_infrastructure(self):
+        def refused(*args, **kwargs):
+            raise fleet.FleetError('app-prod: cannot mount the tested checkout: exit 1')
+        self.fleet.cli = refused
+        with self.assertRaises(steps.Infra) as caught:
+            steps.cli(self.run, {'run': ['node:list'], 'as': 'app-prod'})
+        self.assertIn('cannot mount the tested checkout', str(caught.exception))
 
     def test_ufw_rows_in_order_once_each_and_absent(self):
         port = self.blocked_port()
