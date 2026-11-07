@@ -14,6 +14,10 @@ additionalFiles:
   - ansible/operation-instance-create.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
+  - ansible/route-withdraw-node.yml
+  - ansible/templates/route-withdraw.j2
+  - ansible/operation-firewall-direct.yml
+  - ansible/templates/firewall-rule.j2
   - ansible/tasks/address-node.yml
   - ansible/tasks/route-access.yml
   - ansible/tasks/instance-create-setup-step.yml

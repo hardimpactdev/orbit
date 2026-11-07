@@ -21,7 +21,7 @@ Deno.test("the full intent reaches a private file beyond the environment size li
         assertEquals(JSON.parse(await Deno.readTextFile(result.path)), intent);
         assertEquals((await Deno.stat(folder)).mode! & 0o777, 0o700);
         assertEquals((await Deno.stat(result.path)).mode! & 0o777, 0o600);
-        assertEquals(result.requirements, "ansible-core==2.20.11\n");
+        assertEquals(result.requirements, "ansible-core==2.20.11\nnetaddr==1.3.0\n");
         assertEquals(
             result.assets,
             new URL("../../../../ansible", import.meta.url).pathname,
