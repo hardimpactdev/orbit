@@ -73,6 +73,8 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
             } catch (ResourceOperationException $refused) {
                 // Admission refused this row; the next sweep asks again. Other rows and the host sweeps still run.
                 Log::warning('A destroying task VM was not readmitted.', ['task_vm_id' => $retired->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
+            } catch (Throwable $broken) {
+                report($broken);
             }
         }
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {

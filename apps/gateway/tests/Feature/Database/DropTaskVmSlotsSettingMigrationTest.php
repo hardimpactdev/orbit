@@ -34,10 +34,10 @@ it('hands the ready slots of the old pool to the destroy, and leaves group VMs a
     $host = DB::table('nodes')->insertGetId(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit', 'created_at' => now(), 'updated_at' => now()]);
     $row = static fn (string $name, array $extra): int => DB::table('task_vms')->insertGetId([...['host_node_id' => $host, 'provider' => 'incus', 'size' => 'normal',
-        'name' => $name, 'state' => 'parked', 'wireguard_ip' => '10.44.0.'.random_int(130, 250), 'created_at' => now(), 'updated_at' => now()], ...$extra]);
-    $ready = $row('tvm-875', ['slot_project_id' => 66]);
-    $slot = $row('beast-tvm-1', ['slot_project_id' => 46, 'slot_number' => 1, 'state' => 'provisioning']);
-    $grouped = $row('tvm-610', []);
+        'name' => $name, 'state' => 'parked', 'created_at' => now(), 'updated_at' => now()], ...$extra]);
+    $ready = $row('tvm-875', ['slot_project_id' => 66, 'wireguard_ip' => '10.44.0.131']);
+    $slot = $row('beast-tvm-1', ['slot_project_id' => 46, 'slot_number' => 1, 'state' => 'provisioning', 'wireguard_ip' => '10.44.0.132']);
+    $grouped = $row('tvm-610', ['wireguard_ip' => '10.44.0.133']);
 
     (require database_path('migrations/2027_01_26_000000_retire_ready_task_vm_slots.php'))->up();
 
