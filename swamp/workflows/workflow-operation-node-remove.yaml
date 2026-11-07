@@ -167,7 +167,7 @@ jobs:
       - name: Withdraw Node DNS
         labels: *ref_0
         forEach: {item: publication, in: '${{ inputs.intent.dns }}'}
-        task: {type: workflow, workflowIdOrName: dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.dns }}'}, execution_secrets: {}}}
+        task: {type: workflow, workflowIdOrName: dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.publication.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.dns }}'}, execution_secrets: {}}}
   - name: phase_12
     dependsOn:
       - job: phase_11

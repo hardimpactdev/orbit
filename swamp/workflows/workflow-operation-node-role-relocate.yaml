@@ -245,7 +245,7 @@ jobs:
     task:
       type: workflow
       workflowIdOrName: dns-publish
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.after.dns }}'}, execution_secrets: {}}
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.publication.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', dns: '${{ self.publication.after.dns }}'}, execution_secrets: {}}
 - name: check
   dependsOn: [{job: dns, condition: {type: succeeded}}]
   steps:

@@ -153,7 +153,7 @@ jobs:
       workflowIdOrName: dns-publish
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
+        node_id: ${{ self.part.node_id }}
         kind: ${{ inputs.kind }}
         intent:
           node_id: ${{ self.part.node_id }}

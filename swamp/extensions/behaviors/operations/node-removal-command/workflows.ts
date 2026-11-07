@@ -112,6 +112,7 @@ function child(
     items: string,
     intent: unknown,
     kind = ex("inputs.kind"),
+    nodeId = ex("inputs.node_id"),
 ): Fields {
     return {
         name,
@@ -122,7 +123,7 @@ function child(
             workflowIdOrName: workflow,
             inputs: {
                 operation_id: ex("inputs.operation_id"),
-                node_id: ex("inputs.node_id"),
+                node_id: nodeId,
                 kind,
                 intent,
                 execution_secrets: {},
@@ -290,6 +291,9 @@ export function roleRemovalWorkflow(): ReturnType<typeof workflow> {
                 host_keys: ex("self.publication.host_keys"),
                 dns: ex("self.publication.after.dns"),
             },
+            ex("inputs.kind"),
+            // The behavior names of the child follow the VPN Node it publishes to.
+            ex("self.publication.node_id"),
         )],
         ...resources(items),
         // The role certificate current path may be a directory or a symlink. Neither cfgmgmt file nor directory covers both.
@@ -455,6 +459,8 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
                     host_keys: ex("self.publication.host_keys"),
                     dns: ex("self.publication.dns"),
                 },
+                ex("inputs.kind"),
+                ex("self.publication.node_id"),
             ),
         ],
         [
