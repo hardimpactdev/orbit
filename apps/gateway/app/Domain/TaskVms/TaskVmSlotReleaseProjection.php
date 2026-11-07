@@ -27,10 +27,9 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);
-        $secrets = ValidatedData::object($input['execution_secrets']);
 
-        // A release without a model key to revoke takes no secret; Swamp needs an object, not an empty list.
-        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => $secrets === [] ? (object) [] : $secrets];
+        // A release without a model key to revoke takes no secret; the submission sends the empty map as an object.
+        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => ValidatedData::object($input['execution_secrets'])];
     }
 
     /** @param array<string,mixed> $data */

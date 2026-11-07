@@ -91,7 +91,7 @@ final class SwampDispatch
                 }
             } catch (ResourceOperationException $error) {
                 foreach ($starts as $operation) {
-                    app(StartSwampRun::class)->refuse($operation, $error->errorCode);
+                    app(StartSwampRun::class)->refuse($operation, $error);
                 }
                 $first = reset($starts);
                 throw $first === false ? $error

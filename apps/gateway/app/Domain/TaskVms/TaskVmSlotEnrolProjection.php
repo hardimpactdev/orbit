@@ -34,7 +34,7 @@ final readonly class TaskVmSlotEnrolProjection implements DirectOperationProject
     {
         $input = ValidatedData::object($operation->input);
 
-        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => (object) []];
+        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => []];
     }
 
     /** @param array<string,mixed> $data */

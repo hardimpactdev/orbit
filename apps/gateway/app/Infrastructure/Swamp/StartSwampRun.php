@@ -67,7 +67,7 @@ final readonly class StartSwampRun
                 ? $exception : ($accepted ? $this->uncertain()
                     : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
             $outcome = $safe->errorCode;
-            $this->fail($operation, $safe->errorCode);
+            $this->fail($operation, $safe);
             throw new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
         } finally {
             Log::info('Swamp direct start', ['operation_id' => $operation->id,
@@ -123,15 +123,16 @@ final readonly class StartSwampRun
     }
 
     /** Fails an admitted Operation whose run never started, such as after a failed execution copy. */
-    public function refuse(Operation $operation, string $code): void
+    public function refuse(Operation $operation, ResourceOperationException $error): void
     {
-        Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $code, 'duration_ms' => 0]);
-        $this->fail($operation, $code);
+        Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $error->errorCode, 'duration_ms' => 0]);
+        $this->fail($operation, $error);
     }
 
-    private function fail(Operation $operation, string $code): void
+    private function fail(Operation $operation, ResourceOperationException $error): void
     {
-        $uncertain = DB::transaction(function () use ($operation, $code): bool {
+        $code = $error->errorCode;
+        $uncertain = DB::transaction(function () use ($operation, $code, $error): bool {
             $this->lock($operation);
             if ($operation->status->terminal()) {
                 return false;
@@ -141,8 +142,10 @@ final readonly class StartSwampRun
 
                 return true;
             }
+            // A start that the Gateway refused keeps why: the run never existed, so nothing else records it.
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
-                'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
+                'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null,
+                'result' => ['error' => ['code' => $code, 'message' => $error->getMessage(), 'details' => $error->details]]]);
             if (! isset($operation->state['swamp_run_id']) && DirectOperation::owns($operation)) {
                 $projection = app(DirectOperation::class)->projection($operation);
                 if ($projection instanceof DirectOperationStartRefusal) {

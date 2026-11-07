@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
@@ -17,6 +19,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -141,3 +144,15 @@ it('makes a slot\'s identity once and keeps it, with the public keys the real to
         ->and(TaskVmSlotIdentity::sshFingerprint($keys[1]))->toStartWith('SHA256:')
         ->and(strlen(base64_decode(TaskVmSlotIdentity::wireguardPublicKey($keys[0]))))->toBe(32);
 });
+
+it('submits an enrol and a release without secrets with an empty secret map, which the workflow takes as an object', function (string $kind, array $input): void {
+    [$host, $project, $build] = slotPoolHost(2);
+    $slot = slotPoolSlot($host, $project, $build, 1);
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Queued, 'input' => $input, 'triggered_by' => 'test']);
+
+    expect(json_encode(app(DirectOperation::class)->workflowInputs($operation)['execution_secrets']))->toBe('{}');
+})->with([
+    'enrol' => ['task_vm.slot_enrol', ['intent' => ['public_key' => str_repeat('a', 43).'=']]],
+    'release' => ['task_vm.slot_release', ['intent' => ['host' => [], 'slot' => []], 'execution_secrets' => []]],
+]);
