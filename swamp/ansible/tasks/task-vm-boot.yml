@@ -14,6 +14,8 @@
     owner: "{{ orbit_user }}"
     group: "{{ orbit_user }}"
     mode: "0600"
+- name: Make the folder of the sshd drop-ins
+  ansible.builtin.file: { path: /etc/systemd/system/ssh.service.d, state: directory, mode: "0755" }
 # The unit runs `sshd -t` before it starts; with no host key that check fails, so the keys are made first.
 - name: Make missing SSH host keys before sshd starts
   ansible.builtin.copy:

@@ -58,7 +58,7 @@
           ansible.builtin.command:
             argv: "{{ incus + ['init', '--vm', '--config', 'limits.cpu=' ~ vm.cpus, '--config', 'limits.memory=' ~ vm.memory, '--device',
                 'root,size=' ~ vm.disk,
-                   '--device', 'eth0,network=' ~ host.network, '--', host.current, vm.name] }}"
+                   '--device', 'eth0,network=' ~ host.network, '--device', 'eth0,security.port_isolation=true', '--', host.current, vm.name] }}"
             stdin: "{{ vm.launch_config }}"
           changed_when: true
         # The disk name is the one the nested Incus database of the image knows its seed pool by.
@@ -137,6 +137,7 @@
         - name: Work out the promotion
           ansible.builtin.set_fact:
             promote_current: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.alias) | map(attribute='target') | first | default('') }}"
+            promote_previous: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq', host.previous_alias) | map(attribute='target') | first | default('') }}"
             promote_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq',
                 host.candidate_alias) | map(attribute='target') | first | default('') }}"
         - name: Check the candidate exists
@@ -170,7 +171,9 @@
         - name: Work out what to keep
           ansible.builtin.set_fact:
             keep: "{{ kept_now.results[0].stdout | from_json | selectattr('name', 'in', [host.alias, host.previous_alias]) | map(attribute='target') | list }}"
-            ours: "{{ kept_now.results[0].stdout | from_json | selectattr('name', 'match', '^' ~ host.alias) | map(attribute='target') | list }}"
+            # The image that was `-previous` before this promotion lost its alias above; it belongs to this host's line too.
+            ours: "{{ kept_now.results[0].stdout | from_json | selectattr('name', 'match', '^' ~ host.alias) | map(attribute='target') | list
+                      + ([promote_previous] if promote_previous != '' else []) }}"
         # Only the alias and `-previous` stay: older images of this host's line are rollback copies of nothing. A seed goes with
         # its image, and only when no VM uses it.
         - name: Remove the older images
@@ -202,6 +205,12 @@
             discard_candidate: "{{ aliases_now.stdout | from_json | selectattr('name', 'eq',
                 host.candidate_alias) | map(attribute='target') | first | default('') }}"
             discard_keep: "{{ aliases_now.stdout | from_json | selectattr('name', 'in', [host.alias, host.previous_alias]) | map(attribute='target') | list }}"
+        # A promotion that failed between its two alias steps leaves the old image only under `-previous`: it gets the alias back.
+        - name: Give the alias back to the previous image
+          when: aliases_now.stdout | from_json | selectattr('name', 'eq', host.alias) | list | length == 0
+                and aliases_now.stdout | from_json | selectattr('name', 'eq', host.previous_alias) | list | length == 1
+          ansible.builtin.command: { argv: "{{ incus + ['image', 'alias', 'rename', '--', host.previous_alias, host.alias] }}" }
+          changed_when: true
         - name: Remove the candidate and its seed when it was not promoted
           when: discard_candidate != '' and discard_candidate not in discard_keep
           ansible.builtin.command: { argv: "{{ incus + item }}" }

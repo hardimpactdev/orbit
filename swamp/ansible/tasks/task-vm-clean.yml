@@ -59,6 +59,12 @@
       changed_when: true
     - name: Remove the Club key of the refresh
       ansible.builtin.file: { path: /etc/orbit/swamp-club-api-key, state: absent }
+    # The published disk carries free blocks too; trimming them drops the bytes of removed files, such as the key above.
+    - name: Trim the free blocks
+      ansible.builtin.command: { argv: [fstrim, -av] }
+      register: clean_trim
+      changed_when: true
+      failed_when: clean_trim.rc not in [0, 64]
     # An image of a refresh keeps the key of the Swamp control Node: it boots with cloud-init off (task-vm-boot.yml).
     - name: Empty the authorized keys
       when: intent.boot is not defined
