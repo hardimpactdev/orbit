@@ -1,0 +1,31 @@
+---
+# Deno at the pin of the recipe, the version the repository's CI sets up, for the Project check of a task VM (its Deno tests and
+# Swamp shape checks). One release folder per digest, behind a launcher in /usr/local/bin.
+- name: Read the Deno version
+  ansible.builtin.command: { argv: [/usr/local/bin/deno, --version] }
+  register: deno_version
+  changed_when: false
+  failed_when: false
+- name: Install Deno
+  when: ('deno ' ~ recipe.tools.deno.version) not in deno_version.stdout | default('')
+  vars:
+    artifact: "{{ recipe.tools.deno.artifacts.amd64 }}"
+    release: "/opt/orbit/deno/releases/{{ recipe.tools.deno.artifacts.amd64.sha256 }}"
+  block:
+    - name: Create the Deno folders
+      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+      loop: [/var/cache/orbit/js, /opt/orbit/deno, /opt/orbit/deno/releases, "{{ release }}"]
+    - name: Download Deno
+      ansible.builtin.get_url:
+        url: "{{ artifact.url }}"
+        dest: "/var/cache/orbit/js/{{ artifact.url | basename }}"
+        checksum: "sha256:{{ artifact.sha256 }}"
+        mode: "0644"
+    - name: Unpack Deno
+      ansible.builtin.unarchive:
+        src: "/var/cache/orbit/js/{{ artifact.url | basename }}"
+        dest: "{{ release }}"
+        remote_src: true
+        creates: "{{ release }}/deno"
+    - name: Publish Deno
+      ansible.builtin.file: { src: "{{ release }}/deno", dest: /usr/local/bin/deno, state: link, force: true }

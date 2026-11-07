@@ -8,6 +8,7 @@
     - { name: node, argv: [/usr/local/bin/node, --version] }
     - { name: pnpm, argv: [/usr/local/bin/pnpm, --version] }
     - { name: bun, argv: [/usr/local/bin/bun, --version] }
+    - { name: deno, argv: [/usr/local/bin/deno, --version] }
     - { name: vp, argv: [/usr/local/bin/vp, --version] }
     - { name: rustc, argv: [/opt/orbit/rust/bin/rustc, --version] }
     - { name: cargo, argv: [/opt/orbit/rust/bin/cargo, --version] }
@@ -47,6 +48,7 @@
       - seen.node == 'v' ~ recipe.tools.node.version
       - seen.pnpm == recipe.tools.pnpm.version
       - seen.bun == recipe.tools.bun.version
+      - ('deno ' ~ recipe.tools.deno.version) in seen.deno
       - recipe.tools['vp-cli'].version in seen.vp
       - ('rustc ' ~ recipe.tools.rust.version) in seen.rustc
       - ('cargo ' ~ recipe.tools.cargo.version) in seen.cargo
