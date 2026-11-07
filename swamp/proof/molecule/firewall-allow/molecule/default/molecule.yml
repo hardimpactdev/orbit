@@ -1,0 +1,61 @@
+# SPIKE (molecule-verify-spike). Molecule with the delegated driver ("default" with managed: false in Molecule 6+).
+# No instance is created or destroyed: the inventory is the nested fleet that `tasks:provision` already built.
+# Run from the parent directory (firewall-allow/), in the task VM. Swamp runs this as ONE step after it has restored `base`:
+#   molecule test                   # prepare (fixtures) -> converge (the CLI, answers, receipts) -> verify (state)
+# The spike runs it through scripts/molecule-verify-spike (`tasks:script`).
+driver:
+  name: default
+  options:
+    managed: false
+
+# Molecule needs a platform list even when it manages none; these are the existing Nodes.
+platforms:
+  - name: nested-gateway
+  - name: nested-app-dev
+  - name: nested-app-prod
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      callbacks_enabled: ansible.posix.profile_tasks
+      gathering: explicit
+      interpreter_python: auto_silent
+      # converge.yml leaves its results as cacheable facts; verify.yml reads them in the next ansible-playbook run.
+      fact_caching: jsonfile
+      fact_caching_connection: /tmp/molecule-firewall-allow-facts
+      fact_caching_timeout: 3600
+  inventory:
+    hosts:
+      all:
+        vars:
+          # The nested Gateway, as the outer VM reaches it. The caller is identified by its WireGuard address, so no token is needed.
+          gateway_url: https://10.45.0.1/api/v1
+          gateway_ca: /home/orbit/.orbit/nested-ca.pem
+          # One port pair per case: a case uses its own resources, as in the runner. A rerun on a fleet that was not restored sets another
+          # PROOF_PORT_BASE, so the leftovers of the first run touch nothing.
+          port_base: "{{ lookup('ansible.builtin.env', 'PROOF_PORT_BASE') | default(47100, true) | int }}"
+          cases:
+            new_restricted_allow: {port: "{{ port_base | int + 1 }}", control: "{{ port_base | int + 11 }}"}
+            already_applied:      {port: "{{ port_base | int + 2 }}", control: "{{ port_base | int + 12 }}"}
+            partial_application:  {port: "{{ port_base | int + 3 }}", control: "{{ port_base | int + 13 }}"}
+            conflict:             {port: "{{ port_base | int + 4 }}", control: "{{ port_base | int + 14 }}"}
+        children:
+          control:
+            hosts:
+              localhost:
+                ansible_connection: local
+          nodes:
+            vars:
+              ansible_connection: community.general.incus
+            hosts:
+              nested-gateway:  {ansible_incus_host: nested-gateway}
+              nested-app-dev:  {ansible_incus_host: nested-app-dev}
+              nested-app-prod: {ansible_incus_host: nested-app-prod}
+
+scenario:
+  test_sequence:
+    - prepare
+    - converge
+    - verify

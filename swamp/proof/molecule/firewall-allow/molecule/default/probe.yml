@@ -1,0 +1,17 @@
+---
+# One probe: a TCP connection from a Node to app-dev, with the runner's rules (steps.py probe_result): exit 0 is connected, 124 is the timeout of
+# a dropped packet (blocked), anything else (a refused connection, a dead listener) is neither, so it fails both expectations.
+- name: "Probe {{ probe.from }} -> app-dev:{{ probe.port }}"
+  ansible.builtin.command: timeout 2 bash -c 'echo > /dev/tcp/{{ app_dev_ip }}/{{ probe.port }}'
+  delegate_to: "{{ probe.from }}"
+  register: reached
+  failed_when: false
+  changed_when: false
+
+- name: "Expect {{ probe.expect }}"
+  vars:
+    observed: "{{ 'connect' if reached.rc == 0 else ('blocked' if reached.rc == 124 else 'refused') }}"
+  ansible.builtin.assert:
+    that: observed == probe.expect
+    fail_msg: "{{ probe.from }} -> app-dev:{{ probe.port }} {{ observed }}, expected {{ probe.expect }}"
+    quiet: true

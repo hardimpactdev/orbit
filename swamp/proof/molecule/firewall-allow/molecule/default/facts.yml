@@ -1,0 +1,53 @@
+---
+# Values that the cases need and that only the live fleet knows: the address of app-dev, the address that the Gateway Node really uses to reach
+# it (the kernel route, as the runner's `${gateway.src}`), and the Node IDs from the nested Gateway's API (the `uri` module, as the caller the
+# nested Gateway knows by its WireGuard address).
+- name: Facts from app-dev
+  hosts: nested-app-dev
+  gather_facts: false
+  tasks:
+    - name: Read the bridge address
+      ansible.builtin.shell: |
+        set -o pipefail
+        ip -4 -o addr show scope global | awk '$2!="orbit" && $2!="docker0" {print $4}' | head -1 | cut -d/ -f1
+      args:
+        executable: /bin/bash
+      register: bridge
+      changed_when: false
+
+    - name: Keep it
+      ansible.builtin.set_fact:
+        app_dev_ip: "{{ bridge.stdout }}"
+
+- name: Facts from the Gateway Node
+  hosts: nested-gateway
+  gather_facts: false
+  tasks:
+    - name: Read the source address of the route to app-dev
+      ansible.builtin.shell: |
+        set -o pipefail
+        ip -4 route get {{ hostvars['nested-app-dev'].app_dev_ip }} | grep -o 'src [0-9.]*' | cut -d' ' -f2
+      args:
+        executable: /bin/bash
+      register: route
+      changed_when: false
+
+    - name: Keep it
+      ansible.builtin.set_fact:
+        gateway_src: "{{ route.stdout }}"
+
+- name: Facts from the nested Gateway API
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: List the Nodes
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/nodes"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: node_list
+
+    - name: Keep the Node IDs
+      ansible.builtin.set_fact:
+        node_ids: "{{ dict(node_list.json.data | map(attribute='name') | zip(node_list.json.data | map(attribute='id'))) }}"

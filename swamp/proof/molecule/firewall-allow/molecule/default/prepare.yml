@@ -1,0 +1,52 @@
+---
+# Fixtures for the cases, one play on app-dev: a listener on the test port and on a control port, and a test deny for the test port
+# placed above the proof-network allowance (the `blocked-port` fixture of the cases file).
+- ansible.builtin.import_playbook: facts.yml
+
+- name: Fixtures on app-dev
+  hosts: nested-app-dev
+  gather_facts: false
+  tasks:
+    - name: Start a listener on each test and control port
+      ansible.builtin.command:
+        cmd: python3 -m http.server {{ item }} --bind 0.0.0.0 --directory /tmp
+      async: 3600
+      poll: 0
+      loop: "{{ cases.values() | map(attribute='port') | list + cases.values() | map(attribute='control') | list }}"
+      changed_when: true
+
+    - name: Find the row of the proof-network allowance
+      ansible.builtin.shell: |
+        set -o pipefail
+        ufw status numbered | grep -m1 'proof-network' | sed -E 's/^\[ *([0-9]+)\].*/\1/'
+      args:
+        executable: /bin/bash
+      register: anchor
+      changed_when: false
+
+    - name: Deny each test port above the proof-network allowance
+      ansible.builtin.command:
+        cmd: ufw insert {{ anchor.stdout | int }} deny proto tcp from any to any port {{ item.value.port }} comment 'proof:deny-{{ item.key }}'
+      loop: "{{ cases | dict2items }}"
+      changed_when: true
+
+    - name: Deny the test port of the partial-application case for UDP as well
+      ansible.builtin.command:
+        cmd: ufw insert {{ anchor.stdout | int }} deny proto udp from any to any port {{ cases.partial_application.port }} comment 'proof:deny-partial_application-udp'
+      changed_when: true
+
+    - name: Find the row of the TCP deny of the partial-application case
+      ansible.builtin.shell: |
+        set -o pipefail
+        ufw status numbered | grep -m1 'proof:deny-partial_application$' | sed -E 's/^\[ *([0-9]+)\].*/\1/'
+      args:
+        executable: /bin/bash
+      register: partial_deny
+      changed_when: false
+
+    - name: Partial application, the TCP line exists above the deny and the UDP line does not
+      ansible.builtin.command:
+        cmd: >-
+          ufw insert {{ partial_deny.stdout | int }} allow proto tcp from {{ hostvars['nested-gateway'].gateway_src }}
+          to any port {{ cases.partial_application.port }} comment 'proof:existing'
+      changed_when: true

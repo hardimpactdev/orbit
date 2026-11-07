@@ -20,6 +20,7 @@ bin/**                                           skip
 docs/**                                          skip
 packages/**                                      skip
 tools/**                                         skip
+scripts/**                                       skip
 
 # Swamp code that no case covers yet is listed as uncovered and does not fail the run.
 swamp/**                                         none: no case yet
