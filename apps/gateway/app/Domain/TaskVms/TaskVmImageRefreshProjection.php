@@ -28,6 +28,9 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
     /** The last step: the old snapshots go once the new one is proven. */
     public const string EndCheck = 'Prune old snapshots';
 
+    /** The step after a refresh that passed that removes what no current path makes (TaskVmHostLeftovers). */
+    public const string HostClean = 'Remove host leftovers';
+
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {
@@ -50,7 +53,8 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             $result = ['error_code' => $code];
             $build = $status === 'succeeded' ? $this->record($operation) : null;
             if ($build !== null) {
-                $result = $build;
+                // The leftover cleanup may fail without failing the refresh; its outcome stays visible on the Operation.
+                $result = [...$build, 'host_clean' => NativeRunResult::stepStatus($native, self::HostClean) ?? 'skipped'];
             }
             // The identity that proved the candidate is free once the proof's release passed. Otherwise it is failed, and the slot rule
             // releases it again before anything else takes it.

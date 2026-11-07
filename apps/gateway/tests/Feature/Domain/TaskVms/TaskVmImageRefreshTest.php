@@ -166,10 +166,12 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     expect($slot->refresh()->state)->toBe(TaskVmState::Failed);
     $slot->update(['state' => TaskVmState::Provisioning]);
 
-    $projection->apply($operation, ['status' => 'succeeded', 'result' => ['steps' => ['Prove the candidate' => ['status' => 'succeeded']]], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
+    $projection->apply($operation, ['status' => 'succeeded', 'result' => ['steps' => ['Prove the candidate' => ['status' => 'succeeded'],
+        'Remove host leftovers' => ['status' => 'failed']]], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id)))
         ->toBe(['vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107131500', 'recipe_identity' => 'recipe-9'])
-        ->and($operation->refresh()->result)->toMatchArray(['refreshed' => true, 'snapshot' => 'r20261107131500', 'previous_snapshot' => null]);
+        // A failed leftover cleanup fails no refresh, and the result says so.
+        ->and($operation->refresh()->result)->toMatchArray(['refreshed' => true, 'snapshot' => 'r20261107131500', 'previous_snapshot' => null, 'host_clean' => 'failed']);
     expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed);
 });
 
