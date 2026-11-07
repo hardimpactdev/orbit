@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity).
   %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions, Lab #4334).
+  %% Decided by Nick, 2026-11-07 (shape spike): the whole Node side is one Ansible phase; the plan is a Jinja template with Molecule unit cases, applied with the `community.general.ufw` module (it can insert at a row and name a port range).
   %% status: reviewed
   %% command: firewall:allow
   %% kind: firewall.allow
@@ -39,7 +40,7 @@ sequenceDiagram
   %%> - the new or reused rule is recorded with status provisioning
   %%> - a task is recorded with the full intent
   %%> - nothing has happened on the Node yet
-  GW->>SW: Start run, full intent<br/>operation-firewall-direct
+  GW->>SW: Start run, full intent<br/>operation-firewall-ansible
   %%> What it does:
   %%> - starts one Swamp run
   %%> Inputs:
@@ -50,43 +51,39 @@ sequenceDiagram
   %%> - the task ID, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
-  %%> How:
-  %%> - a Swamp worker reaches the target over SSH with the official `@swamp/ssh` behavior
-  %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
-  Note over SW: Plan the changes
+  SW->>N: Converge the rule<br/>one Ansible phase · ufw
   %%> What it does:
-  %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
-  %%> - an insert position counts the rows as they will be after the earlier commands
-  %%> - plans no changes when every expected line already exists in the correct position
+  %%> - one Ansible phase on the target, over SSH from the Swamp Node
+  %%> - reads `ufw status numbered` and refuses an inactive firewall (`firewall.backend_inactive`) before any change
+  %%> - plans the lines this rule needs, in order, and applies them one `ufw` module call at a time
+  %%> - reads `ufw status numbered` again and checks that every expected line is present, in narrow-first order
+  %%> - writes the public result (`active`, or the skip reason, or the error code) for the Gateway
   %%> Order:
   %%> - narrower rules go above broader ones, allow or deny, so an exception such as one IP wins over a rule for anywhere
   %%> - ufw stops at the first match, so Orbit sets this order on every change
   %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
-  %%> Why typed, not cfgmgmt:
-  %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
+  %%> Already applied:
+  %%> - plans no changes when every expected line already exists in the correct position
+  %%> - the check still runs before the task can succeed, and the result is `Skipped — already applied (firewall.rule_exists)`
+  %%> A line in the wrong place:
+  %%> - is deleted and inserted again at the right row
+  %%> Why one phase:
+  %%> - the read, the plan, each change and the check are tasks of one playbook, not Swamp steps: a rerun changes nothing, and the Swamp run is three steps (input, phase, result)
   alt changes needed
     %% path: changes-needed
-    SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
+    Note over N: Change the rules<br/>ufw module · one call per line
     %%> What it does:
     %%> - adds one ufw allow line per port, protocol and family, commented with its label
-    %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
+    %%> - inserts each line at the row the plan names; an existing identical, well-placed line is left as it is
     %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
-    %%> - runs the planned commands one at a time; nothing is copied to the Node
+    %%> - nothing is copied to the Node
   else already applied
     %% path: already-applied
     Note over SW: Skipped — already applied<br/>firewall.rule_exists
     %%> Result:
     %%> - the plan contains no changes
-    %%> - the final read and check still run before the task can succeed
+    %%> - the check still runs before the task can succeed
   end
-  SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
-  Note over SW: Check the rules
-  %%> What it does:
-  %%> - checks every expected line is present, in narrow-first order
-  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
-  %%> Why:
-  %%> - the rule only counts as active when ufw shows it
   alt rules present and ordered
     %% path: succeeded
     N-->>SW: ufw lines in order

@@ -1,0 +1,27 @@
+# The rule logic of the firewall phase (swamp/ansible/templates/firewall-rule.j2), proved without a fleet: fixed `ufw status numbered`
+# texts in, the planned changes out. Same framework as the `default` scenario; it needs no Node, so it runs on any machine.
+#   cd swamp/proof/molecule/firewall-allow && molecule test -s unit
+driver:
+  name: default
+  options:
+    managed: false
+
+platforms:
+  - name: localhost
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      interpreter_python: auto_silent
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+
+scenario:
+  test_sequence:
+    - converge
