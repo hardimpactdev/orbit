@@ -1083,6 +1083,46 @@ The converge copies the pinned Pi build from the Gateway Node to 209 with offici
 
 The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed` with the stopped `node-template` and the nested fleet of the running release. The snapshot of the seed is taken with the snapshot of the VM, and a task start copies both. A medium or large VM mounts its copy as the disk `topology-seed`, so a topology task has its Nodes at once and does not build Orbit again. A task VM that already runs keeps its own clone of the older seed snapshot.
 
+#### Log task VM egress
+
+Orbit records which outside hosts task VMs connect to. The log only records. It blocks nothing, and the [egress ACL](#prepare-an-incus-host) of the bridge stays as it is. Each task VM host sets it up on its own bridge, and the [base snapshot refresh](#refresh-the-base-snapshot) runs the setup as its first step, `Log egress`.
+
+The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge name from the host's intent (`settings.task_vms.network`). It sets up four things:
+
+- The nftables table `inet orbit_egress` in `/etc/orbit/egress-log.nft`. The oneshot unit `orbit-egress-log.service` loads it at boot. A changed file reloads the rules.
+- The rsyslog rule `/etc/rsyslog.d/19-orbit-egress.conf`. It writes the lines of the table to `/var/log/orbit/task-egress.log` and keeps them out of syslog and `kern.log`.
+- The `raw.dnsmasq` setting of the bridge, which makes its dnsmasq write the DNS queries to `/var/log/incus/dnsmasq.<bridge>.log`.
+- The rotation file `/etc/logrotate.d/orbit-egress` for both logs: daily, seven files, and at most 200 MB.
+
+The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its two rules match a new connection from the bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The second rule logs the connection with `log prefix "orbit-egress " flags ether` and then adds it to the set. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
+
+Only new connections are logged (`ct state new`). A long-lived connection gives one line when it starts and no line after. The log comes before the add, so a full set repeats lines and loses no connection. The table never drops, rejects or changes a packet. The host has no `conntrack` tool and no connection table in `/proc`, so the log does not read the connection tracker.
+
+A connection line is the raw kernel message with the time, the host name and the tag in front. The `MAC=` field holds the destination MAC, the source MAC and the type, so the source MAC names the VM.
+
+```text
+2026-11-07T20:31:02.123456+01:00 shark kernel: [12345.678901] orbit-egress IN=orbittask0 OUT=enp5s0 MAC=aa:aa:aa:aa:aa:aa:bb:bb:bb:bb:bb:bb:08:00 SRC=10.252.7.5 DST=93.184.216.34 LEN=60 PROTO=TCP SPT=41234 DPT=443
+```
+
+The DNS log uses the `log-queries=extra` format of dnsmasq: the serial number of the query, the client address and port, the record type, the name and the answer.
+
+The agent reads both logs as other users, without a capability, so the part makes them world-readable. The folder `/var/log/orbit` has mode 0755. The part creates `task-egress.log` and the dnsmasq log with mode 0644 before they are used, because rsyslog and dnsmasq keep the mode of a file that exists. The dnsmasq leases and host files are already readable and stay untouched.
+
+The setting `raw.dnsmasq` is merged. The part keeps every line of the operator and adds `log-queries=extra` and `log-facility=<file>` only when a line is missing. It refuses a bridge that already logs to another file (`egress.dnsmasq_log_taken`) and changes nothing. The first set restarts the bridge's dnsmasq: run it when no provision is running, because running VMs lose DNS for about a second. A rerun finds the lines and restarts nothing. The part never restarts Incus.
+
+The end of the part asserts the state and its safety. Each failed check gives a public error code:
+
+| Check | Error code |
+|---|---|
+| The table, its set and the accepting base chain exist | `egress.rules_missing` |
+| The `raw.dnsmasq` value holds both lines | `egress.dnsmasq_unset` |
+| rsyslog and `orbit-egress-log.service` are active | `egress.service_inactive` |
+| Others can read both logs and enter the folder | `egress.log_unreadable` |
+| The bridge still has `ipv6.address=none` | `egress.bridge_dual_stack` |
+| The bridge keeps its ACL, and its first rule drops the private ranges | `egress.acl_changed` |
+
+The `Log egress` step runs before the base VM is touched. A failed check fails the refresh and starts no rollback. To run only this part, start the workflow `task-vm-host-phase` with `tags: egress-log` and the intent of a refresh.
+
 #### Refresh the base snapshot
 
 Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`. Two triggers admit every Linux host: a release that went live and changed playbooks, pins or lock files, and a daily schedule at 03:20. A host with a refresh open returns it, and a host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records and UpCloud attempts.
@@ -1100,6 +1140,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 
 | Step | What it does |
 |---|---|
+| `Log egress` | Phase `egress-log` of `task-vm-host.yml`, in a job of its own that runs first: sets up the [egress log](#log-task-vm-egress) of the host bridge. |
 | `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
 | `Converge` | The same converge as a task start (`task-vm-image-ansible`, phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`). It waits for no nested Gateway and wipes no identity. |
 | `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |

@@ -1,7 +1,8 @@
 id: 17bf7d13-d591-4dc7-a735-5396d311994f
 name: operation-task-vm-image-refresh
 description: >-
-  Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: make the host's base VM when it has none, start it,
+  Refresh the base of one task VM host (docs/cli/tasks/vm-image-refresh.mmd) from full inputs on 209: set up the egress log of the host bridge,
+  make the host's base VM when it has none, start it,
   converge it as a task start would, stop it and snapshot it and its seed, prove the snapshot with one task start, and keep the newest two
   snapshots. The Gateway records the new snapshot. No step calls the Gateway.
 queueTimeout: 30
@@ -39,8 +40,22 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
+# The egress log of the host bridge (docs/reference/compute-drivers.md#log-task-vm-egress): log-only, and it runs before the base is
+# touched, so a failure here leaves the base as it was and starts no rollback.
+- name: egress
+  labels: {role: swamp}
+  steps:
+  - name: Log egress
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: egress-log}
 - name: refresh
   labels: {role: swamp}
+  dependsOn: [{job: egress, condition: {type: succeeded}}]
   steps:
   - name: Start the base VM
     labels: {role: swamp}

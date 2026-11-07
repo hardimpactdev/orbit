@@ -9,6 +9,11 @@
 # - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), put the identity the admission minted and the claim's keys
 #   on an identity volume of the VM, and start it. The base's orbit-identity unit applies them at boot. The containers start with the VM.
 # - `delete`: the task VM, its seed clone and its identity volume go; the Gateway then deletes the Node and its keys.
+# The egress log of the host bridge (docs/reference/compute-drivers.md#log-task-vm-egress). It only records; it blocks nothing:
+# - `egress-log`: an nftables `log` rule on the bridge writes each new outside connection of a task VM once per ten minutes, rsyslog
+#   splits it into /var/log/orbit/task-egress.log, and dnsmasq of the bridge logs the DNS queries to /var/log/incus/dnsmasq.<bridge>.log.
+#   The first set of `raw.dnsmasq` restarts the bridge's dnsmasq: run the part when no provision is running; VMs that run lose DNS for
+#   about a second. The setting is merged: lines of the operator stay and only missing lines are added.
 # Every part is idempotent: a rerun finds its work done. The intent comes from the Gateway; this file names no host or VM. Secrets come
 # from the environment, never from argv. The host is reached from the Swamp Node with its pinned host keys, never trusted on first use.
 - name: Reach the task VM host
@@ -270,3 +275,264 @@
       register: slot_delete
       changed_when: slot_delete.rc == 0
       failed_when: slot_delete.rc != 0 and 'not found' not in slot_delete.stderr
+
+# The egress log (docs/reference/compute-drivers.md#log-task-vm-egress). Nothing here blocks a packet: the table has no verdict, its base
+# chain accepts, and the bridge and its ACL are read and checked, never changed. `host.network` is the only input.
+- name: Task VM egress log
+  hosts: task_vm_host
+  become: true
+  gather_facts: false
+  tags: [egress-log]
+  vars:
+    bridge: "{{ host.network }}"
+    # The ranges the bridge ACL drops, as `acl()` in apps/agent/src/commands/incus/setup.rs lists them (a test holds the two equal).
+    # The log skips them, so it records only a connection that can leave the host.
+    private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
+    # Incus runs dnsmasq as its own user and its AppArmor profile allows writes to exactly this file.
+    dnsmasq_log: "/var/log/incus/dnsmasq.{{ bridge }}.log"
+    dnsmasq_lines: ["log-queries=extra", "log-facility={{ dnsmasq_log }}"]
+    # `raw.dnsmasq` may hold lines of the operator: they stay, and only the lines that are missing are added.
+    raw_current: "{{ (bridge_before.stdout | from_json).config['raw.dnsmasq'] | default('') | trim }}"
+    raw_lines: "{{ raw_current.splitlines() | map('trim') | list }}"
+    dnsmasq_missing: "{{ dnsmasq_lines | reject('in', raw_lines) | list }}"
+    # Ansible leaves `\n` inside a template string as two characters; the variable holds the line break.
+    newline: "\n"
+    dnsmasq_raw: "{{ (([raw_current] if raw_current else []) + dnsmasq_missing) | join(newline) }}"
+    outside_match: 'iifname "{{ bridge }}" oifname != "{{ bridge }}" ct state new meta l4proto { tcp, udp }
+      ip daddr != { {{ private_ranges | join(", ") }} }'
+    # `ct state new` logs a flow when it starts; a long-lived flow is logged once, never again. One entry per (VM address, outside address,
+    # protocol, port) and ten minutes: the first rule returns for a tuple that is in the set, the second logs the flow, with the MAC
+    # addresses (`flags ether`) that name the VM, and then adds the tuple. The log comes first: an `add` to a full set fails and skips
+    # the statements after it, so a full set repeats lines and loses no flow. The table is declared, deleted and made again, so a reload
+    # swaps it in one step. The family is `inet` and the rules match `ip daddr` only: the bridge has no IPv6, and the end checks hold it.
+    nft_rules: |
+      table inet orbit_egress
+      delete table inet orbit_egress
+      table inet orbit_egress {
+          set seen {
+              type ipv4_addr . ipv4_addr . inet_proto . inet_service
+              flags dynamic,timeout
+              timeout 10m
+              size 262144
+          }
+          chain forward {
+              type filter hook forward priority filter + 10; policy accept;
+              {{ outside_match }} ip saddr . ip daddr . meta l4proto . th dport @seen return
+              {{ outside_match }} log prefix "orbit-egress " flags ether add @seen { ip saddr . ip daddr . meta l4proto . th dport }
+          }
+      }
+    egress_unit: |
+      [Unit]
+      Description=Orbit task VM egress log rules
+      After=network-pre.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/sbin/nft -f /etc/orbit/egress-log.nft
+      ExecReload=/usr/sbin/nft -f /etc/orbit/egress-log.nft
+      ExecStop=-/usr/sbin/nft delete table inet orbit_egress
+
+      [Install]
+      WantedBy=multi-user.target
+    # Like 20-ufw.conf, one level earlier: the kernel line goes to its own file, with the raw kernel message, and `stop` keeps it out of
+    # syslog and kern.log. The file mode is set on this action only, so no other log changes; the agent reads the file as other.
+    rsyslog_rules: |
+      template(name="OrbitEgress" type="string" string="%TIMESTAMP:::date-rfc3339% %HOSTNAME% %syslogtag%%msg%\n")
+      if $msg contains "orbit-egress " then {
+          action(type="omfile" file="/var/log/orbit/task-egress.log" template="OrbitEgress" fileCreateMode="0644")
+          stop
+      }
+    logrotate_rules: |
+      /var/log/orbit/task-egress.log {
+          daily
+          rotate 7
+          maxsize 200M
+          compress
+          missingok
+          notifempty
+          create 0644 syslog adm
+          sharedscripts
+          postrotate
+              /usr/lib/rsyslog/rsyslog-rotate
+          endscript
+      }
+
+      {{ dnsmasq_log }} {
+          daily
+          rotate 7
+          maxsize 200M
+          compress
+          missingok
+          notifempty
+          copytruncate
+      }
+    end_bridge: "{{ egress_bridge.stdout | from_json }}"
+    end_raw_lines: "{{ (end_bridge.config['raw.dnsmasq'] | default('')).splitlines() | map('trim') | list }}"
+    end_acl: "{{ egress_acl.stdout | from_json }}"
+    # The first egress rule of the ACL drops the private ranges, ahead of the rule that allows the rest.
+    dropped: "{{ ((end_acl.egress | first).destination | default('')).split(',') if (end_acl.egress | first).action == 'drop' else [] }}"
+  tasks:
+    # The bridge belongs to `task-vms:prepare-host`. A host without it is not ready for this part, and nothing below runs.
+    - name: Read the bridge
+      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ bridge }}?project=default"] }
+      register: bridge_before
+      changed_when: false
+      check_mode: false
+    # One dnsmasq log file per bridge: the operator's own line for another file stays, and this part does not start a second log.
+    - name: Check that the DNS log is free
+      ansible.builtin.assert:
+        that: raw_lines | select('match', '^log-facility=') | reject('equalto', 'log-facility=' ~ dnsmasq_log) | list | length == 0
+        fail_msg: egress.dnsmasq_log_taken
+    - name: Make the folders
+      ansible.builtin.file: { path: "{{ item.path }}", state: directory, owner: "{{ item.owner }}", group: "{{ item.group }}", mode: "{{ item.mode }}" }
+      loop:
+        - { path: /etc/orbit, owner: root, group: root, mode: "0755" }
+        - { path: /var/log/orbit, owner: syslog, group: adm, mode: "0755" }
+      loop_control: { label: "{{ item.path }}" }
+    # The agent reads both logs as other. rsyslog and dnsmasq open a file that exists and keep its mode, so the files exist before they log:
+    # dnsmasq would make its own with mode 0640. Touching keeps the times, so a rerun changes nothing. The owner of the dnsmasq log is
+    # not set: dnsmasq opens it as root and gives it to its own user, and nothing here relies on who owns it.
+    - name: Make the log files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: touch
+        owner: "{{ item.owner | default(omit) }}"
+        group: "{{ item.group | default(omit) }}"
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+      loop:
+        - { path: /var/log/orbit/task-egress.log, owner: syslog, group: adm }
+        - { path: "{{ dnsmasq_log }}" }
+      loop_control: { label: "{{ item.path }}" }
+    # DNS lookups of the task VMs, to the file Incus's AppArmor profile allows. A value with the lines already in it changes nothing, so a
+    # rerun does not restart the dnsmasq of the bridge; the first set does, and VMs that run lose DNS for about a second.
+    - name: Log the DNS queries of the bridge
+      when: dnsmasq_missing | length > 0
+      ansible.builtin.command: { argv: [incus, network, set, "{{ bridge }}", "raw.dnsmasq={{ dnsmasq_raw }}", --project, default] }
+      changed_when: true
+    # Incus starts a new dnsmasq for the bridge with the setting; ten seconds at most, then the part fails.
+    - name: Wait for the dnsmasq of the bridge
+      ansible.builtin.command: { argv: [pgrep, -f, "^dnsmasq .*--conf-file=/var/lib/incus/networks/{{ bridge }}/dnsmasq.raw"] }
+      register: dnsmasq_running
+      until: dnsmasq_running.rc == 0
+      retries: 10
+      delay: 1
+      changed_when: false
+      check_mode: false
+    # Each file is checked by the tool that reads it before it replaces the old one.
+    - name: Write the rsyslog rule
+      ansible.builtin.copy:
+        dest: /etc/rsyslog.d/19-orbit-egress.conf
+        content: "{{ rsyslog_rules }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/rsyslogd -N1 -f %s
+      notify: Restart rsyslog
+    - name: Write the nftables rules
+      ansible.builtin.copy:
+        dest: /etc/orbit/egress-log.nft
+        content: "{{ nft_rules }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/nft -c -f %s
+      notify: Reload the egress log rules
+    - name: Write the unit that loads them
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/orbit-egress-log.service
+        content: "{{ egress_unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Write the log rotation
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/orbit-egress
+        content: "{{ logrotate_rules }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/logrotate -d %s
+    - name: Load the rules at boot
+      ansible.builtin.systemd: { name: orbit-egress-log.service, enabled: true, state: started, daemon_reload: true }
+    - name: Apply the changed rules
+      ansible.builtin.meta: flush_handlers
+    # A unit that stays active does not bring back a table that something deleted.
+    - name: Read the table
+      ansible.builtin.command: { argv: [/usr/sbin/nft, list, table, inet, orbit_egress] }
+      register: egress_table
+      changed_when: false
+      failed_when: false
+      check_mode: false
+    - name: Load the table again
+      when: egress_table.rc != 0
+      ansible.builtin.systemd: { name: orbit-egress-log.service, state: restarted }
+
+    - name: Read the table at the end
+      ansible.builtin.command: { argv: [/usr/sbin/nft, list, table, inet, orbit_egress] }
+      register: egress_end_table
+      changed_when: false
+      failed_when: false
+      check_mode: false
+    - name: Read the bridge at the end
+      ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ bridge }}?project=default"] }
+      register: egress_bridge
+      changed_when: false
+      check_mode: false
+    - name: Read the ACL at the end
+      ansible.builtin.command: { argv: [incus, query, "/1.0/network-acls/{{ bridge }}-egress?project=default"] }
+      register: egress_acl
+      changed_when: false
+      check_mode: false
+    - name: Read the units
+      ansible.builtin.systemd: { name: "{{ item }}" }
+      loop: [rsyslog.service, orbit-egress-log.service]
+      register: egress_units
+      check_mode: false
+    - name: Read the log files at the end
+      ansible.builtin.stat: { path: "{{ item }}" }
+      loop: [/var/log/orbit, /var/log/orbit/task-egress.log, "{{ dnsmasq_log }}"]
+      register: egress_files
+      check_mode: false
+    # The log must change nothing for a task VM: the base chain accepts, the ACL still drops the private ranges, and the bridge has no IPv6.
+    - name: Check the rules
+      ansible.builtin.assert:
+        that:
+          - "'set seen' in egress_end_table.stdout"
+          - "'log prefix \"orbit-egress \"' in egress_end_table.stdout"
+          - "'policy accept' in egress_end_table.stdout"
+        fail_msg: egress.rules_missing
+    - name: Check the DNS log setting
+      ansible.builtin.assert:
+        that: dnsmasq_lines | reject('in', end_raw_lines) | list | length == 0
+        fail_msg: egress.dnsmasq_unset
+    # The agent reads the logs as other, without a capability: each file exists and others may read it, and others may enter the folder.
+    - name: Check that the logs are readable
+      ansible.builtin.assert:
+        that:
+          - egress_files.results | map(attribute='stat') | selectattr('exists') | selectattr('roth') | list | length == 3
+          - egress_files.results[0].stat.xoth
+        fail_msg: egress.log_unreadable
+    - name: Check the services
+      ansible.builtin.assert:
+        that:
+          - egress_units.results[0].status.ActiveState == 'active'
+          - egress_units.results[1].status.ActiveState == 'active'
+        fail_msg: egress.service_inactive
+    - name: Check that the bridge has no IPv6
+      ansible.builtin.assert:
+        that: (end_bridge.config['ipv6.address'] | default('')) == 'none'
+        fail_msg: egress.bridge_dual_stack
+    - name: Check that the bridge keeps its ACL
+      ansible.builtin.assert:
+        that:
+          - (bridge ~ '-egress') in (end_bridge.config['security.acls'] | default('')).split(',')
+          - private_ranges | difference(dropped) | length == 0
+        fail_msg: egress.acl_changed
+  handlers:
+    - name: Restart rsyslog
+      ansible.builtin.systemd: { name: rsyslog.service, state: restarted }
+    - name: Reload the egress log rules
+      ansible.builtin.systemd: { name: orbit-egress-log.service, state: reloaded }
