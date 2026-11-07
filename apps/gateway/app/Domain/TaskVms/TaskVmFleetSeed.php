@@ -12,7 +12,7 @@ use App\Models\Operation;
  * seed and asks no host: it infers the fact from its own records. The seed follows the image a VM boots from, and it holds the
  * copies when the latest refresh run of the host promoted that image and saved copies of the current format. A run with
  * `seed=keep` saves none, so it never counts. A provision lists the copies by format alone, so their age does not matter here,
- * except for a proof, which admits only hosts whose copies come from a release at or after its merge base ({@see TaskVmSeedFloor}).
+ * except for a proof, which admits only hosts whose copies include every change of what the image carries up to its merge base ({@see TaskVmSeedFloor}).
  */
 final readonly class TaskVmFleetSeed
 {

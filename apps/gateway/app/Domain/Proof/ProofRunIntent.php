@@ -150,8 +150,8 @@ final readonly class ProofRunIntent
     }
 
     /**
-     * The hosts whose ready copies come from a release at or after the merge base of the commit under proof. GitHub is read here, before the
-     * admission transaction.
+     * The hosts whose ready copies include every change of what the image carries up to the merge base of the commit under proof. GitHub is read
+     * here, before the admission transaction.
      *
      * @return list<int>
      */

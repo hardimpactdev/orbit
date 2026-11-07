@@ -23,11 +23,9 @@ final readonly class TaskVmImageInputs
      */
     public function carries(string $path): bool
     {
-        if (str_contains('/'.$path, '/__pycache__/')) {
-            return false;
-        }
         foreach (self::Folders as $folder) {
-            if (str_starts_with($path, $folder.'/')) {
+            // The digest leaves out compiled files of the folders.
+            if (str_starts_with($path, $folder.'/') && ! str_contains('/'.$path, '/__pycache__/')) {
                 return true;
             }
         }

@@ -136,7 +136,7 @@ it('leaves out a host whose copies record no release commit, without asking GitH
     expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([])->and($asked)->toBe([]);
 });
 
-it('moves to the other host when one host is stale and the other is fresh, and asks once for each release commit', function (): void {
+it('moves to the fresh hosts when one host is stale, and asks once for each release commit', function (): void {
     $beast = freshHost('beast', FRESH_OLD);
     $shark = freshHost('shark', FRESH_NEW);
     $second = freshHost('sabre', FRESH_NEW);
