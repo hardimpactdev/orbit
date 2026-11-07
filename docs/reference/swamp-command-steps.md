@@ -3,7 +3,7 @@ title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
   - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
-  - apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php
+  - apps/gateway/app/Jobs/Operations/{ProjectSwampOperation,ReconcileSwampOperations}.php
 ---
 
 # Swamp command steps
@@ -96,7 +96,7 @@ A fire of a Schedule's own workflow is recorded as a task when its run ends, not
 
 ### Reconciler
 
-`ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute, and the event observer asks for a pass when it sees a run end. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
+`ReconcileSwampOperations` is the one place that settles an Operation with its Swamp run. The scheduler runs it every minute. When the event observer sees a run end, it queues `ProjectSwampOperation` for that Operation. That job is not unique, so a pass that already runs or waits cannot drop it. It reads the history again for a few seconds when serve has not written it yet, then leaves the Operation to the minute pass. Polling stays: the datastore is format 2, which has no commit feed. The same pass frees the Nodes of a Route write that ended without a release and starts the Route writes that wait for them ([One Route write per Node](/reference/operations#one-route-write-per-node)).
 
 Each pass reads every open Operation of a direct kind against Swamp:
 
@@ -133,11 +133,11 @@ Only kinds with `terminal_result` are followed through bound-root attachments an
 
 The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
 
-A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel dispatches `ReconcileSwampOperations` for a pass; the pass reloads each Operation and its declaration and calls the same `SwampCommandStep` helper. There is no native execution command.
+A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel dispatches `ProjectSwampOperation` for that Operation; the job reloads the Operation and its declaration and calls the same `SwampCommandStep` helper as the reconciler pass. There is no native execution command.
 
-An explicit attach `not_found`, or a `run.interrupted` reply naming the bound root, requests the same pass for late-result recovery. Official e459 uses `run.interrupted` when the previous owner's heartbeat is stale; that reply alone does not prove persisted terminal history. The shared helper still requires the exact root's terminal history before projecting.
+An explicit attach `not_found`, or a `run.interrupted` reply naming the bound root, queues the same projection for late-result recovery. Official e459 uses `run.interrupted` when the previous owner's heartbeat is stale; that reply alone does not prove persisted terminal history. The shared helper still requires the exact root's terminal history before projecting.
 
-If projection fails, the observer keeps the binding and attachment without closing the native event socket, and the next scheduled pass reads history again. An interrupted reply can arrive before terminal history; the Operation stays active until a pass sees terminal history. Other bound runs continue on the same socket. A process restart recovers durable bindings through the normal startup snapshot.
+If projection fails, the observer keeps the binding and attachment without closing the native event socket, and the next scheduled pass reads history again. An interrupted reply can arrive before terminal history; the Operation stays active until `ProjectSwampOperation` or a pass sees terminal history. Other bound runs continue on the same socket. A process restart recovers durable bindings through the normal startup snapshot.
 
 Authorization failures and `run.elsewhere` do not invent a terminal result. Successful duplicate deliveries are suppressed on the connection; the helper's row lock and terminal guard protect duplicate delivery after a process restart.
 

@@ -30,7 +30,8 @@ use Throwable;
  * The one place that settles an Operation with its Swamp run. Every pass reads each open Operation against Swamp and projects
  * the ones whose run ended. It also expires an Operation at its budget, finds a run whose start confirmation was lost,
  * forwards a recorded cancel, and frees the target of a run that nothing proves ended. A failed read changes nothing; the
- * next pass reads again. The scheduler runs it every minute, and the event observer asks for a pass when a run ends.
+ * next pass reads again. The scheduler runs it every minute. When a run ends, the event observer queues `ProjectSwampOperation` for that Operation, so
+ * this unique pass is the safety net, not the wake-up.
  */
 final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 {

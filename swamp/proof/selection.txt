@@ -99,6 +99,7 @@ apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php  *
 apps/gateway/app/Infrastructure/Swamp/SwampSshExecutionInput.php  *
 apps/gateway/app/Infrastructure/Swamp/SwampTerminalReadUnavailable.php  *
 apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php  *
+apps/gateway/app/Jobs/Operations/ProjectSwampOperation.php  *
 apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php  *
 apps/gateway/app/Models/Operation.php                      *
 apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  *

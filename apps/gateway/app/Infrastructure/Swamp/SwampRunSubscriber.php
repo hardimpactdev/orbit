@@ -9,14 +9,14 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
-use App\Jobs\Operations\ReconcileSwampOperations;
+use App\Jobs\Operations\ProjectSwampOperation;
 use App\Models\Operation;
 use Closure;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-/** Follows bound native roots for their progress and asks the reconciler to settle one when its run ends. It never submits, resumes or cancels native work. */
+/** Follows bound native roots for their progress and queues the projection of one when its run ends. It never submits, resumes or cancels native work. */
 final class SwampRunSubscriber
 {
     /** @var array<int,array{run:string,workflow:string,request:?string,attached:bool}> */
@@ -218,11 +218,11 @@ final class SwampRunSubscriber
             }
         }
         try {
-            ReconcileSwampOperations::dispatch();
+            ProjectSwampOperation::dispatch($operationId);
             $this->queued[$operationId] = $entry['run'];
         } catch (Throwable $exception) {
             // The reconciler's next scheduled pass settles the run.
-            $this->log->warning('The Operation reconcile request is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+            $this->log->warning('The Operation projection request is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
 
             return;
         }

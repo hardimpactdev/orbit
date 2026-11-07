@@ -14,10 +14,12 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampConnection;
+use App\Jobs\Operations\ProjectSwampOperation;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
+use Illuminate\Contracts\Queue\Job;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -374,4 +376,33 @@ it('does not record a confirmation for a request that was recorded again while S
     reconcile();
 
     expect($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
+});
+
+function projectOne(Operation $operation, int $attempt = 1, ?int $releasedFor = null): void
+{
+    $queued = Mockery::mock(Job::class);
+    $queued->shouldReceive('attempts')->andReturn($attempt);
+    $releasedFor === null ? $queued->shouldNotReceive('release') : $queued->shouldReceive('release')->once()->with($releasedFor);
+    $job = new ProjectSwampOperation($operation->id);
+    $job->setJob($queued);
+    app()->call([$job, 'handle']);
+}
+
+it('projects one ended run in its own job, with no reconcile pass', function (): void {
+    $operation = runningScript(minutes: 3);
+    reconcileSocket($operation, 'failed');
+
+    projectOne($operation);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed);
+});
+
+it('reads the history again a second later while the run is not terminal there, and stops after its last try', function (): void {
+    $operation = runningScript(minutes: 3);
+    reconcileSocket($operation, 'running');
+
+    projectOne($operation, releasedFor: 1);
+    projectOne($operation, attempt: (new ProjectSwampOperation($operation->id))->tries);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
 });
