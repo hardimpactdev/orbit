@@ -1,0 +1,148 @@
+---
+# Cases of the Route withdrawal composition: captured states in, the files to write out. They follow the cases of
+# publication-command/withdraw_test.ts that a destroy needs. Each case is data; the assertions are at the end.
+- name: Compose the withdrawal against fixed live files
+  hosts: localhost
+  gather_facts: false
+  vars:
+    template: "{{ playbook_dir }}/../../../../../ansible/templates/route-withdraw.j2"
+    header: "# Managed by Orbit: Node Caddy build\n{ admin off }\n"
+    gone: "# orbit: routes gone\nhttps://gone.test { reverse_proxy a }\n"
+    kept: "# orbit: routes kept\nhttps://kept.test { reverse_proxy a }\n"
+    added: "# orbit: routes added\nhttps://added.test { reverse_proxy z }\n"
+    edited: "# orbit: routes gone\nhttps://gone.test { reverse_proxy edited }\n"
+    two: "{{ header }}\n{{ gone }}\n{{ kept }}"
+    one: "{{ header }}\n{{ kept }}"
+    empty: "{{ header }}"
+    account: "orbit:x:1000:1000::/home/orbit:/bin/bash"
+    pool1: "[orbit-instance-1]\nchdir = /__ORBIT_NODE_HOME__/app-1\npm.max_children = 5\n"
+    pool2: "[orbit-instance-2]\nchdir = /__ORBIT_NODE_HOME__/app-2\npm.max_children = 5\n"
+    live1: "[orbit-instance-1]\nchdir = /home/orbit/app-1\npm.max_children = 5\n"
+    live2: "[orbit-instance-2]\nchdir = /home/orbit/app-2\npm.max_children = 5\n"
+    live3: "[orbit-instance-3]\nchdir = /home/orbit/app-3\npm.max_children = 9\n"
+    # The Caddy chain of a destroy: before, then the same after state three times (no grace).
+    chain_two_to_one:
+      before: {content: "{{ two }}", version: aaaa}
+      prepared: {content: "{{ one }}", version: bbbb}
+      withdrawn: {content: "{{ one }}", version: bbbb}
+      after: {content: "{{ one }}", version: bbbb}
+    chain_one_to_none:
+      before: {content: "{{ one }}", version: bbbb}
+      prepared: {content: "{{ empty }}", version: cccc}
+      withdrawn: {content: "{{ empty }}", version: cccc}
+      after: {content: "{{ empty }}", version: cccc}
+    cases:
+      - name: a destroy removes its site and keeps an unrelated live one
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: "{{ two }}\n{{ added }}"
+        php: {}
+        expect_caddy: "{{ one }}\n{{ added }}"
+      - name: a rerun finds the site gone and changes nothing
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: "{{ one }}\n{{ added }}"
+        php: {}
+        expect_caddy: "{{ one }}\n{{ added }}"
+      - name: the last site leaves the header only
+        caddy: "{{ chain_one_to_none }}"
+        live_caddy: "{{ one }}"
+        php: {}
+        expect_caddy: "{{ empty }}"
+      - name: a pool of the Instance leaves and a foreign one stays
+        caddy: {}
+        php:
+          before: {account_user: orbit, configurations: {"8.4": "{{ pool1 }}{{ pool2 }}"}}
+          after: {account_user: orbit, configurations: {"8.4": "{{ pool2 }}"}}
+        pools: {"8.4": "{{ live1 }}{{ live2 }}{{ live3 }}"}
+        expect_pools:
+          - {version: "8.4", ensure: present, has: [orbit-instance-2, orbit-instance-3], lacks: ["orbit-instance-1]"]}
+      - name: a pool file that empties is removed
+        caddy: {}
+        php:
+          before: {account_user: orbit, configurations: {"8.4": "{{ pool1 }}"}}
+          after: {account_user: orbit, configurations: []}
+        pools: {"8.4": "{{ live1 }}"}
+        expect_pools:
+          - {version: "8.4", ensure: absent, has: [], lacks: []}
+    refusals:
+      - name: a live site that matches no captured state is refused
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: "{{ header }}\n{{ edited }}\n{{ kept }}"
+        php: {}
+        error: caddy.owned_revision_conflict
+      - name: a missing Caddyfile is refused when sites were served
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: ""
+        php: {}
+        error: caddy.current_config_missing
+      - name: a foreign Caddyfile is refused
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: "not managed by orbit\n"
+        php: {}
+        error: caddy.foreign_config
+      - name: a global option edited by hand is refused
+        caddy: "{{ chain_two_to_one }}"
+        live_caddy: "# Managed by Orbit: Node Caddy build\n{ admin on }\n\n{{ gone }}\n{{ kept }}"
+        php: {}
+        error: caddy.global_revision_conflict
+      - name: a pool the Node lacks is refused
+        caddy: {}
+        php:
+          before: {account_user: orbit, configurations: {"8.4": "{{ pool1 }}"}}
+          after: {account_user: orbit, configurations: []}
+        pools: {}
+        error: php.current_config_missing
+      - name: a pool edited by hand is refused
+        caddy: {}
+        php:
+          before: {account_user: orbit, configurations: {"8.4": "{{ pool1 }}"}}
+          after: {account_user: orbit, configurations: []}
+        pools: {"8.4": "[orbit-instance-1]\nchdir = /home/orbit/app-1\npm.max_children = 99\n"}
+        error: php.owned_revision_conflict
+  tasks:
+    - name: Compose each case
+      ansible.builtin.set_fact:
+        composed: "{{ composed | default({}) | combine({c.name: lookup('ansible.builtin.template', template) | from_json}) }}"
+      vars:
+        rw_php: "{{ c.php }}"
+        rw_caddy: "{{ c.caddy }}"
+        rw_account: "{{ account }}"
+        rw_pools: "{{ c.pools | default({}) }}"
+        rw_live_caddy: "{{ c.live_caddy | default('') }}"
+      loop: "{{ cases + refusals }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The Caddyfile is the expected one
+      ansible.builtin.assert:
+        that:
+          - composed[c.name].error is none
+          - composed[c.name].caddy.content == c.expect_caddy
+        fail_msg: "{{ c.name }}: got {{ composed[c.name] | to_json }}"
+        quiet: true
+      loop: "{{ cases | selectattr('expect_caddy', 'defined') | list }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The pools are the expected ones
+      ansible.builtin.assert:
+        that:
+          - composed[c.name].error is none
+          - composed[c.name].pools | length == c.expect_pools | length
+          - composed[c.name].pools[0].version == c.expect_pools[0].version
+          - composed[c.name].pools[0].ensure == c.expect_pools[0].ensure
+          - missing == []
+          - unwanted == []
+        fail_msg: "{{ c.name }}: missing '{{ missing }}', unwanted '{{ unwanted }}', got {{ composed[c.name] | to_json }}"
+        quiet: true
+      vars:
+        content: "{{ composed[c.name].pools[0].content }}"
+        missing: "{{ c.expect_pools[0].has | reject('in', content) | list }}"
+        unwanted: "{{ c.expect_pools[0].lacks | select('in', content) | list }}"
+      loop: "{{ cases | selectattr('expect_pools', 'defined') | list }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The refusals carry their code and write nothing
+      ansible.builtin.assert:
+        that:
+          - composed[c.name].error == c.error
+          - composed[c.name].pools == []
+          - composed[c.name].caddy is none
+        fail_msg: "{{ c.name }}: got {{ composed[c.name] | to_json }}"
+        quiet: true
+      loop: "{{ refusals }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}

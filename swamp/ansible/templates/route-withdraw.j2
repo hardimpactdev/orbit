@@ -1,0 +1,158 @@
+{#-
+  One Node's Route withdrawal composed against what the Node holds now: the captured states applied in order to the live
+  PHP-FPM pool files and Caddyfile, each file written once. Pure: it reads `rw_php`, `rw_caddy` and `rw_cleanup` (the intent),
+  `rw_account` (the passwd line), `rw_pools` (version -> live text) and `rw_live_caddy`, and prints one JSON object:
+  {error, pools: [{version, path, content, ensure}], caddy: {content} | null}.
+  It follows `publication-command/sections.ts` (three-way merge by section key, `owned_revision_conflict` when the live section is
+  none of the captured ones) and `composeWithdrawal` (a later step of the Caddy chain runs only when its states differ).
+-#}
+{#- Three-way merge of two keyed maps over the live one. Prints {"result": {...}, "conflict": bool}. -#}
+{%- macro merge(before, after, current, alts) -%}
+{%- set ns = namespace(result=current, conflict=false) -%}
+{%- set keys = [] -%}
+{%- for map in [before, after] + alts -%}{%- for k in map.keys() -%}{%- if k not in keys -%}{%- set _ = keys.append(k) -%}{%- endif -%}{%- endfor -%}{%- endfor -%}
+{%- for k in keys -%}
+{%- set previous = before.get(k) -%}{%- set desired = after.get(k) -%}{%- set actual = current.get(k) -%}
+{%- set alts_same = namespace(all=true, any=false) -%}
+{%- for alt in alts -%}
+{%- if alt.get(k) != desired -%}{%- set alts_same.all = false -%}{%- endif -%}
+{%- if actual == alt.get(k) -%}{%- set alts_same.any = true -%}{%- endif -%}
+{%- endfor -%}
+{%- if not (previous == desired and alts_same.all) -%}
+{%- if actual != previous and actual != desired and not alts_same.any -%}{%- set ns.conflict = true -%}{%- endif -%}
+{%- if desired is none -%}
+{%- set kept = {} -%}
+{%- for rk, rv in ns.result.items() -%}{%- if rk != k -%}{%- set _ = kept.update({rk: rv}) -%}{%- endif -%}{%- endfor -%}
+{%- set ns.result = kept -%}
+{%- else -%}
+{%- set ns.result = ns.result | combine({k: desired}) -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{{ {'result': ns.result, 'conflict': ns.conflict} | to_json }}
+{%- endmacro -%}
+
+{#- Caddyfile: the header up to the first `# orbit:` marker, and the blocks by marker key (a list of blocks per key). -#}
+{%- macro caddy_sections(content) -%}
+{%- if not content.startswith('# Managed by Orbit: Node Caddy build\n') or '\u0000' in content -%}
+{{ {'error': 'caddy.foreign_config'} | to_json }}
+{%- else -%}
+{%- set header = (content | regex_replace('(?ms)^# orbit: .*\\Z', '') | regex_replace('\\n+\\Z', '')) ~ '\n' -%}
+{%- set groups = {} -%}
+{%- for block in content | regex_findall('(?ms)^# orbit: [^\\s]+ [^\\r\\n]+\\n.*?(?=^# orbit: |\\Z)') -%}
+{%- set pair = block | regex_findall('^# orbit: ([^\\s]+) ([^\\r\\n]+)\\n') | first -%}
+{%- set key = pair[0] ~ ' ' ~ pair[1] -%}
+{%- set text = (block | regex_replace('\\n+\\Z', '')) ~ '\n' -%}
+{%- set _ = groups.update({key: groups.get(key, []) + [text]}) -%}
+{%- endfor -%}
+{{ {'header': header, 'groups': groups} | to_json }}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- One Caddy step: `before` -> `after` over `current`, with every captured content as an alternative. Prints {"content": text} or {"error": code}. -#}
+{%- macro caddy_step(before, after, current, alternatives) -%}
+{%- set b = caddy_sections(before) | from_json -%}
+{%- set a = caddy_sections(after) | from_json -%}
+{%- set live = current if current else before -%}
+{%- set c = caddy_sections(live) | from_json -%}
+{%- set alt = [] -%}
+{%- for text in alternatives -%}{%- set _ = alt.append(caddy_sections(text) | from_json) -%}{%- endfor -%}
+{%- if b.error is defined or a.error is defined or c.error is defined -%}
+{{ {'error': 'caddy.foreign_config'} | to_json }}
+{%- elif not current and b.groups | length > 0 -%}
+{{ {'error': 'caddy.current_config_missing'} | to_json }}
+{%- elif c.header not in ([b.header, a.header] + (alt | map(attribute='header') | list)) -%}
+{{ {'error': 'caddy.global_revision_conflict'} | to_json }}
+{%- else -%}
+{%- set merged = merge(b.groups, a.groups, c.groups, alt | map(attribute='groups') | list) | from_json -%}
+{%- if merged.conflict -%}
+{{ {'error': 'caddy.owned_revision_conflict'} | to_json }}
+{%- else -%}
+{%- set blocks = [] -%}
+{%- for list_of_blocks in merged.result.values() -%}{%- for text in list_of_blocks -%}{%- set _ = blocks.append(text) -%}{%- endfor -%}{%- endfor -%}
+{{ {'content': a.header ~ (('\n' ~ blocks | join('\n')) if blocks | length > 0 else '')} | to_json }}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- PHP-FPM pool file: the text before the first `[pool]` and the pools by name. -#}
+{%- macro php_sections(text) -%}
+{%- set ns = namespace(prefix='', name=none, groups={}, error=none) -%}
+{%- for line in text.splitlines(true) -%}
+{%- set trimmed = line | trim -%}
+{%- if trimmed.startswith('[') -%}
+{%- set ns.name = trimmed[1:-1] -%}
+{%- if not trimmed.endswith(']') or ns.name is not match('^orbit-(instance|workspace|app-instance)-[1-9][0-9]*(-[0-9a-f]{8})?$') or ns.name in ns.groups -%}{%- set ns.error = 'php.shared_pool_invalid' -%}{%- endif -%}
+{%- set ns.groups = ns.groups | combine({ns.name: ''}) -%}
+{%- endif -%}
+{%- if ns.name is not none -%}
+{%- set ns.groups = ns.groups | combine({ns.name: ns.groups[ns.name] ~ line}) -%}
+{%- elif trimmed == '' or trimmed.startswith(';') or trimmed.startswith('#') -%}
+{%- set ns.prefix = ns.prefix ~ line -%}
+{%- else -%}
+{%- set ns.error = 'php.shared_pool_invalid' -%}
+{%- endif -%}
+{%- endfor -%}
+{{ {'prefix': ns.prefix, 'groups': ns.groups, 'error': ns.error} | to_json }}
+{%- endmacro -%}
+
+{#- A pool file `previous` -> `desired` over `current`, as mergePhp does. Prints {"content": text} or {"error": code}. -#}
+{%- macro php_step(previous, desired, current) -%}
+{%- set b = php_sections(previous) | from_json -%}
+{%- set a = php_sections(desired) | from_json -%}
+{%- set c = php_sections(current) | from_json -%}
+{%- if b.error or a.error or c.error -%}
+{{ {'error': 'php.shared_pool_invalid'} | to_json }}
+{%- else -%}
+{%- set merged = merge(b.groups, a.groups, c.groups, []) | from_json -%}
+{%- if merged.conflict -%}
+{{ {'error': 'php.owned_revision_conflict'} | to_json }}
+{%- else -%}
+{%- set text = namespace(value='') -%}
+{%- for name in merged.result.keys() | sort -%}{%- set text.value = text.value ~ merged.result[name] -%}{%- endfor -%}
+{{ {'content': '' if (c.groups | length > 0 and merged.result | length == 0) else c.prefix ~ text.value} | to_json }}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- set out = namespace(error=none, pools=[], caddy=none) -%}
+{#- PHP pools. -#}
+{%- if rw_php.before is defined -%}
+{%- set fields = rw_account.split(':') -%}
+{%- set home = fields[5] | default('') -%}
+{#- The Gateway stores an empty map as [] . -#}
+{%- set before_cfg = rw_php.before.configurations if rw_php.before.configurations is mapping else {} -%}
+{%- set after_cfg = rw_php.after.configurations if rw_php.after.configurations is mapping else {} -%}
+{%- set versions = (before_cfg.keys() | list + after_cfg.keys() | list) | unique | sort -%}
+{%- for version in versions -%}
+{%- if out.error is none -%}
+{%- set previous = (before_cfg.get(version, '')) | replace('__ORBIT_NODE_GROUP__', fields[3]) | replace('/__ORBIT_NODE_HOME__', home) -%}
+{%- set desired = (after_cfg.get(version, '')) | replace('__ORBIT_NODE_GROUP__', fields[3]) | replace('/__ORBIT_NODE_HOME__', home) -%}
+{%- if previous != desired -%}
+{%- if version not in rw_pools -%}
+{%- set out.error = 'php.current_config_missing' -%}
+{%- else -%}
+{%- set step = php_step(previous, desired, rw_pools[version]) | from_json -%}
+{%- if step.error is defined -%}{%- set out.error = step.error -%}
+{%- else -%}
+{%- set out.pools = out.pools + [{'version': version, 'path': '/etc/php/' ~ version ~ '/fpm/pool.d/orbit-scopes.conf', 'content': step.content, 'ensure': ('present' if step.content else 'absent')}] -%}
+{%- endif -%}
+{%- endif -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{#- Caddyfile: chain before, prepared, withdrawn, after; a later step runs only when its two states differ. -#}
+{%- if rw_caddy.before is defined and out.error is none -%}
+{%- set chain = [rw_caddy.before, rw_caddy.prepared, rw_caddy.withdrawn, rw_caddy.after] -%}
+{%- set contents = chain | map(attribute='content') | list -%}
+{%- set state = namespace(content=rw_live_caddy) -%}
+{%- for i in range(3) -%}
+{%- if out.error is none and (i == 0 or chain[i].version != chain[i + 1].version) -%}
+{%- set step = caddy_step(chain[i].content, chain[i + 1].content, state.content, contents) | from_json -%}
+{%- if step.error is defined -%}{%- set out.error = step.error -%}{%- else -%}{%- set state.content = step.content -%}{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if out.error is none -%}{%- set out.caddy = {'content': state.content} -%}{%- endif -%}
+{%- endif -%}
+{{ {'error': out.error, 'pools': out.pools, 'caddy': out.caddy} | to_json }}

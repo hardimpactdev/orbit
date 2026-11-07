@@ -114,10 +114,10 @@ sequenceDiagram
   %%> When:
   %%> - always after the check, also when it refused
   opt Instance has a Route
-  SW->>N: Withdraw the Route<br/>Ansible read, compose, apply
+  SW->>N: Withdraw the Route<br/>one Ansible phase per Node
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
-  %%> - per Node, in parallel: one Ansible read of the pools, the Caddyfile and the private DNS files, one composition of the captured states against them, one Ansible apply
+  %%> - per Node, in parallel: one Ansible phase that reads the pools and the Caddyfile, composes the captured states against them (a Jinja template with unit cases) and applies the result
   %%> - the apply writes the pools, tests and reloads PHP-FPM, writes the Caddyfile, validates and reloads Caddy, writes the DNS records and restarts the backend, then removes the certificate folders
   %%> - for a Route domain outside the Cluster or Node TLD it also removes the private DNS records on Node 1 (private DNS answers the whole TLD, so a domain inside it has none), in this step and not in a step of its own
   %%> - the catalog's Router answers (`overrides`, a list per requesting Node) name a Route only while the captured fleet has a site for it, as the host records do, so the name of the withdrawn Route leaves with its records in this same step and no stale answer stays

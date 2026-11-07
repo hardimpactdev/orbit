@@ -26,7 +26,7 @@ Domain, publication and web-root updates use the Route admission action. The Gat
 
 The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
 
-An Instance removal withdraws its Route with the `route-withdraw` workflow, not the Route mutation. Each Node it touches runs `route-withdraw-node`, in parallel: one Ansible `read`, one composition and one Ansible `apply`.
+An Instance removal withdraws its Route with the `route-withdraw` workflow, not the Route mutation. Each Node it touches runs `route-withdraw-node-ansible`, in parallel: one Ansible phase reads the pool files and the Caddyfile, composes the withdrawal from the captured states and applies it.
 
 - The composition is the same pool, Caddyfile and private DNS merge as the Route mutation, with the same revision checks.
 - The captured states apply in order against what the Node holds, so each file is written once.
