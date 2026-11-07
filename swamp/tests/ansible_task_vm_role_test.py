@@ -55,6 +55,26 @@ class TaskVmRoleTest(unittest.TestCase):
         self.assertIn("'agent' not in checkout_current", place['when'])
         self.assertNotIn('when', next(task for task in take if task['name'] == 'Restart the long-running services'))
 
+    def test_a_task_start_converges_the_converge_part_of_its_whole_intent_and_keeps_the_host_pins(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            whole = {'host': {'ssh': {'target': {'host': '192.0.2.5', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 host']}}},
+                     'converge': intent(direct=True)}
+            (folder / 'intent.json').write_text(json.dumps(whole))
+            os.environ['ORBIT_INTENT_KEY'] = 'converge'
+            self.addCleanup(os.environ.pop, 'ORBIT_INTENT_KEY')
+            builder.build(folder, 'tasks.provision')
+            host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
+            self.assertEqual(host['ansible_host'], '10.252.7.9')
+            # The vars hold the converge part as the role's intent; the host play reads the whole file by itself.
+            self.assertIn('"direct": true', (folder / 'vars.yml').read_text())
+            self.assertNotIn('192.0.2.5', (folder / 'vars.yml').read_text())
+        # The host play adds its pins to the file that holds the VM's, and the one run starts both playbooks.
+        host_play = yaml.safe_load((ANSIBLE / 'task-vm-host.yml').read_text())[0]
+        pin = next(task for task in host_play['tasks'] if task['name'] == 'Pin the host keys')
+        self.assertIn('ansible.builtin.lineinfile', pin)
+        self.assertEqual(pin['loop'], '{{ host.ssh.target.host_keys }}')
+
     def test_the_files_name_no_version(self):
         for path in [ANSIBLE / 'task-vm-role.yml', *sorted((ANSIBLE / 'tasks').glob('task-vm-*.yml'))]:
             text = path.read_text()

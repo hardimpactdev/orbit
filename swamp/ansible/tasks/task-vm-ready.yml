@@ -4,10 +4,10 @@
 - name: Wait for a new server
   when: intent.image
   block:
-    # A task VM with its identity answers over WireGuard about 6 s after its start, so 30 s means its identity failed. A new cloud server
+    # A task VM with its identity answers over WireGuard about 6 to 14 s after its start, and a task start's one run waits from the start itself, so 60 s means its identity or its hub peer failed. A new cloud server
     # (an UpCloud image build) needs minutes.
     - name: Wait until SSH answers
-      ansible.builtin.wait_for_connection: { timeout: "{{ 30 if intent.direct | default(false) else 300 }}", sleep: 1 }
+      ansible.builtin.wait_for_connection: { timeout: "{{ 60 if intent.direct | default(false) else 300 }}", sleep: 1 }
     - name: Wait for cloud-init
       ansible.builtin.command: { argv: [timeout, "900", cloud-init, status, --wait, --long] }
       register: ready_cloud_init

@@ -6,12 +6,10 @@ sequenceDiagram
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane H icon=server pill=target tone=amber
   %% lane HUB icon=server pill=target tone=purple
   %% lane VM icon=server pill=task VM tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>shark-tvm-3
   Note over GW: Take a slot<br/>mint an identity · database only
