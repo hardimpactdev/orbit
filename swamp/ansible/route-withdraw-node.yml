@@ -1,0 +1,161 @@
+---
+# One Node's Route withdrawal (instance.destroy) as ONE Swamp phase, tag `withdraw`: read what the Node holds, compose the
+# withdrawal from the captured states (templates/route-withdraw.j2), apply it. It replaces route-withdraw.yml, whose `read` and
+# `apply` phases needed a TypeScript composition step between them.
+# A file is written only when its content differs, and PHP-FPM and Caddy reload only after a write, so a second run changes nothing.
+# The private DNS records are not part of this phase yet: a Node with DNS states fails before any change.
+# A failed task fails the phase, and its message is the step's stderr; the Swamp step is the end check the Gateway reads.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.node }}"
+    address_identity: "{{ intent.node.identity_file }}"
+    address_group: route_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Withdraw the Route from the Node
+  hosts: route_node
+  become: true
+  gather_facts: false
+  tags: [withdraw]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    php_states: "{{ intent.php if intent.php is mapping else {} }}"
+    caddy_states: "{{ intent.caddy if intent.caddy is mapping else {} }}"
+  tasks:
+    - name: Refuse the DNS records of this spike
+      ansible.builtin.assert:
+        that: intent.dns is not mapping or intent.dns | length == 0
+        fail_msg: route.dns_withdrawal_unsupported
+        quiet: true
+    # Read.
+    - name: Read the account
+      ansible.builtin.command:
+        argv: [timeout, "10", getent, passwd, "{{ intent.node.account }}"]
+      register: account
+      changed_when: false
+      check_mode: false
+      when: php_states.before is defined
+    - name: Find the pool files
+      ansible.builtin.find:
+        paths: /etc/php
+        patterns: orbit-scopes.conf
+        recurse: true
+        file_type: file
+      register: found
+      check_mode: false
+      when: php_states.before is defined
+    - name: Read the pool files
+      ansible.builtin.slurp:
+        src: "{{ item }}"
+      register: pools
+      loop: "{{ found.files | default([]) | map(attribute='path') | select('match', '^/etc/php/[0-9.]+/fpm/pool.d/orbit-scopes.conf$') | list }}"
+      when: php_states.before is defined
+    # A Node without a Caddyfile reads as an empty one; any other failure fails the phase.
+    - name: Read the Caddyfile
+      ansible.builtin.slurp:
+        src: /etc/caddy/Caddyfile
+      register: caddy
+      when: caddy_states.before is defined
+      failed_when: caddy is failed and 'file not found' not in (caddy.msg | default('') | lower)
+    # Compose.
+    - name: Key the live pool files by PHP version
+      ansible.builtin.set_fact:
+        pool_texts: "{{ pool_texts | default({}) | combine({item.item | regex_replace('^/etc/php/([0-9.]+)/.*$', '\\1'): item.content | b64decode}) }}"
+      loop: "{{ pools.results | default([]) | selectattr('content', 'defined') | list }}"
+      loop_control: {label: "{{ item.item }}"}
+    - name: Compose the withdrawal
+      ansible.builtin.set_fact:
+        plan: "{{ lookup('ansible.builtin.template', 'route-withdraw.j2') | from_json }}"
+      vars:
+        rw_php: "{{ php_states }}"
+        rw_caddy: "{{ caddy_states }}"
+        rw_account: "{{ account.stdout | default('') }}"
+        rw_pools: "{{ pool_texts | default({}) }}"
+        rw_live_caddy: "{{ (caddy.content | default('') | b64decode) if caddy.content is defined else '' }}"
+    - name: Refuse a live file that matches no captured state
+      ansible.builtin.assert:
+        that: plan.error is none
+        fail_msg: "{{ plan.error }}"
+        quiet: true
+    # Apply: pools first, tested and reloaded; then the Caddyfile, validated and reloaded. A reload keeps open requests.
+    - name: Write the PHP-FPM pool files
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ item.path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: pools_written
+      loop: "{{ plan.pools | selectattr('ensure', 'equalto', 'present') | list }}"
+      loop_control: {label: "{{ item.path }}"}
+    - name: Remove the emptied PHP-FPM pool files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      register: pools_removed
+      loop: "{{ plan.pools | selectattr('ensure', 'equalto', 'absent') | list }}"
+      loop_control: {label: "{{ item.path }}"}
+    - name: Test the PHP-FPM configuration
+      ansible.builtin.command:
+        argv: [timeout, "30", "/usr/sbin/php-fpm{{ item.item.version }}", -t]
+      loop: "{{ ((pools_written.results | default([])) + (pools_removed.results | default([]))) | selectattr('changed') | list }}"
+      loop_control: {label: "{{ item.item.version }}"}
+      changed_when: false
+    - name: Reload PHP-FPM
+      ansible.builtin.command:
+        argv: [timeout, "30", systemctl, try-reload-or-restart, "php{{ item.item.version }}-fpm"]
+      loop: "{{ ((pools_written.results | default([])) + (pools_removed.results | default([]))) | selectattr('changed') | list }}"
+      loop_control: {label: "{{ item.item.version }}"}
+      changed_when: true
+    - name: Write the Caddyfile
+      ansible.builtin.copy:
+        content: "{{ plan.caddy.content }}"
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: caddy
+        mode: "0640"
+      when: plan.caddy is not none
+      notify: Validate and reload Caddy
+    # Validated, then reloaded; Caddy is never restarted. The handlers run only after a write, and here, before the next task.
+    - name: Publish the Caddyfile
+      ansible.builtin.meta: flush_handlers
+    # The certificate scopes no site names any more: the Caddy folder, and the copy under the account's home.
+    - name: Read the accounts of the withdrawn scopes
+      ansible.builtin.command:
+        argv: [timeout, "10", getent, passwd, "{{ item }}"]
+      register: cleanup_accounts
+      loop: "{{ intent.cleanup | map(attribute='user') | unique | list }}"
+      changed_when: false
+      check_mode: false
+    - name: Remove the certificate folders
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ caddy_folders + account_folders }}"
+      vars:
+        scopes: "{{ intent.cleanup | map(attribute='scope') | list }}"
+        passwd: "{{ cleanup_accounts.results | default([]) | items2dict(key_name='item', value_name='stdout') }}"
+        homes: "{{ intent.cleanup | map(attribute='user') | map('extract', passwd) | map('regex_replace', '^(?:[^:]*:){5}([^:]*):.*$', '\\1') | list }}"
+        caddy_folders: "{{ scopes | map('regex_replace', '^', '/etc/caddy/orbit-certificates/') | list }}"
+        account_folders: "{{ homes | zip(scopes) | map('join', '/.orbit/certificates/') | list }}"
+  handlers:
+    - name: Validate the Caddyfile
+      ansible.builtin.command:
+        argv: [timeout, "60", runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      listen: Validate and reload Caddy
+      changed_when: false
+    - name: Reload Caddy
+      ansible.builtin.command:
+        argv: [timeout, "60", systemctl, reload, caddy]
+      listen: Validate and reload Caddy
+      changed_when: true
