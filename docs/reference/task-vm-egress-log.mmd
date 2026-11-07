@@ -14,10 +14,9 @@ sequenceDiagram
   participant AG as orbit-agent<br/>on the host
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>Ansible phase
-  SW->>BR: Turn on DNS logging<br/>once per host · a part
+  SW->>BR: Turn on the logs<br/>once per host · a part
   %%> What it does:
-  %%> - sets `raw.dnsmasq` on the bridge (`log-queries=extra`, a log file) and a logrotate drop-in, in one idempotent part of the host phase (`swamp/ansible/task-vm-host.yml`, tag `egress-log`)
-  %%> - nothing else changes on the host: the connection log needs no rule, because the kernel's conntrack table already holds every NAT'd connection
+  %%> - one idempotent part of the host phase (`swamp/ansible/task-vm-host.yml`, tag `egress-log`): `raw.dnsmasq` on the bridge (`log-queries=extra`, a log file), an `nftables` table `orbit_egress` with a logging rule, an rsyslog rule that splits its lines into a file, and a logrotate file
   %%> - applied in a quiet window: a dnsmasq reload blinks DNS and DHCP of running VMs for a second
   VM->>BR: Ask for a name<br/>DNS to the bridge address
   %%> What it does:
@@ -27,13 +26,13 @@ sequenceDiagram
   %%> - a fixed IP, DNS over HTTPS, a resolver other than the bridge; the connection log below sees all three
   VM->>BR: Open a connection<br/>forwarded and NAT'd
   %%> What it does:
-  %%> - the kernel forwards the first packet and adds one conntrack entry: the VM's address, the outside address, port and protocol
-  %%> - the entry stays at least 10 s after the connection ends (30 s for UDP, 120 s for TCP in TIME_WAIT), so a 5 s read misses no connection
+  %%> - the kernel forwards the first packet of the flow and the `orbit_egress` rule logs it with the prefix `orbit-egress `: the VM's address, the outside address, port and protocol
+  %%> - a dynamic set with a ten-minute timeout logs each distinct source, destination, protocol and port once, so a busy install writes a few hundred lines
   %%> What it misses:
   %%> - traffic inside the WireGuard tunnel: it holds only private Orbit addresses, the host sees one UDP flow to the hub
-  AG->>BR: Read the records<br/>conntrack · DNS log · leases
+  AG->>BR: Read the records<br/>two logs · leases
   %%> What it does:
-  %%> - every 5 s the agent reads `/proc/net/nf_conntrack` for sources in the bridge subnet, the new lines of the DNS log, and the bridge's leases
+  %%> - every 5 s the agent reads the new lines of `/var/log/incus/dnsmasq.<network>.log` and `/var/log/orbit/task-egress.log`, and the bridge's leases and hosts files
   %%> - the VM is named by its MAC address: the lease gives MAC to IP, and the host's Incus config gives MAC to the VM name (`beast-tvm-3`); nothing the VM says about itself is trusted
   AG->>AG: Roll up per VM<br/>one row per host and port
   %%> What it does:
