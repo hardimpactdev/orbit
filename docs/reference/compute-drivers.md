@@ -389,10 +389,6 @@ The template builder verifies the guest account before it becomes a template. Cl
 
 `guest.cloud-init` returns readiness from the guest’s complete cloud-init result and reports bootstrap errors as typed refusals. `guest.fingerprint` reads and validates the ed25519 host fingerprint through the trusted guest transport. Image builders install command mode before their first readiness check. A guest transport that cannot yet return output remains pending within the existing boot deadline; malformed or refused agent results fail the build. Incus smoke checks also prove a host key and one completed boot before promotion.
 
-It masks the first-boot services, stops Caddy, Docker and containerd and removes their identities, then allows only public SSH in the firewall. It empties the journal, logs, temporary files and shell histories, cleans the cloud-init state and the machine id, and removes the SSH host keys and the authorized keys. Incus state stays on the image.
-
-A template build cleans its server with the `clean` phase of the task VM role. The phase masks the services of a first boot, removes the identities of the services, resets the firewall, empties the logs and the cloud-init state, and removes the SSH host keys. An enrolled server cannot become a template.
-
 ### From claim to workspace
 
 A task start (`tasks.provision`, [command](/cli/tasks/provision)) takes the lowest free slot of a host and mints the identity of the slot. It copies the host's [base snapshot](#claims-copy-the-base-snapshot), writes the identity and the claim, and adds the hub peer. Then it converges the VM to the commit and starts the task branch. There is no provision, enrollment or bootstrap kind; the Node, its `app-dev` role and its `pi-server` Process are recorded at admission.
@@ -584,12 +580,6 @@ The `tools` phase installs the shape gate linters. The nested fleet is Incus sys
 The `check` phase is the one end check. It asserts every package at its pin, every runtime and tool at its version, and the package cache active.
 
 The `check` phase also asserts that `orbit` has UID and GID 1000.
-
-The base snapshot refresh runs the converge without it.
-
-The phase refuses a server that was enrolled. It masks the services of a first boot and turns ufw on with only the recovery SSH rule open (`orbit:public-ssh-recovery`). It empties the journal, the logs, the temporary files (not the ones of Ansible itself) and the shell histories.
-
-It ends with `cloud-init clean`, the removal of the SSH host keys and the emptying of the authorized keys. The Ansible session stays open through them. The state of Incus stays in the image.
 
 The VM must be `ready` with an active guest Node (`task_vm.converge_refused`). No other Operation may hold it (`operation.target_busy`). The Operation has a provisional budget of 3,300 seconds. A failed phase leaves finished work in place. Run the command again and each phase skips what matches.
 
@@ -1330,4 +1320,3 @@ Set `preview: true` when creating or updating a task group to keep its VM runnin
 Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
 
 The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.
-
