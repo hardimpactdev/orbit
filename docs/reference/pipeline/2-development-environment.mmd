@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, holds a nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) that resets from the ready copies in the host's topology seed. The nested Nodes are Incus system containers with the outer VM's checkout as a disk device, so an edit reaches them at once with no sync; `base` is a container snapshot without memory (decided 2026-11-06). Uses the simple slot pool (task-vm.slots) as the target way to get the VM.
+  %% Target design (Nick 2026-11-07): stage 2 of the command development pipeline. A task VM, where an agent or Nick develops a command and the proof cases run too, is a fixed slot `<node>-tvm-<n>` from the host's image. The image holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, sshd and UFW, a warm checkout of main with `vendor/` and `node_modules/`, and the nested fleet (a Gateway with Swamp, an app-dev Node, an app-prod Node) as Incus system containers, migrated and running, with a `base` snapshot each. The containers mount the outer VM's checkout as a disk device, so an edit reaches them at once. A claim only starts the slot: docs/cli/tasks/provision.mmd.
   %% status: draft
   %% command: development pipeline stage 2 · development environment
   %% kind: pipeline.2-development-environment
@@ -7,156 +7,54 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
-  %% lane VM icon=server pill=target tone=purple
+  %% lane VM icon=server pill=slot tone=purple
   %% lane NT icon=server pill=fleet tone=gray
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>provision run
   participant H as Task VM host<br/>Incus over ssh
-  participant VM as Task VM<br/>outer · operator
+  participant VM as Slot<br/>outer · operator
   participant NT as Nested fleet<br/>3 containers
-  Note over GW: Admit the task<br/>group at a commit
+  Note over GW: Claim a free slot<br/>group at a commit
   %%> Requirements:
-  %%> - an external task group in `todo` and a free task VM host
+  %%> - an external task group in `todo` and a free slot on a host, enrolled from the host's promoted image
   %%> Result:
-  %%> - the full intent is recorded; the group is reserved
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - a parked prep group is admitted by the gate check when the owner approves its spec: the Gateway appends the implementation subtask, moves the group to `running` and starts `tasks.build`, which resumes the VM, syncs the refs and runs the first implementer turn
+  %%> - the group holds the slot; its Node, WireGuard peer, agent secret, Pi token, host key and workspace Instance already exist, so nothing is minted or published
+  %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission answers `tasks.capacity_unavailable` and names the release the host's image comes from
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof
-  SW->>H: Take a task VM<br/>ready slot, else clone
-  %%> Target, not built:
-  %%> - start a ready slot that was enrolled ahead of time and kept stopped; takes seconds (chart `task-vm.slots`)
-  %%> Built today:
-  %%> - clone the task image, boot, enrol (keys, WireGuard, observer), model key, Pi; takes minutes
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - a task that needs the nested fleet (a proof, or any VM with test nodes: medium or large) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
-  %%> - the Gateway reads the fact from its own records: the seed follows the image the VM boots from, and it holds usable copies when the host's latest refresh run promoted that image and saved copies of the current `user.ready.format`; no agent report and no ssh
-  %%> - the refresh of a host is pinned to that host and is not filtered, because it is what builds the copies; a task with no fleet (a plain task) still uses any host
-  %%> Decided by the orchestrator, for Nick's review (2026-11-07; the key sharpened the same day): a proof is placed only on a host whose ready copies include every change of what the image carries, up to the merge base of the proof commit with main
-  %%> - why: M5 try 10's allow run landed on the copies of beast from before #3104 (the refresh converged the nested Nodes only from then on), and failed on faults that the commit under proof did not cause
-  %%> - what the image carries is one rule, the one that starts a refresh: the playbooks of the task VM role (`swamp/ansible`), the pins of the recipe (`apps/gateway/resources/machine-software`) and the lock files. The code is `TaskVmImageInputs`, and the refresh trigger and this check both ask it. A change of any other file, such as Gateway PHP or documents, makes no copies stale, because a task mounts its own checkout and no refresh follows it
-  %%> - not the merge base itself: main moves past the copies through commits that change nothing the copies hold, and no refresh follows them, so a test against the merge base could refuse a proof until some unrelated refresh happens, which may be never. The copies must include the newest commit at or before the merge base that changed what the image carries
-  %%> - the fact: the refresh that saved the current copies records the release commit it built them from (`refresh.commit`, the commit the Gateway ran at its admission). The Gateway asks GitHub, through the same App reads that select the cases, how the merge base stands to that commit and which files differ (`compare/{release commit}...{merge base}`), before the admission transaction. The copies pass when they are the merge base or after it, or when no file that differs is one that the image carries
-  %%> - copies that miss such a change, a release commit that GitHub does not know, a list of changed files that GitHub cut, and copies with no recorded commit are not usable for that proof; a host with room is skipped as a host with no usable copies is, and the message names the rule. A proof never falls back to older copies. If GitHub cannot answer, the proof fails with `proof.github_unavailable`
-  %%> - the rule holds for a clone and for a ready slot alike, because both ask the same question of the seed; a task that is not a proof keeps the rule above and any host with usable copies
-  %%> - nothing queues and a refusal starts no refresh (decided 2026-11-07: every release that changes the image already starts one for each host, one for each host with the newest winning, so a refusal that started one would only add churn). With no fresh host the admission answers `tasks.capacity_unavailable`. The refusal tells the caller when to run the proof again: for each skipped host it names the release its copies come from and the change of the image inputs they lack (or that they record no release, or that GitHub does not know it), and says whether a refresh of that host is running, with its operation id, or not. The refresh of a host is never filtered
-  SW->>H: Attach the topology seed<br/>clone under the host lock
+  SW->>H: Start the slot<br/>incus start
   %%> What it does:
-  %%> - clones the seed of the host's task image; on ZFS the clone costs only what the Nodes write
-  %%> - the VM sees it as the disk `topology-seed`
-  %%> Why:
-  %%> - each host keeps its own seed; nothing is copied between hosts
-  SW->>VM: Check out the commit<br/>git fetch · task token
+  %%> - starts the stopped slot; about 7 s to the guest agent
+  SW->>VM: Fetch the task branch<br/>onto the warm checkout
   %%> What it does:
-  %%> - checks out the commit or branch the task works on, with a read token from the vault
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - no step brings the task branch up to date with main. `tasks:sync` fetches refs only and the author merges, as stage 4 asks for a conflict. The proof (stage 3) refuses a head that lacks a platform change, with `proof.head_behind_platform`, before it restores or runs any case
-  SW->>VM: Start the nested fleet<br/>from the ready copies
+  %%> - `git fetch` of the group's branch with an App read token minted for this step, then checkout; the token never stays on the VM
+  %%> - `composer install` or `npm ci` only when a lock file differs from main's
+  %%> - no step brings the task branch up to date with main: `tasks:sync` fetches refs only and the author merges, as stage 4 asks for a conflict
+  SW->>NT: Start the containers<br/>from base
   %%> What it does:
-  %%> - creates the nested network from the subnet stored with the ready copies
-  %%> - per Node: copies the ready copy, adds its NIC with the stored MAC and address, attaches the outer VM's checkout as an Incus disk device (Gateway and app-dev), starts all three
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - the nested Nodes are Incus system containers, not VMs (chart `vm-fleet-build.mmd`); the outer task VM stays a VM
-  %%> - no memory snapshot of the outer VM (Nick, option 3): a cold start of the outer VM plus the containers was as fast as its memory restore (beast 35 s, shark 27 s against 34 s), and a memory snapshot would need retaking per host and per release
-  %%> - measured on shark (rvm-2): copies to a healthy fleet 8–11 s
-  %%> - each ready copy is self-contained: its own `.env`, storage, `bootstrap/cache` and database on its own disk (stage 6 saves them so); the code comes from the outer VM's checkout
-  %%> - needs no earlier fleet in this VM and no state from the outer VM; the task owns the network and the three containers
-  %%> - then pushes the proof Swamp Club key into the nested Gateway, as today
-  %%> Proposed 2026-11-05:
-  %%> - replaces today's reset, which takes `.env`, storage, the agent manifest and the lease from an earlier fleet in the same VM, so it fails on a fresh VM
-  %%> Time:
-  %%> - about 10 seconds to a healthy fleet from the copies (8–11 s on shark); Doctor reads healthy once every agent has reported; an agent sends a report the Gateway did not accept again within seconds
-  SW->>NT: Join as operator<br/>this VM's WireGuard key
+  %%> - restores `base` and starts the Gateway with Swamp, app-dev and app-prod; 3.5 to 7 s each
+  %%> - migrations run only when the branch adds new ones
+  %%> - the outer VM is the operator of the nested fleet; its WireGuard key and Node record are in the image
+  SW->>VM: Check ready<br/>one exec
   %%> What it does:
-  %%> - the outer VM makes its own WireGuard key; its public key goes into the nested Gateway's operator Node record with `incus exec` (the outer VM is the Incus host of the nested containers, so this needs no network yet)
-  %%> - the nested Gateway puts the key on its hub; the outer VM brings up WireGuard as the operator `10.45.0.10`
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - the hub gets the operator peer through a file in its peer folder, in the form the hub rendering writes (a hub converge of the nested Gateway would need its Swamp, which only a proof VM runs), not through a runtime `wg set`: a restore of `base` reboots the containers, and a peer that lived only in memory was gone after it
-  %%> - the private key never leaves this task VM; each task VM has its own
-  %%> Proposed 2026-11-05:
-  %%> - the ready copies hold the operator Node record without a key (stage 6), so the key of the VM that made them never works anywhere else
-  opt no usable ready copies
-    VM->>NT: Build the fleet<br/>then make ready copies
-    %%> When:
-    %%> Decided by the orchestrator, for Nick's review: until the fleet build (`task_vm.fleet_build`) lands, the branch skips the fleet. The provision records "no nested fleet" (`nested_fleet: none`) on its result, and the VM stays usable for tasks that need no fleet. A proof run on such a VM fails early with `proof.no_nested_fleet`. When the fleet build lands, the branch calls it instead.
-    %%> - a new task image has a seed with only the Node template until its first seed refresh (stage 6)
-    %%> - copies of an older format count as not usable: the save writes `user.ready.format`, and the provision lists only the copies that carry the current value
-    %%> Time:
-    %%> - about 230 seconds; the build ends by making the ready copies for the next reset
-  end
-  SW->>NT: Apply the code<br/>migrate · restart
-  %%> What it does:
-  %%> - the bind-mount units of the copies put `.env`, `storage` and `bootstrap/cache` (each guest's own disk) over the shared checkout at boot
-  %%> - then the re-mint below, migrations and a restart of the long-running services (queue worker, scheduler, agent-view subscriber), so they run the checked-out code
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - the checkout is the disk device of the fleet start; there is no NFS export, NFS mount or mount ordering step any more
-  %%> Why:
-  %%> - an edit on the outer VM is in the nested Nodes at once, at local disk speed; nothing can run against old code
-  SW->>NT: Place the agent delivery<br/>checkout pin · nested Gateway
-  %%> Decided by the orchestrator, for Nick's review (2026-11-07):
-  %%> - copies the checkout's agent pin (`resources/agent/frozen-manifest.json`) to the nested Gateway's delivery manifest (`apps/agent/delivery/manifest.json`), as a release does
-  %%> Why:
-  %%> - the manifest is an ignored file of the shared checkout, so a fleet from ready copies mounts a checkout without it, and its `node:converge` refuses to start
-  SW->>NT: Re-mint the Swamp tokens<br/>nested Gateway · 30 days
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> What it does:
-  %%> - runs the play `remint` of the Gateway bootstrap playbook on the nested Gateway, from the checkout disk device, with the control plan the build left on that machine (`/opt/orbit/bootstrap/control.yml`)
-  %%> - the Swamp CLI renews the tokens by the names and into the files the build used: `access token rotate` for the serve driver, the two workers and the Gateway's run and read tokens, a new enrollment token for each worker; each lasts 30 days
-  %%> - a worker gets a new enrollment token under a new name; the old one was used once and expires with the task VM, so nothing revokes it
-  %%> - stops serve and both workers while the tokens change, then starts them; the apply step that follows restarts the Gateway's own services, which read the new tokens
-  %%> - the worker units read the token files directly (group orbit, 0640), not through `LoadCredential=`, which does nothing in a container (chart `vm-fleet-build.mmd`)
-  %%> - measured on shark: ok=15 failed=0, about 20 s
-  %%> Why:
-  %%> - the tokens of the ready copies are as old as the copies, so a fleet started from them would otherwise run a Swamp whose tokens expired; this step makes the age of the copies irrelevant, and the seed refresh needs no step for it
-  %%> - the same fleet start does it every time, from the same checkout the apply uses; it needs no key from the real Gateway, because these tokens belong to the nested Orbit
-  %%> - runs only when the VM has the proof Swamp Club key (a proof task): the Swamp CLI needs it, the start pushes it to `~/.config/swamp/api-key` of the nested Gateway before this step, and this step restarts serve and the workers so they read it
-  %%> - the certificates last 397 days and are issued again by the seed refresh; nothing else in the fleet expires within the life of a task
-  %%> Time:
-  %%> - not yet measured; recorded here when the first provision with it has run
-  opt playbooks or pins changed, also after a rebase
-    SW->>VM: Converge once<br/>outer VM · nested Nodes
-    %%> What it does:
-    %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - the nested Orbit reads the playbooks from the checkout disk device
-    %%> - after a rebase onto main, a running task picks up the tools main added since its start
-    %%> Why:
-    %%> - a tool update lives in code; this puts it in place once, and the snapshot taken next keeps it
-    %%> - the base images are not touched; only the merge and the seed refresh change them
-  end
-  VM->>NT: Check readiness<br/>agents · Swamp · Doctor
-  %%> What it does:
-  %%> - every Node agent online, the Swamp worker enrolled, the Gateway knows the operator, Doctor has no finding
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - readiness first waits, bounded, until Doctor of the nested Gateway is healthy (one Ansible task with `until` and `retries`, the fleet build's wait playbook); the apply step restarts the agent-view subscriber, and the agents read online only after their next heartbeats, so a single read 3 s later failed (provision 11937)
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - Reverb starts only once the Gateway API answers (systemd ordering on its unit, `ExecStartPre` with a bounded wait), so it accepts about 5 s after the boot and not about 35 s, when the registry fetch of a first start failed; the agents' first reports follow the agent's own retry of failed reports (a separate change)
-  SW->>NT: Take the base snapshot<br/>containers · no memory
-  %%> What it does:
-  %%> - one Incus snapshot `base` of each of the three containers, in parallel
-  %%> - every proof batch starts from it (stage 3)
-  %%> - holds the proof Swamp Club key, pushed in after the start from the ready copies, and the Swamp tokens renewed by this provision (30 days); accepted because `base` belongs to this task VM only and is destroyed with it; ready copies stay key-free
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06), container inner topology:
-  %%> - no memory state: a restore of `base` is a reboot of the containers, so the services start fresh, the clocks are the outer VM's, and nothing waits on an old network session
-  %%> - measured: snapshot 0.3 s against 30–41 s for the stateful VM snapshot
+  %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
   SW-->>GW: Environment ready<br/>terminal event
   %%> Result:
-  %%> - the Gateway marks the group running and records the VM; the proof (stage 3) or the proof CI (stage 4) uses the fleet
+  %%> - the group runs on the slot; the proof (stage 3) or the proof CI (stage 4) uses the fleet
+  %%> - target under 30 s from admission
   loop while the author develops
     VM->>NT: Edit, test, call the CLI<br/>the checkout is shared
     %%> What it does:
     %%> - the author edits and runs tests on the outer VM; PHP in the nested containers sees the change on the next request
     %%> - the candidate CLI on the outer VM talks to the nested Gateway as the operator
-    %%> - after a new migration or a change to a long-running service, the author runs the apply step again
-    %%> - when the change holds playbooks or pins, or after a rebase onto main, the converge step above runs once
+    %%> - after a new migration, the author runs the migrations in the nested Gateway
   end
   opt the author wants a clean fleet
     SW->>NT: Restore the base snapshot<br/>a reboot · 5–16 s
     %%> What it keeps:
-    %%> - the outer VM, Pi and the checkout; the apply step follows, so the restored fleet runs the current code
+    %%> - the outer VM, Pi and the checkout
   end
-  SW->>H: Destroy the task VM<br/>always · success or failure
-  %%> Why:
-  %%> - no proof VM stays behind; diagnostics are kept, not running VMs
-  %%> Target, not built:
-  %%> - the Gateway then enrols a new slot to refill the pool of ready slots
+  SW->>H: Release the slot<br/>stop · roll back to clean
+  %%> What it does:
+  %%> - at the end of the group, the slot stops and rolls back to its `clean` snapshot (docs/cli/tasks/vm-slot-release.mmd); its identity stays

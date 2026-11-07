@@ -43,14 +43,13 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 ## 2. Development environment
 
-**Built, with a slot pool still to come.** A task VM, started with `tasks:provision`, holds a nested topology: a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node. They share a real nested WireGuard network, `10.45.0.0/24`, and the outer VM is the operator. Each task VM host keeps ready copies of this topology in its topology seed, so a reset takes about 75 seconds instead of a 230-second build. An agent, or Nick, develops a command here, and the proof cases run here too.
+**Being rebuilt to the target (Nick, 2026-11-07).** A task VM is a fixed slot, `<node>-tvm-<n>`: a permanent Node whose identity is written once, at enrol. `tasks:provision` claims a free slot and only starts it. The host's image holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, a warm checkout of main with its dependencies, and a nested topology of three Incus system containers (a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node), migrated and running, with a `base` snapshot each. A claim starts the slot, fetches the task branch, starts the containers from `base` and checks that they are ready, in under 30 seconds. The end of the group stops the slot and rolls it back to its `clean` snapshot. An agent, or Nick, develops a command here, and the proof cases run here too.
 
-The nested guests are Incus system containers. The Gateway and app-dev see the checkout of the task as an Incus disk device, so the author's changes reach them at once. At task start, Swamp takes a plain Incus snapshot `base` of the three containers, and a restore is a reboot. Not built: the converge step for playbook and pin changes.
+The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so the author's changes reach them at once. A restore of `base` is a reboot of the containers.
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
-- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), and the [ready copies](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-ready-copies.mmd) that the refresh saves.
-- Not built: the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd), a draft. A slot is a normal task VM, enrolled ahead of time and kept stopped; a claim starts it, a release destroys it, and the pool refills by enrolling a new one.
+- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), the [slot enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enrol.mmd) and the [slot release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd).
 - Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the task image and the topology seed](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).
@@ -91,15 +90,11 @@ The nested guests are Incus system containers. The Gateway and app-dev see the c
 
 ## 6. Per-host task image and seed refresh
 
-**Partly built.** There is no image build per release. Each task VM host (Linux only: beast and shark) refreshes its own task image and topology seed, and the hosts work in parallel. Nothing is copied between hosts: that is not a supported flow, so each host refreshes and, if it must, builds its own. The trigger is a release that changed playbooks, pins or lock files, plus a daily run. Per host, Swamp starts a refresh task VM from the current image and seed, then resets and syncs the release commit. It converges once if playbooks or pins changed. It re-mints the nested Swamp tokens. Then it saves the outer VM as the new task image and the nested containers as new ready copies, key-free. It boot-checks both and promotes them. A recipe build runs only for a new host or a new base OS.
+**Being rebuilt to the target (Nick, 2026-11-07).** There is no image build per release. Each task VM host (Linux only: beast and shark) bakes its next image from its current one, and the hosts work in parallel. Nothing is copied between hosts. The trigger is a release that changed playbooks, pins or lock files, plus a daily run. Per host, Swamp starts one VM from the current image, and one Ansible run converges everything: the outer VM, the warm checkout, and each container, which then gets a new `base` snapshot. The VM is published as the candidate image, with its container disk as the candidate's seed. One idle slot re-enrols from the candidate and passes the claim's ready check; then the candidate is promoted, and the other idle slots re-enrol one at a time. The target is about 3 minutes. A recipe build runs only for a new host or a new base OS.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
-- Built: the refresh run `task_vm.image_refresh`, which an operator starts with `php artisan task-vms:refresh-image <host>`: a refresh VM, the converge, the ready copies, the clean, the new image and seed, the boot check and the promotion. The recipe image build stays for a new host or a new base OS.
-- Built: the release trigger and the daily schedule, and the checkout disk device, apply and readiness check, through the provision child.
-- Not built: the first refresh of a host with no ready copies (the fleet build child), the converge of the nested Nodes, and the replacement of ready slots.
-- Built: the re-mint of the nested Swamp tokens, at every provision that starts a fleet from ready copies (stage 2), and in a proof run when the tokens in `base` are older than 20 days (stage 3). The copies carry format 4 (containers), which keeps the control plan it reads.
-- Charts: the stage chart above, the [task VM slot pool](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slots.mmd) (draft; a refresh replaces ready slots built from the old image, one at a time).
+- Charts: the stage chart above and the per-host run [`task_vm.image_refresh`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-image-refresh.mmd).
 - Docs: [Build the base image](/reference/compute-drivers#build-the-base-image), [Refresh the topology seed](/reference/compute-drivers#refresh-the-topology-seed).
 - Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml), [`swamp/workflows/workflow-task-vm-image-clean.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-task-vm-image-clean.yaml).
 

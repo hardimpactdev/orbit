@@ -106,7 +106,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
-| `slots` | No | `null` | Ready slots the host keeps: `{"count": 5, "project_id": 46, "size": "large"}` (chart `docs/cli/tasks/vm-slots.mmd`) |
+| `slots` | No | `null` | Fixed slots the host keeps, `<node>-tvm-1` to `<node>-tvm-<count>`: `{"count": 5, "project_id": 46, "size": "large"}` (chart `docs/cli/tasks/vm-slot-enrol.mmd`) |
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 

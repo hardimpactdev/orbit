@@ -1,151 +1,45 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
-  %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
-  %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; Swamp composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
-  %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
-  %% status: draft
+  %% Target design (Nick approved 2026-11-07): a provision claims a slot. Slots are fixed, reused task VMs named <node>-tvm-<slot>, each a permanent Orbit Node whose identity was written once at enroll. The image holds everything. The image is baked by the refresh (docs/cli/tasks/vm-image-refresh.mmd).
+  %% status: reviewed
   %% command: tasks:provision
   %% kind: tasks.provision
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=target tone=amber
-  %% lane H icon=server pill=target tone=purple
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=slot tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant VM as Task VM<br/>tvm-88 over ssh
-  participant H as Incus host<br/>Node 14 · VM power
-  CLI->>GW: tasks:provision 42
-  Note over GW: Validate, record the task<br/>group 42: reserved · task #5140
-  %%> When it waits:
-  %%> - no host has room or a usable image: the task waits (`capacity`) and starts when a VM is destroyed or an image is promoted
-  opt Project serves a web root and task_workspace_routed is on
-    Note over GW: Reserve the Route<br/>task-42.blog.test · private
-    %%> Why first:
-    %%> - the Route changes how Process units render; capturing Processes after it keeps admission and dispatch identical
-  end
-  opt Project has Process definitions
-    Note over GW: Capture the Processes<br/>dev definitions
-  end
-  GW->>SW: Push the VM secrets<br/>vault: model key, Pi token
-  %%> Why:
-  %%> - secrets go Gateway → vault → step; the run inputs hold only vault key names
-  GW->>SW: Start run, full intent<br/>operation-task-provision
-  GW-->>CLI: 202 Accepted<br/>task #5140
-  SW->>H: Create and prepare the VM<br/>launch · WireGuard · Pi server
-  %%> Skipped for a claimed ready slot (`intent.slot`, chart `task_vm.slots`): the three slot steps below run instead.
-  SW->>H: Start the slot<br/>ssh exec · incus start
-  %%> Only for a claimed ready slot: the slot was enrolled and stopped ahead of time; a VM that already runs counts as started
-  SW->>H: Wait for the slot agent<br/>ssh exec · incus wait agent
-  SW->>H: Wait for the slot boot<br/>incus exec · systemctl --wait
-  %%> The agent answers before sshd, WireGuard and Pi; this waits for the boot to finish, and a degraded boot still counts
-  SW->>VM: Set up the workspace<br/>clone · Project setup steps
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06): with a Route, the workspace step runs the guest's rows of the Route's Caddy access right after the fetch, before the setup steps write into the tree, as instance:create does in its checkout phase:
-  %%> - what the setup creates inherits the default entries, so the walk covers the fetched files only
-  %%> - the rows run beside the steps that only read the tree (identity, inspect, composer, profile); the dependency writes wait for them, so the setup steps start after them: each row is one SSH step of about 2 s, and run in line the five rows cost 10.2 s (op 12305)
-  %%> - the Route then gets `prepared` with the guest and skips those rows there; in op 12259 the walk over the set-up tree took 4.6 s of the Route
-  %%> - an APP_URL line on the guest exists only after the setup steps; a Route with one keeps its rows, and the workspace step gets none
-  %%> Private dependencies:
-  %%> - before the Project setup steps, the workspace step asks the Gateway for a read token (`purpose: dependencies`) and writes the Composer `auth.json` (`http-basic` for `github.com`, user `x-access-token`) and the `.npmrc` of the task account from it, mode 0600
-  %%> - after the last setup step, on success or failure, it removes both files; a failed removal fails the provision
-  %%> - beside the removal, not after it, it revokes the token (`DELETE installation/token`): a revoked token is dead whether or not the files are gone, so output that echoes it leaves a dead token; the kept setup output is redacted for GitHub tokens
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the dependency steps stay off the critical path. The token is asked for beside the clone credential, right after the control step, and the old files are cleared early. The two files are written by two parallel steps in one stage, and the removal and the revoke are two parallel steps in one stage. All are plain argv steps, not child workflows and not an Ansible phase: a phase costs three dispatches (input, vars, playbook), each about 1.3 s, more than the two parallel steps it would replace
-  %%> - measured in op 12083: the write took 6 s and the removal 4.3 s on the critical path; the target is one dispatch each, under 4 s together
-  %%> - the revoke reports what became of the token in the receipt, as `dependency_token`: `revoked` (GitHub answered 204), `none` (GitHub answered 401: no token was minted, or it had expired or been revoked) or `unrevoked` with the reason (any other answer, or no answer)
-  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the provision. The files are already gone from the VM, the token reads for at most an hour, and a failed provision would not shorten that hour; the receipt and the operation result name the reason instead
-  %%> - when no setup step runs, nothing is written, removed or revoked
-  %%> - a cancelled or timed-out run keeps them until the token expires, within the hour, or until `tasks:cancel` removes the VM
-  %%> - the token is minted for these steps only, reads the repositories that the GitHub App installation covers, and expires within the hour
-  %%> - when the App cannot supply a token, both files hold an empty configuration and setup runs without private access
-  %%> The clone credential:
-  %%> - the first step asks the Gateway for it (`operation:direct:github-token`, `purpose: clone`), not admission: the VM step before it can wait for capacity for longer than the hour an installation token lives
-  %%> - the Gateway writes a read-only Git authorization header, or an empty value for a repository the App does not cover, to the vault key that admission named
-  %%> - the clone credential never reaches the VM, and the VM holds no other, outside the setup token files above: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
-  %%> Why redacted:
-  %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
-  Note over SW: Accept the source<br/>fails on an error_code
+  participant H as Task VM host<br/>Incus over ssh
+  participant VM as Slot<br/>shark-tvm-3
+  Note over GW: Claim a free slot<br/>one run per group
+  %%> Started by:
+  %%> - `tasks:provision` for a todo group, from proof CI or feature work; the same slots serve both
+  %%> Requirements:
+  %%> - a free slot on the host, enrolled from the promoted image
+  %%> Result:
+  %%> - the group holds `shark-tvm-3`; its Node, WireGuard peer, agent secret, Pi token and host key already exist, so nothing is minted or published
+  GW->>SW: Start run, full intent<br/>operation-tasks-provision
+  SW->>H: Start the slot<br/>incus start
   %%> What it does:
-  %%> - fails the run when the receipt of the workspace step carries an error code, before the converge, the nested fleet, the Route and the Processes start
-  %%> Why:
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): a failed step of the checkout (the connection, the control folder, the clone credential, the clone, the bundle, the copy, the import, the origin, the task branch, the identity, the Route access rows, the inspection and the composer read) is not `allowFailure`: the run fails at the first of them with the message of the step, stderr included, and no later step that does work starts
-  %%> - the cleanups, the receipt, `Check the workspace` and `Accept the workspace` still run
-  %%> - the profile, the dependency files, the Project setup, the copy of its output, the proof club and the cleanups report in the receipt, which this step reads
-  %%> - the clone, the import, the task branch and the Project setup declare `writes: true`. Swamp runs a dispatch again when a worker loses it (the session of a worker ends after 8 hours) and the step does not write; a second `git clone` into the same folder exits 128 (`destination path already exists`). A lost dispatch of these steps fails the step instead
-  opt the task declares a topology
-    Note over SW: Pin the converge<br/>guest host key
-    %%> Why:
-    %%> - the guest's host key exists only after the VM step pins it; the converge intent leaves it unset until then
-    SW->>VM: Converge once<br/>operation-task-vm-converge child
-    %%> What it does:
-    %%> - runs the task VM role phases on the outer VM (docs/cli/tasks/vm-converge.mmd): the firewall rules of the bridge, and Incus with its default pool, the nested network and the topology seed pool recovered from the seed disk
-    %%> Why:
-    %%> - the image may predate these phases; a VM at the pins reports no change
-    SW->>VM: Find the fleet guest<br/>its address and host key
-    %%> What it does:
-    %%> - the behavior `tp-data-guest-fleet` reads the guest's SSH target from the VM step, as the fleet child does
-    SW->>VM: Look for ready copies<br/>current format only
-    %%> What it does:
-    %%> - lists the instances `fleet-ready-*` that carry `user.ready.format` of the current value; the next step starts only when there are three
-    SW->>VM: Start the nested fleet<br/>task-nested-fleet child
-    %%> What it does:
-    %%> - creates the nested network from the subnet that the ready copies of the seed store (the converge may have made it; the fleet checks that its subnet is the stored one), copies the three ready copies, gives each its stored MAC and address, and starts them
-    %%> - joins as operator: the VM makes its own WireGuard key, writes the public key into the nested Gateway's operator record with `incus exec`, puts it on the hub and brings up `wg-nested` as 10.45.0.10
-    %%> - adds the CLI profile `nested` on the VM: the root CA of the nested Gateway is pinned and the candidate CLI of the checkout is pointed at it by address
-    %%> - pushes the proof Swamp Club key from the VM into the nested Gateway, where the re-mint below restarts its Swamp
-    %%> Why:
-    %%> - the task owns the network and the three VMs; it needs no earlier fleet and no state from another VM (stage 2 of the command development pipeline)
-    %%> Decided by the orchestrator, for Nick's review: a seed without its three ready copies skips the fleet with one guard on this step, and the result records `nested_fleet: none`; the refresh of the task image builds the fleet in such a VM; placement already keeps a VM that needs the fleet off a host whose seed has no usable copies (stage 2 chart), so the guard is the exception
-    %%> - mounts the checkout state and applies it (child `task-nested-apply`): the bind mounts of `.env`, `storage` and `bootstrap/cache` over the checkout (a disk device of the containers), the re-mint of the Swamp tokens of the nested Gateway (the play `remint`, from the mounted checkout; only a fleet started from ready copies), the migrations, and a restart of the Gateway's queue worker, scheduler and agent-view subscriber
-    %%> - checks readiness from the VM over the operator's WireGuard address: every Node agent online, the operator known to the nested Gateway, Doctor healthy
-    %%> - takes the plain snapshot `base` of the three nested containers; the proof batches restore it (a reboot)
-  end
-  opt the workspace has a Route or Processes
-    Note over SW: Bind the workspace keys<br/>pin the guest host key
-    %%> Why:
-    %%> - the guest's host key exists only after the VM step pins it; the Gateway leaves only the guest's targets unpinned
-  end
-  opt Project serves a web root and task_workspace_routed is on
-    SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
-    %%> What it does:
-    %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
-    %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
-    %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
-    %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
-    SW->>VM: Route the workspace<br/>operation-route-create child
-    %%> With access rows in the workspace intent, the Route gets `prepared` with the guest and skips them there; a Route with an APP_URL line on the guest keeps both, so the workspace step gets no rows
-    %%> Why a child:
-    %%> - the same Route child instance:create runs; its signing authorizes against this root run
-    %%> - Decided by the orchestrator, for Nick's review (2026-11-06): the signing accepts the leaf of the new guest while its Node is still `provisioning` as well as `active`. On the plain VM create path the Gateway activates that Node only when it applies the provision result, after this Route step, so the guest's admitted leaf was never signable and the step failed with `certificate.intent_mismatch` (409), as group 3780 (op 12284) showed. A claimed slot is already active and never met it
-    SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
-    %%> What it does:
-    %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
-    %%> - runs beside the next step, so it adds no time
-  end
-  opt Project has Process definitions
-    SW->>VM: Create, start Processes<br/>operation-process-create · forEach
-  end
-  Note over SW: Check the workspace<br/>receipt · VM, source, base
-  Note over SW: Accept the workspace<br/>fails on an error_code
-  alt every step passes
-    SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record result<br/>group 42 running · VM 88 ready
-  else a step fails
-    VM--xSW: exit ≠ 0 or timeout
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the task failed<br/>group asks for help
-    %%> On the VM:
-    %%> - VM 88 and its checkout stay; there is no rollback; `tasks:cancel 42` ends the group and removes the VM
-  else the run is cancelled
-    SW--xGW: Run cancelled<br/>terminal event
-    Note over GW: End the group<br/>tasks.cancel · VM 88 removed
-    %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-    %%> - a cancel can stop the run while it creates VM 88 or the workspace; group 42 ends `cancelled`, and the Gateway admits the group's `tasks.cancel` itself, once per provision
-    %%> - that ending destroys VM 88, whether it exists yet or not, and removes the workspace and its Route
-    %%> - a refused ending asks for help (`removal_failure`), so no row stays `provisioning` with a VM running, as tvm-791 did after provision 12239
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5140
-    GW-->>CLI: status + result
+  %%> - `incus start shark-tvm-3`; about 7 s to the guest agent
+  %%> - the agent, Pi, WireGuard, the tools, the warm checkout of main and the containers are all on its disk
+  SW->>VM: Fetch the task branch<br/>onto the warm checkout
+  %%> What it does:
+  %%> - `git fetch` of the group's branch with an App read token minted for this step, then checkout; the token never stays on the VM
+  %%> - `composer install` or `npm ci` only when a lock file differs from main's
+  SW->>VM: Start the containers<br/>from base
+  %%> What it does:
+  %%> - restore `base` and start Gateway+Swamp, app-dev and app-prod; 3.5 to 7 s each
+  %%> - migrations run only when the branch adds new ones
+  SW->>VM: Check ready<br/>one exec
+  %%> What it does:
+  %%> - one exec checks the agent, Pi, the tunnel and the three containers; Swamp's `assert` decides
+  alt the run passes
+    SW-->>GW: Run succeeded<br/>ready
+    Note over GW: Record the slot ready<br/>target under 30 s
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - the slot is released (stopped and rolled back to `clean`); the group records the failed step
   end
