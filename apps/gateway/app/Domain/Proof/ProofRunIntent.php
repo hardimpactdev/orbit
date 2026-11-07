@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
+use App\Domain\TaskVms\TaskVmSeedFloor;
 use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\Proof\AdmitProofRun;
@@ -113,7 +114,8 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
             // transaction, so a router teardown never sees a half-admitted proof.
-            app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+            $fresh = $this->freshHosts($selection->mergeBase);
+            app(TaskVmSeedFloor::class)->during($fresh, fn () => app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
                 // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
                 if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
@@ -132,7 +134,7 @@ final readonly class ProofRunIntent
                 $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs], 'current_step' => null]);
 
                 return $runs;
-            }), ProofRunWatch::lockOwner($proof->id));
+            }), ProofRunWatch::lockOwner($proof->id)));
         } catch (Throwable $exception) {
             if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForKeptVms($proof, $reportOnly)) {
                 return;
@@ -142,6 +144,21 @@ final readonly class ProofRunIntent
             if (! $exception instanceof ResourceOperationException) {
                 report($exception);
             }
+        }
+    }
+
+    /**
+     * The hosts whose ready copies come from a release at or after the merge base of the commit under proof. GitHub is read here, before the
+     * admission transaction.
+     *
+     * @return list<int>
+     */
+    private function freshHosts(string $mergeBase): array
+    {
+        try {
+            return app(ProofFreshHosts::class)->hosts($mergeBase);
+        } catch (GitHubApiException) {
+            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the age of the ready copies cannot be checked.', 503);
         }
     }
 

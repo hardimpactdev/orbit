@@ -116,6 +116,17 @@ final class GitHubProofCommitSource implements ProofCommitSource
         return new ProofChangedFiles($mergeBase, $files, count($rows) < self::COMPARE_FILES);
     }
 
+    public function atOrAfter(string $base, string $sha): bool
+    {
+        $response = $this->get($this->contentsToken(), $this->path('/compare/'.$base.'...'.$sha), ['per_page' => 1]);
+        if (in_array($response->status(), [404, 422], true)) {
+            return false;
+        }
+        $this->assertOk($response);
+
+        return in_array($response->json('status'), ['ahead', 'identical'], true) && $response->json('merge_base_commit.sha') === $base;
+    }
+
     public function file(string $sha, string $path): ?string
     {
         $segments = explode('/', $path);

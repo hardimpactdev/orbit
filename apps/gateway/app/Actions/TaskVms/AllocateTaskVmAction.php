@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSeedFloor;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
@@ -152,7 +153,8 @@ final readonly class AllocateTaskVmAction
                 }
                 if ($unseeded !== []) {
                     throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size, $reserveSlots)
-                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.');
+                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.'
+                        .(app(TaskVmSeedFloor::class)->active() ? ' A proof needs copies built from the merge base of its commit, or a later release.' : ''));
                 }
                 throw $exception;
             }

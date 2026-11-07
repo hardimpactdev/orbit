@@ -33,6 +33,12 @@ sequenceDiagram
   %%> - a task that needs the nested fleet (a proof, or any VM with test nodes: medium or large) is placed only on a host whose seed holds usable ready copies of the current format; with no such host free, admission answers `tasks.capacity_unavailable`
   %%> - the Gateway reads the fact from its own records: the seed follows the image the VM boots from, and it holds usable copies when the host's latest refresh run promoted that image and saved copies of the current `user.ready.format`; no agent report and no ssh
   %%> - the refresh of a host is pinned to that host and is not filtered, because it is what builds the copies; a task with no fleet (a plain task) still uses any host
+  %%> Decided by the orchestrator, for Nick's review (2026-11-07): a proof is placed only on a host whose ready copies were built from a release at or after the merge base of the proof commit with main
+  %%> - why: M5 try 10's allow run landed on the copies of beast from before #3104 (the refresh converged the nested Nodes only from then on), and failed on faults that the commit under proof did not cause
+  %%> - the fact: the refresh that saved the current copies records the release commit it built them from (`refresh.commit`, the commit the Gateway ran at its admission). The Gateway asks GitHub, through the same App reads that select the cases, whether that commit is the merge base or ahead of it (`compare/{merge base}...{release commit}`: `ahead` or `identical`), before the admission transaction
+  %%> - copies of an older release, a release commit that GitHub does not know, and copies with no recorded commit are not usable for that proof; a host with room is skipped as a host with no usable copies is, and the message names the rule. A proof never falls back to older copies. If GitHub cannot answer, the proof fails with `proof.github_unavailable`
+  %%> - the rule holds for a clone and for a ready slot alike, because both ask the same question of the seed; a task that is not a proof keeps the rule above and any host with usable copies
+  %%> - nothing queues: with no fresh host the admission answers `tasks.capacity_unavailable` and names the refresh to run, and the caller runs the proof again when the refresh is done. The refresh of a host is never filtered
   SW->>H: Attach the topology seed<br/>clone under the host lock
   %%> What it does:
   %%> - clones the seed of the host's task image; on ZFS the clone costs only what the Nodes write

@@ -39,6 +39,20 @@ function usedToken(int $index = 0): string
     return Http::recorded()[$index][0]->header('Authorization')[0];
 }
 
+it('says whether a release commit is the merge base or after it', function (): void {
+    $base = str_repeat('a', 40);
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/'.$base.'...*' => Http::sequence()
+        ->push(['status' => 'ahead', 'merge_base_commit' => ['sha' => $base]])->push(['status' => 'identical', 'merge_base_commit' => ['sha' => $base]])
+        ->push(['status' => 'behind', 'merge_base_commit' => ['sha' => str_repeat('c', 40)]])->push(['status' => 'diverged', 'merge_base_commit' => ['sha' => str_repeat('c', 40)]])
+        ->push(['message' => 'Not Found'], 404)->push(['message' => 'No commit found'], 422)->push([], 500)]);
+    $source = githubSource();
+
+    expect($source->atOrAfter($base, SOURCE_SHA))->toBeTrue()->and($source->atOrAfter($base, $base))->toBeTrue()
+        ->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()
+        ->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()
+        ->and(usedToken())->toBe('Bearer contents-token');
+    expect(fn () => $source->atOrAfter($base, SOURCE_SHA))->toThrow(GitHubApiException::class);
+});
 it('finds the commit and tells an unknown one apart from a GitHub outage', function (): void {
     Http::fake(['api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA => Http::sequence()
         ->push(['sha' => SOURCE_SHA])->push(['message' => 'No commit found'], 422)->push(['message' => 'Not Found'], 404)->push([], 500)]);
