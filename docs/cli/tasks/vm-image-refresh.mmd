@@ -14,6 +14,11 @@ sequenceDiagram
   participant VM as Base VM<br/>shark-base
   Note over GW: Admit the refresh<br/>one run per host
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
+  SW->>H: Log egress<br/>host bridge, log only
+  %%> What it does:
+  %%> - sets up the egress log of the host bridge (Ansible part `egress-log`): an nftables rule logs each new outside connection of a task VM, rsyslog writes it to its own file, and dnsmasq logs the DNS queries; nothing is blocked
+  %%> - the first run sets `raw.dnsmasq`, which runs the whole setup of the bridge again and restarts its dnsmasq: running VMs lose DNS for about a second, so it should run when no provision is running; Incus then runs that dnsmasq without its AppArmor profile, as the user `incus`
+  %%> - it runs before the base is touched; only a safety check fails the run (rules that do not load, a bridge with IPv6, an ACL without its drop rule) and starts no rollback; other checks warn
   SW->>H: Start the base VM<br/>incus start
   %%> What it does:
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it

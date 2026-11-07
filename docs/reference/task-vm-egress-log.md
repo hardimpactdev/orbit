@@ -47,20 +47,39 @@ Two other sources stay out of step 1.
 
 One Ansible part, tagged `egress-log`, sets up all of it. Each piece uses a stock tool. The part adds no rule that drops or rewrites traffic.
 
-1. **DNS log.** The part adds `log-queries=extra` and a log file at `/var/log/incus/dnsmasq.<network>.log` to `raw.dnsmasq` on the bridge. It keeps any line already there. Incus's AppArmor profile allows exactly that path.
-2. **Connection log.** The part loads an `nftables` table `orbit_egress` of the family `inet`. Its forward chain has the policy `accept`. One rule only logs.
-3. **What it logs.** The rule logs each new flow to an address outside the ACL's drop list. Each line has the prefix `orbit-egress ` and the source MAC.
-4. **Deduplication.** A dynamic set holds each distinct flow for ten minutes. The rule logs a flow once in that time. It logs before it adds to the set.
-5. **A full set.** A full set of 262,144 flows repeats lines and loses none.
-6. **File split.** An rsyslog rule moves those lines to `/var/log/orbit/task-egress.log`.
-7. **Rotation.** A logrotate file keeps seven days of both logs. The DNS log uses `copytruncate`.
-8. **Reopen.** rsyslog reopens its file after a rotation.
+1. **DNS log.** The part adds `log-queries=extra` and `log-facility=/var/log/orbit/dnsmasq-<network>.log` to `raw.dnsmasq` on the bridge. It keeps any line already there.
+2. **Connection log.** The part loads an `nftables` table `orbit_egress` of the family `inet`. Its forward chain has the policy `accept`. Its rules only return or log.
+3. **What it logs.** The rules log each new flow to an address outside the ACL's drop list. Each line has the prefix `orbit-egress ` and the source MAC.
+4. **Deduplication.** A dynamic set holds each distinct flow for ten minutes. The rules log a flow once in that time. They log before they add it to the set.
+5. **Rate bound.** A rule returns for a source above 50 new flows a second. A flooding VM loses only its own log lines, which a `counter` counts.
+6. **File split.** An rsyslog rule moves the kernel lines to `/var/log/orbit/task-egress.log`.
+7. **Rotation.** A logrotate file keeps seven days of both logs. The DNS log uses `copytruncate`, and rsyslog reopens its file after a rotation.
 
-The agent runs as root without capabilities. It reads only files that it owns or that other users may read. The part therefore creates both logs world-readable: `/var/log/orbit` mode 0755, the rsyslog file mode 0644, and the DNS log pre-created with mode 0644. The leases file and the hosts files of the bridge are mode 0644 already, in a directory that others may traverse (checked on beast and shark).
+A full set of 262,144 flows repeats lines and loses none. A VM that scans cannot flood the kernel log, rsyslog and the disk, because of the rate bound. The DNS log is our own file. The file `dnsmasq.<network>.log` in `/var/log/incus` is Incus's capture of dnsmasq's stderr, and Incus truncates it at every dnsmasq start. dnsmasq appends to our file.
 
-Changing `raw.dnsmasq` restarts the bridge's dnsmasq. Running VMs lose DNS for about a second. Run the part when no provision is running.
+The agent runs as root without capabilities. It reads only files that it owns or that other users may read. The part therefore creates both logs world-readable: `/var/log/orbit` mode 0755, and both log files pre-created. The connection log has mode 0644. The DNS log is `root:root` with mode 0664, because dnsmasq changes a root-group file without the group write bit to mode 0660 and owner `incus`. rsyslog and dnsmasq keep the mode of a file that exists. The leases file and the hosts files of the bridge are mode 0644 already, in a directory that others may traverse (checked on beast and shark).
+
+The `raw.dnsmasq` setting is the only way to switch on query logging, and it has a cost. While it is set, Incus starts the bridge's dnsmasq without its AppArmor profile. dnsmasq still runs as the unprivileged user `incus`. Incus shows the warning `AppArmorDisabledDueToRawDnsmasq`, so `incus warning list` will show it. Unsetting `raw.dnsmasq` reverses the change.
+
+The command `incus network set` runs the whole setup of the bridge again: the firewall rules of the network, then a kill and a start of dnsmasq. The first run of the part therefore reconfigures each bridge once. Running VMs lose DNS for about a second, so run the part when no provision is running. A rerun finds the lines and sets nothing.
 
 A kernel without `/proc/net/nf_conntrack` is the reason for the `nftables` rule. Beast and shark build the kernel without it, and the agent has no netlink access.
+
+## Running the host part
+
+The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Every task VM host therefore gets it after a release that changed the playbooks, in the daily refresh at 03:20, and with `task-vms:refresh-image <host>`.
+
+The step runs before the base is touched. Only a safety check fails the refresh: rules that do not load, a bridge with IPv6, or an ACL that lost its drop rule. Every other check prints a warning with its code, and the refresh goes on, because the missing agent fact shows the gap. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. [Log task VM egress](/reference/compute-drivers#log-task-vm-egress) lists the checks. The part writes these files on the host:
+
+| File | Content |
+| --- | --- |
+| `/etc/orbit/egress-log.nft` | The `orbit_egress` table, loaded by `orbit-egress-log.service` |
+| `/etc/rsyslog.d/19-orbit-egress.conf` | The rule that moves the `orbit-egress ` lines to their own file |
+| `/var/log/orbit/task-egress.log` | One raw kernel line for each new flow |
+| `/var/log/orbit/dnsmasq-<network>.log` | The DNS queries of the bridge |
+| `/etc/logrotate.d/orbit-egress` | The rotation of both logs |
+
+A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<bridge> OUT=<nic> MAC=<dst MAC>:<src MAC>:<type> SRC=<VM address> DST=<outside address> ... PROTO=<tcp|udp> SPT=<port> DPT=<port>`. The agent reads `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`.
 
 ## The agent fact
 
@@ -128,6 +147,8 @@ Each blind spot shows in the data, or the table says why it does not matter.
 | Two names on one address | One row for each name that the VM resolved to it |
 | A long-lived flow | One row: only the first packet is logged |
 | The agent restarts | The agent resumes at the end of each log. A flow that started during the gap is lost, and a flow with no name stays an address |
+| The bridge's dnsmasq restarts | Nothing is lost from our own file, because dnsmasq appends to it |
+| A VM scans and floods the log | The rate bound drops that VM's log lines above 50 new flows a second, counted in the rule's `counter`, never traffic |
 | Log rotation | `copytruncate` keeps the file. The agent resets its offset when the size drops below it, and lines written between the copy and the truncate are lost |
 | A VM spoofs another VM's IP address | The connection rows name the right VM, because the nft line carries the real source MAC. DNS rows follow the lease and can name the wrong VM |
 | A VM sets another VM's MAC | Both sources name the wrong VM |

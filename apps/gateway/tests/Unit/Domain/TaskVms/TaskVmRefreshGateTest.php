@@ -27,6 +27,18 @@ it('runs the steps of the chart in order, each only after the one before passed,
         ->and(refreshJob('workflow-operation-task-vm-image-refresh', 'discard')['steps'][0]['task']['inputs']['tags'])->toBe('base-discard');
 });
 
+it('logs the egress of the host bridge before the base is touched, so a failure there starts no rollback', function (): void {
+    $egress = refreshJob('workflow-operation-task-vm-image-refresh', 'egress');
+    $refresh = refreshJob('workflow-operation-task-vm-image-refresh', 'refresh');
+
+    expect(array_column($egress['steps'], 'name'))->toBe(['Log egress'])
+        ->and($egress['steps'][0]['task']['workflowIdOrName'])->toBe('task-vm-host-phase')
+        ->and($egress['steps'][0]['task']['inputs']['tags'])->toBe('egress-log')
+        ->and($refresh['dependsOn'])->toBe([['job' => 'egress', 'condition' => ['type' => 'succeeded']]])
+        // The rollback follows the refresh job only: a failed egress part skips the refresh, and the base stays as it was.
+        ->and(refreshJob('workflow-operation-task-vm-image-refresh', 'discard')['dependsOn'])->toBe([['job' => 'refresh', 'condition' => ['type' => 'failed']]]);
+});
+
 it('places the agent delivery of the checkout on the nested Gateway before its Swamp tokens are renewed and its code migrates', function (): void {
     $steps = collect(refreshJob('workflow-task-nested-apply', 'apply')['steps'])->keyBy('name');
     $checkout = '/home/orbit/orbit/';
