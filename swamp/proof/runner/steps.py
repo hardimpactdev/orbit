@@ -145,10 +145,13 @@ def ufw_rule(run, args):
         raise Infra('ufw_rule comment holds no quote')
     source = args.get('from', 'any')
     anchor = args.get('above') or args.get('below')
-    mark = (run.rules[anchor]['comment'] if anchor in run.rules else anchor) if anchor else None
+    if anchor in run.rules and proto not in run.rules[anchor]:
+        raise Unrun(f'ufw_rule {name}: anchor {anchor} has no {proto} rule')
+    anchor_rule = run.rules[anchor][proto] if anchor in run.rules else {'comment': anchor}
+    mark = anchor_rule['comment']
     position = None
     if anchor:
-        found = [row['n'] for row in family_rows(ufw_rows(run, node)[1], 4) if row['comment'] == mark]
+        found = [row['n'] for row in family_rows(ufw_rows(run, node)[1], 4) if matches(row, anchor_rule)]
         if not found:
             raise Unrun(f'ufw_rule {name}: no row to place it relative to: {anchor}')
         position = found[0] if args.get('above') else found[0] + 1
@@ -156,13 +159,13 @@ def ufw_rule(run, args):
     inserted = run.fleet.sh(node, f'ufw insert {position} {words}' if position else f'ufw {words}')
     if inserted.returncode:
         return [f'ufw_rule {name} failed: {(inserted.stdout + inserted.stderr).strip()[-200:]}']
-    run.rules[name] = {'to': f'{port}/{proto}', 'action': args['action'].upper(), 'from': 'Anywhere' if source == 'any' else source, 'comment': comment}
+    run.rules.setdefault(name, {})[proto] = {'to': f'{port}/{proto}', 'action': args['action'].upper(), 'from': 'Anywhere' if source == 'any' else source, 'comment': comment}
     rows = family_rows(ufw_rows(run, node)[1], 4)
     mine = [row['n'] for row in rows if row['comment'] == comment and row['to'] == f'{port}/{proto}']  # one name may stand for a row per protocol
     if len(mine) != 1:
         return [f'ufw_rule {name}: expected one row with the comment, found {len(mine)}']
     if anchor:
-        other = [row['n'] for row in rows if row['comment'] == mark]
+        other = [row['n'] for row in rows if matches(row, anchor_rule)]
         if not other or (mine[0] > other[0]) == bool(args.get('above')):
             return [f'ufw_rule {name} is not {"above" if args.get("above") else "below"} {anchor}']
         if args.get('above') and source == 'any':
@@ -315,9 +318,10 @@ def ufw(run, args):
 
     def wanted(item):
         if 'ref' in item:
-            reference = run.rules.get(item['ref'])
-            if reference is None:
+            bindings = run.rules.get(item['ref'])
+            if bindings is None:
                 raise Infra(f"ufw ref {item['ref']} was not bound by a ufw_rule")
+            reference = bindings[next(reversed(bindings))]
             found = {key: reference[key] for key in ('to', 'action', 'from', 'comment')}
             if args.get('family') is not None and int(args['family']) == 6:  # the IPv6 line of a rule for both families
                 found.update(to=found['to'] + ' (v6)', **{'from': found['from'] + ' (v6)'} if found['from'] == 'Anywhere' else {})

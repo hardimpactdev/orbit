@@ -1,0 +1,23 @@
+# What each case runs and sees. Loaded by converge.yml, probes.yml and verify.yml for every case host: `inventory_hostname` is the case and
+# `c` its ports, protocols and flags (molecule.yml). Values that only the live fleet knows are templated when the case runs.
+tcontainer: "nested-{{ target }}"
+tid: "{{ hostvars['localhost'].node_ids[target] }}"
+# The address the sources probe, and the address the allowed source really uses to reach it (the kernel route, as the runner's ${gateway.src}).
+tip: "{{ hostvars[tcontainer].node_ip }}"
+src: "{{ hostvars['nested-' ~ allowed].src_to[target] }}"
+c: "{{ cases[inventory_hostname] }}"
+argv: "{{ ['firewall:allow', c.port | string, '--node=' ~ tid, '--from=' ~ src] + c.flags }}"
+
+# The probes, as the case file lists them. `protos` makes one probe of each entry for every protocol of the variant (the runner's list in `proto`).
+probe_common: {case: "{{ inventory_hostname }}", tip: "{{ tip }}", protos: "{{ c.protos }}"}
+probes:
+  # The fixture `blocked-port` is a precondition: the control port works and the test port is blocked, before the command.
+  setup:
+    - {from: "nested-{{ allowed }}", port: "{{ c.control }}", expect: connect}
+    - {from: "nested-{{ blocked }}", port: "{{ c.control }}", expect: connect}
+    - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: blocked}
+    - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
+  # The `expect` of the case: the allowed source connects, the other one stays blocked.
+  expect:
+    - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: connect}
+    - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
