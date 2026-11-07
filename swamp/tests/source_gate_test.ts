@@ -3,7 +3,7 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 
 type Condition = { type: string; conditions?: Condition[] };
 type Edge = { step: string; condition?: Condition };
-type Step = { name: string; guard?: string; allowFailure?: boolean; dependsOn?: Edge[]; task?: { type?: string; expr?: string } };
+type Step = { name: string; guard?: string; allowFailure?: boolean; writes?: boolean; dependsOn?: Edge[]; task?: { type?: string; expr?: string } };
 type Workflow = { jobs: { name: string; steps: Step[] }[] };
 
 const workflows = new URL("../workflows/", import.meta.url);
@@ -127,4 +127,12 @@ Deno.test("the receipt names a failed source and not the VM", async () => {
     const text = await Deno.readTextFile(new URL("workflow-operation-task-provision.yaml", workflows));
     assert(text.includes('steps["Set up the workspace"].status == "failed"'), "a failed source step needs its own failed_step");
     assert(text.includes('failed_step\\":\\"source\\"'));
+});
+
+Deno.test("the steps that cannot run twice declare writes, so a dispatch that a worker loses is not run again", async () => {
+    // Swamp re-runs a dispatch lost to a worker disconnect only when the step does not write (try 13: the import ran twice and the second git clone exited 128).
+    const source = await steps("workflow-task-workspace-source.yaml");
+    for (const name of ["clone", "import", "branch", "setup-${{ self._index }}"]) {
+        assertEquals(source.find((step) => step.name === name)?.writes, true, `${name} must declare writes: true`);
+    }
 });

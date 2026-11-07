@@ -34,6 +34,8 @@ inputs:
 # the Route's access rows, the inspection) ends the provision when it fails: it is not `allowFailure`, so the run fails with the message of the step, stderr
 # included, and no later step of the provision starts. The steps that stay `allowFailure` (profile, dependency files, Project setup, the copy of its output,
 # the proof club, the cleanups) report in the receipt; `Accept the source` of operation-task-provision ends the provision on that receipt.
+# The steps that cannot run twice (the clone, the import, the task branch, the Project setup) declare `writes: true`: Swamp re-runs a dispatch that a
+# worker loses (the session of a worker ends after 8 hours) only when the step does not write, so these steps fail instead of running a second time.
 jobs:
 - name: source
   steps:
@@ -113,6 +115,7 @@ jobs:
         type: succeeded
   - name: clone
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: command/shell
@@ -228,6 +231,7 @@ jobs:
         type: succeeded
   - name: import
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -297,6 +301,7 @@ jobs:
         type: succeeded
   - name: branch
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -649,6 +654,7 @@ jobs:
     allowFailure: true
   - name: setup-${{ self._index }}
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

@@ -72,6 +72,9 @@ sequenceDiagram
   %%> - Decided by the orchestrator, for Nick's review (2026-11-07): in try 13 (proof 12699, group 3920) the import failed on tvm-866, the provision went on into the fleet start, and only the last step failed the run; a workspace left on main could have run the proof on main
   %%> - the steps of the checkout (control folder, clone credential, clone, bundle, copy, import, origin, task branch, identity, Route access rows, inspection) are no longer `allowFailure`: the run fails at the first of them with the message of the step, stderr included, and no later step of the provision starts
   %%> - the profile, the dependency files, the Project setup and the cleanups still report in the receipt, which this step reads
+  %%> - cause of the failed import (try 13, list child 12701): at 06:40:29 and 06:40:34 the sessions of both Swamp workers on Node 209 ended after 8 hours and reconnected; the `import` dispatch was lost on worker b after its `git clone` had finished, and because the step did not declare `writes: true` Swamp ran it again, and the second clone exited 128 (`destination path already exists`)
+  %%> - the clone, the import, the task branch and the Project setup now declare `writes: true`: a dispatch that a worker loses fails the step and is not run a second time
+  %%> - the allow child of the same proof passed because its import ran at 06:40:07, before the sessions ended
   %%> - before, every step of the workspace job was `allowFailure`, so the step `Set up the workspace` always ended as succeeded and nothing after it checked the receipt until `Accept the workspace`
   opt the task declares a topology
     Note over SW: Pin the converge<br/>guest host key
