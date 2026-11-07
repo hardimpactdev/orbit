@@ -36,6 +36,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
@@ -387,6 +388,18 @@ describe('proof:run admission', function (): void {
     it('is on by default, as in production', function (): void {
         expect(config('proof.execution'))->toBeTrue();
     });
+
+    it('keeps execution on unless the variable says it is off', function (?string $value, bool $expected): void {
+        $environment = Env::getRepository();
+
+        try {
+            $value === null ? $environment->clear('ORBIT_PROOF_RUN_EXECUTION') : $environment->set('ORBIT_PROOF_RUN_EXECUTION', $value);
+
+            expect((require base_path('config/proof.php'))['execution'])->toBe($expected);
+        } finally {
+            $environment->clear('ORBIT_PROOF_RUN_EXECUTION');
+        }
+    })->with([[null, true], ['true', true], ['1', true], ['false', false], ['0', false], ['off', false], ['no', false], ['', false]]);
 
     it('selects the cases and fails while execution is switched off', function (): void {
         config(['proof.execution' => false]);

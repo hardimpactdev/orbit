@@ -21,7 +21,7 @@ These terms distinguish the task images, topology seeds, their hosts and the sta
 
 ## The proof CI
 
-The job `proof-run` is built but report-only. It is not part of `Required checks` until a run passes end to end. Not built yet: the receipt store and the label workflow. Execution stays switched off until they are; see [the execution switch](/cli/proof/run#the-execution-switch).
+The job `proof-run` is built but report-only. It is not part of `Required checks` until a run passes end to end. Not built yet: the receipt store and the label workflow. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch).
 
 The job is `proof-run` (`Proof run (report-only)`), a job of the one CI. It will be part of the one CI result that the merge requires. Until then the merge does not wait for it. See [the proof run job](/reference/implementation-loop#the-proof-run-job).
 
