@@ -41,26 +41,37 @@ Deno.test("the proof run takes keep_failed as an optional boolean", () => {
     assert(JSON.stringify(proof.inputs.properties.keep_failed) === '{"type":"boolean"}');
 });
 
+const created = { status: "succeeded" };
+const steps = (report: string | null, over: Record<string, unknown> = {}) => ({
+    "Create the VM": created, "Pin the VM": pinned, ...(report === null ? {} : { "Prove the command": proved(report) }), ...over,
+});
+
 Deno.test("without keep_failed the destroy step runs, whatever the cases did", () => {
-    assert(!keeps({}, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
-    assert(!keeps({ keep_failed: false }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
-    assert(!keeps({}, { "Pin the VM": pinned, "Prove the command": proved(passed) }));
+    assert(!keeps({}, steps(failed)));
+    assert(!keeps({ keep_failed: false }, steps(failed)));
+    assert(!keeps({}, steps(passed)));
+    assert(!keeps({}, { "Create the VM": { status: "failed" } }));
 });
 
 Deno.test("with keep_failed a run whose cases did not all pass skips the destroy step, so its VM stays", () => {
-    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${failed}`) }));
-    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(failed) }));
+    assert(keeps({ keep_failed: true }, steps(`${passed}\n${failed}`)));
+    assert(keeps({ keep_failed: true }, steps(failed)));
 });
 
 Deno.test("with keep_failed a run that printed no verdict, or whose verify step failed, skips the destroy step", () => {
-    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved("") }));
-    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": { status: "failed" } }));
-    assert(keeps({ keep_failed: true }, { "Pin the VM": pinned }));
+    assert(keeps({ keep_failed: true }, steps("")));
+    assert(keeps({ keep_failed: true }, { "Create the VM": created, "Pin the VM": pinned, "Prove the command": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, steps(null)));
 });
 
-Deno.test("with keep_failed a run that passes, or whose VM never got ready, still destroys the VM", () => {
-    assert(!keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(passed) }));
-    assert(!keeps({ keep_failed: true }, { "Pin the VM": pinned, "Prove the command": proved(`${passed}\n${passed}`) }));
-    assert(!keeps({ keep_failed: true }, { "Create the VM": { status: "failed" } }));
-    assert(!keeps({ keep_failed: true }, { "Create the VM": { status: "succeeded" }, "Pin the VM": { status: "failed" } }));
+Deno.test("with keep_failed a run that failed in its setup, before the VM was pinned or any case ran, skips the destroy step too (M5 try 11)", () => {
+    assert(keeps({ keep_failed: true }, { "Create the VM": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Create the VM": created, "Pin the VM": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Create the VM": { status: "failed" }, "Pin the VM": { status: "skipped" }, "Prove the command": { status: "skipped" } }));
+    assert(keeps({ keep_failed: true }, {}));
+});
+
+Deno.test("with keep_failed a run that succeeded in every part, with every verdict passed, still destroys the VM", () => {
+    assert(!keeps({ keep_failed: true }, steps(passed)));
+    assert(!keeps({ keep_failed: true }, steps(`${passed}\n${passed}`)));
 });
