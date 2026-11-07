@@ -130,7 +130,10 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
+| Admit VM refreshes | Runs `task-vms:refresh-images --commit <sha>` from the new release: one base refresh per task VM host, beside the hand-over. Best effort. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+
+The admission step runs for every release, also one that later fails or switches back, and the hand-over waits only for it to end, never for the refresh. A refresh to a commit that never went live is harmless.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -329,7 +332,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default. Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-A release that went live also queues the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) when it changed playbooks, pins or lock files since the release it replaced. A release of code only starts nothing, and the refresh never holds the release.
+Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", as soon as Swamp has loaded the commit. The refresh runs while the release switches, and it never holds the release: the step is best effort. A refresh that is open on a host keeps running, and the newest commit waits behind it.
 
 ```bash
 orbit gateway:release:auto:enable

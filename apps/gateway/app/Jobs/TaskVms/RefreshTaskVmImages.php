@@ -9,9 +9,9 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
- * Admits the refresh of the task image of every Linux task VM host. Without a release it is the daily trigger and admits
- * every host; with the release that went live and the one it replaced, it admits them only when that release changed
- * playbooks, pins or lock files. The admission of a host returns its open refresh, so a repeat starts nothing.
+ * Admits the refresh of the task image of a task VM host. With no host it is the daily trigger and admits every Linux host to the
+ * release the Gateway runs; with a host and a commit it admits that host to the commit a release queued behind the refresh that has
+ * just ended. The admission of a host returns its open refresh, so a repeat starts nothing.
  */
 final class RefreshTaskVmImages implements ShouldBeUnique, ShouldQueue
 {
@@ -23,23 +23,23 @@ final class RefreshTaskVmImages implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 600;
 
-    public function __construct(public ?string $releaseId = null, public ?string $previousId = null)
+    public function __construct(public ?int $hostId = null, public ?string $commit = null)
     {
         $this->onTaskVmQueue();
     }
 
     public function uniqueId(): string
     {
-        return ($this->releaseId ?? 'daily').':'.($this->previousId ?? '');
+        return ($this->hostId === null ? 'daily' : 'host-'.$this->hostId).':'.($this->commit ?? '');
     }
 
     public function handle(TaskVmImageRefreshTrigger $trigger): void
     {
-        if ($this->releaseId === null || $this->previousId === null) {
+        if ($this->hostId === null || $this->commit === null) {
             $trigger->admitAll('daily');
 
             return;
         }
-        $trigger->afterRelease($this->releaseId, $this->previousId);
+        $trigger->admitHost($this->hostId, 'release', $this->commit);
     }
 }

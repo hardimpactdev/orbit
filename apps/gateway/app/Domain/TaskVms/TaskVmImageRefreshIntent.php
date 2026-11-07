@@ -30,7 +30,10 @@ final readonly class TaskVmImageRefreshIntent
     /** Where the proof Swamp Club key lives on a task VM; the nested Gateway reads it through a disk device (swamp/ansible/task-vm-role.yml). */
     public const string ClubKey = '/etc/orbit/swamp-club-api-key';
 
-    public function __construct(private StartOperationAction $operations, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
+    /** The key of the Operation state that holds the commit to refresh to when the open refresh ends. */
+    public const string Next = 'refresh_next';
+
+    public function __construct(private StartOperationAction $operations, private OperationStore $store, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots) {}
 
     /**
@@ -54,35 +57,60 @@ final readonly class TaskVmImageRefreshIntent
         return $this->settings->host($host->id);
     }
 
-    public function start(Node $host, string $caller, ?string $request = null): Operation
+    /**
+     * Admits the refresh of `$host` to `$commit`, or to the release the Gateway runs. A refresh that is open on the host stays; a different
+     * `$commit` waits behind it, one pending commit per host, the newest wins, and the run that ends admits it (`TaskVmImageRefreshProjection`).
+     */
+    public function start(Node $host, string $caller, ?string $request = null, ?string $commit = null): Operation
     {
-        if (($open = self::open($host)) instanceof Operation) {
+        if (($open = $this->openOrQueue($host, $commit)) instanceof Operation) {
             return $open;
         }
         $lock = Cache::lock('task-vm-image-refresh-'.$host->id, 120);
         if (! $lock->get()) {
-            return self::open($host) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
+            return $this->openOrQueue($host, $commit) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
         }
         try {
             // The proof's claim takes its identity in the admission transaction.
-            return self::open($host) ?? DB::transaction(fn (): Operation => $this->operations->execute(
-                self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host), $caller, $request, lockKey: OperationStore::lockKey('task_vm_host', $host->id)));
+            return $this->openOrQueue($host, $commit) ?? DB::transaction(fn (): Operation => $this->operations->execute(
+                self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit), $caller, $request, lockKey: OperationStore::lockKey('task_vm_host', $host->id)));
         } finally {
             $lock->release();
         }
     }
 
     /**
-     * The full intent of the run. The base VM and seed names follow the host's name, so a rerun after a failure finds and replaces what
-     * the failed run left.
+     * The refresh that is open on `$host`, told to refresh to `$commit` when it ends if it runs for another commit; null when none is open.
+     *
+     * @phpstan-impure
+     */
+    private function openOrQueue(Node $host, ?string $commit): ?Operation
+    {
+        return DB::transaction(function () use ($host, $commit): ?Operation {
+            $open = self::open($host);
+            $open = $open instanceof Operation ? Operation::query()->lockForUpdate()->find($open->id) : null;
+            if (! $open instanceof Operation || $open->status->terminal()) {
+                return null;
+            }
+            if ($commit !== null && ($open->input['commit'] ?? null) !== $commit) {
+                $this->store->change($open, ['state' => [...($open->state ?? []), self::Next => $commit]]);
+            }
+
+            return $open;
+        });
+    }
+
+    /**
+     * The full intent of the run, for `$commit` or the release the Gateway runs. The base VM and seed names follow the host's name, so a
+     * rerun after a failure finds and replaces what the failed run left.
      *
      * @return array<string,mixed>
      */
-    public function input(Node $host): array
+    public function input(Node $host, ?string $commit = null): array
     {
         $location = $this->assertCanRefresh($host);
         $base = $this->images->recorded($host, $location);
-        $commit = $this->converge->releaseCommit();
+        $commit ??= $this->converge->releaseCommit();
         $club = config('swamp.proof_club_api_key');
         if (! is_string($club) || trim($club) === '') {
             throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'The refresh needs the proof Swamp Club key for the nested Gateway.', 503);

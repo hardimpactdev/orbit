@@ -3,30 +3,18 @@
 declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmImageInputs;
 use App\Domain\TaskVms\TaskVmImageRefreshTrigger;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 uses(LazilyRefreshDatabase::class);
-
-/** A release folder with the files an image carries, and one that it does not. */
-function triggerRelease(string $path, string $playbook = 'a', string $code = 'a', string $lock = 'a'): void
-{
-    foreach (['swamp/ansible/tasks', 'apps/gateway/resources/machine-software', 'apps/gateway/app'] as $folder) {
-        is_dir($path.'/'.$folder) || mkdir($path.'/'.$folder, 0700, true);
-    }
-    file_put_contents($path.'/swamp/ansible/tasks/task-vm-apt.yml', $playbook);
-    file_put_contents($path.'/apps/gateway/resources/machine-software/recipe.json', '{}');
-    file_put_contents($path.'/apps/gateway/app/Code.php', $code);
-    file_put_contents($path.'/composer.lock', $lock);
-}
 
 beforeEach(function (): void {
     $this->base = sys_get_temp_dir().'/orbit-refresh-trigger-'.bin2hex(random_bytes(4));
@@ -41,31 +29,7 @@ afterEach(function (): void {
     Process::run(['rm', '-rf', $this->base]);
 });
 
-it('digests only what the image carries: playbooks, pins and lock files', function (): void {
-    triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', code: 'changed code');
-    $inputs = app(TaskVmImageInputs::class);
-
-    expect($inputs->changed($this->base.'/releases/aaaaaaaaaaaa', $this->base.'/releases/bbbbbbbbbbbb'))->toBeFalse();
-
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', playbook: 'b');
-    expect($inputs->changed($this->base.'/releases/aaaaaaaaaaaa', $this->base.'/releases/bbbbbbbbbbbb'))->toBeTrue();
-
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', lock: 'b');
-    expect($inputs->changed($this->base.'/releases/aaaaaaaaaaaa', $this->base.'/releases/bbbbbbbbbbbb'))->toBeTrue();
-    expect($inputs->changed($this->base.'/releases/gone', $this->base.'/releases/bbbbbbbbbbbb'))->toBeTrue();
-});
-
-it('admits nothing after a release that changed none of them', function (): void {
-    triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', code: 'new code');
-
-    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['*' => 'unchanged']);
-});
-
-it('asks every Linux task VM host and skips one that refuses', function (): void {
-    triggerRelease($this->base.'/releases/aaaaaaaaaaaa');
-    triggerRelease($this->base.'/releases/bbbbbbbbbbbb', playbook: 'b');
+it('asks every Linux task VM host for a release commit and skips one that refuses', function (): void {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $node = static fn (string $name, string $platform, string $ip): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => $platform, 'architecture' => 'x86_64', 'public_ssh_host' => $ip, 'wireguard_ip' => $ip, 'user' => 'orbit',
@@ -76,8 +40,8 @@ it('asks every Linux task VM host and skips one that refuses', function (): void
         [new TaskVmHost($bare->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB'), new TaskVmHost($mac->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 5, 4, '8GiB', '40GiB')],
         '/pi', str_repeat('a', 64), ['gpt-6']));
 
-    // The Linux host refuses, as the Gateway release of this test has no commit; the macOS Node is no task VM host for this run.
-    expect(app(TaskVmImageRefreshTrigger::class)->afterRelease('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->toBe(['shark' => 'task_vm.converge_unavailable']);
+    // The Linux host refuses, as this test has no proof Swamp Club key; the macOS Node is no task VM host for this run.
+    expect(app(TaskVmImageRefreshTrigger::class)->admitAll('release', str_repeat('b', 40)))->toBe(['shark' => 'task_vm.image_refresh_unavailable']);
 });
 
 it('schedules no recipe reconcile: only the refresh starts work on the image of a task VM host', function (): void {
@@ -91,7 +55,18 @@ it('schedules no recipe reconcile: only the refresh starts work on the image of 
         ->and(method_exists(RecipeImageBuilds::class, 'reconcile'))->toBeFalse();
 });
 
-it('keys the queued job by its release, so a repeat is one job', function (): void {
+it('keys the queued job by its host and commit, so a repeat is one job', function (): void {
     expect((new RefreshTaskVmImages)->uniqueId())->toBe('daily:')
-        ->and((new RefreshTaskVmImages('bbbbbbbbbbbb', 'aaaaaaaaaaaa'))->uniqueId())->toBe('bbbbbbbbbbbb:aaaaaaaaaaaa');
+        ->and((new RefreshTaskVmImages(7, 'bbbbbbbbbbbb'))->uniqueId())->toBe('host-7:bbbbbbbbbbbb');
+});
+
+it('asks one host for a queued commit, and refuses a host that is none', function (): void {
+    $trigger = app(TaskVmImageRefreshTrigger::class);
+
+    expect($trigger->admitHost(999, 'release', str_repeat('c', 40)))->toBe('task_vm.host_unavailable');
+});
+
+it('validates the commit of the refresh command', function (): void {
+    $this->artisan('task-vms:refresh-images', ['--commit' => 'main'])->expectsOutputToContain('full lowercase SHA')->assertExitCode(Command::INVALID);
+    $this->artisan('task-vms:refresh-images', ['--commit' => str_repeat('d', 40)])->assertSuccessful();
 });
