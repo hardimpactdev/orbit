@@ -745,6 +745,8 @@ See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, 
 
 ## Checks
 
+Receipt replay fixtures keep one Operation creation timestamp across repeated calls, so crossing a wall-clock second does not change the identity under test.
+
 Run the [agent checks](/reference/bun-and-rust-projects#node-agent) as a normal user. The dev profile optimizes `regex` and `regex-automata` so the shared redaction fixtures run without the cost of unoptimized matching. Cargo's test profile inherits these package overrides. The inputs, redaction rules, and assertions stay the same; these overrides do not change the release profile. [Live logs](/reference/live-logs#stream-tests) describes which stream tests use a paused clock and which retain real processes and observation intervals.
 
 Tests that create executable tools use the shared `tests/support/executable.rs` helper. It writes a source file, then waits for a separate `install` process to copy it to the executable path. Only that child opens the executable inode for writing. Parallel test forks can inherit a writable descriptor for the source, but the source is never executed. Closing, syncing, or renaming a file written by the test process would leave an inherited descriptor open until the other child executes or exits, which can cause Linux `ETXTBSY` errors.
