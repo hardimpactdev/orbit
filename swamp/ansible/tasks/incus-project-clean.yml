@@ -1,36 +1,58 @@
 ---
-# One Incus project of a task VM host loses what it holds: its images always; with `clean_whole`, also its instances, its custom volumes on
-# every pool, and then the project itself. A volume that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
-- name: Read the instances, images and pools
-  ansible.builtin.command: { argv: "{{ item }}" }
-  loop:
-    - [incus, --project, "{{ clean_project }}", list, --format, json]
-    - [incus, --project, "{{ clean_project }}", image, list, --format, json]
-    - [incus, storage, list, --format, json]
-  register: project_read
-  changed_when: false
-- name: Remove the instances
-  when: clean_whole
-  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", delete, --force, "{{ item }}"] }
-  loop: "{{ project_read.results[0].stdout | from_json | map(attribute='name') | list }}"
-  changed_when: true
-- name: Remove the images
-  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", image, delete, "{{ item }}"] }
-  loop: "{{ project_read.results[1].stdout | from_json | map(attribute='fingerprint') | list }}"
-  changed_when: true
-- name: Read the volumes
-  when: clean_whole
-  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", storage, volume, list, "{{ item }}", --format, json] }
-  loop: "{{ project_read.results[2].stdout | from_json | map(attribute='name') | list }}"
-  register: project_volumes
-  changed_when: false
-- name: Remove the custom volumes
-  when: clean_whole
-  ansible.builtin.command: { argv: [incus, --project, "{{ clean_project }}", storage, volume, delete, "{{ item.pool }}", "{{ item.name }}"] }
-  loop: "{{ project_volumes.results | map(attribute='stdout') | map('from_json') | flatten | selectattr('type', 'equalto', 'custom') | list }}"
-  loop_control: { label: "{{ item.pool }}/{{ item.name }}" }
-  changed_when: true
-- name: Remove the project
-  when: clean_whole
-  ansible.builtin.command: { argv: [incus, project, delete, "{{ clean_project }}"] }
-  changed_when: true
+# One Incus project of a task VM host, `clean_entry.name`, loses its images; with `clean_entry.whole` also its instances, its custom
+# volumes on every pool, and then the project itself. Images and volumes go only when the project keeps its own: a project that shares
+# them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves the next project its turn.
+# A volume or image that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
+- name: Empty the project
+  vars:
+    project: "{{ clean_entry.name }}"
+    whole: "{{ clean_entry.whole | bool }}"
+    config: "{{ (clean_projects.stdout | from_json | selectattr('name', 'equalto', project) | first).config }}"
+    own_images: "{{ config['features.images'] | default('false') | bool }}"
+    own_volumes: "{{ config['features.storage.volumes'] | default('false') | bool }}"
+  block:
+    - name: Read the instances, the images and the pools
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop:
+        - [incus, --project, "{{ project }}", list, --format, json]
+        - [incus, --project, "{{ project }}", image, list, --format, json]
+        - [incus, storage, list, --format, json]
+      register: project_read
+      changed_when: false
+    - name: Remove the instances
+      when: whole
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", delete, --force, "{{ item }}"] }
+      loop: "{{ project_read.results[0].stdout | from_json | map(attribute='name') | list }}"
+      changed_when: true
+    - name: Remove the images
+      when: own_images
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", image, delete, "{{ item }}"] }
+      loop: "{{ project_read.results[1].stdout | from_json | map(attribute='fingerprint') | list }}"
+      changed_when: true
+    - name: Read the volumes on each pool
+      when: whole and own_volumes
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", storage, volume, list, "{{ item }}", --format, json] }
+      loop: "{{ project_read.results[2].stdout | from_json | map(attribute='name') | list }}"
+      register: project_volumes
+      changed_when: false
+    # Each pool's list names the pool only by the loop item that read it.
+    - name: Collect the custom volumes with their pools
+      when: whole and own_volumes
+      ansible.builtin.set_fact:
+        project_custom: >-
+          {% set found = [] %}{% for read in project_volumes.results if read.stdout is defined %}{% for volume in read.stdout | from_json
+          if volume.type == 'custom' %}{% set _ = found.append([read.item, volume.name]) %}{% endfor %}{% endfor %}{{ found }}
+    - name: Remove the custom volumes
+      when: whole and own_volumes
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", storage, volume, delete, "{{ item.0 }}", "{{ item.1 }}"] }
+      loop: "{{ project_custom }}"
+      loop_control: { label: "{{ item.0 }}/{{ item.1 }}" }
+      changed_when: true
+    - name: Remove the project
+      when: whole
+      ansible.builtin.command: { argv: [incus, project, delete, "{{ project }}"] }
+      changed_when: true
+  rescue:
+    - name: Record the project that could not be emptied
+      ansible.builtin.set_fact:
+        clean_failed: "{{ clean_failed | default([]) + [project] }}"

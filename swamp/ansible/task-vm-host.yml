@@ -199,42 +199,61 @@
   vars:
     clean: "{{ host.clean }}"
     retired: "{{ '^(' ~ (clean.prefixes | map('regex_escape') | join('|')) ~ ')' }}"
+    incus: [incus, --project, "{{ host.project }}"]
   tasks:
-    - name: Read the task VM project and the projects
-      ansible.builtin.command: { argv: "{{ item }}" }
+    - name: Read the projects
+      ansible.builtin.command: { argv: [incus, project, list, --format, json] }
+      register: clean_projects
+      changed_when: false
+    # A project without its own images or volumes lists those of `default`; deleting from that list would hit `default`.
+    - name: Check that the task VM project keeps its own images and volumes
+      ansible.builtin.assert:
+        that:
+          - task_project.config['features.images'] | default('false') | bool
+          - task_project.config['features.storage.volumes'] | default('false') | bool
+        fail_msg: "task_vm.host_clean_refused: project {{ host.project }} shares images or volumes with default"
+      vars:
+        task_project: "{{ clean_projects.stdout | from_json | selectattr('name', 'equalto', host.project) | first }}"
+    - name: Read the task VM project
+      ansible.builtin.command: { argv: "{{ incus + item }}" }
       loop:
-        - [incus, --project, "{{ host.project }}", image, list, --format, json]
-        - [incus, --project, "{{ host.project }}", list, --format, json]
-        - [incus, --project, "{{ host.project }}", storage, volume, list, "{{ host.pool }}", --format, json]
-        - [incus, project, list, --format, json]
+        - [image, list, --format, json]
+        - [list, --format, json]
+        - [storage, volume, list, "{{ host.pool }}", --format, json]
       register: clean_read
       changed_when: false
     # The stock source image is what a host without a base VM starts from; every other image of the project is from a retired build.
     - name: Remove the images that are not the stock one
       when: item.aliases | map(attribute='name') | intersect(clean.keep_images) | length == 0
-      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", image, delete, "{{ item.fingerprint }}"] }
+      ansible.builtin.command: { argv: "{{ incus + ['image', 'delete', item.fingerprint] }}" }
       loop: "{{ clean_read.results[0].stdout | from_json }}"
       loop_control: { label: "{{ item.fingerprint[:12] }}" }
       changed_when: true
     - name: Remove the instances of retired prefixes
-      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", delete, --force, "{{ item }}"] }
+      ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', item] }}" }
       loop: "{{ clean_read.results[1].stdout | from_json | map(attribute='name') | select('match', retired) | list }}"
       changed_when: true
     - name: Remove the volumes of retired prefixes
-      ansible.builtin.command: { argv: [incus, --project, "{{ host.project }}", storage, volume, delete, "{{ host.pool }}", "{{ item }}"] }
+      ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, item] }}" }
       loop: >-
         {{ clean_read.results[2].stdout | from_json | selectattr('type', 'equalto', 'custom') | map(attribute='name')
            | select('match', retired) | list }}
       changed_when: true
-    - name: Empty and remove the retired projects, and empty the image projects of their images
+    # Each project is tried; one that fails is reported after the others had their turn.
+    - name: Empty the retired projects and the image projects
       ansible.builtin.include_tasks: tasks/incus-project-clean.yml
-      loop: >-
-        {{ ((clean.retired_projects | product([true]) | list) + (clean.image_projects | product([false]) | list))
-           | selectattr('0', 'in', clean_read.results[3].stdout | from_json | map(attribute='name') | list) | list }}
-      loop_control: { label: "{{ item[0] }}" }
+      loop: "{{ clean_entries }}"
+      loop_control: { loop_var: clean_entry, label: "{{ clean_entry.name }}" }
       vars:
-        clean_project: "{{ item[0] }}"
-        clean_whole: "{{ item[1] }}"
+        present: "{{ clean_projects.stdout | from_json | map(attribute='name') | list }}"
+        clean_entries: >-
+          {% set entries = [] %}{% for name in clean.retired_projects if name in present %}{% set _ = entries.append({'name': name, 'whole': true})
+          %}{% endfor %}{% for name in clean.image_projects if name in present %}{% set _ = entries.append({'name': name, 'whole': false})
+          %}{% endfor %}{{ entries }}
+    - name: Report the projects that could not be emptied
+      when: clean_failed | default([]) | length > 0
+      ansible.builtin.fail:
+        msg: "task_vm.host_clean_failed: {{ clean_failed | join(', ') }}"
 
 - name: Task VM slot
   hosts: task_vm_host

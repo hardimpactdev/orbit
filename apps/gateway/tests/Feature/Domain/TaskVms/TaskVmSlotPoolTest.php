@@ -17,6 +17,7 @@ use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
+use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -456,4 +457,20 @@ it('rebuilds the base from stock only when asked: the run deletes the base first
         ->and($rebuild['host'])->toMatchArray(['rebuild' => true, 'current' => null])->and($rebuild['with_pi'])->toBeTrue()
         ->and($refresh['host']['clean'])->toBe(['keep_images' => ['ubuntu-26.04-vm'], 'prefixes' => ['orbit-topology-seed-', 'orbit-baseline-'],
             'retired_projects' => ['orbit-baselines', 'orbit-measure-nr'], 'image_projects' => ['orbit-proto']]);
+});
+
+it('withdraws the recorded base for a rebuild, and refuses a rebuild while a refresh is open', function (): void {
+    [$host, $project] = slotPoolHost();
+    $images = app(TaskVmPromotedImage::class);
+
+    expect($images->latest($host))->not->toBeNull();
+    $images->withdraw($host);
+    // No start copies a withdrawn base; the pool skips a host without one.
+    expect($images->latest($host))->toBeNull()
+        ->and(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+    expect(fn () => app(TaskVmImageRefreshIntent::class)->start($host, 'test', fromStock: true))
+        ->toThrow(ResourceOperationException::class, 'rebuild after it ends');
 });

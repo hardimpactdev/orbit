@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Infrastructure\TaskVms\TaskVmVolumes;
+
 /**
  * What a task VM host must not hold beside its base, the stock image and its task VMs (docs/cli/tasks/vm-image-refresh.mmd). After each
  * refresh the `host-clean` phase removes it. The task VM project keeps only the stock source image; its other images and the volumes of
@@ -12,7 +14,7 @@ namespace App\Domain\TaskVms;
 final class TaskVmHostLeftovers
 {
     /** Volume and instance name prefixes in the task VM project that no current path makes. */
-    public const array Prefixes = ['orbit-topology-seed-', 'orbit-baseline-'];
+    public const array Prefixes = [TaskVmVolumes::SeedPrefix, 'orbit-baseline-'];
 
     /** Projects of past experiments, removed with what they hold. Drop a name here once no host has it (docs/reference/old-paths.md). */
     public const array RetiredProjects = ['orbit-baselines', 'orbit-measure-nr'];

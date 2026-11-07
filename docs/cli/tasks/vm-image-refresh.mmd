@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
   %%> - a host without a base VM gets it here, once: `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, an empty seed volume, and a first boot that makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge builds everything else
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
-  %%> - `task-vms:refresh-image <host> --from-stock` first deletes the base VM and its seed with their snapshots, so this run builds the base from stock; a task start on the host fails until the run promotes the new base
+  %%> - `task-vms:refresh-image <host> --from-stock` withdraws the recorded base at admission, so no task start copies it, and the run first deletes the base VM and its seed with their snapshots and builds the base from stock; after a failure the next refresh builds it as on a new host
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container
@@ -50,6 +50,7 @@ sequenceDiagram
   %%> What it does:
   %%> - in the task VM project: every image but the stock source image, the volumes of retired image seeds (`orbit-topology-seed-*`) and the slot-pool baseline (`orbit-baseline-*`)
   %%> - the retired projects the Gateway names (`orbit-baselines`, `orbit-measure-nr`), with what they hold, and the old images of `orbit-proto`
+  %%> - only where the project keeps its own images and volumes; a project that cannot be emptied is reported after the others had their turn
   %%> - a failure here fails no refresh: the next refresh removes what is left
   alt the run passes
     SW-->>GW: Run succeeded<br/>new snapshot
