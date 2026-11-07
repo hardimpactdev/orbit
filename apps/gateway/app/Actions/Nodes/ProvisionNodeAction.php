@@ -8,6 +8,7 @@ use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -72,6 +73,7 @@ final readonly class ProvisionNodeAction
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?VpnConfigurationRepository $vpnConfiguration = null,
+        private ?PrivateDnsManager $dns = null,
     ) {}
 
     public function start(ProvisionNodeData $data, ?string $requestId = null): Operation
@@ -439,6 +441,7 @@ final readonly class ProvisionNodeAction
         }
 
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+        $this->publishRouterAddress($node);
         $clock->step('activate');
 
         if ($data->settingsProvided) {
@@ -736,6 +739,18 @@ final readonly class ProvisionNodeAction
             ],
             clusterIds: $clusterIds,
         );
+    }
+
+    /**
+     * A Router is no role of this call: only `cluster:router:set` assigns one, and it publishes the DNS itself. A Node that is
+     * already an active Router can be provisioned again with another WireGuard address, though, and its Cluster's TLD answers
+     * with that address. The roles that provisioning converges publish their own DNS before they turn active; the Router does not.
+     */
+    private function publishRouterAddress(Node $node): void
+    {
+        if ($node->roles()->where('role', RoleName::Router)->where('status', LifecycleStatus::Active)->exists()) {
+            ($this->dns ?? app(PrivateDnsManager::class))->converge();
+        }
     }
 
     private function syncRouterLanIngress(Node $node): void
