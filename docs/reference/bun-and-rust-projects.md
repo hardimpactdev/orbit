@@ -56,11 +56,11 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. CI reports these as separate steps, and `bun run test` runs those same two stages in order to avoid competing browser workloads on smaller development machines.
+`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. `bun run test` runs those two stages in order to avoid competing browser workloads on smaller development machines. CI currently builds the web app without its unit or browser tests.
 
 Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage.
 
-Install the browsers once with `bunx playwright install webkit chromium`; [CI](/reference/implementation-loop#ci) installs Chromium's headless shell, WebKit, and their system libraries directly on the hosted runner. It uses Playwright's `--only-shell` option to avoid downloading full Chromium for headless tests.
+Install the browsers once with `bunx playwright install webkit chromium`; For local headless tests, Playwright's `--only-shell` option avoids downloading full Chromium.
 
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
@@ -108,7 +108,7 @@ cargo build --release --locked
 
 Linux package-cache tests run Composer, npm, and Bun against temporary homes. Put the installed runtime binaries on `PATH`; a launcher that resolves its runtime from `HOME` cannot use the isolated home. These tests verify archive hits, normal registry misses, and private writes. External downloads are blocked; registry misses use a local test server. CI installs these test prerequisites before running Cargo.
 
-`cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI also builds static musl binaries for `x86_64` and `aarch64` with [`cross`](https://github.com/cross-rs/cross). On a pull request, CI builds the agent only when the change touches `apps/agent` or the CI workflow.
+`cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI runs Cargo check and tests on agent source, Cargo, test or composed extension crate changes, and on shared CI changes. Release delivery builds support Linux `x86_64`; CI produces no agent delivery.
 
 The privileged Caddy access tests live in `apps/agent/tests/caddy_access.rs`. On a disposable Linux test host with `acl`, a `caddy` account, and passwordless sudo, run `cargo test --release --locked --test caddy_access -- --ignored`. To test ACL publication through Docker, use `cargo test --release --locked --test valkey_acl -- --ignored` on the same disposable host with Docker. The tests run the agent as root and check access as the managed user and Caddy. They own private fixture and lock directories. When copying the compiled test to a test host, set `ORBIT_AGENT_TEST_BINARY` to the agent built from the same source.
 
@@ -130,10 +130,10 @@ cd ../desktop && bun install
 bun run dev
 ```
 
-`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests yet. Before you submit a change, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`; CI runs the same checks. The [desktop app](/reference/desktop-app) page describes the build and its limits.
+`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests yet. Before you submit a change, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`; CI does not currently check the desktop app. The [desktop app](/reference/desktop-app) page describes the build and its limits.
 
 ## CI
 
-The `Web`, `Pi server`, `Rust agent`, and `Desktop app` jobs check these projects on every pull request. The `Rust agent` and `Desktop app` jobs skip their steps when the pull request does not change their project or the CI workflow. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI checks the desktop app's Rust shell but does not build a bundle.
+The Web job builds selected web changes and every main commit. Pi runs check, test and build within eight minutes when its inputs change. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select both jobs. `Required checks` expects both selected jobs to succeed. [CI](/reference/implementation-loop#ci) lists the checks. Gateway Pest, web unit tests and desktop checks remain paused.
 
 The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.

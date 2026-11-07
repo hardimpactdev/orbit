@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'swamp', 'proof')
+JOBS = ('php', 'gateway-static', 'cli', 'cli-static', 'sdk-static', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
 # Gateway files that the Swamp gate and its Deno tests read: the grant renderer, the workflow definition that a Deno test parses, and the
 # frozen agent contract, whose check scans the Gateway and Swamp sources (the PHP job runs the same check for PHP files only).
@@ -126,8 +126,10 @@ def select(paths, main=False, selection=None):
             jobs['web'] = True
             if path.startswith(('apps/web/tools/api-types/', 'apps/web/fixtures/')):
                 jobs['api-reference'] = True
-        if path.startswith('apps/agent/'):
-            agent = True
+        if path.startswith('apps/pi-server/') and not path.endswith(('.md', '.mdx')):
+            jobs['pi'] = True
+        if (path.startswith('apps/agent/') or re.match(r'apps/gateway/extensions/[^/]+/agent/', path)) and not path.endswith(('.md', '.mdx')):
+            agent = jobs['agent'] = True
         if not path.startswith(('apps/', 'packages/', 'docs/', '.github/', 'bin/', 'tools/', '.agents/')) and '/' in path:
             jobs = dict.fromkeys(JOBS, True)
     jobs['web'] |= main

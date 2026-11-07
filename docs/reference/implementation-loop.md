@@ -130,7 +130,9 @@ Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective toke
 
 CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules.
+
+On agent source, Cargo or test changes, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. On Pi source changes, CI runs its check, tests and build within an eight-minute job budget. Shared CI changes select both jobs too. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
@@ -138,7 +140,7 @@ Installed Gateway runtime and CLI build dependencies use lock-based caches. Comp
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies run in minutes and do not wait for agent compilation. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
@@ -158,11 +160,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs, including the native package boundary checks, do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
+Gateway test shards and the privileged, E2E, SDK, CLI, remote-program and web test jobs, including the native package boundary checks, do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
 
 ### Runner policy during the Swamp migration
 
-Orbit CI runs builds and static checks only during the Swamp migration. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus the selected Pi and Rust tests. Gateway Pest and web unit tests stay out until the full pipeline runs end to end. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Feature development normally runs on Beast, with UpCloud for overflow.
 

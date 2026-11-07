@@ -80,7 +80,23 @@ class BuildPlanTest(unittest.TestCase):
     def test_a_test_only_change_checks_syntax(self):
         self.assertEqual({'php', 'gateway-static'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
 
-    def test_agent_selection_is_independent_of_the_build_jobs(self):
+    def test_pi_and_agent_sources_select_required_component_checks(self):
+        for path in ('apps/pi-server/src/main.ts', 'apps/pi-server/tests/session.test.ts',
+                     'apps/pi-server/package.json', 'apps/pi-server/bun.lock', 'apps/pi-server/patches/pi.patch'):
+            with self.subTest(path=path):
+                self.assertEqual({'pi'}, self.selected([path]))
+        for path in ('apps/agent/src/main.rs', 'apps/agent/Cargo.toml', 'apps/agent/Cargo.lock',
+                     'apps/agent/tests/binary_input.rs', 'apps/agent/crates/contract/src/lib.rs'):
+            with self.subTest(path=path):
+                self.assertEqual({'agent'}, self.selected([path]))
+        for path in ('apps/gateway/extensions/documents/agent/src/lib.rs',
+                     'apps/gateway/extensions/ai-router/agent/Cargo.toml'):
+            self.assertIn('agent', self.selected([path]))
+        for path in ('apps/web/src/main.ts', 'docs/reference/pi-server.md', 'apps/pi-server/README.md',
+                     'apps/agent/AGENTS.md'):
+            self.assertFalse(self.selected([path]) & {'pi', 'agent'}, path)
+
+    def test_agent_delivery_selection_tracks_agent_sources(self):
         self.assertTrue(plan.select(['apps/agent/src/main.rs'])['agent'])
         self.assertFalse(plan.select(['apps/gateway/app/Thing.php'])['agent'])
         self.assertFalse(plan.select(['.github/workflows/ci.yml'])['agent'])
