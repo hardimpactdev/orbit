@@ -41,7 +41,7 @@ sequenceDiagram
   %%> - the build runs only when the fleet is not complete: a container is missing, or the operator stamp that the join writes last is not recorded; it removes that stamp and any container first and builds whole. A complete fleet skips it and restarts no container
   %%> - no other wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
   %%> - the boot phase bakes the Orbit root CA and the firewall into the base, and the `orbit-identity` unit that mounts a copy's identity share and applies it before sshd, WireGuard and the agent; a base VM has no share, so the unit skips
-  %%> - the boot phase also matches the uplink by type and name (`00-orbit-task-vm.network`), never by the base VM's MAC, so every copy gets an address; it waits online for IPv4 only, masks the apt and motd timers and starts Docker on its first use
+  %%> - the boot phase also matches the uplink by type and name (`00-orbit-task-vm.network`), never by the base VM's MAC, so every copy gets an address; it waits online for IPv4 only, masks the apt and motd timers, and starts Docker at boot, as its package does
   SW->>H: Stop and snapshot<br/>VM and seed
   %%> What it does:
   %%> - stops the base VM and snapshots it and its seed volume under the run's name; ZFS snapshots, about 1 s
