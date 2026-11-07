@@ -8,10 +8,12 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofSettings;
@@ -104,6 +106,17 @@ final class GitHubProofCommitSource implements ProofCommitSource
         if (! is_string($mergeBase) || preg_match('/\A[0-9a-f]{40}\z/D', $mergeBase) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::COMPARE_FILES) {
             throw GitHubApiException::unavailable();
         }
+
+        // GitHub lists no more than 300 files of a comparison and gives no total, so a full list may be cut.
+        return new ProofChangedFiles($mergeBase, $this->changedFiles($rows), count($rows) < self::COMPARE_FILES);
+    }
+
+    /**
+     * @param  array<int, mixed>  $rows  the `files` of a comparison
+     * @return list<ProofChangedFile>
+     */
+    private function changedFiles(array $rows): array
+    {
         $files = [];
         foreach ($rows as $row) {
             if (! is_array($row) || ! is_string($row['filename'] ?? null) || ! is_string($row['status'] ?? null)) {
@@ -112,19 +125,24 @@ final class GitHubProofCommitSource implements ProofCommitSource
             $files[] = new ProofChangedFile($row['filename'], $row['status'], is_string($row['previous_filename'] ?? null) ? $row['previous_filename'] : null);
         }
 
-        // GitHub lists no more than 300 files of a comparison and gives no total, so a full list may be cut.
-        return new ProofChangedFiles($mergeBase, $files, count($rows) < self::COMPARE_FILES);
+        return $files;
     }
 
-    public function atOrAfter(string $base, string $sha): bool
+    public function range(string $from, string $to): ?ProofCommitRange
     {
-        $response = $this->get($this->contentsToken(), $this->path('/compare/'.$base.'...'.$sha), ['per_page' => 1]);
+        $response = $this->get($this->contentsToken(), $this->path('/compare/'.$from.'...'.$to), ['per_page' => 1]);
         if (in_array($response->status(), [404, 422], true)) {
-            return false;
+            return null;
         }
         $this->assertOk($response);
+        $status = GitHubComparisonStatus::tryFrom(is_string($response->json('status')) ? $response->json('status') : '');
+        $mergeBase = $response->json('merge_base_commit.sha');
+        $rows = $response->json('files') ?? [];
+        if ($status === null || ! is_string($mergeBase) || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::COMPARE_FILES) {
+            throw GitHubApiException::unavailable();
+        }
 
-        return in_array($response->json('status'), ['ahead', 'identical'], true) && $response->json('merge_base_commit.sha') === $base;
+        return new ProofCommitRange($status, new ProofChangedFiles($mergeBase, $this->changedFiles($rows), count($rows) < self::COMPARE_FILES));
     }
 
     public function file(string $sha, string $path): ?string

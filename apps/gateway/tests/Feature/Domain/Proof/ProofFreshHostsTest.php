@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofChangedFile;
+use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofFreshHosts;
 use App\Domain\TaskVms\TaskVmFleetSeed;
@@ -43,37 +47,88 @@ function freshSettings(Node ...$hosts): void
         'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
 }
 
-/** A GitHub that knows which release commits are at or after the merge base. */
-function freshGitHub(array $atOrAfter, ?array &$asked = null): void
+/**
+ * How the merge base stands to a release commit, as GitHub says: `$status` and the files that differ.
+ *
+ * @param  list<string>  $paths
+ */
+function freshRange(string $status, array $paths = [], bool $complete = true): ProofCommitRange
+{
+    return new ProofCommitRange(GitHubComparisonStatus::from($status), new ProofChangedFiles(FRESH_BASE, array_map(static fn (string $path): ProofChangedFile => new ProofChangedFile($path, 'modified'), $paths), $complete));
+}
+
+/**
+ * A GitHub that answers each release commit with a range; a commit it lacks is unknown.
+ *
+ * @param  array<string,ProofCommitRange|null>  $ranges
+ * @param  list<array{string,string}>|null  $asked  every question: from, to
+ */
+function freshGitHub(array $ranges, ?array &$asked = null): void
 {
     $asked = [];
-    app()->instance(ProofCommitSource::class, Mockery::mock(ProofCommitSource::class, function ($source) use ($atOrAfter, &$asked): void {
-        $source->shouldReceive('atOrAfter')->andReturnUsing(function (string $base, string $sha) use ($atOrAfter, &$asked): bool {
-            $asked[] = [$base, $sha];
+    app()->instance(ProofCommitSource::class, Mockery::mock(ProofCommitSource::class, function ($source) use ($ranges, &$asked): void {
+        $source->shouldReceive('range')->andReturnUsing(function (string $from, string $to) use ($ranges, &$asked): ?ProofCommitRange {
+            $asked[] = [$from, $to];
 
-            return $atOrAfter[$sha] ?? false;
+            return $ranges[$from] ?? null;
         });
     }));
 }
 
-it('names the hosts whose copies come from a release at or after the merge base, and only those', function (): void {
+it('asks how the merge base stands to the copies, and names a host fresh when main moved by documents or Gateway PHP only', function (): void {
     $beast = freshHost('beast', FRESH_OLD);
-    $shark = freshHost('shark', FRESH_NEW);
-    freshSettings($beast, $shark);
-    freshGitHub([FRESH_NEW => true, FRESH_OLD => false], $asked);
+    freshSettings($beast);
+    freshGitHub([FRESH_OLD => freshRange('ahead', ['docs/reference/pipeline/3-proof.mmd', 'apps/gateway/app/Domain/Proof/ProofRunIntent.php', 'apps/cli/app/Commands/Proof/RunProofCommand.php', 'swamp/proof/firewall/allow.cases.yaml'])], $asked);
 
-    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([$shark->id])->and($asked)->toBe([[FRESH_BASE, FRESH_OLD], [FRESH_BASE, FRESH_NEW]]);
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([$beast->id])->and($asked)->toBe([[FRESH_OLD, FRESH_BASE]]);
 });
 
-it('asks GitHub once for each release commit', function (): void {
-    $hosts = [freshHost('beast', FRESH_NEW), freshHost('shark', FRESH_NEW)];
-    freshSettings(...$hosts);
-    freshGitHub([FRESH_NEW => true], $asked);
+it('names a host stale when main moved by a change of what the image carries', function (string $path): void {
+    $beast = freshHost('beast', FRESH_OLD);
+    freshSettings($beast);
+    freshGitHub([FRESH_OLD => freshRange('ahead', ['docs/a.md', $path])]);
 
-    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([$hosts[0]->id, $hosts[1]->id])->and($asked)->toHaveCount(1);
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([]);
+})->with([
+    'a playbook' => 'swamp/ansible/tasks/task-vm-software.yml',
+    'a pin' => 'apps/gateway/resources/machine-software/recipe.json',
+    'the root lock file' => 'composer.lock',
+    'the lock file of an app' => 'apps/gateway/composer.lock',
+    'the bun lock file of an app' => 'apps/web/bun.lock',
+]);
+
+it('counts the old path of a rename out of what the image carries', function (): void {
+    $beast = freshHost('beast', FRESH_OLD);
+    freshSettings($beast);
+    app()->instance(ProofCommitSource::class, Mockery::mock(ProofCommitSource::class, function ($source): void {
+        $source->shouldReceive('range')->andReturn(new ProofCommitRange(GitHubComparisonStatus::Ahead,
+            new ProofChangedFiles(FRESH_BASE, [new ProofChangedFile('docs/pins.json', 'renamed', 'apps/gateway/resources/machine-software/pins.json')], true)));
+    }));
+
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([]);
 });
 
-it('leaves out a host whose copies record no release commit, without asking GitHub', function (): void {
+it('treats copies that are the merge base, or after it, as fresh', function (string $status): void {
+    $beast = freshHost('beast', FRESH_NEW);
+    freshSettings($beast);
+    freshGitHub([FRESH_NEW => freshRange($status)]);
+
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([$beast->id]);
+})->with(['identical', 'behind']);
+
+it('treats copies that diverged from the merge base, a cut list of files and an unknown release as stale', function (?ProofCommitRange $range): void {
+    $beast = freshHost('beast', FRESH_NEW);
+    freshSettings($beast);
+    freshGitHub([FRESH_NEW => $range]);
+
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([]);
+})->with([
+    'diverged' => fn () => freshRange('diverged'),
+    'a list that GitHub cut' => fn () => freshRange('ahead', ['docs/a.md'], complete: false),
+    'a release GitHub does not know' => null,
+]);
+
+it('leaves out a host whose copies record no release commit, without asking GitHub, so the proof waits', function (): void {
     $beast = freshHost('beast', null);
     freshSettings($beast);
     freshGitHub([], $asked);
@@ -81,19 +136,21 @@ it('leaves out a host whose copies record no release commit, without asking GitH
     expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([])->and($asked)->toBe([]);
 });
 
-it('leaves out a host whose release commit GitHub does not know', function (): void {
-    $beast = freshHost('beast', FRESH_NEW);
-    freshSettings($beast);
-    freshGitHub([FRESH_NEW => false]);
+it('moves to the other host when one host is stale and the other is fresh, and asks once for each release commit', function (): void {
+    $beast = freshHost('beast', FRESH_OLD);
+    $shark = freshHost('shark', FRESH_NEW);
+    $second = freshHost('sabre', FRESH_NEW);
+    freshSettings($beast, $shark, $second);
+    freshGitHub([FRESH_OLD => freshRange('ahead', ['swamp/ansible/x.yml']), FRESH_NEW => freshRange('identical')], $asked);
 
-    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([]);
+    expect(app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toBe([$shark->id, $second->id])->and($asked)->toHaveCount(2);
 });
 
 it('lets the GitHub failure through, so a proof never guesses the age of the copies', function (): void {
     $beast = freshHost('beast', FRESH_NEW);
     freshSettings($beast);
     app()->instance(ProofCommitSource::class, Mockery::mock(ProofCommitSource::class, function ($source): void {
-        $source->shouldReceive('atOrAfter')->andThrow(GitHubApiException::unavailable());
+        $source->shouldReceive('range')->andThrow(GitHubApiException::unavailable());
     }));
 
     expect(fn () => app(ProofFreshHosts::class)->hosts(FRESH_BASE))->toThrow(GitHubApiException::class);

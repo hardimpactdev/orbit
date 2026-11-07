@@ -17,6 +17,29 @@ final readonly class TaskVmImageInputs
     /** Lock files, as glob patterns relative to the root of a release. */
     private const array Locks = ['composer.lock', 'apps/*/composer.lock', 'apps/*/bun.lock', 'apps/*/bun.lockb', 'apps/*/package-lock.json', 'apps/*/Cargo.lock', 'Cargo.lock'];
 
+    /**
+     * Whether the file at `$path`, relative to the root of a release, is one of the files the image carries: the one rule of the digest below, which
+     * decides whether a release starts a refresh, and of the proof, which asks whether the ready copies include every change of these files.
+     */
+    public function carries(string $path): bool
+    {
+        if (str_contains('/'.$path, '/__pycache__/')) {
+            return false;
+        }
+        foreach (self::Folders as $folder) {
+            if (str_starts_with($path, $folder.'/')) {
+                return true;
+            }
+        }
+        foreach (self::Locks as $pattern) {
+            if (fnmatch($pattern, $path, FNM_PATHNAME)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** One digest over the path and the content of every file the image carries from the release at `$root`. */
     public function digest(string $root): string
     {

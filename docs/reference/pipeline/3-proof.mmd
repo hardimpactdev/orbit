@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - the runner finds the fleet by the guest names of `task-nested-fleet`, `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
   %%> Decided by the orchestrator, for Nick's review (2026-11-07):
-  %%> - the Gateway places the proof only on a host whose ready copies were built from a release at or after the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet older than the base it is judged against
+  %%> - the Gateway places the proof only on a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet that lacks a change of what the image carries
   %%> - this is about the copies of the host. The next step checks the other side, the head of the proof against main
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>VM: Check the head<br/>behind a platform change?

@@ -154,7 +154,7 @@ final readonly class AllocateTaskVmAction
                 if ($unseeded !== []) {
                     throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size, $reserveSlots)
                         .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.'
-                        .(app(TaskVmSeedFloor::class)->active() ? ' A proof needs copies built from the merge base of its commit, or a later release.' : ''));
+                        .(app(TaskVmSeedFloor::class)->active() ? ' A proof needs copies that include every change of the playbooks, pins and lock files up to the merge base of its commit.' : ''));
                 }
                 throw $exception;
             }

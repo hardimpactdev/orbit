@@ -6,6 +6,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\Proof\ProofCommitSource;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -39,20 +40,30 @@ function usedToken(int $index = 0): string
     return Http::recorded()[$index][0]->header('Authorization')[0];
 }
 
-it('says whether a release commit is the merge base or after it', function (): void {
-    $base = str_repeat('a', 40);
-    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/'.$base.'...*' => Http::sequence()
-        ->push(['status' => 'ahead', 'merge_base_commit' => ['sha' => $base]])->push(['status' => 'identical', 'merge_base_commit' => ['sha' => $base]])
-        ->push(['status' => 'behind', 'merge_base_commit' => ['sha' => str_repeat('c', 40)]])->push(['status' => 'diverged', 'merge_base_commit' => ['sha' => str_repeat('c', 40)]])
+it('says how one commit stands to another and which files differ between them', function (): void {
+    $from = str_repeat('a', 40);
+    $files = [['filename' => 'docs/a.md', 'status' => 'modified'], ['filename' => 'swamp/ansible/new.yml', 'status' => 'renamed', 'previous_filename' => 'swamp/ansible/old.yml']];
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/'.$from.'...*' => Http::sequence()
+        ->push(['status' => 'ahead', 'merge_base_commit' => ['sha' => $from], 'files' => $files])
+        ->push(['status' => 'identical', 'merge_base_commit' => ['sha' => $from], 'files' => []])
+        ->push(['status' => 'behind', 'merge_base_commit' => ['sha' => SOURCE_SHA], 'files' => []])
+        ->push(['status' => 'diverged', 'merge_base_commit' => ['sha' => str_repeat('c', 40)], 'files' => []])
+        ->push(['status' => 'ahead', 'merge_base_commit' => ['sha' => $from], 'files' => array_fill(0, 300, ['filename' => 'docs/a.md', 'status' => 'modified'])])
         ->push(['message' => 'Not Found'], 404)->push(['message' => 'No commit found'], 422)->push([], 500)]);
     $source = githubSource();
 
-    expect($source->atOrAfter($base, SOURCE_SHA))->toBeTrue()->and($source->atOrAfter($base, $base))->toBeTrue()
-        ->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()
-        ->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()->and($source->atOrAfter($base, SOURCE_SHA))->toBeFalse()
+    $ahead = $source->range($from, SOURCE_SHA);
+    expect($ahead->status)->toBe(GitHubComparisonStatus::Ahead)->and($ahead->changes->paths())->toBe(['docs/a.md', 'swamp/ansible/new.yml', 'swamp/ansible/old.yml'])->and($ahead->changes->complete)->toBeTrue()
+        ->and($source->range($from, SOURCE_SHA)->status)->toBe(GitHubComparisonStatus::Identical)
+        ->and($source->range($from, SOURCE_SHA)->status)->toBe(GitHubComparisonStatus::Behind)
+        ->and($source->range($from, SOURCE_SHA)->status)->toBe(GitHubComparisonStatus::Diverged)
+        // GitHub lists 300 files at most and gives no total, so a full list may be cut.
+        ->and($source->range($from, SOURCE_SHA)->changes->complete)->toBeFalse()
+        ->and($source->range($from, SOURCE_SHA))->toBeNull()->and($source->range($from, SOURCE_SHA))->toBeNull()
         ->and(usedToken())->toBe('Bearer contents-token');
-    expect(fn () => $source->atOrAfter($base, SOURCE_SHA))->toThrow(GitHubApiException::class);
+    expect(fn () => $source->range($from, SOURCE_SHA))->toThrow(GitHubApiException::class);
 });
+
 it('finds the commit and tells an unknown one apart from a GitHub outage', function (): void {
     Http::fake(['api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA => Http::sequence()
         ->push(['sha' => SOURCE_SHA])->push(['message' => 'No commit found'], 422)->push(['message' => 'Not Found'], 404)->push([], 500)]);
