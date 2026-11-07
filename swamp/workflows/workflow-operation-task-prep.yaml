@@ -42,31 +42,26 @@ inputs:
           additionalProperties: false
         ssh_host: *secret
         agent_secret: *secret
-        model:
+        model_key:
           type: object
           properties:
-            model_key:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-            model_router_management:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-            model_router_anchor:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-          required: [model_key, model_router_management, model_router_anchor]
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        model_router_management:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        model_router_anchor:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
+          required: [vault, key]
           additionalProperties: false
         claim:
           type: object
@@ -83,7 +78,7 @@ inputs:
             key: {type: string, pattern: '^task-vm-pi-token-[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
-      required: [wireguard, ssh_host, agent_secret, model, claim, pi_token]
+      required: [wireguard, ssh_host, agent_secret, model_key, model_router_management, model_router_anchor, claim, pi_token]
       additionalProperties: false
     publish_secrets:
       type: object
@@ -127,7 +122,9 @@ jobs:
         kind: tasks.provision
         intent: ${{ inputs.intent.provision }}
         execution_secrets: '${{ {"wireguard": inputs.execution_secrets.wireguard, "ssh_host": inputs.execution_secrets.ssh_host,
-          "agent_secret": inputs.execution_secrets.agent_secret, "model": inputs.execution_secrets.model, "claim": inputs.execution_secrets.claim} }}'
+          "agent_secret": inputs.execution_secrets.agent_secret, "model_key": inputs.execution_secrets.model_key,
+          "model_router_management": inputs.execution_secrets.model_router_management, "model_router_anchor": inputs.execution_secrets.model_router_anchor,
+          "claim": inputs.execution_secrets.claim} }}'
   - name: Draft the spec
     labels: {role: swamp}
     dependsOn:

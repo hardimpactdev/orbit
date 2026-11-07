@@ -142,9 +142,11 @@ final readonly class StartSwampRun
 
                 return true;
             }
-            // A start that the Gateway refused keeps why: the run never existed, so nothing else records it.
+            // A start that the Gateway refused keeps why: the run never existed, so nothing else records it. The failure detail is what
+            // every Operation read shows as its error.
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null,
+                'state' => [...($operation->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => $error->getMessage(), 'stderr_recorded' => false]],
                 'result' => ['error' => ['code' => $code, 'message' => $error->getMessage(), 'details' => $error->details]]]);
             if (! isset($operation->state['swamp_run_id']) && DirectOperation::owns($operation)) {
                 $projection = app(DirectOperation::class)->projection($operation);
