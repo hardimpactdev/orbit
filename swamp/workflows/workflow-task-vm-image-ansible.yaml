@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.image_build]}
+    kind: {type: string, enum: [task_vm.image_build, task_vm.image_refresh]}
     intent: {type: object}
     guest: {type: string, minLength: 1}
     tags: {type: string, minLength: 1}
