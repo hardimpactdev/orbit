@@ -98,7 +98,9 @@ jobs:
         argv: [timeout, '30', /usr/sbin/ufw, status, numbered]
   - name: Check the rules
     labels: {role: swamp}
-    dependsOn: [{step: Read the result, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn:
+    - {step: Plan the changes, condition: {type: succeeded}}
+    - {step: Read the result, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@nckrtl/firewall-plan'

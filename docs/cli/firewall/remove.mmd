@@ -77,7 +77,7 @@ sequenceDiagram
   Note over SW: Check the rules
   %%> What it does:
   %%> - checks every removed line is gone, and retained lines are still there
-  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
+  %%> - prints the public result; after changes, a line that ufw changed in between fails the check, and a rerun repairs it
   %%> Why:
   %%> - the rule only counts as removed when ufw shows it
   alt end state is right
