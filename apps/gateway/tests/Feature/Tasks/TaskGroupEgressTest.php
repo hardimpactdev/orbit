@@ -21,6 +21,7 @@ use App\Models\TaskVm;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 uses(LazilyRefreshDatabase::class);
@@ -86,6 +87,9 @@ it('refuses an egress report with an unsafe row', function (array $fact): void {
     'no source' => [egress_fact(egress_row(['sources' => []]))],
     'unknown flag' => [egress_fact(egress_row(['flags' => ['tor']]))],
     'date without a zone' => [egress_fact(egress_row(['first_seen' => '2026-11-07 19:00:05']))],
+    'port without protocol' => [egress_fact(egress_row(['protocol' => null]))],
+    'protocol without port' => [egress_fact(egress_row(['port' => null]))],
+    'port as a string' => [egress_fact(egress_row(['port' => '443']))],
     'bad bridge name' => [['network' => 'eth0'] + egress_fact()],
     'bad MAC' => [['mac' => 'zz'] + egress_fact()],
 ]);
@@ -197,4 +201,38 @@ it('names the bridge in the watch list of a task VM host only', function (): voi
 
     $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4, 'network' => 'orbittaskb']]]);
     expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittaskb']);
+});
+
+it('writes nothing for a report that adds nothing, and merges two rows with one key', function (): void {
+    [$host, $group] = egress_world();
+    $record = app(RecordTaskGroupEgressAction::class);
+    $twice = egress_fact(egress_row(['addresses' => ['9.9.9.9', '1.1.1.1'], 'sources' => ['dns', 'conn']]), egress_row(['addresses' => ['5.5.5.5'], 'flags' => ['doh']]));
+
+    expect($record->execute($host, 'shark-tvm-1', $twice))->toBe(1)
+        ->and(TaskGroupEgress::query()->where('task_id', $group->id)->sole()->addresses)->toBe(['1.1.1.1', '5.5.5.5', '9.9.9.9']);
+
+    $queries = 0;
+    DB::listen(static function ($query) use (&$queries): void {
+        if (! str_starts_with(strtolower($query->sql), 'select')) {
+            $queries++;
+        }
+    });
+
+    expect($record->execute($host, 'shark-tvm-1', $twice))->toBe(0)->and($queries)->toBe(0);
+});
+
+it('lists a name without a port only until the VM connected to it', function (): void {
+    [$host, $group] = egress_world();
+    app(TaskExtensionState::class)->enable();
+    $record = app(RecordTaskGroupEgressAction::class);
+    $dnsOnly = egress_row(['port' => null, 'protocol' => null, 'sources' => ['dns']]);
+    $record->execute($host, 'shark-tvm-1', egress_fact($dnsOnly, egress_row(['destination' => 'github.com', 'port' => null, 'protocol' => null, 'sources' => ['dns']])));
+
+    expect(app(ShowTaskGroupEgressAction::class)->execute($group)->pluck('destination')->all())->toBe(['github.com', 'registry.npmjs.org']);
+
+    $record->execute($host, 'shark-tvm-1', egress_fact(egress_row()));
+
+    expect(app(ShowTaskGroupEgressAction::class)->execute($group)->map(fn (TaskGroupEgress $row): string => $row->destination.':'.$row->port)->all())
+        ->toBe(['github.com:0', 'registry.npmjs.org:443'])
+        ->and(TaskGroupEgress::query()->where('task_id', $group->id)->count())->toBe(3);
 });

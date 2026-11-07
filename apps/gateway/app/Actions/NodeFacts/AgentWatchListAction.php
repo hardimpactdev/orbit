@@ -8,6 +8,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -58,7 +59,7 @@ final readonly class AgentWatchListAction
             'applications' => $root === null ? [] : $this->applications(),
             'tools' => $this->tools->forNode($node),
             'environments' => $this->environments->forNode($node),
-            'egress' => $this->egress($node),
+            'egress' => self::egress($node),
         ];
     }
 
@@ -68,7 +69,7 @@ final readonly class AgentWatchListAction
      *
      * @return array{network: string}|null
      */
-    private function egress(Node $node): ?array
+    public static function egress(Node $node): ?array
     {
         $task = data_get($node->settings, 'task_vms');
         if (! is_array($task)) {
@@ -76,7 +77,7 @@ final readonly class AgentWatchListAction
         }
         $network = $task['network'] ?? config('task_vms.incus.host_defaults.network');
 
-        return is_string($network) && preg_match('/\Aorbittask[a-z0-9]{1,6}\z/', $network) === 1 ? ['network' => $network] : null;
+        return is_string($network) && preg_match(NodeFactKind::EgressNetworkPattern, $network) === 1 ? ['network' => $network] : null;
     }
 
     /**

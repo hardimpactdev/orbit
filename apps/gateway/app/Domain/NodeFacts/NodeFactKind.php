@@ -45,6 +45,9 @@ enum NodeFactKind: string
      */
     case Egress = 'egress';
 
+    /** The name of a task VM host's bridge: `orbittask` and 1 to 6 lower case letters or digits. */
+    public const string EgressNetworkPattern = '/\\Aorbittask[a-z0-9]{1,6}\\z/';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -137,14 +140,14 @@ enum NodeFactKind: string
                 'accounts.*.shell' => ['required', 'string', 'starts_with:/', 'max:4096'],
             ],
             self::Egress => [
-                'network' => ['required', 'string', 'regex:/\Aorbittask[a-z0-9]{1,6}\z/'],
+                'network' => ['required', 'string', 'regex:'.self::EgressNetworkPattern],
                 'mac' => ['required', 'string', 'regex:/\A(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\z/'],
                 'rows' => ['present', 'array', 'list', 'max:1500'],
                 'rows.*.destination' => ['required', 'string', 'max:253', 'regex:/\A[a-z0-9._-]+\z/'],
                 'rows.*.kind' => ['required', 'string', 'in:name,address'],
                 // A name that nothing connected to has no port and no protocol.
-                'rows.*.port' => ['present', 'nullable', 'integer', 'between:1,65535'],
-                'rows.*.protocol' => ['present', 'nullable', 'string', 'in:tcp,udp'],
+                'rows.*.port' => ['present', 'nullable', 'integer:strict', 'between:1,65535', 'required_with:rows.*.protocol'],
+                'rows.*.protocol' => ['present', 'nullable', 'string', 'in:tcp,udp', 'required_with:rows.*.port'],
                 'rows.*.addresses' => ['present', 'array', 'list', 'max:8'],
                 'rows.*.addresses.*' => ['required', 'ipv4'],
                 'rows.*.sources' => ['present', 'array', 'list', 'min:1', 'max:2'],

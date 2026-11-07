@@ -121,7 +121,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 ## Noun-ending commands
 
-Five commands end in a noun.
+Six commands end in a noun.
 
 | Command | Result |
 | --- | --- |
@@ -130,6 +130,7 @@ Five commands end in a noun.
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
 | `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
+| `tasks:egress` | The CLI lists the outside hosts that a [task](/reference/tasks)'s VM connected to. |
 
 ## Gateway route names
 
