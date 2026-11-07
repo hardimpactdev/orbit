@@ -283,7 +283,7 @@
 # the bridge and its ACL are read and checked, never changed. `host.network` is the only input.
 # Only a safety check fails the part, and with it the image refresh: a table that does not load (`nft -c`), a bridge with IPv6, an ACL that
 # lost its drop rule. Everything else only observes. A failed action or a failed observation check prints a warning and the part goes on,
-# because the missing agent fact shows it and a broken log must not stop the base refresh.
+# because a broken log must not stop the base refresh.
 - name: Task VM egress log
   hosts: task_vm_host
   become: true

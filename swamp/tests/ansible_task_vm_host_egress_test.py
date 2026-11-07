@@ -80,9 +80,9 @@ def render(folder, raw=None, bridge='orbittask0'):
 def local_file_tasks(root, validator=('test', '-s')):
     """The file tasks of the part with every path moved below `root`, as an unprivileged user can run them twice.
 
-    The block structure stays, so the `when` of a block and its rescue run as on a host. Owners go (the test is not root), the tool that checks
-    the rsyslog rule becomes `validator` (an argv prefix: `test -s`, or a command that fails for a rule that does not pass), the tools that validate on the temporary file
-    become a size check, and notifications go. Tasks that need systemd or Incus are left out.
+    The block structure stays, so the `when` of a block and its rescue run as on a host. Owners go (the test is not root). The tool that
+    checks the rsyslog rule becomes `validator`: an argv prefix, `test -s`, or a command that fails for a rule that does not pass. The tools
+    that validate on the temporary file become a size check, and notifications go. Tasks that need systemd or Incus are left out.
     """
     def moved(path):
         return str(root) + path if path.startswith(('/', '{{ dnsmasq_log')) else path
@@ -220,7 +220,7 @@ class TaskVmHostEgressTest(unittest.TestCase):
         self.assertEqual(names.index('Apply the changed rules'), names.index('Set up the DNS log') + 1)
         self.assertEqual(top['Apply the changed rules']['ansible.builtin.meta'], 'flush_handlers')
         self.assertLess(names.index('Apply the changed rules'), names.index('Warn about the rules'))
-        # Two asserts, both safety checks, after the warnings are printed and written; the observation checks only record warnings.
+        # Two asserts, both safety checks, after the warnings are printed; the observation checks only record warnings.
         asserts = {task['name']: task['ansible.builtin.assert']['fail_msg'] for task in play['tasks'] if 'ansible.builtin.assert' in task}
         self.assertEqual(set(asserts.values()), SAFETY)
         for code in asserts.values():
@@ -422,6 +422,23 @@ class TaskVmHostEgressTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('WARNING egress.setup_failed: Write into a folder that is gone', result.stdout)
             self.assertIn('went on', result.stdout)
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_failed_bridge_setting_names_the_error_text_of_the_tool_in_its_warning(self):
+        # `incus network set` is a command: its `msg` is only "non-zero return code", the reason is on stderr and stdout.
+        block = next(task for task in egress_play()['tasks'] if task['name'] == 'Set up the DNS log')
+        warning = json.dumps(block['rescue'][0]['vars'])
+        self.assertIn('ansible_failed_result.stderr', warning)
+        self.assertIn('ansible_failed_result.stdout', warning)
+        printing = [task for task in egress_play()['tasks'] if task['name'] == 'Print the warnings']
+        failing = {'name': 'Log the DNS queries of the bridge',
+                   'ansible.builtin.command': {'argv': ['sh', '-c', 'echo "Error: network is busy" >&2; echo "partial output"; exit 1']}}
+        with tempfile.TemporaryDirectory() as folder:
+            result = run_local(Path(folder), [{'block': [failing], 'rescue': block['rescue']}, *printing], {})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('WARNING egress.setup_failed: Log the DNS queries of the bridge', result.stdout)
+            self.assertIn('Error: network is busy', result.stdout)
+            self.assertIn('partial output', result.stdout)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_rsyslog_rule_that_fails_its_check_keeps_the_old_rule_and_skips_nothing_else(self):
