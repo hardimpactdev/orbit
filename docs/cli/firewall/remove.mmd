@@ -65,13 +65,15 @@ sequenceDiagram
     %%> - deletes each line that belongs to this rule alone; a line that is already gone is skipped
     %%> - a line that a role also needs (`retain`) stays
     %%> - runs the planned commands one at a time; nothing is copied to the Node
+    SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+    %%> Why:
+    %%> - the rule only counts as done when ufw shows it after the changes
   else already removed
     Note over SW: Skipped — already removed<br/>firewall.rule_absent
     %%> Result:
     %%> - the plan contains no changes
-    %%> - the final read and check still run before the task can succeed
+    %%> - there is no second read of ufw: the check runs on the first read, which nothing has changed since
   end
-  SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
   Note over SW: Check the rules
   %%> What it does:
   %%> - checks every removed line is gone, and retained lines are still there

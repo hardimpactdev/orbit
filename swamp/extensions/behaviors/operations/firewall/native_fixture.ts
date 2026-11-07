@@ -20,12 +20,15 @@ export class UfwDouble {
     fail = false;
     /** Ignore insert positions, as a racing writer would. */
     misplace = false;
+    /** How many times `status` was read: the workflow reads ufw once, and a second time only after changes. */
+    reads = 0;
 
     constructor(rows: Row[] = [Trust, Trust6]) {
         this.rows = structuredClone(rows);
     }
 
     status() {
+        this.reads++;
         return `Status: ${
             this.active ? "active" : "inactive"
         }\n\n     To  Action  From\n` +
