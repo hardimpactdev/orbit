@@ -72,8 +72,9 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
-     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
-     * fails with `task_vm.parked` until it is ready.
+     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A parked task VM goes
+     * as it is: the release deletes a stopped VM as well, and nothing on it is worth a start. Approved work that origin does not have yet
+     * is the one exception: its push needs the VM running, so a parked VM is started for it and removal waits for the publication.
      */
     public function remove(Task $group): null
     {
@@ -82,10 +83,9 @@ final readonly class RemoveTaskWorkspaceAction
             return null;
         }
         $group->setRelation('taskable', $instance);
-        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-        }
         if (TaskFinalReview::reconcileRemovalPush($group) !== null) {
+            app(WakeTaskVmAction::class)->forInstance($instance);
+
             throw TaskPullRequestException::pending('Approved work must finish native publication before workspace removal.');
         }
         $this->removeWorkspace($instance);

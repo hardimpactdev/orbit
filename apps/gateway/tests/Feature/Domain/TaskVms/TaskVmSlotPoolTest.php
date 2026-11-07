@@ -525,6 +525,23 @@ it('has the removal of a group\'s workspace admit the release of its slot and wa
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->count())->toBe(1);
 });
 
+it('releases a parked task VM as it is: no start before the removal, and no resume', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $slot->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
 it('refuses the removal of a workspace on a task VM that has no slot, which no release can delete', function (): void {
     [$host, $project] = slotPoolHost();
     slotPoolSweepWorld();
