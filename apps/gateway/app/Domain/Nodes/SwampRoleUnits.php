@@ -18,6 +18,9 @@ final class SwampRoleUnits
     /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
     public const int ScheduledRuns = 4;
 
+    /** Native drain after the first completed dispatch; other slots finish before the clean exit. */
+    private const string WorkerLifecycle = '--max-dispatches 1 --idle-timeout 5m';
+
     /** The drain a worker gets on stop before systemd kills it: the value of Swamp's own worker daemon unit. */
     private const int WorkerStopSeconds = 300;
 
@@ -55,8 +58,8 @@ final class SwampRoleUnits
             ." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
-            .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
-            ."Restart=on-failure\nRestartSec=15\nKillMode=mixed\n"
+            .' '.self::WorkerLifecycle.' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
+            ."Restart=always\nRestartSec=1\nKillMode=mixed\n"
             .'TimeoutStopSec='.self::WorkerStopSeconds."\nUMask=0077\n"
             ."StandardOutput=journal\nStandardError=journal\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
