@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
@@ -18,7 +19,7 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 
 /** State projection only: the claim of a slot (docs/cli/tasks/provision.mmd). Swamp owns the start, the fetch, the containers and readiness. */
-final readonly class TaskProvisionProjection implements DirectOperationProjection
+final readonly class TaskProvisionProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The end check of a task start: what a task needs, the agent, Pi, the tunnel and the three containers running. */
     public const string EndCheck = 'Check ready';
@@ -52,6 +53,12 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
     }
 
+    /** A start the Gateway refused never ran: the group fails and its slot is released, as after a failed run. */
+    public function refused(Operation $operation): void
+    {
+        $this->record($operation, 'failed', $operation->error_code, static fn (): Operation => $operation);
+    }
+
     /**
      * Records the slot, the workspace Instance and the group from the end of a claim. `$record` writes the Operation between the lookups
      * and the writes. A kind that claims as one step of a larger run passes its own closure; `$operation` then holds the provision intent
@@ -65,9 +72,9 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         $slot = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
         $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
         $instance = Instance::query()->where('task_workspace_owner_id', $group->id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-        $workspace = ValidatedData::object($operation->input['workspace']);
         $projected = $record();
         if ($status === 'succeeded') {
+            $workspace = ValidatedData::object($operation->input['workspace']);
             $slot->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'stop_confirmed_at' => null, 'error_code' => null, 'error_message' => null]);
             $instance->update(['branch' => $workspace['branch'], 'starting_commit' => $workspace['start_commit'],
                 'status' => InstanceState::SourceResolved, 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);

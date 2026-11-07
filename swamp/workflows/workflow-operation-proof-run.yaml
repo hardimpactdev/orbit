@@ -45,31 +45,26 @@ inputs:
           additionalProperties: false
         ssh_host: *secret
         agent_secret: *secret
-        model:
+        model_key:
           type: object
           properties:
-            model_key:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-            model_router_management:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-            model_router_anchor:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
-              required: [vault, key]
-              additionalProperties: false
-          required: [model_key, model_router_management, model_router_anchor]
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        model_router_management:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+        model_router_anchor:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
+          required: [vault, key]
           additionalProperties: false
         claim:
           type: object
@@ -78,7 +73,7 @@ inputs:
             key: {type: string, pattern: '^task-vm-pi-claim-[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
-      required: [wireguard, ssh_host, agent_secret, model, claim]
+      required: [wireguard, ssh_host, agent_secret, model_key, model_router_management, model_router_anchor, claim]
       additionalProperties: false
     # `proof:run --keep-failed`: a run that did not succeed in every part, a failed setup included, keeps its VM (the Gateway destroys it 60 minutes later).
     keep_failed: {type: boolean}

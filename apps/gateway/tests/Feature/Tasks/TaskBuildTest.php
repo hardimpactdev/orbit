@@ -343,6 +343,8 @@ it('fails a sync and a build run closed when the read-token vault write fails, a
         ->and($failed->error_code)->toBe('swamp.vault_sync_unavailable')
         ->and($failed->result['error']['code'] ?? null)->toBe('swamp.vault_sync_unavailable')
         ->and($failed->result['error']['message'] ?? '')->toContain('could not be stored')
+        // Every Operation read shows the refusal as its error detail.
+        ->and($failed->state['native_failure']['detail'] ?? '')->toContain('could not be stored')
         ->and($failed->dispatched_at)->toBeNull()
         ->and($failed->finished_at)->not->toBeNull()
         // The Pi token goes first in a build run; the read token is the write that fails.

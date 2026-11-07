@@ -79,3 +79,15 @@ it('leaves the release to a run that releases its slot itself, as a proof run do
 
     Queue::assertNotPushed(ReleaseTaskVmSlot::class);
 });
+
+it('fails the group and releases its slot when the Gateway refused the start, so the group does not stay reserved', function (): void {
+    Queue::fake();
+    [$operation, $group, $slot, $instance] = claimedProvision();
+    $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid']);
+
+    app(TaskProvisionProjection::class)->refused($operation);
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+        ->and($instance->refresh()->error_code)->toBe('operation.execution_secrets_invalid');
+    Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $slot->id && $job->groupId === $group->id);
+});

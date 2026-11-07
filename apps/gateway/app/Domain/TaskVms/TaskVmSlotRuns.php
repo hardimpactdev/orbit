@@ -68,7 +68,8 @@ final readonly class TaskVmSlotRuns
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
                 'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],
             ],
-            'execution_secrets' => [...$this->identity->secrets($slot), 'model' => $model['execution_secrets'],
+            // One flat map of vault references, as every Operation's secrets are; the release passes the model's three the same way.
+            'execution_secrets' => [...$this->identity->secrets($slot), ...$model['execution_secrets'],
                 'claim' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-claim-'.$slot->id, $secrets)],
         ];
     }
