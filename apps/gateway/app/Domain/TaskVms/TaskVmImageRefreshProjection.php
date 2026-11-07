@@ -50,12 +50,9 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
             $code = in_array($status, ['failed', 'interrupted'], true) ? 'task_vm.image_refresh_failed' : null;
-            $result = ['error_code' => $code];
             $build = $status === 'succeeded' ? $this->record($operation) : null;
-            if ($build !== null) {
-                // The leftover cleanup may fail without failing the refresh; its outcome stays visible on the Operation.
-                $result = [...$build, 'host_clean' => NativeRunResult::stepStatus($native, self::HostClean) ?? 'skipped'];
-            }
+            // The leftover cleanup may fail without failing the refresh; its outcome stays visible on the Operation.
+            $result = [...($build ?? ['error_code' => $code]), 'host_clean' => NativeRunResult::stepStatus($native, self::HostClean) ?? 'skipped'];
             // The identity that proved the candidate is free once the proof's release passed. Otherwise it is failed, and the slot rule
             // releases it again before anything else takes it.
             $slot = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($operation->input)['task_vm_id']));

@@ -161,7 +161,9 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     $failed = $operation->replicate();
     $failed->save();
     $projection->apply($failed, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
-    expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id))['snapshot'])->toBe(ImageRefreshSnapshot);
+    expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id))['snapshot'])->toBe(ImageRefreshSnapshot)
+        // A refresh that failed never reached the cleanup.
+        ->and($failed->refresh()->result)->toMatchArray(['error_code' => 'task_vm.image_refresh_failed', 'host_clean' => 'skipped']);
     // A refresh that failed before its proof released leaves the slot failed, for the sweep to release.
     expect($slot->refresh()->state)->toBe(TaskVmState::Failed);
     $slot->update(['state' => TaskVmState::Provisioning]);
