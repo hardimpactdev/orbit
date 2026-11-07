@@ -29,6 +29,9 @@ def build_task_vm(folder, kind):
     """The inventory, known hosts and variables of the task VM role. A builder behind its host is reached through a jump."""
     folder = Path(folder)
     intent = json.loads((folder / 'intent.json').read_text())
+    # A task start's one run holds the whole start intent in the file; the role converges the part that names it.
+    if os.environ.get('ORBIT_INTENT_KEY'):
+        intent = intent[os.environ['ORBIT_INTENT_KEY']]
     # The runtime and fleet build intents name their connection ssh_execution; the other task VM intents name it ssh.
     ssh = intent['ssh_execution' if kind in SSH_EXECUTION_KINDS else 'ssh']
     target = dict(ssh['target'])

@@ -25,18 +25,15 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof
-  SW->>H: Create and start the VM<br/>copy of the base snapshot
+  SW->>VM: Start and converge<br/>one Ansible run
   %%> What it does:
-  %%> - `incus copy` of the host's base snapshot and a clone of its seed snapshot (ZFS clones), an identity volume with the identity and keys, `incus start`; the base's orbit-identity unit applies it at boot; the containers start with the VM
+  %%> - the host part copies the host's base snapshot and a clone of its seed snapshot (ZFS clones), writes an identity volume with the identity and keys, and starts the VM; the base's own boot unit applies the identity
+  %%> - the converge part is the converge of the release refresh: a no-op on a current image; it catches up a small delta when main moved since the last release
+  %%> - then the new task branch on the warm checkout, at the group's start commit
   SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
   %%> - adds the new WireGuard key as a peer of the hub while the VM boots
-  SW->>VM: Converge and branch<br/>the release's converge
-  %%> What it does:
-  %%> - the converge of the release refresh: a no-op on a current image; it catches up a small delta when main moved since the last release
-  %%> - then the new task branch on the warm checkout, at the group's start commit
-  %%> - the outer VM is the operator of the nested fleet; that operator key belongs to the nested network only and is baked with the fleet, so it is no part of the VM's identity
   SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
   %%> What it does:
   %%> - the path every later step takes: ssh from a Swamp worker to the VM's WireGuard address

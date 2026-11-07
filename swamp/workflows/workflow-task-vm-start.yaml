@@ -1,0 +1,154 @@
+id: 6825ed05-928f-4260-a42f-6ef2aa8a2277
+name: task-vm-start
+description: >-
+  Start a task VM and converge it in one Ansible run (docs/cli/tasks/provision.mmd, step "Start and converge"): the `start` part of the
+  host playbook with the slot's identity and the claim's Pi token and model file from the vault, then the role's converge on the new VM over
+  WireGuard, and the task branch (swamp/ansible/task-vm-start.yml).
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [tasks.provision, task_vm.image_refresh]}
+    intent: {type: object}
+    # The slot's identity and the claim's Pi token and model file, as vault names and keys, never the values.
+    execution_secrets:
+      type: object
+      properties:
+        wireguard: &secret
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^(task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*|task-vm-pi-claim-[1-9][0-9]*)$'}
+          required: [vault, key]
+          additionalProperties: false
+        ssh_host: *secret
+        agent_secret: *secret
+        claim: *secret
+      required: [wireguard, ssh_host, agent_secret, claim]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: start
+  labels: {role: swamp}
+  steps:
+  - name: Write the intent
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ ("ansible-input-start-" + inputs.intent.slot.name).split(".").join("-") }}
+      methodName: write
+      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+    # Pi is an internal artifact on the Gateway host; the software phase copies it to the guest when the guest copy differs from the pin. A guard that is true skips the step.
+  - name: Fetch the Pi server
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ !inputs.intent.with_pi }}
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("task-vm-guest-pi-" + inputs.intent.slot.name).split(".").join("-") }}
+      methodName: copy
+      globalArgs:
+        name: ${{ ("task-vm-guest-pi-" + inputs.intent.slot.name).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.converge.pi.source.ssh.target.user }}
+          port: ${{ inputs.intent.converge.pi.source.ssh.target.port }}
+          identityFile: ${{ inputs.intent.converge.pi.source.ssh.identity_file }}
+        hosts:
+        - name: source
+          address: ${{ inputs.intent.converge.pi.source.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.converge.pi.source.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:source
+        src: ${{ inputs.intent.converge.pi.source.path }}
+        dst: ${{ "/tmp/orbit-ansible-" + run.id + "/pi-server" }}
+        direction: from
+        timeoutSec: 300
+  - name: Check the Pi server
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ !inputs.intent.with_pi }}
+    dependsOn:
+    - {step: Fetch the Pi server, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("task-vm-guest-pi-check-" + inputs.intent.slot.name).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
+        env:
+          ORBIT_SHA: ${{ inputs.intent.converge.pi.sha256 }}
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+    # One run, two parts: the host part starts the VM, the converge part reaches it over WireGuard once sshd answers. The playbook input
+    # (the inventory with the VM, the pinned keys, the variables) is built in this step, from the `converge` part of the intent.
+  - name: Run the Ansible phases
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
+    - {step: Check the Pi server, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      # Named by target and never used with another type.
+      behaviorName: ${{ ("task-vm-start-phase-vm-" + inputs.intent.slot.name).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
+        ignoreExitCode: true
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/intent.json" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-start.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ORBIT_KIND: ${{ inputs.kind }}
+          ORBIT_INTENT_KEY: converge
+          ORBIT_TAGS: start,software,tools,boot,checkout,fleet,check,branch
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
+          # The time of each task, slowest first, at the end of the run.
+          ANSIBLE_CALLBACKS_ENABLED: ansible.posix.profile_tasks
+          PROFILE_TASKS_TASK_OUTPUT_LIMIT: all
+          ORBIT_SLOT_WIREGUARD_KEY: ${{ vault.get(inputs.execution_secrets.wireguard.vault, inputs.execution_secrets.wireguard.key) }}
+          ORBIT_SLOT_SSH_HOST_KEY: ${{ vault.get(inputs.execution_secrets.ssh_host.vault, inputs.execution_secrets.ssh_host.key) }}
+          ORBIT_SLOT_AGENT_SECRET: ${{ vault.get(inputs.execution_secrets.agent_secret.vault, inputs.execution_secrets.agent_secret.key) }}
+          ORBIT_CLAIM: ${{ vault.get(inputs.execution_secrets.claim.vault, inputs.execution_secrets.claim.key) }}
+  - name: Check the Ansible phases
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Run the Ansible phases, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: 'steps["Run the Ansible phases"].outputs.exitCode == 0'
+      severity: high
+      message: '${{ steps["Run the Ansible phases"].outputs.exitCode == 124 ? "Run the Ansible phases timed out after 3300s" : "Ansible exited with " + string(steps["Run the Ansible phases"].outputs.exitCode) + ": " + (size(steps["Run the Ansible phases"].outputs.stderr) > 3500 ? steps["Run the Ansible phases"].outputs.stderr.substring(size(steps["Run the Ansible phases"].outputs.stderr) - 3500) : steps["Run the Ansible phases"].outputs.stderr) }}'
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: start, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("task-vm-start-cleanup-vm-" + inputs.intent.slot.name).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

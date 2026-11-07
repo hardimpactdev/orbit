@@ -6,12 +6,10 @@ sequenceDiagram
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane H icon=server pill=target tone=amber
   %% lane HUB icon=server pill=target tone=purple
   %% lane VM icon=server pill=task VM tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>shark-tvm-3
   Note over GW: Take a slot<br/>mint an identity · database only
@@ -22,24 +20,23 @@ sequenceDiagram
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
   %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
   GW->>SW: Start run, full intent<br/>operation-tasks-provision
-  SW->>H: Create and start the VM<br/>copy of the base snapshot
+  SW->>VM: Start and converge<br/>one Ansible run
   %%> What it does:
-  %%> - one host phase: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+  %%> - one `ansible-playbook` run with two parts, and no second start: the host part runs on the task VM host over ssh, then the converge runs on the VM over WireGuard
+  %%> - host part: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim (the Pi token and the Pi models file), pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
   %%> - Pi calls the guard with the fixed key from the VM's own WireGuard address; the start makes no model router call and registers no key
   %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 6 s after the start
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
-  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
-  %%> Runs beside the step before it: Swamp starts both at once.
-  %%> What it does:
-  %%> - the VM's public key and address on the WireGuard hub, while the VM boots
-  SW->>VM: Converge and branch<br/>the release's converge
-  %%> What it does:
-  %%> - the same Ansible converge as the release refresh, over WireGuard with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
-  %%> - the glue is two steps: write the intent once, then one step that builds the playbook input and starts Ansible; the address and host key come from the admission, so nothing is read from the host
+  %%> - converge part: the same Ansible converge as the release refresh, with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
+  %%> - the glue is one write of the intent and the step that builds the playbook input and starts Ansible; nothing is read from the host
   %%> - with no delta every part is skipped, and it catches up a small delta when main moved since the last release
   %%> - the nested Gateway's services restart only when `apps/gateway` changed since the base, and its agent delivery manifest is placed only when the pinned agent build changed; a commit that changes neither does neither
   %%> - the containers' `base` snapshots belong to the refresh: a task start never retakes them
   %%> - then the new task branch on the checkout; it waits for no nested service
+  SW->>HUB: Add the hub peer<br/>peer file · wg addconf
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the converge part waits for the connection, and the readiness steps below wait for this step
   SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
   %%> What it does:
   %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key

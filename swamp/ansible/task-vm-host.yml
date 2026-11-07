@@ -27,12 +27,14 @@
   gather_facts: false
   tags: [always]
   tasks:
+    # The file may already hold the pins of the VM that a task start's one run converges after this part: the host's lines are added.
     - name: Pin the host keys
-      ansible.builtin.copy:
-        dest: "{{ run_dir }}/known_hosts"
+      ansible.builtin.lineinfile:
+        path: "{{ run_dir }}/known_hosts"
+        create: true
         mode: "0600"
-        content: "{% for key in host.ssh.target.host_keys %}{{ host.ssh.target.host if host.ssh.target.port == 22
-          else '[' ~ host.ssh.target.host ~ ']:' ~ host.ssh.target.port }} {{ key }}\n{% endfor %}"
+        line: "{{ host.ssh.target.host if host.ssh.target.port == 22 else '[' ~ host.ssh.target.host ~ ']:' ~ host.ssh.target.port }} {{ item }}"
+      loop: "{{ host.ssh.target.host_keys }}"
     - name: Add the host
       ansible.builtin.add_host:
         name: task-vm-host
