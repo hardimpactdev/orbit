@@ -100,7 +100,7 @@ sequenceDiagram
   %%> - the step is skipped by its guard (Swamp skips a step whose guard is true) when the flag is set and the run did not succeed in every part: the VM was created, pinned, the cases ran and every case passed. A run that passes destroys its VM as before
   %%> - what is kept is the VM that the group has at that time, whatever its state: a VM that failed to provision is kept as it is, and a run that never got a VM keeps nothing, so its group is cancelled the normal way
   %%> - the Gateway then does not cancel the group. It records the VM (name, group, keep-until time) on the run and on the result of the proof, and the proof ends as usual
-  %%> - only the groups of this proof run (`proof_operation_id`) are kept, and the VM keeps its slot, so capacity and the watchdogs count it
+  %%> - only the groups of this proof run (`proof_operation_id`) are kept. A kept VM that is ready keeps its slot, so capacity and the watchdogs count it. A kept VM that failed to provision is in the state `failed`, which the capacity of an Incus host does not count, so for up to 60 minutes the host can hold one VM more than its slots (known; a waiting proof releases kept VMs only when a host is full)
   %%> - the keep lasts 60 minutes from the end of the run. The one-minute pass that watches proofs (`ReconcileSwampOperations`) cancels the group when the time is up, with the trigger `proof-run`, and asks again every 5 minutes. It needs nobody to come back
   %%> - a cancel of the proof leaves a kept VM until its time is up; a keep that is still open a day after its time is no longer asked, and the Gateway logs a warning
   %%> Built:

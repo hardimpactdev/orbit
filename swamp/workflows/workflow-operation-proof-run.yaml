@@ -52,7 +52,7 @@ inputs:
     execution_secrets:
       type: object
       additionalProperties: *reference
-    # `proof:run --keep-failed`: a run whose cases did not all pass keeps its VM (the Gateway destroys it 60 minutes later).
+    # `proof:run --keep-failed`: a run that did not succeed in every part, a failed setup included, keeps its VM (the Gateway destroys it 60 minutes later).
     keep_failed: {type: boolean}
   required:
   - operation_id

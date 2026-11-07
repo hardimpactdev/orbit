@@ -318,6 +318,7 @@ describe('keep_failed', function (): void {
         $projected = app(ProofCommandProjection::class)->apply($run, $ended);
 
         expect($projected->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     });
 
     it('keeps nothing for a run that never got a VM, and cancels its group the normal way', function (): void {
