@@ -523,8 +523,7 @@ jobs:
           forward_prepare_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes))
             }}
           forward_urls: ${{ size(inputs.intent.route_mutations.forward.url_writes) }}
-          forward_prepare_dns: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns
-            != null)) }}
+          forward_prepare_dns: '${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null && (p.before.dns == null || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].listen != inputs.intent.route_mutations.artifacts.dns[p.before.dns].listen || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].tlds != inputs.intent.route_mutations.artifacts.dns[p.before.dns].tlds || inputs.intent.route_mutations.artifacts.dns[p.prepared.dns].records != inputs.intent.route_mutations.artifacts.dns[p.before.dns].records))) }}'
           forward_dns_grace: '${{ size(inputs.kind != "instance.destroy" && inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns
             != null && (inputs.intent.route_mutations.artifacts.dns[p.before.dns].listen != inputs.intent.route_mutations.artifacts.dns[p.after.dns].listen || inputs.intent.route_mutations.artifacts.dns[p.before.dns].tlds != inputs.intent.route_mutations.artifacts.dns[p.after.dns].tlds || inputs.intent.route_mutations.artifacts.dns[p.before.dns].records != inputs.intent.route_mutations.artifacts.dns[p.after.dns].records)) ? [{}] : []) }}'
           forward_withdraw_caddy: ${{ size(inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes && (inputs.kind != "instance.destroy" || p.withdrawn.caddy != p.prepared.caddy)))

@@ -38,3 +38,32 @@ Deno.test("forward_prepare_dns publishes only a prepared state that differs from
     // No state before it means nothing to compare with: publish.
     assert(prepare.includes("p.before.dns == null"));
 });
+
+Deno.test("the required count of forward_prepare_dns uses the same filter as its forEach", async () => {
+    const text = await Deno.readTextFile(
+        `${ROOT}/workflows/workflow-route-mutation-forward.yaml`,
+    );
+    const filter = (source: string, opener: RegExp) => {
+        const match = source.match(opener);
+        assert(match, `no match for ${opener}`);
+        const start = match.index! + match[0].length;
+        let depth = 1;
+        let index = start;
+        while (depth > 0 && index < source.length) {
+            if (source[index] === "(") depth++;
+            if (source[index] === ")") depth--;
+            index++;
+        }
+
+        return source.slice(start, index - 1).replace(/\s+/g, " ");
+    };
+    const forEach = filter(
+        await step("forward_prepare_dns"),
+        /publications\.filter\(/,
+    );
+    const required = filter(
+        text.slice(text.indexOf("          forward_prepare_dns:")),
+        /publications\.filter\(/,
+    );
+    assertEquals(required, forEach);
+});
