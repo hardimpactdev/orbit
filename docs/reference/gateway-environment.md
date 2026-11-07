@@ -103,7 +103,7 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
    php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
    ```
 
-   Read a known group's `/api/v1/tasks/{group}/swamp-runs` endpoint and require `availability: available` with a fresh `observed_at`. HTTP 200 alone does not prove an upstream read. The installer verifies the candidate before publication; it does not refresh the serving configuration or revoke credentials.
+   Read a known group's `/api/v1/tasks/{task}/swamp-runs` endpoint and require `availability: available` with a fresh `observed_at`. HTTP 200 alone does not prove an upstream read. The installer verifies the candidate before publication; it does not refresh the serving configuration or revoke credentials.
 
 4. Revoke the old token only after that read succeeds.
 

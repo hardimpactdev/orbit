@@ -15,7 +15,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and leaves it ready for `task:start`. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and optional `deliverables` and `topology` arrays. |
-| `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `tasks.orchestration_invalid`. Children can declare workload topology. |
+| `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. Children can declare workload topology. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 | `--review=MODE` | `manual` | How the gate of the task pull request is passed. `manual`: Nick approves the exact head. `automatic`: a fresh reviewer passes the head in review rounds ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). Any other value returns `tasks.review_invalid`. `task:show` returns the mode as `review`. |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
@@ -32,8 +32,8 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | Error code | Meaning |
 | --- | --- |
 | `tasks.project_required`, `tasks.title_required`, `tasks.brief_required` | A `--json` or `-n` call omits a required input. |
-| `tasks.project_invalid`, `tasks.title_invalid`, `tasks.brief_invalid`, `tasks.status_invalid` | A supplied value is outside the accepted form. |
-| `tasks.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
+| `task.project_invalid`, `task.title_invalid`, `task.brief_invalid`, `task.status_invalid` | A supplied value is outside the accepted form. |
+| `task.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no task. |

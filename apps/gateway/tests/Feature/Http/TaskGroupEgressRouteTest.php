@@ -45,7 +45,7 @@ function egress_http_report(Node $node, array $data, string $subject = 'shark-tv
         ->postJson('/api/v1/agent/facts', ['kind' => 'egress', 'subject' => $subject, 'observed_at' => '2026-11-07T19:00:10Z', 'data' => $data]);
 }
 
-describe('GET /api/v1/tasks/{group}/egress', function (): void {
+describe('GET /api/v1/tasks/{task}/egress', function (): void {
     beforeEach(function (): void {
         $this->gateway = egress_http_node('gateway', '10.44.0.2');
         $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);

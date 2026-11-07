@@ -1,5 +1,5 @@
 ---
-title: "tasks"
+title: "task"
 sidebarTitle: "Overview"
 description: "Create, prepare, inspect, cancel, and complete tasks, through the Gateway tasks extension."
 covers:
@@ -53,13 +53,13 @@ Direct `task:*` calls send their request without discovering extension switches 
 
 [Trusted GitHub requested changes](/reference/tasks#trusted-github-feedback) can append a normal fixup subtask. `task:show --json` exposes its source review and findings in the existing `brief`. The Gateway API's `fixup_problem` is `review:{reviewer_id}`; the CLI keeps its existing brief and deliverable fields without adding an identity field. Use the existing cancel or operator-subtask commands when that scope needs intervention. No command configures reviewer trust, submits a GitHub review, requests external re-review, or merges a pull request. In a Project with [review and merge](/reference/tasks#review-and-merge) on, the Gateway itself reviews and merges; the CLI only shows that state. The Gateway's automatic findings packet has its own 64 KiB bound; the CLI's 8,000-character input limit remains unchanged.
 
-Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. Each entry names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add the role `ingress` after `+`. The CLI checks only that the value is a JSON array of distinct strings, and refuses anything else with `tasks.invalid_topology`. The Gateway validates the entries and how many a topology may have. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. The Gateway [refuses](/reference/compute-drivers#declare-a-topology) any nonempty list with `tasks.orchestration_unsupported`, so only `[]` is accepted.
+Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. Each entry names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add the role `ingress` after `+`. The CLI checks only that the value is a JSON array of distinct strings, and refuses anything else with `task.invalid_topology`. The Gateway validates the entries and how many a topology may have. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. The Gateway [refuses](/reference/compute-drivers#declare-a-topology) any nonempty list with `tasks.orchestration_unsupported`, so only `[]` is accepted.
 
 ## Select a task or subtask
 
 A `group` argument is a numeric task ID, and a `subtask` argument is a numeric subtask ID. When you omit either in a terminal, the CLI lists the candidates and you select one. The task list shows the ID, title, Project, and status. The subtask list shows the position, ID, title, and status of the task's subtasks. An empty list stops the command with `No matching records were found.`
 
-With `--json` or `-n`, an omitted task fails with `tasks.group_required` and an omitted subtask fails with `tasks.subtask_required`. A value that is not a positive integer fails with `tasks.group_invalid` or `tasks.subtask_invalid`.
+With `--json` or `-n`, an omitted task fails with `task.task_required` and an omitted subtask fails with `tasks.subtask_required`. A value that is not a positive integer fails with `task.task_invalid` or `tasks.subtask_invalid`.
 
 Human output names a task by its Project code and ID, such as `ORB-13`, as the web task board does. The CLI accepts only the numeric ID. Human output shows times to the minute in the Gateway's time zone; JSON keeps the full timestamps.
 
@@ -95,4 +95,4 @@ Every command belongs to `task:*`. Select either level with its existing Task ID
 | `task:comment:create <task>`, `task:comment:list <task>` | Select either level. Parent assistance requires an open external parent with all children ended. Comments never start work. History remains readable after completion. |
 | `task:agent:list <task>`, `task:agent:show <task> <session>` | Require the parent and verify session ownership. The transcript stream stays outside MCP. |
 
-This is a hard switch. Old command names and `/tasks` URLs have no aliases or adapters. Internal `tasks.*` operation kinds, workflow IDs, vault schemas, receipts and idempotency identities retain their names.
+This is a hard switch. Old command names and `/task-groups` URLs have no aliases or adapters. Internal `tasks.*` operation kinds, workflow IDs, vault schemas, receipts and idempotency identities retain their names.

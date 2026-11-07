@@ -65,7 +65,7 @@ Name implementation paths only where the contract fixes them. Express each promi
 
 Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the group in Backlog with `task-create` for the Orbit Project, and its subtasks with `task-create`.
+Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. Moving the parent to Todo changes board state only; `task-start` starts its VM through the internal `tasks.provision` operation. Select a child directly for `task-check` and `task-turn`.
 
 ## Implement a subtask
 

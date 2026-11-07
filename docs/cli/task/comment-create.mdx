@@ -16,6 +16,6 @@ orbit task:comment:create <task> [--type=TYPE] [--body=TEXT] [--author=NAME] [--
 | `--author=NAME` | prompt, with your local user name | Who wrote the comment, at most 255 characters. |
 | `--agent-thread=ID` | none | Numeric Orbit agent thread ID that the comment concerns. |
 
-A `--json` or `-n` call fails with `tasks.comment_type_required`, `tasks.comment_body_required`, or `tasks.comment_author_required` when a value is missing. An unknown type fails with `tasks.comment_type_invalid`. An agent thread ID that is not a positive integer fails with `tasks.agent_thread_invalid`.
+A `--json` or `-n` call fails with `task.comment_type_required`, `task.comment_body_required`, or `task.comment_author_required` when a value is missing. An unknown type fails with `task.comment_type_invalid`. An agent thread ID that is not a positive integer fails with `task.agent_thread_invalid`.
 
 A parent ID records assistance only on an open external task after all its subtasks end. Parent resolution clears Direction only. A child ID keeps child assistance and resolution rules. Neither starts work.

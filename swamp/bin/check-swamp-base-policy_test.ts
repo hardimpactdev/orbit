@@ -116,7 +116,8 @@ Deno.test("real frozen policy owns limits and dependencies", async () => {
             );
             return result;
         }
-        assertEquals((await check()).code, 0);
+        const initial = await check();
+        assertEquals(initial.code, 0, initial.stdout + initial.stderr);
         await write(source, originalSource + "await delay(20);\n");
         await commit(
             repo,
