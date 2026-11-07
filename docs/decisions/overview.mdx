@@ -33,10 +33,10 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; replaces the deployment history with operations and lowers the request limit; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
-| [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress |
+| [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) | Answer Cluster names from a DNS server on the Router | In progress; replaced by [0248](/decisions/0248-render-private-dns-as-desired-state) |
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
 | [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) | Run one gate from handoff to merge | In progress; changes [CI main cache imports](/reference/instance-setup#import-ci-main-caches); leaves runner registration with the [operator](/reference/node-provisioning#ci-roles-own-hosts-operators-own-runner-registration) |
-| [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
+| [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; its peer-resolver parts stay, the Cluster DNS member step is replaced by [0248](/decisions/0248-render-private-dns-as-desired-state); amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
 | [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) | Let an orchestrator drive task work through Gateway operations | In progress; decided on 2026-10-22; amends [0218](/decisions/0218-take-long-commands-off-the-request-path), and [Node commands](/reference/node-agent#commands) |
 | [0240](/decisions/0240-bound-environment-import-private-output) | Bound environment import private output | In progress; one-store proposal only, no runtime change |
 | [0242](/decisions/0242-signed-apt-tool-repositories) | Signed apt repositories for Tools | In progress |
@@ -45,7 +45,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) | Identify firewall rules by port, protocol and source | In progress; supersedes 0241 |
 | [0246](/decisions/0246-show-task-progress-through-one-resumable-read) | Show task progress through one resumable read | In progress; builds on [0244](/decisions/0244-track-every-action-as-one-task) |
 | [0247](/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes) | Keep fleet software current through tested recipe changes | In progress; decided on 2026-11-03 and 2026-11-04; replaces the task VM image build of [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) |
-
+| [0248](/decisions/0248-render-private-dns-as-desired-state) | Render private DNS as desired state | In progress; option A chosen on 2026-11-07; replaces [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
 
 ## Retired decisions
 
