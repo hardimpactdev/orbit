@@ -43,6 +43,10 @@ sequenceDiagram
     SW->>H: Prune old snapshots<br/>keep -previous
     %%> What it does:
     %%> - keeps the new snapshot and the one before it; removes older ones
+    SW->>H: Remove host leftovers<br/>after a refresh that passed
+    %%> What it does:
+    %%> - removes images, seed volumes and projects no current path makes
+    %%> - a failure fails no refresh; the result says `host_clean: succeeded`, `failed` or `skipped` (the refresh failed first)
   end
   alt every host refreshed
     SW-->>GW: Host refreshed<br/>terminal event per host

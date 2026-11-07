@@ -56,7 +56,7 @@ sequenceDiagram
   %%> - in the task VM project: every image but the stock source image, the volumes of retired image seeds (`orbit-topology-seed-*`) and the slot-pool baseline (`orbit-baseline-*`)
   %%> - the retired projects the Gateway names (`orbit-baselines`, `orbit-measure-nr`), with what they hold, and the old images of `orbit-proto`
   %%> - only where the project keeps its own images and volumes; a project that cannot be emptied is reported after the others had their turn
-  %%> - a failure here fails no refresh: the next refresh removes what is left
+  %%> - a failure here fails no refresh: the next refresh removes what is left, and the Operation's result says `host_clean: failed`
   alt the run passes
     SW-->>GW: Run succeeded<br/>new snapshot
     Note over GW: Promote<br/>record the new snapshot
