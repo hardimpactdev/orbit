@@ -41,6 +41,13 @@ use Throwable;
  */
 final readonly class ProofRunIntent
 {
+    /** How long a proof that cannot be placed waits for kept VMs to be released: the last try then starts before 220 s and may wait 60 s for the admission lock, still under the 300 s after which the watch ends a proof with no runs. */
+    public const int KeptWaitSeconds = 200;
+
+    public const int KeptRetrySeconds = 20;
+
+    public const string KeptWaitStep = 'Wait for kept VMs to be released';
+
     public function __construct(private ProofCommitTrust $trust, private ProofCommitSource $source, private ProofSettings $settings,
         private OperationIdempotency $idempotency, private OperationStore $store, private ProofGroup $groups) {}
 
@@ -122,17 +129,47 @@ final readonly class ProofRunIntent
                 }
 
                 // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs]]);
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs], 'current_step' => null]);
 
                 return $runs;
             }), ProofRunWatch::lockOwner($proof->id));
         } catch (Throwable $exception) {
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForKeptVms($proof, $reportOnly)) {
+                return;
+            }
             $this->fail($proof, $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
                 $exception instanceof ResourceOperationException ? $exception->getMessage() : 'The Gateway could not admit the proof.', $uncovered);
             if (! $exception instanceof ResourceOperationException) {
                 report($exception);
             }
         }
+    }
+
+    /**
+     * A proof that cannot be placed releases the VMs that failed runs kept (`--keep-failed`), and tries again in a few seconds. A report-only
+     * proof does not: it yields capacity, and the report-only job of every pull request would destroy the VM somebody is reading.
+     *
+     * @return bool whether the admission goes on: a kept VM is on its way out, the proof is young enough to wait, and the new try is queued
+     */
+    private function waitForKeptVms(Operation $proof, bool $reportOnly): bool
+    {
+        if ($reportOnly || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::KeptWaitSeconds))) {
+            return false;
+        }
+        try {
+            // A proof that was cancelled while the job ran is left alone, and nothing is released for it.
+            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() === 0) {
+                return false;
+            }
+            $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::KeptWaitStep]));
+            app(Dispatcher::class)->dispatch((new AdmitProofRun($proof->id))->delay(self::KeptRetrySeconds));
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

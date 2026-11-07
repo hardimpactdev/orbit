@@ -15,13 +15,16 @@ use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
+use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Jobs\Proof\AdmitProofRun;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -473,6 +476,166 @@ function proofRunInput(array $proofInput): array
         ['node_id' => $guest->id, 'execution_secrets' => []], $group, $instance);
 }
 
+/** A host that cannot place the proof: with no VM settings every command is refused for capacity. */
+function proofWorldWithoutCapacity(): void
+{
+    config(['proof.execution' => true]);
+    app(TaskExtensionState::class)->enable();
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+    config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+    $source = proofSource();
+    $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
+    proofWorld($source);
+}
+
+/**
+ * A failed run of an earlier proof that kept its VM (`--keep-failed`): its group is still running.
+ *
+ * @return array{0: Operation, 1: Task}
+ */
+function proofKeptRun(string $command = 'firewall:allow'): array
+{
+    $node = Node::query()->firstOrFail();
+    $earlier = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Failed,
+        'input' => ['commit' => str_repeat('b', 40), 'runs' => []], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
+    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
+    $run = Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id, 'status' => OperationStatus::Failed,
+        'error_code' => 'proof.cases_failed', 'input' => ['proof_operation_id' => $earlier->id, 'group_id' => $group->id, 'keep_failed' => true], 'state' => [], 'sequence' => 1, 'attempts' => 0,
+        'result' => ['kept' => ['vm' => 'tvm-849', 'group_id' => $group->id, 'keep_until' => now()->addMinutes(30)->utc()->format('Y-m-d\TH:i:s\Z'), 'cancel_requested_at' => null]]]);
+
+    return [$run, $group];
+}
+
+describe('a proof that cannot be placed while failed runs keep their VMs', function (): void {
+    it('releases the kept VMs and waits, visibly, for the room instead of failing', function (): void {
+        proofWorldWithoutCapacity();
+        [$kept] = proofKeptRun();
+        [$other] = proofKeptRun('firewall:list');
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::KeptWaitStep)
+            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()->and($other->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()
+            ->and(Operation::query()->where('kind', 'proof.command')->where('input->proof_operation_id', $proof->id)->count())->toBe(0);
+        Queue::assertPushed(CancelProofGroup::class, 2);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id && $job->trigger === 'proof-run');
+        // The first job and one that tries again in a few seconds.
+        Queue::assertPushed(AdmitProofRun::class, 2);
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::KeptRetrySeconds);
+    });
+
+    it('waits on while the VMs are on their way out, and asks for no second cancel', function (): void {
+        proofWorldWithoutCapacity();
+        proofKeptRun();
+        $proof = proofAdmitted();
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull();
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(AdmitProofRun::class, 3);
+    });
+
+    it('fails with the capacity code when the kept VMs are gone and the room is still short', function (): void {
+        proofWorldWithoutCapacity();
+        [, $group] = proofKeptRun();
+        $proof = proofAdmitted();
+        $group->update(['status' => TaskGroupStatus::Cancelled]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+    });
+
+    it('stops waiting after the time that the watch of a proof with no runs allows', function (): void {
+        proofWorldWithoutCapacity();
+        proofKeptRun();
+        $proof = proofAdmitted();
+        $this->travel(ProofRunIntent::KeptWaitSeconds + 1)->seconds();
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and(ProofRunIntent::KeptWaitSeconds + ProofRunIntent::KeptRetrySeconds + 60)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
+    });
+
+    it('fails as before when no VM is kept', function (): void {
+        proofWorldWithoutCapacity();
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->current_step)->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('does not release a kept VM for a report-only proof, which yields capacity', function (): void {
+        proofWorldWithoutCapacity();
+        [$kept] = proofKeptRun();
+
+        $proof = proofAdmitted(reportOnly: true);
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('leaves a proof that was cancelled while it waited cancelled, and releases nothing for it', function (): void {
+        Queue::fake();
+        proofWorldWithoutCapacity();
+        [$kept] = proofKeptRun();
+        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
+        $proof->update(['status' => OperationStatus::Cancelled]);
+
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('does not hold the other kept VMs back when one of them cannot be released', function (): void {
+        proofWorldWithoutCapacity();
+        [$broken] = proofKeptRun();
+        [$fine] = proofKeptRun('firewall:list');
+        $armed = true;
+        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
+            if ($armed && $operation->id === $broken->id) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        try {
+            $proof = proofAdmitted();
+        } finally {
+            $armed = false;
+        }
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull();
+        Queue::assertPushed(CancelProofGroup::class, 1);
+    });
+
+    it('does not ask for a keep that is more than a day past its time', function (): void {
+        proofWorldWithoutCapacity();
+        [$old] = proofKeptRun();
+        $old->update(['result' => ['kept' => [...$old->result['kept'], 'keep_until' => now()->subDays(2)->utc()->format('Y-m-d\TH:i:s\Z')]]]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+    it('releases only the runs that kept a VM, never another running group of the same command', function (): void {
+        proofWorldWithoutCapacity();
+        [$kept] = proofKeptRun();
+        [$stranger] = proofKeptRun();
+        // A running run of another proof, with no record of a kept VM: its group is not this rule's.
+        $stranger->update(['result' => ['cases' => []]]);
+
+        proofAdmitted();
+
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id);
+    });
+});
 describe('the intent of a run', function (): void {
     it('carries the head and the merge base, which the proof of a new case switches the checkout to', function (): void {
         $input = proofRunInput([]);

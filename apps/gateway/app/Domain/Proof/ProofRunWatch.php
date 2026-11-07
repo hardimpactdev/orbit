@@ -14,7 +14,6 @@ use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -41,13 +40,10 @@ final readonly class ProofRunWatch
     /** The format of the times in the record of a kept VM; it sorts as text. */
     public const string Time = 'Y-m-d\TH:i:s\Z';
 
-    /** A cancel of an expired kept VM that has not ended is asked for again after this many minutes. */
-    public const int KeptRetryMinutes = 5;
-
     /** A keep that is still open this many hours after its time is no longer asked to cancel. */
     public const int KeptGiveUpHours = 24;
 
-    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofGroup $groups) {}
+    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofKeptVms $kept) {}
 
     /** The owner of the admission lock while this proof is admitted, so the lock ends with the proof. */
     public static function lockOwner(int $proofId): string
@@ -95,30 +91,12 @@ final readonly class ProofRunWatch
             ->whereBetween('result->kept->keep_until', [now()->utc()->subHours(self::KeptGiveUpHours)->format(self::Time), now()->utc()->format(self::Time)])->pluck('id');
         foreach ($due as $id) {
             try {
-                DB::transaction(fn () => $this->askForCancel(ValidatedData::integer($id)));
+                $this->kept->release(ValidatedData::integer($id));
             } catch (Throwable $exception) {
                 // One run that cannot be cancelled must not hold the others.
                 report($exception);
             }
         }
-    }
-
-    private function askForCancel(int $id): void
-    {
-        $run = Operation::query()->lockForUpdate()->find($id);
-        $kept = $run instanceof Operation && is_array($run->result['kept'] ?? null) ? $run->result['kept'] : null;
-        if (! $run instanceof Operation || $kept === null || ! $this->groups->needsCancel($run)) {
-            return;
-        }
-        $asked = $kept['cancel_requested_at'] ?? null;
-        if (is_string($asked)) {
-            if ($asked > now()->utc()->subMinutes(self::KeptRetryMinutes)->format(self::Time)) {
-                return;
-            }
-            Log::warning('A kept proof VM is still there after its cancel was asked for.', ['operation_id' => $run->id, 'group_id' => $kept['group_id'] ?? null, 'asked_at' => $asked]);
-        }
-        $this->store->change($run, ['result' => [...ValidatedData::object($run->result), 'kept' => [...$kept, 'cancel_requested_at' => now()->utc()->format(self::Time)]]]);
-        DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
     }
 
     private function needsAction(int $id): bool
