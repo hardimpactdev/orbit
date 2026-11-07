@@ -113,7 +113,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null,
                 'provider_bootstrap' => null, 'worker_stop_required' => false,
-                'error_code' => null, 'error_message' => null, ...$vm::ForgetTopology]);
+                'error_code' => null, 'error_message' => null]);
         });
     }
 }

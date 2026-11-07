@@ -14,7 +14,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
 | `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables), of type `file`, `command`, or `review`. Only a command deliverable may set `fails_on_base` to `true` or `false` and supply `paths`. When `fails_on_base` is `true`, `paths` must list at least one workspace-relative file for the base run. The CLI refuses these fields on any other type. |
-| `--topology=JSON` | none | JSON array of the test nodes the subtask needs, such as `["app-dev","app-prod+ingress"]`. See [Declare a topology](/reference/compute-drivers#declare-a-topology). |
+| `--topology=JSON` | none | JSON array of the test nodes the subtask needs, such as `["app-dev","app-prod+ingress"]`. The Gateway refuses any nonempty list. See [Declare a topology](/reference/compute-drivers#declare-a-topology). |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json

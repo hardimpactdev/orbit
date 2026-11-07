@@ -21,7 +21,7 @@ This harness composes the per-issue topology of a subtask. It is not the proof o
 
 ## Declared topologies in task VM groups
 
-An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, after the group's baseline check and before the first turn Orbit [prepares](/reference/compute-drivers#prepare-the-topology) for the subtask. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
+A task group on a [task VM](/reference/compute-drivers#task-vms) cannot [declare](/reference/compute-drivers#declare-a-topology) a topology, so Orbit prepares none and reads no evidence. A contributor acquires a topology by hand, as this page describes.
 
 ## Declared Nodes
 
@@ -162,7 +162,7 @@ Nested guests boot about three times slower than on a bare host, so the windows 
 
 ## Run topologies nested in a task VM
 
-A topology runs only inside a task VM that [boots with a clone](/reference/compute-drivers#incus-provider) of its host's topology seed, with nested KVM. Orbit [runs](/reference/compute-drivers#prepare-the-topology) `sudo bin/e2e-topology-host-setup` in a task VM group that declares a topology. The script is idempotent.
+A topology runs only inside a task VM that [boots with a clone](/reference/compute-drivers#incus-provider) of its host's topology seed, with nested KVM. A contributor runs `sudo bin/e2e-topology-host-setup` in the VM before the first `acquire`. The script is idempotent.
 
 | Step | What happens |
 | --- | --- |
@@ -280,7 +280,7 @@ Each line of `evidence.jsonl` is one record, without the output. `argv` is the r
 {"v":1,"start":"2026-09-24T06:40:00.123Z","end":"2026-09-24T06:40:01.357Z","duration_ms":1234,"label":"viewer after crash","node":"app-dev","exit":0,"argv":["orbit","node:list","--json"]}
 ```
 
-The agent owns the machine and can write either file itself. The Gateway's evidence gate is a cooperative check, which the reviewer and the person who reads the approval audit.
+The agent owns the machine and can write either file itself. The records are for the people who read them. The Gateway reads none.
 
 Recording never changes the command's output or exit code. A failed append prints a warning on stderr. The log can hold output that the redactor does not recognize as a secret, so treat it like the rest of `.e2e/`. `bin/worktree-remove` deletes it with the worktree, so copy what you need first.
 

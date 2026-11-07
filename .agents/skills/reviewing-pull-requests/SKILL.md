@@ -17,9 +17,9 @@ Check correctness, regressions, test coverage, architectural decisions, and docu
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
-In an Orbit task, the review prompt names a declared topology and how to record evidence on it. A subtask without a declared topology has none, and agents never acquire or release one.
+A task group cannot declare a topology, and agents never acquire or release one in an Orbit task.
 
-Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. A missing topology does not block task approval of a subtask that declares none. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
+Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. A missing topology does not block task approval. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
 
 ## Report
 

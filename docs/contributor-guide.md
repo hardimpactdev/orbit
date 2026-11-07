@@ -294,7 +294,7 @@ A pull request carries the ADR, the implementation, and the documentation togeth
 
 ### Review reproduces on a topology
 
-Orbit's reviewer reproduces the feature on the [topology](/reference/incus-topologies) that the task group declares, nested in its task VM, and records the evidence. Contributors do not have to run Incus before they submit, because they may not have the environment and Orbit owns the machine review. External contributors and internal automation meet the same review and merge standard.
+Orbit's reviewer judges the change from its tests and its diff. A task group cannot declare a [topology](/reference/incus-topologies), so Orbit prepares none. Contributors do not have to run Incus before they submit, because they may not have the environment. External contributors and internal automation meet the same review and merge standard.
 
 A separate proof run for each candidate is a rejected alternative. That flow kept a proof plan and fixtures beside each branch, captured immutable evidence on a proof topology, kept those machines through review, compared later commits by recorded inputs, and promoted the proof topology into the snapshot at closeout. It doubled the delivery steps and held machines through review. The ownership and cleanup rules of that flow still apply to every topology.
 

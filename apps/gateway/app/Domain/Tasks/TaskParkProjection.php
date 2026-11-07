@@ -49,7 +49,7 @@ final readonly class TaskParkProjection implements DirectOperationProjection
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === OperationStatus::Succeeded) {
-                $vm->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
+                $vm->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null]);
                 $group = Task::topLevel()->findOrFail($operation->target_id);
                 $group->update(['status' => TaskGroupStatus::WaitingForReview, 'settled_at' => $group->settled_at ?? now()]);
             } elseif ($status === OperationStatus::Failed) {

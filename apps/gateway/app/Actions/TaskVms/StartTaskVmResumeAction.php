@@ -34,7 +34,7 @@ final readonly class StartTaskVmResumeAction
             }
             $input = $this->intent->capture($vm);
             $operation = $this->start->execute('task_vm.resume', 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm', null);
-            $vm->update(['stop_confirmed_at' => null, ...TaskVm::ForgetTopology]);
+            $vm->update(['stop_confirmed_at' => null]);
 
             return $operation;
         });

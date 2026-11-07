@@ -297,7 +297,7 @@ bin/web-deploy --switch <release>
 
 ## Run against a topology
 
-Use a disposable topology for web UI development that can change Processes, Schedules, databases, or firewall rules. Do not test those actions on the live fleet. An Orbit task group gets a topology only when a subtask [declares](/reference/compute-drivers#declare-a-topology) one, and Orbit then prepares it nested in the group's task VM. [Incus topologies](/reference/incus-topologies) describes how to acquire one by hand.
+Use a disposable topology for web UI development that can change Processes, Schedules, databases, or firewall rules. Do not test those actions on the live fleet. An Orbit task group cannot [declare](/reference/compute-drivers#declare-a-topology) a topology. [Incus topologies](/reference/incus-topologies) describes how to acquire one by hand.
 
 From the task workspace on beast, run:
 

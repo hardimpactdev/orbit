@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\Tasks\TaskTopology;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\TaskVmTopologyState;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -31,11 +29,6 @@ use Throwable;
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
  * @property TaskVmSize $size
- * @property TaskTopology $topology
- * @property TaskVmTopologyState|null $topology_state
- * @property string|null $topology_run
- * @property Carbon|null $topology_started_at
- * @property string|null $topology_error
  * @property string|null $publish_commit
  * @property string|null $publish_branch
  * @property TaskVmPublishState|null $publish_state
@@ -75,16 +68,10 @@ use Throwable;
  */
 final class TaskVm extends Model
 {
-    /**
-     * The columns that forget the VM's nested topology. Its test machines stop when the VM stops, so a park and a
-     * resume both clear it, and the next subtask with a topology prepares it again.
-     */
-    public const array ForgetTopology = ['topology' => null, 'topology_state' => null, 'topology_run' => null, 'topology_started_at' => null, 'topology_error' => null];
-
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
+        'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'worker_stop_required', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
@@ -106,9 +93,6 @@ final class TaskVm extends Model
             'provider' => TaskVmProviderKind::class,
             'state' => TaskVmState::class,
             'size' => TaskVmSize::class,
-            'topology' => TaskTopology::class,
-            'topology_state' => TaskVmTopologyState::class,
-            'topology_started_at' => 'datetime',
             'publish_state' => TaskVmPublishState::class,
             'publish_queued_at' => 'datetime',
             'publish_started_at' => 'datetime',
