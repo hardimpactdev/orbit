@@ -1,0 +1,17 @@
+---
+# One probe: a TCP connection from a Node to app-dev. A connection that fails within the timeout counts as blocked (ufw drops denied packets).
+- name: "Probe {{ probe.from }} -> app-dev:{{ probe.port }}"
+  ansible.builtin.wait_for:
+    host: "{{ app_dev_ip }}"
+    port: "{{ probe.port | int }}"
+    timeout: 2
+    connect_timeout: 1
+  delegate_to: "{{ probe.from }}"
+  register: reached
+  ignore_errors: true
+
+- name: "Expect {{ probe.expect }}"
+  ansible.builtin.assert:
+    that: (reached is succeeded) == (probe.expect == 'connect')
+    fail_msg: "{{ probe.from }} -> app-dev:{{ probe.port }} expected {{ probe.expect }}"
+    quiet: true
