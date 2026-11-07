@@ -17,10 +17,16 @@ case "$1 $2" in
   "storage list") cat "$FAKE/pools" ;;
   "network list") cat "$FAKE/networks" ;;
   "admin init") cat > "$FAKE/preseed" ;;
-  "list nested-") ;;
+  "storage create") echo "$*" > "$FAKE/created" ;;
   *) echo "unexpected incus call: $*" >&2; exit 1 ;;
 esac
 """
+# The seed disk's file system: blkid prints its type and exits 0, or exits 2 for a blank disk.
+FAKE_BLKID = """#!/bin/sh
+if [ -s "$FAKE/fs" ]; then cat "$FAKE/fs"; exit 0; fi
+exit 2
+"""
+FAKE_TIMEOUT = '#!/bin/sh\nshift\nexec "$@"\n'
 NESTED = {'subnet': '10.232.2.0/24', 'interface': 'nested'}
 
 
@@ -31,22 +37,32 @@ class TaskVmIncusTest(unittest.TestCase):
         self.assertNotIn('Serve the checkout', names)
         self.assertEqual(tools[names.index('Initialise Incus')]['ansible.builtin.import_tasks'], 'task-vm-incus.yml')
 
-    def run_task(self, nested, pools='', networks=''):
+    def run_task(self, nested, pools='', networks='', seed_fs=None, check=True):
+        """Runs the task file; `seed_fs` gives the VM a seed disk: '' blank, or the type of its file system."""
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, True)
         fake = folder / 'bin'
         fake.mkdir()
-        (fake / 'incus').write_text(FAKE_INCUS)
-        (fake / 'incus').chmod(stat.S_IRWXU)
+        for name, text in (('incus', FAKE_INCUS), ('blkid', FAKE_BLKID), ('timeout', FAKE_TIMEOUT)):
+            (fake / name).write_text(text)
+            (fake / name).chmod(stat.S_IRWXU)
         (folder / 'pools').write_text(pools)
         (folder / 'networks').write_text(networks)
+        extra = []
+        if seed_fs is not None:
+            (folder / 'disk').write_text('')
+            (folder / 'fs').write_text(seed_fs)
+            extra = ['-e', f'incus_seed_disk={folder / "disk"}']
         play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': {'intent': {'nested': nested}},
                  'tasks': [{'ansible.builtin.import_tasks': str(ANSIBLE / 'tasks/task-vm-incus.yml')}]}]
         (folder / 'play.yml').write_text(yaml.safe_dump(play))
         environment = {**os.environ, 'PATH': f'{fake}:{os.environ["PATH"]}', 'FAKE': str(folder),
                        'ANSIBLE_HOME': str(folder / 'home'), 'ANSIBLE_LOCAL_TEMP': str(folder / 'tmp')}
-        subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(folder / 'play.yml')],
-                       check=True, capture_output=True, env=environment)
+        done = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', *extra, str(folder / 'play.yml')],
+                              check=check, capture_output=True, text=True, env=environment)
+        if not check:
+            created = folder / 'created'
+            return done, created.read_text() if created.exists() else None
         preseed = folder / 'preseed'
         return yaml.safe_load(preseed.read_text()) if preseed.exists() else None
 
@@ -68,6 +84,26 @@ class TaskVmIncusTest(unittest.TestCase):
         preseed = self.run_task(NESTED, pools='default,dir,,,1,CREATED\n')
         self.assertNotIn('storage_pools', preseed)
         self.assertEqual(preseed['networks'][0]['name'], 'nested')
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
+    def test_a_blank_seed_disk_gets_the_seed_pool(self):
+        done, created = self.run_task(NESTED, pools='default,dir,,,1,CREATED\n', networks='nested,bridge,YES\n', seed_fs='', check=False)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertTrue(created.startswith('storage create topology-seed btrfs source='), created)
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
+    def test_a_seed_disk_with_a_file_system_the_vm_does_not_know_is_refused_and_not_imported(self):
+        done, created = self.run_task(NESTED, pools='default,dir,,,1,CREATED\n', networks='nested,bridge,YES\n', seed_fs='btrfs', check=False)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn('The topology seed disk holds btrfs, but the Incus of this VM knows no pool on it.', done.stdout)
+        self.assertIsNone(created)
+
+    @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
+    def test_a_seed_disk_of_a_known_pool_is_left_alone(self):
+        done, created = self.run_task(NESTED, pools='default,dir,,,1,CREATED\ntopology-seed,btrfs,,,1,CREATED\n',
+                                      networks='nested,bridge,YES\n', seed_fs='btrfs', check=False)
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertIsNone(created)
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_an_image_gets_a_pool_and_no_network(self):

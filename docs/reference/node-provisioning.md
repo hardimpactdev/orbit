@@ -424,7 +424,7 @@ Missing or damaged protected files require their approved recovery procedure and
 
 A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
 
-The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
+The wait for a nested fleet is not a phase of the role: it is the task file `swamp/ansible/tasks/task-vm-nested-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code. The playbook `task-vm-fleet-wait.yml` runs it from Node 209 for the readiness of a fleet, and the `fleet` phase imports it for the waits of its [fleet build](/reference/compute-drivers#build-the-nested-fleet-in-the-converge).
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
@@ -438,9 +438,7 @@ The `tools` phase also initialises Incus once (`tasks/task-vm-incus.yml`): a dir
 
 ### The topology seed pool
 
-A task image made by a refresh VM carries the Incus database of that VM, with stale records of the ready copies. Before any nested guest exists, the phase deletes the database rows of the seed pool (the data on the disk stays), so the recovery reads the disk and the VM sees the copies as they are saved.
-
-A task VM that has the topology seed disk also recovers the pool on it (`topology-seed`, btrfs) with `incus admin recover`, so the ready copies it holds show in the VM. The phase first deletes the other instances of the seed disk, which is a clone of the VM, and bounds every command with `timeout`. The provision of a task with a topology runs this converge before the nested fleet starts; a VM at the pins reports no change.
+A base VM makes the pool `topology-seed` (btrfs) once, on its blank seed disk. Its Incus database keeps the pool, and a task VM copied from the base has it from the database it copied. The phase refuses a seed disk with a file system that the Incus of the VM does not know: it imports no seed. The `fleet` phase builds the nested fleet on that pool ([compute drivers](/reference/compute-drivers#build-the-nested-fleet-in-the-converge)).
 
 A task VM with a nested subnet also opens its firewall to the nested bridge (`tasks/task-vm-nested-firewall.yml`): DHCP and DNS in, and routing out, so the nested containers get an address and reach the internet. Nothing else is opened.
 

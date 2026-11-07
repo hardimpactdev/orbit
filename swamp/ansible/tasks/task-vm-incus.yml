@@ -1,7 +1,7 @@
 ---
 # Incus on a task VM, initialised once: a directory storage pool, the default profile's root disk and, on a task VM, the nested
 # network. intent.nested names the nested subnet and the bridge; it is null on an image, which gets the pool and
-# the root disk only, because the subnet belongs to a task VM. The nested containers are launched by Swamp steps into this network.
+# the root disk only, because the subnet belongs to a task VM. The fleet phase builds the nested containers into this network.
 - name: Read the Incus storage pools
   ansible.builtin.command: { argv: [incus, storage, list, --format, csv] }
   register: incus_pools
@@ -40,95 +40,28 @@
       {{ ({'storage_pools': pool, 'profiles': root_disk} if incus_pool_missing | bool else {})
          | combine({'networks': network} if incus_network_missing | bool else {}) }}
   changed_when: true
-# The topology seed disk of a task VM holds the ready copies of the nested fleet (system containers) as Incus volumes on a btrfs file system. Incus does not
-# know the pool in a fresh VM, so this attaches it, and every command is bounded well under the phase.
-# - A blank disk gets the pool with `incus storage create`. Incus refuses to format a disk that holds a file system, so that path
-#   never overwrites a seed.
-# - A disk with a btrfs file system is mounted first and tidied. Only the VM `node-template` and the three `fleet-ready-*` container
-#   copies are self-contained. Any other instance of an old seed (an earlier nested fleet, an operator VM of an old proof) names networks that this
-#   VM lacks, and `incus admin recover` then waits for the networks forever. The seed disk is a clone that belongs to this VM, so
-#   those instances go before `incus admin recover` reads the pool: recover a pool named topology-seed on btrfs from the disk, no
-#   further property, no further pool, scan, recover what it found.
+# The topology seed disk of a task VM holds the nested fleet (system containers) as Incus volumes on a btrfs file system, in the pool
+# `topology-seed`. The base VM makes the pool once, on its blank seed volume, and keeps it in its Incus database; a task VM copied from the
+# base has the pool in the database it copied, with a clone of the seed. `incus storage create` refuses to format a disk that holds a file
+# system, so this never overwrites a seed. A disk with a file system that the database of this VM does not know is refused.
 - name: Look for the topology seed disk
   when: intent.nested is not none
   ansible.builtin.stat: { path: "{{ incus_seed_disk }}" }
   register: incus_seed
-# A task image made from a refresh VM carries that VM's Incus database: the pool topology-seed and the records of the ready copies it held
-# then. Incus trusts those records over the seed disk of this VM, so a new copy set on the disk would stay unseen (the old keys and no
-# `user.ready.format`). Before a nested guest exists, the records of the seed pool are forgotten; the recovery below reads the disk again.
-# The data stays on the disk: only database rows go.
-- name: Look for nested guests
-  when: intent.nested is not none
-  ansible.builtin.command: { argv: [incus, list, "nested-", --format, csv, --columns, n] }
-  register: incus_nested
-  changed_when: false
-- name: Forget the stale records of the topology seed pool
-  when: >-
-    intent.nested is not none and incus_seed.stat.exists and (incus_nested.stdout_lines | length == 0)
-    and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length > 0)
-  ansible.builtin.command: { argv: [incus, admin, sql, global, "{{ item }}"] }
-  loop:
-    - "delete from instances where name like 'fleet-ready-%' or name = 'node-template'"
-    - "delete from storage_pools where name = 'topology-seed'"
-  changed_when: true
-- name: Read the Incus storage pools again
-  ansible.builtin.command: { argv: [incus, storage, list, --format, csv] }
-  register: incus_pools_now
-  changed_when: false
 - name: Work out whether the topology seed pool is missing
   ansible.builtin.set_fact:
     incus_seed_attach: >-
-      {{ intent.nested is not none and incus_seed.stat.exists and (incus_pools_now.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
-    incus_seed_mount: /run/orbit-seed-tidy
-    # The VM template and the container copies of the fleet; the folders of their snapshots stay, the snapshots go.
-    incus_seed_keep: '^(virtual-machines/node-template|containers/fleet-ready-(gateway|app-dev|app-prod))$'
-    incus_seed_keep_snapshots: '^(virtual-machines-snapshots/node-template|containers-snapshots/fleet-ready-(gateway|app-dev|app-prod))$'
+      {{ intent.nested is not none and incus_seed.stat.exists and (incus_pools.stdout_lines | select('match', '^topology-seed,') | list | length == 0) }}
 - name: Read the file system of the topology seed disk
   when: incus_seed_attach | bool
   ansible.builtin.command: { argv: [timeout, "30", blkid, --output, value, --match-tag, TYPE, "{{ incus_seed_disk }}"] }
   register: incus_seed_fs
   changed_when: false
   failed_when: incus_seed_fs.rc not in [0, 2]
-- name: Refuse a topology seed disk with another file system
-  when: (incus_seed_attach | bool) and incus_seed_fs.rc == 0 and incus_seed_fs.stdout != 'btrfs'
-  ansible.builtin.fail: { msg: "The topology seed disk holds {{ incus_seed_fs.stdout }}, not btrfs." }
+- name: Refuse a topology seed disk that holds an unknown file system
+  when: (incus_seed_attach | bool) and incus_seed_fs.rc == 0
+  ansible.builtin.fail: { msg: "The topology seed disk holds {{ incus_seed_fs.stdout }}, but the Incus of this VM knows no pool on it." }
 - name: Create the topology seed pool on a blank disk
   when: (incus_seed_attach | bool) and incus_seed_fs.rc == 2
   ansible.builtin.command: { argv: [timeout, "120", incus, storage, create, topology-seed, btrfs, "source={{ incus_seed_disk }}"] }
-  changed_when: true
-- name: Tidy and recover the topology seed pool
-  when: (incus_seed_attach | bool) and incus_seed_fs.rc == 0
-  block:
-    - name: Create the folder to mount the topology seed
-      ansible.builtin.file: { path: "{{ incus_seed_mount }}", state: directory, mode: "0700" }
-    - name: Mount the topology seed
-      ansible.builtin.command: { argv: [timeout, "60", mount, -t, btrfs, "{{ incus_seed_disk }}", "{{ incus_seed_mount }}"] }
-      changed_when: true
-    - name: List the subvolumes of the topology seed
-      ansible.builtin.command: { argv: [timeout, "60", btrfs, subvolume, list, "{{ incus_seed_mount }}"] }
-      register: incus_seed_subvolumes
-      changed_when: false
-    - name: Delete the instances that are not ready copies
-      ansible.builtin.command: { argv: [timeout, "120", btrfs, subvolume, delete, "{{ incus_seed_mount }}/{{ item }}"] }
-      loop: >-
-        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path ', '') | select('match', '^(virtual-machines|containers)(-snapshots)?/')
-           | reject('match', incus_seed_keep) | list }}
-      changed_when: true
-    - name: Delete the folders of the snapshots they had
-      ansible.builtin.file: { path: "{{ incus_seed_mount }}/{{ item }}", state: absent }
-      loop: >-
-        {{ incus_seed_subvolumes.stdout_lines | map('regex_replace', '^.* path ((virtual-machines|containers)-snapshots/[^/]+)/.*$', '\1')
-           | select('match', '^(virtual-machines|containers)-snapshots/[^ /]+$') | reject('match', incus_seed_keep_snapshots) | unique | list }}
-  always:
-    - name: Unmount the topology seed
-      ansible.builtin.command: { argv: [timeout, "60", umount, "{{ incus_seed_mount }}"] }
-      register: incus_seed_unmount
-      changed_when: incus_seed_unmount.rc == 0
-      # 32 is a disk that was not mounted, such as when the mount itself failed.
-      failed_when: incus_seed_unmount.rc not in [0, 32]
-- name: Recover the topology seed pool
-  when: (incus_seed_attach | bool) and incus_seed_fs.rc == 0
-  ansible.builtin.command: { argv: [timeout, "120", incus, admin, recover] }
-  args:
-    stdin: "yes\ntopology-seed\nbtrfs\n{{ incus_seed_disk }}\n\nno\nyes\nyes\n"
   changed_when: true

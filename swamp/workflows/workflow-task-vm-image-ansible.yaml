@@ -128,7 +128,8 @@ jobs:
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
         ignoreExitCode: true
-        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-role.yml"
+        # The bound covers a whole base from stock, the nested fleet included (about 30 min of it).
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 5400 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-role.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
@@ -153,7 +154,7 @@ jobs:
       type: assert
       expr: 'steps["Run the Ansible phases"].outputs.exitCode == 0'
       severity: high
-      message: '${{ steps["Run the Ansible phases"].outputs.exitCode == 124 ? "Run the Ansible phases timed out after 3300s" : "Ansible exited with " + string(steps["Run the Ansible phases"].outputs.exitCode) + ": " + (size(steps["Run the Ansible phases"].outputs.stderr) > 3500 ? steps["Run the Ansible phases"].outputs.stderr.substring(size(steps["Run the Ansible phases"].outputs.stderr) - 3500) : steps["Run the Ansible phases"].outputs.stderr) }}'
+      message: '${{ steps["Run the Ansible phases"].outputs.exitCode == 124 ? "Run the Ansible phases timed out after 5400s" : "Ansible exited with " + string(steps["Run the Ansible phases"].outputs.exitCode) + ": " + (size(steps["Run the Ansible phases"].outputs.stderr) > 3500 ? steps["Run the Ansible phases"].outputs.stderr.substring(size(steps["Run the Ansible phases"].outputs.stderr) - 3500) : steps["Run the Ansible phases"].outputs.stderr) }}'
 - name: cleanup
   labels: {role: swamp}
   dependsOn:

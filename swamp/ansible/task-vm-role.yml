@@ -11,7 +11,8 @@
   vars:
     recipe: "{{ intent.recipe }}"
     profile: "{{ intent.profile | default('base') }}"
-    # The proof Swamp Club key: a slot's enrol writes it here on its root disk; the nested Gateway reads it through a disk device.
+    # The proof Swamp Club key: the refresh writes it here on the base VM (task-vm-host.yml); the nested Gateway reads it through a disk
+    # device, and the fleet build's local bootstrap run reads it.
     fleet_club_key: /etc/orbit/swamp-club-api-key
     orbit_user: orbit
     orbit_home: "/home/orbit"
@@ -88,7 +89,8 @@
       tags: [check]
       when: converge_due.check
 
-# The converge waits for no nested service: readiness belongs to a task start (docs/cli/tasks/provision.mmd).
+# The converge waits for no nested service, except the fleet build of a base VM that has no fleet: readiness belongs to a task start
+# (docs/cli/tasks/provision.mmd).
 - name: Task VM image
   hosts: task_vm
   become: true

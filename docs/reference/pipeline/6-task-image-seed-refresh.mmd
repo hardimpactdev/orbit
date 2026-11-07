@@ -33,6 +33,7 @@ sequenceDiagram
     %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed
     %%> - the warm checkout: main at the release commit, installs only where a lock file changed
     %%> - each container: migrations and restarts only when the code changed; no wait for nested services and no identity wipe
+    %%> - a base VM without a nested fleet builds it once, in the same converge: the containers from stock Ubuntu, the nested Gateway from one local `gateway-bootstrap` run, app-dev and app-prod through its own Orbit, and a Doctor wait; a base VM with its fleet skips the build
     SW->>H: Stop and snapshot<br/>VM and seed
     %%> What it does:
     %%> - stops the base VM and snapshots it and its seed volume; ZFS snapshots, about 1 s
@@ -48,6 +49,7 @@ sequenceDiagram
     Note over GW: Promote the snapshot<br/>task starts copy it
     %%> Result:
     %%> - target about 25 s per host for a no-op refresh before the proof; one slow host does not hold the others
+    %%> - the first refresh of a new host builds the whole base, its nested fleet included (about 30 min of it)
   else a refresh failed
     SW--xGW: Host not refreshed<br/>failed step
     Note over GW: Alert · try again<br/>next trigger

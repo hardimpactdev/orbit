@@ -55,12 +55,13 @@ final readonly class TaskVmConvergeInput
         $identity = $this->ssh->identity();
         $target = $guest === null ? ['host' => '', 'user' => 'orbit', 'port' => 22, 'host_keys' => []]
             : array_intersect_key($this->ssh->forNode($guest)['target'], array_flip(['host', 'user', 'port', 'host_keys']));
+        $checkout = $this->checkout($commit, $branch);
 
         return ['recipe_identity' => $recipe->identity, 'converge' => [
             'project' => $location->project, 'jump' => $this->ssh->forNode($host),
             'ssh' => ['identity_file' => $identity['identity_file'], 'target' => $target], ...$guest === null ? [] : ['direct' => true],
             'profile' => 'base', 'image' => true,
-            'nested' => ['subnet' => TaskVmReadyCopiesIntent::Subnet, 'interface' => TaskVmReadyCopiesIntent::Network],
+            'nested' => ['subnet' => TaskVmNestedFleet::Subnet, 'interface' => TaskVmNestedFleet::Network],
             'recipe' => json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR),
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']),
             'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->ssh->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
@@ -70,10 +71,22 @@ final readonly class TaskVmConvergeInput
                 'trust' => ['certificate' => $this->certificates->rootCertificate(),
                     'control_ip' => ValidatedData::string(Node::query()->findOrFail($identity['control_node_id'])->wireguard_ip),
                     'gateway_ip' => ValidatedData::string($gateway->wireguard_ip), 'pi_port' => $this->pi->port()]],
-            'checkout' => $this->checkout($commit, $branch),
-            // The outer VM joins the nested WireGuard network as its operator; the hub is the nested Gateway.
-            'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24']],
+            'checkout' => $checkout,
+            'fleet' => $this->fleet(ValidatedData::string($checkout['path'])),
         ]];
+    }
+
+    /**
+     * The nested fleet: what a base VM without one builds it from (swamp/ansible/tasks/task-vm-fleet-build.yml), and the operator end that
+     * every converge joins. The outer VM joins the fleet's WireGuard network as its operator; the hub is the nested Gateway.
+     *
+     * @return array<string,mixed>
+     */
+    private function fleet(string $checkout): array
+    {
+        return ['guests' => TaskVmNestedFleet::Guests, 'network' => TaskVmNestedFleet::Network, 'operator' => TaskVmNestedFleet::operator(),
+            'layout' => TaskVmNestedFleet::Layout, 'proof_network' => TaskVmNestedFleet::Subnet, 'checkout' => TaskVmNestedFleet::checkout(),
+            'bootstrap' => TaskVmNestedFleet::bootstrap($this->delivery, $checkout)];
     }
 
     /** The commit that the Gateway runs: a refreshed image holds the playbooks and pins of the release it serves. */

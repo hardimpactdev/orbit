@@ -1,0 +1,108 @@
+---
+# One wait for the nested fleet of a task VM, from the VM: the nested Gateway ends one of its Operations (`wait_kind: operation`,
+# `wait_operation`), or its Doctor is healthy (`wait_kind: doctor`), at its address in the layout of the fleet. The playbook
+# task-vm-fleet-wait.yml runs it from Node 209 for the readiness of a fleet; the fleet build of the converge imports it for each of its
+# waits (task-vm-fleet-build.yml).
+# Each check is one `incus exec` into the nested Gateway, every `wait_delay` seconds (5 by default), with the tool's own `until` and
+# `retries`. `wait_seconds` is the time of the delays. The checks take their own time on top, so a caller bounds the run at twice that.
+# A check that finds the Gateway guest not running ends the wait at once, and the task after it names the nested containers that are not running.
+# Doctor passes only on the fleet's own `healthy`, which opens the answer: each Node in it carries one too (op 11756).
+- name: Wait for the nested fleet
+  vars:
+    wait_gateway: "{{ intent.fleet.guests.gateway }}"
+    wait_every: "{{ wait_delay | default(5) }}"
+    wait_checks: "{{ ((wait_seconds | int) / (wait_every | int)) | round(0, 'ceil') | int }}"
+    wait_ended: [succeeded, failed, cancelled, interrupted]
+    wait_running: "{{ nested_vms.stdout_lines | default([]) | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list }}"
+    wait_not_running: "{{ intent.fleet.guests.values() | list | difference(wait_running) }}"
+    wait_why: "{{ nested_why.stdout | default('') | trim }}"
+  block:
+    - name: Wait for the Operation of the nested Gateway to end
+      when: wait_kind == 'operation'
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - "30"
+          - incus
+          - exec
+          - "{{ wait_gateway }}"
+          - "--"
+          - sqlite3
+          - /home/orbit/.orbit/gateway.sqlite
+          - "select status from operations where id = {{ wait_operation | int }}"
+      register: nested_operation
+      changed_when: false
+      failed_when: false
+      until: nested_operation.stdout | trim in wait_ended or 'Instance is not running' in nested_operation.stderr
+      retries: "{{ wait_checks }}"
+      delay: "{{ wait_every }}"
+    - name: Wait for Doctor of the nested Gateway
+      when: wait_kind == 'doctor'
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - "120"
+          - incus
+          - exec
+          - "{{ wait_gateway }}"
+          - "--"
+          - curl
+          - -sk
+          - -m
+          - "100"
+          - -X
+          - POST
+          - "https://{{ intent.fleet.layout.gateway.wireguard }}/api/v1/doctor"
+          - -H
+          - "Host: gateway.orbit"
+          - -H
+          - "Accept: application/json"
+          - -H
+          - "Content-Type: application/json"
+          - -d
+          - "{}"
+      register: nested_doctor
+      changed_when: false
+      failed_when: false
+      until: nested_doctor.stdout is match('\{"data":\{"healthy":true') or 'Instance is not running' in nested_doctor.stderr
+      retries: "{{ wait_checks }}"
+      delay: "{{ wait_every }}"
+    - name: Read why the Operation did not succeed
+      when: wait_kind == 'operation' and nested_operation.stdout | trim in wait_ended and nested_operation.stdout | trim != 'succeeded'
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - "30"
+          - incus
+          - exec
+          - "{{ wait_gateway }}"
+          - "--"
+          - sqlite3
+          - /home/orbit/.orbit/gateway.sqlite
+          - >-
+            select coalesce('at ' || failed_step || ' ', '') || coalesce('code ' || error_code, '')
+            from operations where id = {{ wait_operation | int }}
+      register: nested_why
+      changed_when: false
+      failed_when: false
+    - name: Read the state of the nested containers
+      ansible.builtin.command:
+        argv: [incus, list, --format, csv, --columns, ns]
+      register: nested_vms
+      changed_when: false
+    - name: Check that every nested container is running
+      ansible.builtin.assert:
+        that: wait_not_running | length == 0
+        fail_msg: "A nested container is not running: {{ wait_not_running | join(', ') }}"
+    - name: Check that the Operation succeeded
+      when: wait_kind == 'operation'
+      ansible.builtin.assert:
+        that: nested_operation.stdout | trim == 'succeeded'
+        fail_msg: >-
+          The Operation {{ wait_operation }} of the nested Gateway ended
+          {{ nested_operation.stdout | trim | default('with no status', true) }}{{ ' ' + wait_why if wait_why else '' }}
+    - name: Check that Doctor is healthy
+      when: wait_kind == 'doctor'
+      ansible.builtin.assert:
+        that: nested_doctor.stdout is match('\{"data":\{"healthy":true')
+        fail_msg: "Doctor of the nested Gateway has a finding: {{ nested_doctor.stdout | default('') | truncate(400) }}"

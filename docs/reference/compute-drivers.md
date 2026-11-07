@@ -927,7 +927,9 @@ Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume
 
 Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
-A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server. The converge that follows builds everything else, because no digest is recorded yet. The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
+A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
+
+The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row.
 
@@ -937,7 +939,9 @@ The converge copies the pinned Pi build from the Gateway Node to 209 with offici
 
 #### The topology seed
 
-The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed` with the stopped `node-template` and the nested fleet of the running release. The snapshot of the seed is taken with the snapshot of the VM, and a task start copies both. A medium or large VM mounts its copy as the disk `topology-seed`, so a topology task has its Nodes at once and does not build Orbit again. A task VM that already runs keeps its own clone of the older seed snapshot.
+The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed` with the nested fleet of the running release. The tools phase of the converge makes the pool once, on the blank seed volume. The Incus database of the base VM keeps the pool, and a task VM copies that database with the VM. The phase refuses a seed disk with a file system that the Incus of the VM does not know, because Orbit imports no seed from another VM.
+
+The snapshot of the seed is taken with the snapshot of the VM, and a task start copies both. A medium or large VM mounts its copy as the disk `topology-seed`, so a topology task has its Nodes at once and does not build Orbit again. A task VM that already runs keeps its own clone of the older seed snapshot.
 
 #### Log task VM egress
 
@@ -1032,14 +1036,50 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 |---|---|
 | `Log egress` | Phase `egress-log` of `task-vm-host.yml`, in a job of its own that runs first: sets up the [egress log](#log-task-vm-egress) of the host bridge. |
 | `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
-| `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It waits for no nested Gateway and wipes no identity. |
+| `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It wipes no identity. It builds a missing nested fleet. |
 | `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
 | `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free slot, then its release. |
 | `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
 
 A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
 
-The proof task start needs one free slot of the host. The refresh VM of the old design, its group in the proof Project, the nested-fleet build and the ready copies are not part of this run. The kinds `task_vm.fleet_build` and `task_vm.ready_copies` stay as kinds of their own.
+The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. It waits for the nested Gateway only while it builds the fleet.
+
+The proof task start needs one free slot of the host. The refresh VM of the old design, its group in the proof Project, the kind `task_vm.fleet_build` and the ready copies are not part of this run. The kinds `task_vm.fleet_build`, `task_vm.ready_copies` and `task_vm.converge` stay until a live refresh of an empty host and its task start prove the fleet build of the converge ([old paths](/reference/old-paths)).
+
+##### Build the nested fleet in the converge
+
+The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml`) reads the containers of the VM first. A fleet is complete when its three containers exist and the operator stamp is recorded. The operator join writes that stamp as its last task, after the build, and every promoted base has it.
+
+The phase builds the fleet (`task-vm-fleet-build.yml`) only when it is not complete. That is a base VM that never held a fleet, or one whose build stopped half way, also after all three containers existed. A converge on a complete fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
+
+The values come from the converge intent of the Gateway, `TaskVmConvergeInput`, which takes them from `TaskVmNestedFleet`:
+
+- the names of the containers and of the network;
+- the address, MAC, memory and TLD of each container;
+- the operator end and the subnet that a proof admits;
+- the mount units of the state;
+- the part of the `gateway-bootstrap` input that the Gateway knows.
+
+That part names the package cache of the VM, the address of the nested Gateway, the operator and the agent delivery. The nested network `oe-nested` and the pool `topology-seed` come from the tools phase, which runs on a new base VM because no digest is recorded. The build runs the steps of the former `task_vm.fleet_build`, each as one Ansible task with its own `timeout`. First it makes the containers:
+
+1. It removes the operator stamp and every container of a half-made fleet, so a build that stops leaves the fleet incomplete and the next one builds it whole.
+2. It makes a missing operator SSH key on the VM. It forgets an earlier Gateway host key.
+3. It creates the three system containers one at a time from `images:ubuntu/resolute/cloud`.
+4. Each container has nesting, a memory limit, a start with the VM, and the address and MAC of the layout.
+5. Cloud-init makes the `orbit` account with the operator key. The build turns cloud-init off after the first boot.
+
+Then it makes the nested Gateway and its Nodes:
+
+1. It attaches the proof Swamp Club key of the base VM to the Gateway container.
+2. It runs `gateway-bootstrap` once with a local `swamp workflow run`. The run adds the Swamp pin, the pinned host key and the release.
+3. Through its own Orbit, the nested Gateway converges its Node and its `gateway` and `websocket` roles. It then adds app-dev and app-prod.
+4. Each of those is an Operation of the nested Gateway. `task-vm-nested-wait.yml` waits for its end.
+5. Each container admits the proof subnet. The Gateway moves its state off its own checkout.
+6. The checkout of the VM becomes the disk device `checkout` of the Gateway and app-dev, and the state is mounted over it.
+7. It waits until Doctor of the nested Gateway is healthy.
+
+The rest of the phase then runs as on any converge: the operator join, the renewal of the Swamp tokens and the code of the commit, each recorded as done. The `base` snapshots of the containers are taken last. The fleet build of `task_vm.fleet_build` took 1,840 s (Operation 11816), so a new host's first refresh takes about 30 minutes more than the build of the outer VM.
 
 ##### Not built
 
@@ -1057,7 +1097,7 @@ A booted guest makes mount point directories there and writes a Laravel log, and
 
 ##### Build the nested fleet
 
-`php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
+The fleet phase of the converge now [builds the fleet](#build-the-nested-fleet-in-the-converge) with these steps; this kind and the ready copies go once a live refresh of an empty host proves it. `php artisan task-vms:build-fleet <VM-ID>` builds the nested fleet of one ready task VM from stock Ubuntu, as the kind `task_vm.fleet_build` (chart `docs/cli/tasks/vm-fleet-build.mmd`). The Gateway captures the whole intent at admission: the SSH identity of the VM, the fixed address and MAC of each nested container, the pinned Swamp release and the agent delivery. No step of the run calls the Gateway.
 
 The workflow `operation-task-vm-fleet-build` runs one command per step over official SSH to the VM. It creates the network `oe-nested`, removes an earlier fleet and forgets its Gateway host key, and makes three system containers from the stock image with cloud-init and the key of the VM. It writes the Swamp key to `api-key` on the Gateway guest, the file the nested Swamp units read, the ready copies delete and a task VM pushes. It runs `gateway-bootstrap` once with a local `swamp workflow run`.
 

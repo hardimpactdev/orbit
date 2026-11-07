@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmFleetBuildIntent;
+use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmReadyCopiesIntent;
 use App\Domain\TaskVms\TaskVmSize;
@@ -96,9 +97,9 @@ it('renders the whole public intent of the fleet build, with the layout of the n
     $input = app(TaskVmFleetBuildIntent::class)->capture($vm);
 
     expect($input)->toMatchArray(['task_vm_id' => $vm->id, 'node_id' => $vm->host_node_id, 'guest_node_id' => $vm->node_id, 'operator_checkout' => '/home/orbit/apps/orbit/workspace'])
-        ->and($input['fleet'])->toMatchArray(['network' => TaskVmReadyCopiesIntent::Network, 'format' => TaskVmReadyCopiesIntent::Format, 'bridge' => '10.232.2.1/24', 'proof_network' => '10.232.2.0/24'])
+        ->and($input['fleet'])->toMatchArray(['network' => TaskVmNestedFleet::Network, 'format' => TaskVmReadyCopiesIntent::Format, 'bridge' => '10.232.2.1/24', 'proof_network' => '10.232.2.0/24'])
         ->and(array_keys($input['fleet']['layout']))->toBe(['gateway', 'app-dev', 'app-prod'])
-        ->and($input['fleet']['guests'])->toBe(TaskVmReadyCopiesIntent::Guests)
+        ->and($input['fleet']['guests'])->toBe(TaskVmNestedFleet::Guests)
         ->and($input['execution_secrets']['proof_club'])->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key'])
         ->and(json_encode($input))->not->toContain('proof-club-key');
     $members = json_decode('{'.$input['bootstrap']['fragment'].'}', true, flags: JSON_THROW_ON_ERROR);
@@ -112,7 +113,7 @@ it('renders the whole public intent of the fleet build, with the layout of the n
 });
 
 it('gives every nested VM an address inside the subnet of the nested network and a MAC of its own', function (): void {
-    $layout = TaskVmFleetBuildIntent::Layout;
+    $layout = TaskVmNestedFleet::Layout;
 
     expect(array_unique(array_column($layout, 'address')))->toHaveCount(3)
         ->and(array_unique(array_column($layout, 'hwaddr')))->toHaveCount(3)
@@ -135,7 +136,7 @@ it('renders the intent of a VM that is still being provisioned, for the refresh 
 
 it('refuses a VM that is not large, because the nested VMs hold more memory than a medium VM has', function (): void {
     $memory = static fn (string $gib): int => (int) $gib;
-    $nested = array_sum(array_map(static fn (array $node): int => $memory($node['memory']), TaskVmFleetBuildIntent::Layout));
+    $nested = array_sum(array_map(static fn (array $node): int => $memory($node['memory']), TaskVmNestedFleet::Layout));
     expect($memory(TaskVmSize::Large->resources()->memory))->toBeGreaterThan($nested)
         ->and($memory(TaskVmSize::Medium->resources()->memory))->toBeLessThanOrEqual($nested);
     app()->instance(WebSocketClient::class, fleetBuildVault());
