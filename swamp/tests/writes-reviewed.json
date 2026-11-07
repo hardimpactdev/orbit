@@ -1,0 +1,813 @@
+{
+ "maxUnreviewed": 303,
+ "steps": {
+  "cluster-router-prepare": {
+   "account_command": "read-only",
+   "account_group": "read-only",
+   "packages_release": "read-only"
+  },
+  "cluster-router-probe": {
+   "probe": "unreviewed"
+  },
+  "dependency-upgrade": {
+   "fetch": "read-only",
+   "head": "read-only"
+  },
+  "fleet-release-node": {
+   "observer_check": "read-only",
+   "observer_read": "read-only"
+  },
+  "gateway-bootstrap": {
+   "Read the hub address": "read-only",
+   "Read the machine": "unreviewed",
+   "Read the workers": "unreviewed",
+   "Render the control plan": "unreviewed",
+   "Render the environment": "read-only",
+   "Render the plan": "unreviewed"
+  },
+  "gateway-release-activate": {
+   "Verify the Gateway": "unreviewed"
+  },
+  "instance-clone-candidate": {
+   "candidate-branch": "unreviewed",
+   "candidate-commit": "unreviewed",
+   "candidate-origin": "read-only",
+   "candidate-status": "unreviewed",
+   "candidate-submodules": "unreviewed"
+  },
+  "instance-clone-check": {
+   "commit": "unreviewed",
+   "environment": "read-only",
+   "preview": "read-only"
+  },
+  "instance-clone-database-cleanup": {
+   "candidate": "unreviewed",
+   "local": "unreviewed",
+   "target": "unreviewed"
+  },
+  "instance-clone-database-install": {
+   "copy": "idempotent"
+  },
+  "instance-clone-database-snapshot": {
+   "copy": "idempotent",
+   "digest": "unreviewed"
+  },
+  "instance-clone-environment": {
+   "clone-vp-cli": "unreviewed",
+   "clone-vp-home": "unreviewed",
+   "clone-vp-install": "unreviewed",
+   "clone-vp-inventory": "unreviewed",
+   "clone-vp-read-node_version": "unreviewed",
+   "clone-vp-read-npm_lock": "unreviewed",
+   "clone-vp-read-nvmrc": "unreviewed",
+   "clone-vp-read-package": "unreviewed",
+   "clone-vp-read-pnpm_lock": "unreviewed",
+   "clone-vp-read-workspace": "unreviewed",
+   "clone-vp-store": "unreviewed"
+  },
+  "instance-clone-source": {
+   "source-checkout": "idempotent",
+   "source-commit": "unreviewed",
+   "source-environment-link": "idempotent",
+   "source-git-directory": "unreviewed",
+   "source-init": "idempotent",
+   "source-origin-configure": "unreviewed",
+   "source-origin-read": "unreviewed",
+   "source-profile-read": "unreviewed",
+   "source-refs": "unreviewed",
+   "source-worktrees": "unreviewed"
+  },
+  "instance-route-workload": {
+   "links": "idempotent",
+   "runtime-identity": "read-only",
+   "runtime-pool": "idempotent",
+   "runtime-reload": "unreviewed",
+   "runtime-validate": "unreviewed"
+  },
+  "metrics-configuration": {
+   "validate": "unreviewed"
+  },
+  "metrics-containers": {
+   "grafana_login": "unreviewed",
+   "prometheus_ready": "read-only"
+  },
+  "metrics-prometheus-publish": {
+   "targets": "unreviewed"
+  },
+  "metrics-publication": {
+   "answers": "read-only"
+  },
+  "node-artifact-fetch": {
+   "Verify artifact checksum": "read-only"
+  },
+  "node-caddy-package": {
+   "Prove the Caddy floor": "read-only",
+   "Read the Caddy version": "read-only"
+  },
+  "node-caddy-sites": {
+   "Validate the Caddyfile": "unreviewed"
+  },
+  "node-cli-install": {
+   "cli_candidate": "unreviewed",
+   "cli_self_update": "unreviewed",
+   "cli_version": "unreviewed"
+  },
+  "node-network-hub": {
+   "Read the peers again": "read-only"
+  },
+  "node-network-peer": {
+   "Read the DNS policy": "unreviewed",
+   "Read the DNS policy again": "unreviewed"
+  },
+  "node-php-runtime": {
+   "Find PHP-FPM": "read-only",
+   "Test PHP-FPM": "unreviewed"
+  },
+  "node-private-dns": {
+   "Check the loaded catalog": "read-only",
+   "Query the listener": "unreviewed",
+   "Test dnsmasq": "unreviewed",
+   "Test the release": "unreviewed"
+  },
+  "node-role-certificate-publish": {
+   "Sign the CSR": "idempotent"
+  },
+  "node-role-remove": {
+   "Read CI guests": "read-only"
+  },
+  "node-route-residue": {
+   "Test the PHP pools": "unreviewed"
+  },
+  "operation-analytics-enable-direct": {
+   "Probe the tracking host": "read-only"
+  },
+  "operation-analytics-update-direct": {
+   "health": "read-only",
+   "inspect": "unreviewed",
+   "reinspect": "unreviewed",
+   "result": "read-only",
+   "status": "read-only"
+  },
+  "operation-cluster-router": {
+   "Probe the workloads": "unreviewed"
+  },
+  "operation-conn-pairing-revoke": {
+   "Read session inventory": "unreviewed"
+  },
+  "operation-database-connection-update": {
+   "Check the index fits": "unreviewed"
+  },
+  "operation-database-create": {
+   "Check the owner login": "unreviewed"
+  },
+  "operation-database-destroy": {
+   "Check they are gone": "unreviewed"
+  },
+  "operation-database-read": {
+   "Run the read": "unreviewed",
+   "Run the read on 209": "read-only"
+  },
+  "operation-database-server-close": {
+   "Check default access": "unreviewed",
+   "List default clients": "unreviewed"
+  },
+  "operation-database-server-create": {
+   "Check the admin login": "unreviewed",
+   "Wait until healthy": "unreviewed"
+  },
+  "operation-database-server-destroy": {
+   "Check it is gone": "unreviewed"
+  },
+  "operation-database-user-create": {
+   "Check logical WAL": "unreviewed",
+   "Check the user": "unreviewed"
+  },
+  "operation-dependency-merge": {
+   "Read changed files": "unreviewed",
+   "Read exact contents": "unreviewed",
+   "Read head check runs": "unreviewed",
+   "Read head workflow runs": "unreviewed",
+   "Read registry records": "unreviewed",
+   "Read repository settings": "unreviewed",
+   "Read the PR": "unreviewed",
+   "Read workflow definitions": "unreviewed"
+  },
+  "operation-firewall-direct": {
+   "Read the result": "read-only",
+   "Read the rules": "read-only"
+  },
+  "operation-fleet-peer-dns": {
+   "Check resolution": "read-only"
+  },
+  "operation-instance-create": {
+   "server-database-check": "unreviewed"
+  },
+  "operation-instance-deploy-direct": {
+   "Check the checkout lock": "unreviewed",
+   "Check the local branch": "unreviewed",
+   "Check tracked changes": "unreviewed",
+   "Count commits after it": "unreviewed",
+   "Find releases in use": "read-only",
+   "List target directories": "unreviewed",
+   "List untracked entries": "unreviewed",
+   "Read Schedule group": "read-only",
+   "Read Vite manager home": "read-only",
+   "Read container state": "read-only",
+   "Read current back": "read-only",
+   "Read deployed commit": "unreviewed",
+   "Read first-parent chain": "unreviewed",
+   "Read the branch ancestor": "unreviewed",
+   "Read the checkout branch": "unreviewed",
+   "Read the checkout commit": "unreviewed",
+   "Read the key names": "read-only",
+   "Read the local branch": "unreviewed",
+   "Read the release commit": "unreviewed",
+   "Resolve the commit": "unreviewed",
+   "Test PHP configuration": "unreviewed",
+   "dev-vp-home": "read-only",
+   "dev-vp-inventory": "unreviewed",
+   "dev-vp-read-node_version": "unreviewed",
+   "dev-vp-read-npm_lock": "unreviewed",
+   "dev-vp-read-nvmrc": "unreviewed",
+   "dev-vp-read-package": "unreviewed",
+   "dev-vp-read-pnpm_lock": "unreviewed",
+   "dev-vp-read-workspace": "unreviewed",
+   "dev-vp-store": "unreviewed"
+  },
+  "operation-instance-destroy": {
+   "Check it is gone": "read-only",
+   "Check work is pushed": "read-only"
+  },
+  "operation-instance-rollback": {
+   "Read current back": "read-only"
+  },
+  "operation-instance-transfer": {
+   "Check the destination": "read-only",
+   "Copy it to the destination": "idempotent",
+   "Copy the archive to 209": "idempotent",
+   "Drop the worktree config": "unreviewed",
+   "Make it standalone": "unreviewed",
+   "Remove the 209 archive": "unreviewed",
+   "Remove the copied archive": "unreviewed",
+   "Remove the source archive": "unreviewed"
+  },
+  "operation-metrics-credentials-reset": {
+   "Check the pending one": "read-only",
+   "Confirm the new login": "unreviewed"
+  },
+  "operation-metrics-disable": {
+   "Check it is gone": "read-only"
+  },
+  "operation-metrics-exporter-enable": {
+   "Check the endpoints": "read-only"
+  },
+  "operation-node-add": {
+   "Check the Node state": "read-only",
+   "Inspect the Mac tunnel": "read-only",
+   "Read WireGuard public key": "read-only",
+   "Read the bootstrap account": "read-only",
+   "Read the platform": "read-only",
+   "Verify managed access": "read-only"
+  },
+  "operation-node-agent-rekey": {
+   "Check the Node agent": "read-only",
+   "Check the new key": "read-only"
+  },
+  "operation-node-converge-direct": {
+   "Check the footprint": "read-only",
+   "Probe the tunnel": "read-only",
+   "Read WireGuard state": "read-only",
+   "Read hub WireGuard state": "read-only",
+   "Read network DNS policy": "unreviewed",
+   "Read the handshake": "read-only",
+   "Read the tunnel key": "read-only",
+   "Resolve WireGuard endpoint": "read-only"
+  },
+  "operation-node-remove": {
+   "Log in to departing Node": "unreviewed"
+  },
+  "operation-node-role-add": {
+   "Check the role": "read-only",
+   "Read the OS release": "read-only",
+   "Wait for Analytics": "read-only"
+  },
+  "operation-node-role-relocate": {
+   "Check Reverb": "read-only"
+  },
+  "operation-node-ssh-access-converge": {
+   "Log in with Swamp identity": "unreviewed"
+  },
+  "operation-node-update": {
+   "Check owner and mode": "read-only"
+  },
+  "operation-php-monitor": {
+   "apply-pool": "unreviewed",
+   "probe": "unreviewed",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "operation-process-control": {
+   "Check the listener": "unreviewed"
+  },
+  "operation-process-create": {
+   "Check required mounts": "read-only",
+   "Check the account": "read-only",
+   "Check the listener": "unreviewed"
+  },
+  "operation-process-install-instance-definitions": {
+   "result": "read-only"
+  },
+  "operation-process-start": {
+   "Check the listener": "unreviewed"
+  },
+  "operation-process-vite": {
+   "directory": "idempotent",
+   "environment": "idempotent",
+   "suspend": "unreviewed"
+  },
+  "operation-proof-run": {
+   "Read the workspace commit": "unreviewed",
+   "Report": "read-only"
+  },
+  "operation-route-caddy": {
+   "Check the connection": "read-only",
+   "Validate the Caddyfile": "unreviewed"
+  },
+  "operation-route-caddy-delta": {
+   "apply-config": "unreviewed",
+   "read-current": "read-only",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "read-only"
+  },
+  "operation-route-create": {
+   "Probe the site over TLS": "unreviewed"
+  },
+  "operation-route-php-delta": {
+   "apply-pool": "unreviewed",
+   "read-account": "unreviewed",
+   "read-current": "unreviewed",
+   "reload": "idempotent",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "operation-route-removal": {
+   "Check each Node answers": "read-only"
+  },
+  "operation-route-target-set": {
+   "Probe each new target": "unreviewed"
+  },
+  "operation-route-update": {
+   "Probe the site over TLS": "unreviewed"
+  },
+  "operation-schedule-destroy": {
+   "idle": "read-only"
+  },
+  "operation-task-cancel": {
+   "Check the VM is gone": "read-only"
+  },
+  "operation-task-maintenance": {
+   "snapshot-tracked": "unreviewed",
+   "snapshot-untracked": "unreviewed"
+  },
+  "operation-task-pr-ready": {
+   "Read the PR": "read-only",
+   "Read the PR result": "read-only"
+  },
+  "operation-task-prep": {
+   "Plan the cases 0": "unreviewed",
+   "Plan the cases 1": "unreviewed",
+   "Plan the cases 2": "unreviewed"
+  },
+  "operation-task-prep-fix": {
+   "Plan the cases 0": "unreviewed",
+   "Plan the cases 1": "unreviewed"
+  },
+  "operation-task-provision": {
+   "Check the workspace": "read-only",
+   "Look for ready copies": "read-only",
+   "Wait for the slot agent": "read-only",
+   "Wait for the slot boot": "unreviewed"
+  },
+  "operation-task-publish": {
+   "Copy the bundle": "idempotent",
+   "Read bundle contents": "read-only",
+   "Read open PRs": "unreviewed",
+   "Read workspace HEAD": "unreviewed"
+  },
+  "operation-task-review-round": {
+   "Read the PR": "read-only"
+  },
+  "operation-task-script": {
+   "cleanup-index": "unreviewed",
+   "cleanup-local": "unreviewed",
+   "inspect": "unreviewed",
+   "output-copy": "idempotent",
+   "output-local": "unreviewed",
+   "snapshot-after-add": "unreviewed",
+   "snapshot-after-head": "unreviewed",
+   "snapshot-after-index": "unreviewed",
+   "snapshot-after-tree": "unreviewed",
+   "snapshot-before-add": "unreviewed",
+   "snapshot-before-head": "unreviewed",
+   "snapshot-before-index": "unreviewed",
+   "snapshot-before-tree": "unreviewed"
+  },
+  "operation-task-sync": {
+   "Clean up the VM directory": "unreviewed",
+   "Clean up the scratch": "unreviewed",
+   "Copy the bundle": "idempotent",
+   "Fetch the refs": "idempotent",
+   "Prepare the VM directory": "unreviewed",
+   "Read the refs": "unreviewed"
+  },
+  "operation-task-turn": {
+   "delete_local_artifacts": "unreviewed",
+   "difference_counts_copy": "idempotent",
+   "difference_patch_copy": "idempotent",
+   "observe": "unreviewed",
+   "prepare_local": "unreviewed",
+   "receipt_copy": "idempotent",
+   "receipt_exists": "read-only",
+   "restore_head": "unreviewed",
+   "restore_tree": "unreviewed",
+   "snapshot_after_head": "unreviewed",
+   "snapshot_before_head": "unreviewed"
+  },
+  "operation-task-vm-converge": {
+   "Check the task VM role": "read-only"
+  },
+  "operation-task-vm-fleet-build": {
+   "Check the nested fleet": "read-only",
+   "Look for the network": "read-only",
+   "Read the Gateway host key": "unreviewed",
+   "Read the Gateway key": "read-only",
+   "Read the Node host keys": "unreviewed",
+   "Read the operator key": "read-only",
+   "Read the release address": "unreviewed",
+   "Read the release commit": "unreviewed",
+   "Wait for app-dev": "read-only",
+   "Wait for app-prod": "read-only",
+   "Wait for cloud-init": "read-only",
+   "Wait for the Gateway Node": "read-only",
+   "Wait for the Gateway role": "read-only",
+   "Wait for the websocket role": "read-only"
+  },
+  "operation-task-vm-hub-converge": {
+   "Check the new ruleset": "unreviewed"
+  },
+  "operation-task-vm-image-build": {
+   "Check the seed": "unreviewed",
+   "Wait for the builder": "unreviewed"
+  },
+  "operation-task-vm-image-refresh": {
+   "Read the fingerprint": "read-only"
+  },
+  "operation-task-vm-provision": {
+   "result": "read-only"
+  },
+  "operation-task-vm-ready-copies": {
+   "Look for a checkout": "read-only",
+   "Look for the operator peer": "read-only",
+   "Look for the state": "read-only",
+   "Read the MAC": "unreviewed",
+   "Read the address": "unreviewed",
+   "Read the database path": "read-only",
+   "Read the devices": "unreviewed",
+   "Read the format": "read-only",
+   "Read the instance type": "read-only",
+   "Read the operator keys": "read-only",
+   "Read the stored database path": "read-only",
+   "Read the subnet": "read-only",
+   "Read the time": "read-only",
+   "Scan for the Club key": "read-only",
+   "Search for the Club key": "read-only",
+   "Wait for cloud-init": "read-only"
+  },
+  "operation-task-vm-resume": {
+   "Read the guest state": "unreviewed",
+   "Wait for the guest agent": "read-only"
+  },
+  "operation-task-vm-slot-enrol": {
+   "Check the VM stopped": "read-only",
+   "result": "read-only"
+  },
+  "operation-task-vm-sweep": {
+   "List again": "unreviewed",
+   "List servers, templates": "unreviewed",
+   "Read the inventory": "unreviewed",
+   "Read the project again": "unreviewed"
+  },
+  "operation-task-vm-upcloud-image-build": {
+   "List servers, templates": "unreviewed"
+  },
+  "operation-tool-manager-setup": {
+   "Check the Tool Manager": "unreviewed",
+   "Read DEB identities": "read-only",
+   "Read manager version": "unreviewed",
+   "Read the account home": "read-only",
+   "Verify SHA512 artifacts": "read-only"
+  },
+  "operation-tool-remove-209": {
+   "Check it is gone": "unreviewed",
+   "Plan the removal": "unreviewed",
+   "Read installed package": "unreviewed",
+   "Read macOS version": "unreviewed",
+   "Read manager version": "unreviewed"
+  },
+  "operation-tool-write-209": {
+   "Check the candidate": "unreviewed",
+   "Check the package": "unreviewed",
+   "Read installed package": "unreviewed",
+   "Read macOS version": "unreviewed",
+   "Read manager version": "unreviewed",
+   "Read the key fingerprint": "read-only"
+  },
+  "operation-vault-sync": {
+   "Read private inventory": "unreviewed",
+   "Read private trash": "unreviewed"
+  },
+  "project-dependency-evidence": {
+   "pr-${{ self._index }}": "read-only"
+  },
+  "project-maintenance-inspect": {
+   "Read the changed files": "unreviewed",
+   "Read the manifest SHAs": "unreviewed"
+  },
+  "proof-fleet-restore": {
+   "Read the container state": "read-only",
+   "Wait for cloud-init": "read-only"
+  },
+  "proof-fleet-verify": {
+   "Check the main verdicts": "read-only",
+   "Name the new cases": "read-only",
+   "Plan the merge base": "unreviewed",
+   "Read the nested checkout": "read-only",
+   "Read the token age": "read-only",
+   "plan": "unreviewed",
+   "report": "read-only"
+  },
+  "proof-fleet-verify-batch": {
+   "report": "read-only"
+  },
+  "proof-fleet-verify-case": {
+   "restored": "read-only"
+  },
+  "route-certificate-publish": {
+   "Read the account": "read-only",
+   "Sign the CSR": "idempotent"
+  },
+  "route-certificate-remove": {
+   "Read the account": "read-only"
+  },
+  "route-create-csr": {
+   "sign": "idempotent"
+  },
+  "route-create-ingress": {
+   "caddy-validate": "unreviewed"
+  },
+  "route-create-sign": {
+   "sign": "idempotent"
+  },
+  "route-dns-grace": {
+   "wait-private-dns-ttl": "read-only"
+  },
+  "route-dns-publish": {
+   "catalog": "unreviewed",
+   "catalog-directory": "unreviewed",
+   "listener": "unreviewed",
+   "read-catalog": "read-only",
+   "read-records": "read-only",
+   "records": "unreviewed",
+   "restart-backend": "unreviewed",
+   "result": "read-only",
+   "validate": "unreviewed"
+  },
+  "route-lan-apply": {
+   "apply": "idempotent",
+   "observe-after": "read-only",
+   "observe-before": "read-only"
+  },
+  "swamp-credential-monitor": {
+   "access": "read-only",
+   "certificate": "read-only",
+   "club": "read-only",
+   "enrollment": "read-only"
+  },
+  "swamp-datastore-watch": {
+   "measure": "unreviewed"
+  },
+  "task-approved-push": {
+   "Copy the bundle": "idempotent",
+   "Remove the guest bundle": "unreviewed",
+   "Remove the local copy": "unreviewed",
+   "Revoke the token": "idempotent"
+  },
+  "task-check-ci": {
+   "cleanup_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
+   "prepare_remote-${{ self.check.attributes.inputs.operation_id }}": "unreviewed",
+   "read-${{ self.check.attributes.inputs.operation_id }}": "read-only",
+   "revoke_read-${{ self.check.attributes.inputs.operation_id }}": "idempotent",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-add": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-head": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-index": "unreviewed",
+   "snapshot-${{ self.check.attributes.inputs.operation_id }}-tree": "unreviewed"
+  },
+  "task-check-commit": {
+   "commit_read": "unreviewed"
+  },
+  "task-check-deliverables": {
+   "base_archive-${{ self._index }}": "unreviewed",
+   "base_directory-${{ self._index }}": "unreviewed",
+   "diff": "unreviewed"
+  },
+  "task-check-prepare": {
+   "original": "unreviewed",
+   "output_local": "unreviewed",
+   "prepare_remote": "unreviewed"
+  },
+  "task-check-push": {
+   "cleanup_local": "unreviewed",
+   "cleanup_remote": "unreviewed",
+   "copy_bundle": "idempotent",
+   "import": "unreviewed",
+   "prepare_local": "unreviewed",
+   "revoke_unused_read": "idempotent",
+   "revoke_write": "idempotent"
+  },
+  "task-check-snapshot-after": {
+   "changed": "unreviewed",
+   "output_copy": "idempotent",
+   "snapshot-after-add": "unreviewed",
+   "snapshot-after-head": "unreviewed",
+   "snapshot-after-index": "unreviewed",
+   "snapshot-after-tree": "unreviewed"
+  },
+  "task-check-snapshot-before": {
+   "snapshot-before-add": "unreviewed",
+   "snapshot-before-head": "unreviewed",
+   "snapshot-before-index": "unreviewed",
+   "snapshot-before-tree": "unreviewed"
+  },
+  "task-dependency-auth-remove": {
+   "Remove": "unreviewed"
+  },
+  "task-dependency-auth-write": {
+   "Clear": "unreviewed",
+   "Write composer": "unreviewed",
+   "Write npm": "unreviewed"
+  },
+  "task-maintenance-path": {
+   "audit-after": "unreviewed",
+   "audit-before": "unreviewed",
+   "expo-catalog": "read-only",
+   "expo-cleanup": "unreviewed",
+   "expo-fetch": "unreviewed",
+   "node-modules": "read-only",
+   "read-after-${{ self._index }}": "read-only",
+   "read-before-${{ self._index }}": "read-only",
+   "read-restored-${{ self._index }}": "read-only"
+  },
+  "task-nested-apply": {
+   "Check the services": "read-only",
+   "Check the state": "read-only"
+  },
+  "task-nested-converge": {
+   "Wait for app-dev": "read-only",
+   "Wait for app-prod": "read-only",
+   "Wait for gateway": "read-only"
+  },
+  "task-nested-fleet": {
+   "Check the tunnel": "read-only",
+   "Look for the network": "read-only",
+   "Read the MAC": "read-only",
+   "Read the address": "read-only",
+   "Read the database path": "read-only",
+   "Read the hub key": "read-only",
+   "Read the network address": "read-only",
+   "Read the operator id": "read-only",
+   "Read the subnet": "read-only",
+   "Wait for cloud-init": "read-only"
+  },
+  "task-nested-ready": {
+   "Wait for Doctor": "read-only"
+  },
+  "task-vm-bootstrap": {
+   "bootstrap-authorized_key": "unreviewed",
+   "bootstrap-observer": "unreviewed",
+   "bootstrap-observer-checksum": "unreviewed",
+   "bootstrap-observer-download": "unreviewed",
+   "bootstrap-sudo": "unreviewed",
+   "bootstrap-sudo-check": "unreviewed",
+   "bootstrap-verify": "unreviewed",
+   "bootstrap-verify-sudo": "unreviewed"
+  },
+  "task-vm-destroy": {
+   "Read the host again": "unreviewed"
+  },
+  "task-vm-enrollment": {
+   "Pin the guest host key": "idempotent",
+   "observer-ca": "unreviewed",
+   "observer-configuration": "unreviewed",
+   "observer-group": "idempotent",
+   "observer-identity": "unreviewed",
+   "observer-identity-create": "unreviewed",
+   "observer-identity-find": "unreviewed",
+   "observer-identity-folder": "unreviewed",
+   "observer-identity-mode": "unreviewed",
+   "observer-identity-trim": "unreviewed",
+   "observer-reload": "unreviewed",
+   "observer-start": "unreviewed",
+   "observer-unit": "unreviewed",
+   "peer-dns-command": "unreviewed",
+   "peer-enable": "unreviewed",
+   "peer-key-command": "unreviewed",
+   "peer-publish-command": "unreviewed",
+   "peer-start": "unreviewed"
+  },
+  "task-vm-image-ansible": {
+   "Read the guest address": "read-only",
+   "Read the guest host key": "unreviewed"
+  },
+  "task-vm-image-builder": {
+   "Wait for the builder": "unreviewed"
+  },
+  "task-vm-image-reaper": {
+   "list": "unreviewed",
+   "volumes": "unreviewed"
+  },
+  "task-vm-image-smoke": {
+   "Wait for the copy": "unreviewed"
+  },
+  "task-vm-incus-first-visit": {
+   "cloud-init": "unreviewed",
+   "guest-available": "read-only",
+   "guest-key": "unreviewed"
+  },
+  "task-vm-provider-power": {
+   "cloud-after": "unreviewed",
+   "cloud-before": "unreviewed",
+   "cloud-discover": "unreviewed",
+   "incus-action": "unreviewed",
+   "incus-after": "unreviewed",
+   "incus-before": "unreviewed"
+  },
+  "task-vm-provider-upcloud": {
+   "discover": "unreviewed",
+   "inspect": "unreviewed",
+   "list": "unreviewed",
+   "observe": "unreviewed",
+   "plans": "unreviewed"
+  },
+  "task-vm-runtime": {
+   "Check the Pi build": "read-only",
+   "Check the Pi server": "read-only",
+   "Fetch the Pi build": "idempotent",
+   "result": "read-only"
+  },
+  "task-vm-ssh-prepare": {
+   "authorize": "unreviewed",
+   "available": "unreviewed",
+   "firewall": "idempotent",
+   "host-key": "unreviewed",
+   "host-keys": "unreviewed",
+   "package": "unreviewed",
+   "sshd": "unreviewed",
+   "verify": "read-only"
+  },
+  "task-vm-workspace": {
+   "account": "read-only",
+   "directory": "unreviewed",
+   "observe": "unreviewed"
+  },
+  "task-workspace-source": {
+   "access-${{ self._index }}": "unreviewed",
+   "bundle": "read-only",
+   "cleanup": "unreviewed",
+   "cleanup_remote": "unreviewed",
+   "composer": "idempotent",
+   "control": "unreviewed",
+   "copy_bundle": "idempotent",
+   "deps_clear": "unreviewed",
+   "deps_remove_files": "unreviewed",
+   "deps_write_composer": "unreviewed",
+   "deps_write_npm": "unreviewed",
+   "identity": "unreviewed",
+   "inspect": "unreviewed",
+   "origin": "unreviewed",
+   "prepare_remote": "unreviewed",
+   "proof_club": "unreviewed",
+   "proof_club_directory": "unreviewed",
+   "proof_club_previous": "unreviewed",
+   "setup_copy": "idempotent"
+  },
+  "task-workspace-teardown": {
+   "cleanup_local": "unreviewed",
+   "cleanup_remote": "unreviewed",
+   "output_copy": "idempotent",
+   "output_local": "unreviewed",
+   "teardown-${{ self._index }}": "unreviewed"
+  }
+ }
+}

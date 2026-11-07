@@ -23,6 +23,7 @@ jobs:
   steps:
   - name: Mint
     labels: {role: swamp}
+    writes: true
     queueTimeout: 30
     task:
       type: behavior
