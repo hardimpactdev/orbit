@@ -16,6 +16,8 @@ VENV=$WORK/venv
 LOG=$WORK/molecule.log
 SCENARIO=$ROOT/swamp/proof/molecule/firewall-allow
 mkdir -p "$WORK"
+# The venv and the log are untracked files of the checkout; keep the workspace clean for `changed` and for the next check.
+grep -qxF '.molecule-spike/' "$(git -C "$ROOT" rev-parse --git-path info/exclude)" 2>/dev/null || echo '.molecule-spike/' >>"$(git -C "$ROOT" rev-parse --git-path info/exclude)"
 
 now() { date +%s.%N; }
 since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.1f", b - a }'; }
@@ -54,11 +56,13 @@ run_test() {
   export PATH=$VENV/bin:$PATH
   export PROOF_PORT_BASE=${1:-47100}
   export ORBIT_CHECKOUT=$ROOT
-  export ANSIBLE_DEPRECATION_WARNINGS=false
+  export ANSIBLE_DEPRECATION_WARNINGS=false ANSIBLE_NOCOLOR=1 NO_COLOR=1
+  export XDG_CACHE_HOME=$WORK/cache ANSIBLE_HOME=$WORK/ansible   # nothing outside the workspace and /tmp
   rm -rf /tmp/molecule-firewall-allow-facts   # a rerun must not read the failures of the run before
   local start
   start=$(now); molecule --version >/dev/null 2>&1; say "molecule --version: $(since "$start") s"
   cd "$SCENARIO" || return 1
+  molecule reset >/dev/null 2>&1   # Molecule skips `prepare` when its state says prepared: a rerun needs the listeners and denies again
   start=$(now)
   molecule test >"$LOG" 2>&1
   local rc=$?

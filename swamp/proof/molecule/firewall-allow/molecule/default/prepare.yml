@@ -9,7 +9,7 @@
   tasks:
     - name: Start a listener on each test and control port
       ansible.builtin.command:
-        cmd: python3 -m http.server {{ item }} --bind 0.0.0.0
+        cmd: python3 -m http.server {{ item }} --bind 0.0.0.0 --directory /tmp
       async: 3600
       poll: 0
       loop: "{{ cases.values() | map(attribute='port') | list + cases.values() | map(attribute='control') | list }}"

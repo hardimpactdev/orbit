@@ -32,7 +32,7 @@
 
     - name: Keep the rules
       ansible.builtin.set_fact:
-        rules: "{{ records.json.data.nodes | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first }}"
+        rules: "{{ records.json.data | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first }}"
         rows: "{{ ufw_now.stdout_lines }}"
 
     # ---- case: new-restricted-allow (main, changes-needed, succeeded) ----

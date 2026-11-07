@@ -21,7 +21,7 @@
 
     - name: "{{ c.id }}: Operations before"
       ansible.builtin.uri:
-        url: "{{ gateway_url }}/operations"
+        url: "{{ gateway_url }}/operations?kind=firewall.allow"
         ca_path: "{{ gateway_ca }}"
         headers: {Accept: application/json}
         return_content: true
@@ -79,7 +79,7 @@
 
     - name: "{{ c.id }}: Operations after"
       ansible.builtin.uri:
-        url: "{{ gateway_url }}/operations"
+        url: "{{ gateway_url }}/operations?kind=firewall.allow"
         ca_path: "{{ gateway_ca }}"
         headers: {Accept: application/json}
         return_content: true
