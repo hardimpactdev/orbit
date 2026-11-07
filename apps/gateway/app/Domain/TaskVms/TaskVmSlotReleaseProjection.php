@@ -4,33 +4,32 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Infrastructure\Swamp\NativeRunResult;
-use App\Jobs\TaskVms\RefillTaskVmSlots;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Projects the release of a slot (docs/cli/tasks/vm-slot-release.mmd), as its own run or as the last step of a cancel. An identity whose
- * task VM was deleted is free again: it lets go of the group and of the claim's Pi token and model key, and its workspace Instance is
- * unbound, not deleted. Its Node, peer and keys stay. One whose VM was not deleted is `failed`: the slot rule releases it again while it still
- * holds a model key that was not revoked, and enrols it again once it holds none.
+ * Projects the release of a task VM (docs/cli/tasks/vm-release.mmd), as its own run or as the last step of a cancel (docs/cli/tasks/cancel.mmd).
+ * A release that passed deleted the VM, its seed clone and its hub peer: its workspace Instance, its Node and its identity go, and the slot
+ * is free. One that did not pass leaves the VM `failed`; the sweep releases it again.
  */
-final readonly class TaskVmSlotReleaseProjection implements DirectOperationProjection
+final readonly class TaskVmSlotReleaseProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);
-        $secrets = ValidatedData::object($input['execution_secrets']);
 
-        // A release without a model key to revoke takes no secret; Swamp needs an object, not an empty list.
-        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => $secrets === [] ? (object) [] : $secrets];
+        // A release without a model key to revoke takes no secret; the submission sends the empty map as an object.
+        return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => ValidatedData::object($input['execution_secrets'])];
     }
 
     /** @param array<string,mixed> $data */
@@ -51,17 +50,31 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
         });
     }
 
-    /** The identity after its release: free, or failed, still holding its model key unless the release revoked it. */
+    /** A refused start never ran: the VM and the model key are still there, so it is failed with its key and the sweep releases it again. */
+    public function refused(Operation $operation): void
+    {
+        $slot = TaskVm::query()->lockForUpdate()->find($operation->target_id);
+        if ($slot instanceof TaskVm) {
+            $this->record($slot, false, $operation->error_code ?? 'task_vm.slot_release_failed', false);
+        }
+    }
+
+    /** The slot after its release: destroyed with its Node deleted, or failed, still holding its model key unless the release revoked it. */
     public function record(TaskVm $slot, bool $passed, ?string $errorCode, bool $revoked): void
     {
-        Instance::query()->where('node_id', $slot->node_id)->whereNotNull('task_workspace_owner_id')
-            ->update(['task_workspace_owner_id' => null, 'branch_override' => null, 'status' => InstanceState::Reserved]);
-        $slot->update($passed
-            ? ['state' => TaskVmState::Parked, 'group_id' => null, 'claimed_at' => null, 'pi_token' => null, 'model_key' => null, 'ai_router_origin' => null,
-                'stop_confirmed_at' => now(), 'error_code' => null, 'error_message' => null]
-            : ['state' => TaskVmState::Failed, 'group_id' => null, 'error_code' => $errorCode, 'error_message' => 'The slot release did not pass.',
+        if (! $passed) {
+            $slot->update(['state' => TaskVmState::Failed, 'group_id' => null, 'error_code' => $errorCode, 'error_message' => 'The task VM release did not pass.',
                 ...$revoked ? ['model_key' => null, 'ai_router_origin' => null] : []]);
-        $host = (int) $slot->host_node_id;
-        DB::afterCommit(static fn () => RefillTaskVmSlots::dispatchFor($host));
+
+            return;
+        }
+        // The VM and its hub peer are gone: its workspace Instance, its Node and the identity go with them, and the slot is free.
+        $node = $slot->node;
+        if ($node instanceof Node) {
+            Instance::query()->where('node_id', $node->id)->get()->each(static fn (Instance $instance): bool => $instance->delete() ?? false);
+            app(NodeRemovalRecords::class)->remove(['node_id' => $node->id, 'name' => $node->name, 'task_vm_id' => $slot->id, 'route_ids' => []], []);
+        }
+        $slot->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'group_id' => null, 'node_id' => null, 'pi_token' => null, 'model_key' => null,
+            'ai_router_origin' => null, 'wireguard_private_key' => null, 'ssh_host_private_key' => null, 'agent_secret' => null, 'error_code' => null, 'error_message' => null]);
     }
 }

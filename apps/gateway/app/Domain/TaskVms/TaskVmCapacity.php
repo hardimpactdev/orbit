@@ -38,7 +38,7 @@ final readonly class TaskVmCapacity
 
     /**
      * The free slots of each of `$hosts`, in their order: `max_vms` minus the slots of every task VM on the host that
-     * is not destroyed or failed, parked ones too, except a ready slot that no group holds. A failed VM holds no slot, so it never blocks placement:
+     * is not destroyed or failed, parked ones too. A failed VM holds no slot, so it never blocks placement:
      * its group asks for assistance. The exception is a failed VM that a proof run kept (`--keep-failed`): it holds the CPU and memory of its host, so it counts until
      * it is destroyed. A VM takes the slots of its size
      * ({@see TaskVmSize::slots()}). A host over its budget has 0. A `$reserve` is kept free on top: a report-only proof

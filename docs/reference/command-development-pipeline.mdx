@@ -20,9 +20,9 @@ The command development pipeline is the stages every command goes through during
 
 Each flow has its own trigger. The first three run for a task. The others keep a host ready.
 
-- **Task start.** `tasks:provision` runs for every task group. It claims a free slot identity, copies the host's base VM snapshot with that identity and the claim's new keys, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
+- **Task start.** `tasks:provision` runs for every task group. It takes a free slot under the host's `max_vms`, mints a new identity for it, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Release.** The end of a group deletes its VM and seed clone and revokes the claim's model key. The identity stays.
+- **Release.** The end of a group deletes its VM and seed clone, removes its hub peer, revokes its model key and deletes its Node.
 - **Refresh (stage 6).** It runs after a release whose commit changed playbooks, pins or lock files, and daily. A code-only release needs none. It converges the host's base VM, snapshots it and proves the snapshot with one task start.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 
@@ -47,7 +47,7 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 
 <div className="flow-at" data-chart="reference/pipeline/2-development-environment"></div>
 
-- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), the [slot enrol](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-enrol.mmd) and the [slot release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-slot-release.mmd).
+- Charts: the stage chart above, [`tasks:provision`](/cli/tasks/provision#how-it-works), [`tasks:cancel`](/cli/tasks/cancel#how-it-works) and the [release](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd).
 - Docs: [Provision an external group](/reference/tasks#provision-an-external-group), [Refresh the task image and the topology seed](/reference/compute-drivers#refresh-the-task-image-and-the-topology-seed).
 - Skill: [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md).
 - Files: [`swamp/proof/README.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md).

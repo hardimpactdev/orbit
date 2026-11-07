@@ -44,11 +44,12 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     {
         $input = ValidatedData::object($operation->input);
         $provision = $this->provision->input(self::provisionView($operation));
-        $cancel = ValidatedData::object($input['cancel']);
+        $cancel = TaskVmProviderWorkflowInput::envelope(ValidatedData::object($input['cancel']));
 
         return [
-            'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'],
-                'cancel' => ['node_id' => ValidatedData::integer($cancel['node_id']), ...TaskVmProviderWorkflowInput::envelope($cancel)]],
+            // The cancel's secrets go nested in the intent, past the submission that turns an empty top-level map into an object.
+            'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'], 'cancel' => ['node_id' => ValidatedData::integer($cancel['intent']['node_id']),
+                'intent' => $cancel['intent'], 'execution_secrets' => $cancel['execution_secrets'] === [] ? (object) [] : $cancel['execution_secrets']]],
             'execution_secrets' => $provision['execution_secrets'],
             ...self::keepFlag($input),
         ];

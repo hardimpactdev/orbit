@@ -258,7 +258,8 @@ final readonly class DirectOperation
     private static function executionReferences(mixed $references): array
     {
         if (! is_array($references)) {
-            throw new ResourceOperationException('operation.execution_secrets_invalid', 'Execution secrets must contain only vault and key names.', 422);
+            throw new ResourceOperationException('operation.execution_secrets_invalid', 'Execution secrets must be a map of vault and key names, not '.get_debug_type($references).'.', 422,
+                details: ['reason' => 'not_a_map', 'type' => get_debug_type($references)]);
         }
         $result = [];
         foreach ($references as $field => $reference) {
@@ -267,7 +268,8 @@ final readonly class DirectOperation
                 || ! is_string($reference['vault'] ?? null) || ! is_string($reference['key'] ?? null)
                 || preg_match('/\A[a-z][a-z0-9_-]{0,127}\z/D', $reference['vault']) !== 1
                 || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}\z/D', $reference['key']) !== 1) {
-                throw new ResourceOperationException('operation.execution_secrets_invalid', 'Execution secrets must contain only vault and key names.', 422);
+                throw new ResourceOperationException('operation.execution_secrets_invalid', 'Execution secret "'.(is_string($field) ? $field : '#').'" must hold only a vault and a key name.', 422,
+                    details: ['reason' => 'not_a_reference', 'field' => $field]);
             }
             $result[$field] = ['vault' => $reference['vault'], 'key' => $reference['key']];
         }

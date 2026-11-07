@@ -26,8 +26,7 @@ use Throwable;
  *
  * @property int $id
  * @property int|null $group_id
- * @property int|null $slot_project_id the Project a ready slot was enrolled for; set on a slot row, kept after its claim
- * @property string|null $slot_digest the digest of what a task image carries in the release whose converge the slot got
+ * @property int|null $slot_project_id the Project whose checkout the base VM carries, on a row that takes a slot
  * @property int|null $host_node_id
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
@@ -53,8 +52,8 @@ use Throwable;
  * @property string $wireguard_ip
  * @property string|null $pi_token
  * @property string|null $model_key
- * @property int|null $slot_number the number of a slot, `<host>-tvm-<number>`; fixed for the life of the slot
- * @property string|null $wireguard_private_key a slot's fixed WireGuard key (docs/cli/tasks/vm-slot-enrol.mmd)
+ * @property int|null $slot_number the slot the task VM takes on its host, `<host>-tvm-<number>`
+ * @property string|null $wireguard_private_key the WireGuard key a task start minted (docs/cli/tasks/provision.mmd)
  * @property string|null $ssh_host_private_key a slot's fixed SSH host key, an OpenSSH Ed25519 file
  * @property string|null $agent_secret a slot's fixed agent secret
  * @property bool $worker_stop_required
@@ -87,7 +86,7 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'slot_project_id', 'slot_digest', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
+        'group_id', 'slot_project_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at', 'slot_number', 'wireguard_private_key', 'ssh_host_private_key', 'agent_secret',
@@ -153,21 +152,7 @@ final class TaskVm extends Model
     {
         $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
             ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where(static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed)
-                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id'))))
-            // A stopped slot that no group holds keeps disk, not memory.
-            ->whereNot(static fn (Builder $query) => $query->whereNotNull('slot_project_id')->whereNull('group_id')->where('state', TaskVmState::Parked));
-    }
-
-    /**
-     * The slot rows that no group holds: enrolling, ready (`parked`), failed or being destroyed
-     * (docs/cli/tasks/vm-slots.mmd).
-     *
-     * @param  Builder<self>  $query
-     */
-    #[Scope]
-    protected function unclaimedSlots(Builder $query): void
-    {
-        $query->where('state', '!=', TaskVmState::Destroyed)->whereNotNull('slot_project_id')->whereNull('group_id');
+                ->orWhereIn('group_id', Operation::query()->where('kind', 'proof.command')->whereNotNull('result->kept')->select('target_id'))));
     }
 
     /**

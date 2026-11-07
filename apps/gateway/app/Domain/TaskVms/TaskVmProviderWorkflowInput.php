@@ -36,14 +36,13 @@ final readonly class TaskVmProviderWorkflowInput
     }
 
     /** @param array<string,mixed> $input
-     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>|object}
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
     public static function envelope(array $input): array
     {
         $copies = ValidatedData::object($input['execution_secrets'] ?? []);
         unset($input['execution_secrets']);
 
-        // An empty map stays a JSON object: a workflow declares its secrets as an object.
-        return ['intent' => $input, 'execution_secrets' => $copies === [] ? (object) [] : $copies];
+        return ['intent' => $input, 'execution_secrets' => $copies];
     }
 }

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): a task VM is disposable; its slot identity stays with the Gateway.
+  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees the slot.
   %% status: draft
   %% command: tasks:cancel
   %% kind: tasks.cancel
@@ -7,17 +7,23 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
-  Note over GW: Admit the release<br/>revoke the claim's keys
+  participant HUB as VPN hub<br/>over ssh
+  Note over GW: Admit the release
   %%> Result:
-  %%> - the Pi token and model key of the claim are revoked; approved work is pushed first, as today
+  %%> - approved work is pushed first, as today
   GW->>SW: Start run, full intent<br/>operation-tasks-cancel
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
   %%> - one host exec: `incus delete --force` and the seed clone; a few seconds
-  %%> - no Node, DNS, Metrics or hub peer change: the identity stays
-  %%> - beside it, the claim's model key is revoked at the model router; the Pi token goes with the VM
-  SW-->>GW: Run succeeded<br/>identity free
-  Note over GW: Free the slot identity<br/>target under 10 s
+  SW->>HUB: Remove the hub peer<br/>wg set · remove
+  %%> Runs beside the step before it: Swamp starts both at once.
+  %%> What it does:
+  %%> - the VM's peer leaves the WireGuard hub; the claim's model key is revoked at the model router beside it; the Pi token goes with the VM
+  SW-->>GW: Run succeeded<br/>slot free
+  Note over GW: Delete the Node record<br/>target under 10 s
+  %%> Result:
+  %%> - the Node, its role and its Process go; the slot number is free for the next task start

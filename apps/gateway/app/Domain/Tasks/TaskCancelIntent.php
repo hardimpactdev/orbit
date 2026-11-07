@@ -172,6 +172,6 @@ final readonly class TaskCancelIntent
         }
 
         return ['intent' => ['group_id' => $group->id, 'push' => $operation->input['push'] ?? null, 'release' => $operation->input['release'] ?? null],
-            'execution_secrets' => (object) []];
+            'execution_secrets' => []];
     }
 }

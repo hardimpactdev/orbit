@@ -93,15 +93,15 @@ final readonly class TaskVmEnrollmentIntent
     }
 
     /**
-     * The Node of an enrolling slot identity, its `app-dev` role and its `pi-server` Process, made once and kept. Mints nothing: the
-     * slot's keys come from {@see TaskVmSlotIdentity}, and each task start mints its own Pi token and model key.
+     * The Node of a task start's VM, its `app-dev` role and its `pi-server` Process, made at admission and deleted at its release. Mints
+     * nothing: the keys come from {@see TaskVmSlotIdentity}, and the Pi token and model key from the task start.
      */
     public function slotNode(TaskVm $vm): Node
     {
         return DB::transaction(function () use ($vm): Node {
             $vm->refresh();
             if ($vm->state !== TaskVmState::Provisioning || $vm->slot_project_id === null) {
-                throw new TaskVmException('task_vm.enrollment_invalid', 'A slot enrol requires the enrolling slot.');
+                throw new TaskVmException('task_vm.enrollment_invalid', 'A task start requires its provisioning slot.');
             }
             $node = $this->reserveNode($vm);
             $this->delivery->pin($node);
@@ -112,7 +112,7 @@ final readonly class TaskVmEnrollmentIntent
     }
 
     /**
-     * The files of an enrolled slot's Node that a task start writes: the agent configuration and the `pi-server` unit.
+     * The files of a slot's Node that a task start writes: the agent configuration and the `pi-server` unit.
      *
      * @return array{agent:array<string,mixed>,unit_name:string,unit_path:string,unit:string}
      */
