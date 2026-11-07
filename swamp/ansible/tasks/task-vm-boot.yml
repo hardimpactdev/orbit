@@ -1,8 +1,8 @@
 ---
 # How the base VM and every task VM copied from it boot (docs/cli/tasks/vm-image-refresh.mmd). A task start boots a copy of the base
 # snapshot, so the boot does no first-boot work: cloud-init is off, the orbit account keeps the key of the Swamp control Node, and sshd
-# makes its host keys only when none exist. A task start then writes the host key of its slot identity and restarts sshd
-# (docs/cli/tasks/provision.mmd).
+# makes its host keys only when none exist. A task start puts its identity on an identity volume, which orbit-identity applies at boot
+# before sshd starts (docs/cli/tasks/provision.mmd).
 - name: Turn cloud-init off
   ansible.builtin.copy: { dest: /etc/cloud/cloud-init.disabled, content: "", mode: "0644" }
 - name: Make the SSH folder of orbit
@@ -37,6 +37,58 @@
       ExecStartPre=
       ExecStartPre=/usr/bin/ssh-keygen -A
       ExecStartPre=/usr/sbin/sshd -t
+# A task start puts the VM's identity on an identity volume, which the Incus agent mounts at /run/orbit-identity (task-vm-host.yml). This
+# unit applies it at boot, before sshd, WireGuard and the agent start, so the start never writes into a running VM. The base VM has no
+# identity volume; the agent's mount list says so, and the unit ends at once.
+- name: Make the group of the environment files
+  ansible.builtin.group: { name: orbit-env, system: true }
+- name: Install the identity script
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/orbit-identity
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      set -eu
+      mounts=/run/incus_agent/agent-mounts.json
+      for i in $(seq 300); do [ -e "$mounts" ] && break; sleep 0.1; done
+      grep -q '"/run/orbit-identity"' "$mounts" 2>/dev/null || exit 0
+      for i in $(seq 300); do mountpoint -q /run/orbit-identity && break; sleep 0.1; done
+      mountpoint -q /run/orbit-identity
+      install -d -m 0700 -o orbit -g orbit /home/orbit/.pi /home/orbit/.pi/agent
+      # Files keep the owner and mode the start gave them; directories that exist keep theirs.
+      tar -C /run/orbit-identity -cf - . | tar -C / -xpf - --no-overwrite-dir --numeric-owner
+      umount /run/orbit-identity
+      . /etc/orbit/identity.env
+      hostname "$ORBIT_HOSTNAME"
+      update-ca-certificates > /dev/null
+      # SSH over WireGuard answers only the Swamp Node; Pi answers it and the Gateway; a served workspace answers on 443.
+      ufw prepend deny in on orbit proto tcp to any port 22 comment orbit:task-vm-ssh-only > /dev/null
+      ufw prepend allow in on orbit proto tcp from "$ORBIT_CONTROL_IP" to any port 22 comment orbit:task-vm-ssh-209 > /dev/null
+      ufw allow in on orbit proto tcp from "$ORBIT_CONTROL_IP" to any port "$ORBIT_PI_PORT" comment orbit:task-vm-pi-209 > /dev/null
+      ufw allow in on orbit proto tcp from "$ORBIT_GATEWAY_IP" to any port "$ORBIT_PI_PORT" comment orbit:task-vm-pi-gateway > /dev/null
+      ufw allow in on orbit proto tcp to any port 443 comment orbit:task-vm-site > /dev/null
+      systemctl daemon-reload
+      # They are ordered after this unit, so they start when it ends.
+      systemctl --no-block enable --now wg-quick@orbit.service orbit-agent.service "$ORBIT_PI_UNIT"
+- name: Install the identity unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-identity.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Apply the task VM identity of its start
+      After=local-fs.target ufw.service
+      Before=ssh.socket ssh.service wg-quick@orbit.service orbit-agent.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/orbit-identity
+      TimeoutStartSec=60
+
+      [Install]
+      WantedBy=multi-user.target
+- name: Run the identity unit at every boot
+  ansible.builtin.systemd: { name: orbit-identity.service, enabled: true, daemon_reload: true }
 - name: Read the units again
   ansible.builtin.systemd: { daemon_reload: true }
 # The agent a task VM runs; a task start writes its unit and secret (docs/cli/tasks/provision.mmd).

@@ -24,28 +24,31 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-tasks-provision
   SW->>H: Create and start the VM<br/>copy of the base snapshot
   %%> What it does:
-  %%> - one host exec: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones), the identity and the claim's keys written from the vault on stdin, then `incus start` and the services that use them
+  %%> - one host phase: `incus copy` of the base VM's recorded snapshot and a clone of its seed snapshot (ZFS clones); an identity volume of the VM with the identity and the claim's keys, pushed from the vault on stdin; then `incus start`. It waits for nothing in the guest
+  %%> - at boot, the base's `orbit-identity` unit applies the identity volume before sshd, WireGuard and the agent start, then unmounts it; sshd answers over WireGuard about 6 s after the start
   %%> - the containers start by themselves (`boot.autostart`) and already hold the proof Swamp Club key of the base
   SW->>HUB: Add the hub peer<br/>peer file · wg addconf
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
-  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the claim's model key goes to the model router beside it
+  %%> - the VM's public key and address on the WireGuard hub, while the VM boots; the claim's model key goes to the model router beside it, and only Check ready waits for it
   SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
-  %%> - the same Ansible converge as the release refresh; with no delta every part is skipped, and it catches up a small delta when main moved since the last release
+  %%> - the same Ansible converge as the release refresh, over WireGuard with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
+  %%> - with no delta every part is skipped, and it catches up a small delta when main moved since the last release
   %%> - then the new task branch on the checkout; it waits for no nested service
   SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
   %%> What it does:
   %%> - the path every later step takes (sync, check, turn, script): ssh from a Swamp worker to the VM's WireGuard address with its pinned host key
+  %%> - runs beside the readiness read
   SW->>VM: Check ready<br/>one exec
   %%> What it does:
   %%> - what a task needs: the agent, Pi, the tunnel and the three containers running; Swamp's `assert` decides
   %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
   alt the run passes
     SW-->>GW: Run succeeded<br/>ready
-    Note over GW: Record the VM ready<br/>target about 30 s
+    Note over GW: Record the VM ready<br/>target 10-15 s
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the release runs: the VM, its seed clone, the hub peer, the keys and the Node record go, and the slot is free
+    %%> - the release runs: the VM, its seed clone, its identity volume, the hub peer, the keys and the Node record go, and the slot is free
   end

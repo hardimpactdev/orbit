@@ -56,6 +56,17 @@ class TaskVmRoleTest(unittest.TestCase):
             for name in ['inventory.yml', 'vars.yml', 'known_hosts']:
                 self.assertEqual((folder / name).stat().st_mode & 0o777, 0o600)
 
+    def test_a_task_vm_with_its_identity_is_reached_over_wireguard_and_not_through_its_host(self):
+        jump = {'identity_file': '/role/identity', 'target': {'host': '192.0.2.5', 'port': 22, 'user': 'nckrtl', 'host_keys': ['ssh-ed25519 host']}}
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'intent.json').write_text(json.dumps(intent(jump=jump, direct=True)))
+            builder.build(folder, 'tasks.provision')
+            host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
+            self.assertEqual(host['ansible_host'], '10.252.7.9')
+            self.assertNotIn('ansible_ssh_common_args', host)
+            self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
+
     def test_a_builder_is_reached_through_its_host_with_both_pinned_keys(self):
         jump = {'identity_file': '/role/identity', 'target': {'host': '192.0.2.5', 'port': 2222, 'user': 'nckrtl', 'host_keys': ['ssh-ed25519 host']}}
         with tempfile.TemporaryDirectory() as folder:
