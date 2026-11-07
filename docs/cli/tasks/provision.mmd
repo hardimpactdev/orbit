@@ -47,10 +47,11 @@ sequenceDiagram
   %%> - the tunnel counts as up once WireGuard has a handshake with the hub; the hub answers no ping from a task VM
   alt the run passes
     SW-->>GW: Run succeeded<br/>ready
-    Note over GW: Record the VM ready<br/>about 32 s
-    %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready:
-    %%> - Ansible start and input 2 s; host part 8 s; the wait for sshd 12 s; the converge 6 s (all parts skipped, task branch made); readiness 2 s
-    %%> - a start whose commit is a few commits past the base adds the nested Gateway's migrate and restart, about 8 s when `apps/gateway` changed
+    Note over GW: Record the VM ready<br/>about 33 s
+    %%> Measured 2026-11-07, three starts on a current base: 32-34 s from admission to ready, above the earlier target of 10-15 s:
+    %%> - Swamp writes the intent 1 s; the Ansible run 28 s: its own start 2 s, host part 8 s, wait for sshd 12 s, converge 6 s; the playbook input is removed 2 s; readiness 2 s
+    %%> - what is left to cut: the wait for sshd (VM boot) and the host part (about 14 `incus` calls for the identity)
+    %%> - one start with a commit three commits past the base, with a changed migration, took 45 s: the nested Gateway's migrate 7 s and restart 1 s, and the rest in the checkout and the delta's work
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
