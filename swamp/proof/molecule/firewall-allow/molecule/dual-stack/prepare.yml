@@ -1,0 +1,169 @@
+# The batch `dual-stack` and the fixture `blocked-port` (family 6) of the case family-ipv6. In this order: every container gets an IPv6
+# address on the proof bridge, every container pings every other over IPv6 (a failed ping ends prepare, before any command), the target gets an
+# IPv6 listener and a test deny whose IPv6 line sits above the IPv6 proof-network allowance, and the probes show that it holds ("blocked
+# before"): the control port connects and the test port is blocked, from both sources.
+- ansible.builtin.import_playbook: ../default/facts.yml
+
+# runner steps.py ipv6_addresses: an address `fd42:232:2::<last octet of the IPv4 address>/64` on the interface of the bridge address.
+- name: An IPv6 address on the interface of the bridge address
+  hosts: nodes
+  gather_facts: false
+  tasks:
+    - name: The IPv6 address of the container
+      ansible.builtin.set_fact:
+        node_ip6: "{{ ipv6_prefix }}{{ node_ip.split('.') | last }}"
+        cacheable: true
+
+    - name: Find the interface that holds the bridge address
+      ansible.builtin.command: ip -o -4 addr show to {{ node_ip }}
+      register: bridge_line
+      changed_when: false
+
+    # `nodad` skips the duplicate address check, so the address works at once. `replace` adds it when it is missing and keeps it when it is there.
+    - name: Give that interface the IPv6 address
+      ansible.builtin.command: ip -6 addr replace {{ node_ip6 }}/64 dev {{ bridge_line.stdout.split()[1] }} nodad
+      changed_when: true
+
+    # The IPv4 allowance for the proof network has no IPv6 twin: the default policy would block the control port.
+    - name: Allow the IPv6 proof network
+      ansible.builtin.command: ufw allow from {{ ipv6_prefix }}/64 comment 'proof-network'
+      register: allowed6
+      changed_when: "'Skipping' not in allowed6.stdout"
+
+# A failed ping fails the play, and with it prepare. The first ping may wait for the neighbour discovery: it is asked again.
+- name: Every container reaches every other over IPv6
+  hosts: nodes
+  gather_facts: false
+  tasks:
+    - name: Ping the other containers
+      ansible.builtin.command: ping -6 -c 1 -W 3 {{ hostvars[item].node_ip6 }}
+      loop: "{{ groups['nodes'] | difference([inventory_hostname]) }}"
+      register: pinged
+      until: pinged.rc == 0
+      retries: 5
+      delay: 1
+      changed_when: false
+
+    # As facts.yml does for IPv4: the address that this container really uses to reach each other one (the kernel route).
+    - name: Read the source address of the IPv6 route to each other container
+      ansible.builtin.command: ip -6 route get {{ hostvars[item].node_ip6 }}
+      loop: "{{ groups['nodes'] | difference([inventory_hostname]) }}"
+      register: routes6
+      changed_when: false
+
+    - name: Keep them
+      ansible.builtin.set_fact:
+        src6_to: >-
+          {{ dict(routes6.results | map(attribute='item') | map('regex_replace', '^nested-', '')
+             | zip(routes6.results | map(attribute='stdout') | map('regex_search', 'src (\S+)', '\1') | map('first'))) }}
+        cacheable: true
+
+- name: Fixtures on the target container
+  hosts: nested-app-dev
+  gather_facts: false
+  vars:
+    c: "{{ cases.family_ipv6 }}"
+    deny_comment: proof:deny-family_ipv6
+    row_start: '^\[ *[0-9]+\] +'
+  tasks:
+    # `setsid -f` detaches the listener from the exec session; the redirects let the task end while it runs. `--bind ::` is the IPv6 wildcard.
+    - name: Start the IPv6 listeners, a test and a control port
+      ansible.builtin.shell: |
+        for port in {{ c.port }} {{ c.control }}; do
+          setsid -f python3 -m http.server "$port" --bind :: --directory /tmp >/dev/null 2>&1 </dev/null
+        done
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    # The listener binds a moment after its process starts: a refused connection is asked again.
+    - name: Each listener accepts connections on the container itself, over IPv6
+      ansible.builtin.command: timeout 2 bash -c 'echo > /dev/tcp/::1/{{ item }}'
+      loop: ["{{ c.port }}", "{{ c.control }}"]
+      register: listening
+      until: listening.rc == 0
+      retries: 10
+      delay: 1
+      changed_when: false
+
+    - name: Read the UFW table
+      ansible.builtin.command: ufw status numbered
+      register: table
+      changed_when: false
+
+    # The row number is the text between `[` and `]`. The deny goes in at the number of the IPv4 proof-network allowance, so it sits above it.
+    # For a rule from any to any ufw adds an IPv4 and an IPv6 line, and puts the IPv6 line at the end of the IPv6 rules.
+    - name: Deny the test port above the IPv4 proof-network allowance
+      vars:
+        anchor: >-
+          {{ table.stdout_lines | select('search', 'proof-network') | reject('search', '\(v6\)') | first
+             | split(']') | first | replace('[', '') | trim | int }}
+      ansible.builtin.command:
+        cmd: ufw insert {{ anchor }} deny proto tcp from any to any port {{ c.port }} comment '{{ deny_comment }}'
+      changed_when: true
+
+    - name: Read the UFW table again
+      ansible.builtin.command: ufw status numbered
+      register: table_v6
+      changed_when: false
+
+    # runner steps.py place_v6_line: the IPv6 line is below the IPv6 proof-network allowance, so it is deleted and put in again above it.
+    - name: Move the IPv6 line of the deny above the IPv6 proof-network allowance
+      vars:
+        deny_v6: >-
+          {{ table_v6.stdout_lines | select('search', row_start ~ c.port ~ '/tcp \(v6\) +DENY IN +Anywhere \(v6\) +# ' ~ deny_comment ~ '$')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+        anchor_v6: >-
+          {{ table_v6.stdout_lines | select('search', 'proof-network') | select('search', '\(v6\)')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+      when: deny_v6 | length == 1 and anchor_v6 | length == 1 and deny_v6 | first > anchor_v6 | first
+      block:
+        - name: Delete the IPv6 line
+          ansible.builtin.command: ufw --force delete {{ deny_v6 | first }}
+          changed_when: true
+
+        - name: Put it in again above the IPv6 proof-network allowance
+          ansible.builtin.command:
+            cmd: ufw insert {{ anchor_v6 | first }} deny proto tcp from ::/0 to ::/0 port {{ c.port }} comment '{{ deny_comment }}'
+          changed_when: true
+
+    - name: Read the UFW table a last time
+      ansible.builtin.command: ufw status numbered
+      register: table_end
+      changed_when: false
+
+    - name: The IPv6 deny line is above the IPv6 proof-network allowance
+      vars:
+        deny_v6: >-
+          {{ table_end.stdout_lines | select('search', row_start ~ c.port ~ '/tcp \(v6\) +DENY IN +Anywhere \(v6\) +# ' ~ deny_comment ~ '$')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+        anchor_v6: >-
+          {{ table_end.stdout_lines | select('search', 'proof-network') | select('search', '\(v6\)')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+      ansible.builtin.assert:
+        that:
+          - deny_v6 | length == 1
+          - anchor_v6 | length == 1
+          - deny_v6 | first < anchor_v6 | first
+        fail_msg: "IPv6 rows: deny {{ deny_v6 }}, proof-network allowance {{ anchor_v6 }}; expected one of each, the deny above"
+        quiet: true
+
+- name: Blocked before, the probes of the fixture
+  ansible.builtin.import_playbook: probes.yml
+  vars:
+    probe_set: setup
+
+- name: Every precondition holds
+  hosts: localhost
+  gather_facts: false
+  vars:
+    wrong: "{{ probe_obs | rejectattr('ok') | list }}"
+    expected: "{{ groups['case_hosts'] | map('extract', hostvars, 'probes_of_case') | flatten | list | length }}"
+  tasks:
+    - name: The control port connects and the test port is blocked, from both sources, over IPv6
+      ansible.builtin.assert:
+        that:
+          - wrong | length == 0
+          - probe_obs | length == expected | int
+        fail_msg: "precondition: {{ wrong | map(attribute='text') | join('; ') }} ({{ probe_obs | length }} of {{ expected }} probes ran)"
+        quiet: true

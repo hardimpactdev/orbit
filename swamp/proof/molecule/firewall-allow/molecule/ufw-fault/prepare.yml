@@ -1,0 +1,89 @@
+---
+# Fixtures for the three cases, all on app-dev (the runner's `blocked-port` fixture for each case): a listener on the test and the control port,
+# a test deny placed above the proof-network allowance, and for interrupted-reorder the misplaced allow line BELOW its deny. A last play
+# checks the fixture the way the fixture's own probe steps do: the control port connects and the test port is blocked, from both sources.
+# The shim and the faults are not set here: converge installs them per case, so that no case meets the fault of another.
+- ansible.builtin.import_playbook: ../default/facts.yml
+
+- name: Listeners, test denies and the misplaced line on app-dev
+  hosts: nested-app-dev
+  gather_facts: false
+  vars:
+    node_short: app-dev
+    listen_ports: "{{ (cases.values() | map(attribute='port') | list) + (cases.values() | map(attribute='control') | list) }}"
+  tasks:
+    - name: Start a listener on each test and control port
+      ansible.builtin.command:
+        cmd: python3 -m http.server {{ item }} --bind 0.0.0.0 --directory /tmp
+      async: 3600
+      poll: 0
+      loop: "{{ listen_ports }}"
+      changed_when: true
+
+    - name: Wait until each listener accepts a connection on the container itself
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ item }}"
+        timeout: 15
+      loop: "{{ listen_ports }}"
+
+    - name: Find the row of the proof-network allowance
+      ansible.builtin.shell: |
+        set -o pipefail
+        ufw status numbered | grep -m1 'proof-network' | sed -E 's/^\[ *([0-9]+)\].*/\1/'
+      args:
+        executable: /bin/bash
+      register: anchor
+      changed_when: false
+
+    - name: Deny each test port above the proof-network allowance
+      ansible.builtin.command:
+        cmd: >-
+          ufw insert {{ anchor.stdout | int }} deny proto tcp from any to any port {{ item.value.port }}
+          comment 'proof:deny-{{ item.key }}'
+      loop: "{{ cases | dict2items }}"
+      loop_control: {label: "{{ item.key }}"}
+      changed_when: true
+
+    - name: Find the row of the deny of interrupted-reorder
+      ansible.builtin.shell: |
+        set -o pipefail
+        ufw status numbered | grep -m1 'proof:deny-interrupted_reorder$' | sed -E 's/^\[ *([0-9]+)\].*/\1/'
+      args:
+        executable: /bin/bash
+      register: deny_row
+      changed_when: false
+
+    - name: Interrupted reorder, the allow line exists but sits BELOW its deny (the `misplaced` row of the cases file)
+      ansible.builtin.command:
+        cmd: >-
+          ufw insert {{ (deny_row.stdout | int) + 1 }} allow proto tcp from {{ hostvars['nested-' ~ allowed_of[node_short]].src_to[node_short] }}
+          to any port {{ cases.interrupted_reorder.port }} comment 'proof:misplaced'
+      changed_when: true
+
+- name: Check the fixture of each case, from both sources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: List the probes of the fixtures (control port connects, test port is blocked)
+      ansible.builtin.set_fact:
+        fixture_probes: >-
+          {{ fixture_probes | default([]) + [{'case': item.1.key, 'from': item.0, 'tip': hostvars['nested-app-dev'].node_ip,
+             'port': item.1.value[item.2], 'expect': ('blocked' if item.2 == 'port' else 'connect')}] }}
+      loop: "{{ ['nested-gateway', 'nested-app-prod'] | product(cases | dict2items, ['port', 'control']) | list }}"
+      loop_control: {label: "{{ item.1.key }} {{ item.0 }} {{ item.2 }}"}
+
+    - name: Run the probes, one wave at a time
+      ansible.builtin.include_tasks: probe-wave.yml
+      loop: "{{ fixture_probes | batch(parallel_limit | int) | list }}"
+      loop_control: {loop_var: wave, label: "{{ wave | length }} probes"}
+
+    - name: Every probe of the fixtures saw what was expected
+      vars:
+        wrong: "{{ probe_obs | default([]) | rejectattr('ok') | list }}"
+      ansible.builtin.assert:
+        that:
+          - wrong | length == 0
+          - probe_obs | default([]) | length == fixture_probes | length
+        fail_msg: "fixture probes: {{ wrong | map(attribute='text') | join('; ') }}"
+        quiet: true

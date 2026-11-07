@@ -1,0 +1,34 @@
+---
+# One snapshot of what the cases compare, named by `snap` (s0 before the command, s1 after it, s2 after the retry): the UFW table of the
+# container, the ids of the firewall.allow Operations of the Gateway, and the firewall records of the Node. The result is added to the
+# cacheable fact `snaps`, which verify.yml reads. `tcontainer`, `tid` and `tnode` come from cases.yml.
+- name: "{{ inventory_hostname }}: UFW table of the container ({{ snap }})"
+  ansible.builtin.command: ufw status numbered
+  delegate_to: "{{ tcontainer }}"
+  register: snap_ufw
+  changed_when: false
+
+- name: "{{ inventory_hostname }}: Operations ({{ snap }})"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/operations?kind=firewall.allow"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: snap_ops
+
+- name: "{{ inventory_hostname }}: firewall records of the Node ({{ snap }})"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/firewall-rules?node={{ tid }}"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: snap_records
+
+- name: "{{ inventory_hostname }}: keep the snapshot {{ snap }}"
+  ansible.builtin.set_fact:
+    snaps: >-
+      {{ snaps | default({}) | combine({snap: {
+         'ufw': snap_ufw.stdout,
+         'ops': (snap_ops.json.data | default([])) | map(attribute='id') | sort | list,
+         'records': (snap_records.json.data | default([])) | selectattr('node', 'equalto', tnode) | map(attribute='rules') | first | default([])}}) }}
+    cacheable: true

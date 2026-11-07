@@ -1,0 +1,25 @@
+# What the case runs and sees. Loaded by converge.yml, probes.yml and verify.yml for the case host: `inventory_hostname` is the case and
+# `c` its ports (molecule.yml). Values that only the live fleet knows are templated when the case runs.
+tcontainer: "nested-{{ target }}"
+tid: "{{ hostvars['localhost'].node_ids[target] }}"
+# The IPv6 address the sources probe, and the IPv6 address the allowed source really uses to reach it (the kernel route, as the runner's
+# ${gateway.src6}). Both are facts that prepare.yml left for the containers.
+tip: "{{ hostvars[tcontainer].node_ip6 }}"
+src6: "{{ hostvars['nested-' ~ allowed].src6_to[target] }}"
+c: "{{ cases[inventory_hostname] }}"
+# The runner's `rule6`: ["${port}", "--node=${app-dev.id}", "--from=${gateway.src6}", "--protocol=tcp"]
+argv: ['firewall:allow', "{{ c.port }}", "--node={{ tid }}", "--from={{ src6 }}", "--protocol=tcp"]
+
+# The probes, over IPv6, as the case file lists them.
+probe_common: {case: "{{ inventory_hostname }}", tip: "{{ tip }}"}
+probes:
+  # The fixture `blocked-port` (family 6) is a precondition: the control port works and the test port is blocked, before the command.
+  setup:
+    - {from: "nested-{{ allowed }}", port: "{{ c.control }}", expect: connect}
+    - {from: "nested-{{ blocked }}", port: "{{ c.control }}", expect: connect}
+    - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: blocked}
+    - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}
+  # The `expect` of the case: the allowed source connects, the other one stays blocked.
+  expect:
+    - {from: "nested-{{ allowed }}", port: "{{ c.port }}", expect: connect}
+    - {from: "nested-{{ blocked }}", port: "{{ c.port }}", expect: blocked}

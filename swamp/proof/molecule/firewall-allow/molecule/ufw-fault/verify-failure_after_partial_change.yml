@@ -1,0 +1,44 @@
+---
+# failure-after-partial-change (changes-needed, failed, succeeded). Stage 1: the apply failed after the first line; the TCP line is there, the
+# failure is recorded. Stage 2: the repeat finished with the UDP line, without duplicates. The stages are read from the snapshots of converge
+# (s0 before, s1 after stage 1, s2 after stage 2); the final state is the live read of verify.yml (`rows`, `rules`).
+- name: failure-after-partial-change
+  vars:
+    tcp_re: "{{ c.port }}/tcp +ALLOW IN +{{ src }}"
+    udp_re: "{{ c.port }}/udp +ALLOW IN +{{ src }}"
+    deny_re: 'proof:deny-failure_after_partial_change$'
+    ports: ["{{ c.port | int }}", "{{ c.port | string }}"]
+    s1_rows: "{{ snaps.s1.ufw.split('\n') | select('search', '^\\[') | reject('search', '\\(v6\\)') | list }}"
+    s1_tcp: "{{ s1_rows | select('search', tcp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s1_deny: "{{ s1_rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    tcp: "{{ rows | select('search', tcp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    udp: "{{ rows | select('search', udp_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny: "{{ rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s1_failed: "{{ snaps.s1.records | selectattr('status', 'equalto', 'failed') | selectattr('port', 'in', ports) | list }}"
+    active: "{{ rules | selectattr('status', 'equalto', 'active') | selectattr('port', 'in', ports) | list }}"
+  block:
+    - name: Stage 1, the first (TCP) line is there above the deny, and one record says failed
+      ansible.builtin.assert:
+        that: [s1_tcp | length == 1, s1_deny | length == 1, s1_tcp | first < s1_deny | first, s1_failed | length == 1]
+        quiet: true
+
+    - name: Stage 1, nothing else changed
+      ansible.builtin.include_tasks: unchanged.yml
+      vars: {from_snap: s0, to_snap: s1, except_port: "{{ c.port }}"}
+
+    - name: Stage 2, each line once and in order (TCP, UDP, deny), and one record is active
+      ansible.builtin.assert:
+        that: [tcp | length == 1, udp | length == 1, deny | length == 1, tcp | first < udp | first, udp | first < deny | first, active | length == 1]
+        quiet: true
+
+    - name: Stage 2, nothing else changed
+      ansible.builtin.include_tasks: unchanged.yml
+      vars: {from_snap: s1, to_snap: s2, except_port: "{{ c.port }}"}
+
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"
