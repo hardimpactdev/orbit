@@ -112,7 +112,7 @@ After native validation resolves the pinned extensions, the job runs `swamp/test
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 
-Operation Deno unit tests and the shape gate run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
+Operation Deno unit tests and the shape gate run on every CI change. Operation unit tests run in one job with four Deno workers. Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Baseline and ratchet checks stay serial, and every failure remains in the final result. Keeping one job avoids five separate waits for the shared runner pool.
 
 Workflow validation runs only when the change selects the Swamp checks, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
