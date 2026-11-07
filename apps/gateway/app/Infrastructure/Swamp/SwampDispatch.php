@@ -97,8 +97,8 @@ final class SwampDispatch
                 throw $first === false ? $error
                     : new ResourceOperationException($error->errorCode, $error->getMessage(), $error->status, details: ['operation_id' => $first->id]);
             }
-            foreach ($starts as $operation) {
-                app(StartSwampRun::class)->start($operation);
+            if ($starts !== []) {
+                app(StartSwampRun::class)->startMany(array_values($starts));
             }
         } finally {
             $this->sharing = false;
