@@ -21,7 +21,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ "ansible-input-nested-" + string(inputs.guest_node_id) }}
       methodName: write
       inputs: {intent: '${{ {"ssh_execution": inputs.ssh_execution, "fleet": {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"} } } }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
   - name: Write the playbook input

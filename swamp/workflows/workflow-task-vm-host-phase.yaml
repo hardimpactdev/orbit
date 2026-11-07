@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ansible-input
+      behaviorName: ${{ "ansible-input-refresh-" + string(inputs.node_id) }}
       methodName: write
       inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
   - name: Run the host phase
