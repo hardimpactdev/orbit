@@ -109,11 +109,11 @@ The vpn Node runs the stock `dnsmasq.service`. It binds the VPN DNS address with
 
 The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
 
-The render reads stored rows only. A change stores its state before it asks for a render. A Cluster change that publishes before it commits stores its pending TLD, state or Router on the Cluster row, and the change clears it when it ends. A hold that nothing cleared expires after an hour.
+The render reads stored rows only. A change stores its state before it asks for a render. A Cluster change that publishes before it commits stores its pending TLD, state or Router on the Cluster row. Each source of change (`cluster:update`, a Router selection) keeps its own hold and releases only that one when it ends. A hold that nothing cleared expires after an hour.
 
 ### Revision and parallel publications
 
-Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one.
+Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one. A publication admitted after that holds a newer revision still, and the Node then skips the restore as superseded. So after the Gateway stores the failure of a Router change or an Instance transfer, it queues one fresh publication, and the newest render holds the rolled-back rows.
 
 ### The phase
 
@@ -129,6 +129,8 @@ The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run:
 8. It writes `orbit.revision`.
 
 An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart.
+
+The first publication on a Node that still runs the old listener moves the listener's files to `previous/legacy/` and deletes `/var/lib/orbit/private-dns`, the listener release. A rollback after that restores the last good rendered files. It cannot restart the old listener, because its code is gone.
 
 ### Upstream resolvers
 

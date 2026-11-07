@@ -403,6 +403,27 @@ fn router_restores_each_prior_shape_on_partial_failure_and_reports_failed_recove
 }
 
 #[test]
+fn router_prunes_the_retired_dns_families_and_keeps_https() {
+    let mut udp = lan(5, "53");
+    udp.comment = "orbit:router-lan-dns-udp:5".into();
+    udp.protocol = "udp".into();
+    let mut tcp = lan(5, "53");
+    tcp.comment = "orbit:router-lan-dns-tcp:5".into();
+    let https = lan(5, "443");
+    let mut host = Fake::new(vec![https.clone(), udp, tcp]);
+    router(
+        &RouterInput {
+            desired: vec![https.clone()],
+            expand: true,
+            prune: true,
+        },
+        &mut host,
+    )
+    .unwrap();
+    assert_eq!(host.rows, vec![https]);
+}
+
+#[test]
 fn router_refuses_duplicate_owned_rows_before_mutation_and_cleans_ipv6_residue() {
     let mut host = Fake::new(vec![lan(5, "443"), lan(5, "443")]);
     assert!(matches!(

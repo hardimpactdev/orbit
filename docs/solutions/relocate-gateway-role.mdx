@@ -59,4 +59,4 @@ orbit doctor --node=<new-node-id>
 curl --fail https://gateway.orbit/up
 ```
 
-`node:role:list` shows `gateway` on the new Node and `vpn` still on the old one. `orbit node:show` on the new Gateway lists access to the `vpn` Node and, when Metrics exists, the Metrics Node. Run `curl https://<new-wireguard-ip>/up` from a peer that trusts the Orbit CA. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/private-dns/catalog.json` changes on the `vpn` Node, not on the Gateway.
+`node:role:list` shows `gateway` on the new Node and `vpn` still on the old one. `orbit node:show` on the new Gateway lists access to the `vpn` Node and, when Metrics exists, the Metrics Node. Run `curl https://<new-wireguard-ip>/up` from a peer that trusts the Orbit CA. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/dnsmasq/orbit.revision` changes on the `vpn` Node, not on the Gateway.

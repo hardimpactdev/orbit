@@ -241,6 +241,8 @@ fn rules(input: &RulesInput, host: &mut impl Host) -> Result<Reconciled, Error> 
     Ok(Reconciled { matches: true })
 }
 
+// The two DNS families are retired (ADR 0248: nothing listens on a Router LAN). The Gateway no longer desires them, and the agent
+// still owns the names, so the next Router LAN reconcile prunes the rules that an earlier release opened.
 const FAMILIES: [&str; 3] = [
     "orbit:router-lan-https",
     "orbit:router-lan-dns-udp",
