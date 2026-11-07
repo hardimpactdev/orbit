@@ -1085,7 +1085,11 @@ The seed volume `<host>-base-seed` of the base VM holds the pool `topology-seed`
 
 #### Refresh the base snapshot
 
-Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`, which takes `--commit <sha>` for a release other than the one the Gateway runs. Two triggers admit every Linux host: every release, from its step "Admit the task VM refreshes" after the Swamp load, which runs `task-vms:refresh-images --commit <sha>` from the new release, and a daily schedule at 03:20. A host with a refresh open keeps it and queues the newest commit behind it: the run that ends admits that commit. A host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records and UpCloud attempts.
+Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`, which takes `--commit <sha>` for a release other than the one the Gateway runs.
+
+Two triggers admit every Linux host: every release, from its step "Admit the task VM refreshes" after the Swamp load, which runs `task-vms:refresh-images --commit <sha>` from the new release, and a daily schedule at 03:20.
+
+A host with a refresh open keeps it and queues the newest commit behind it: the run that ends admits that commit. A host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records and UpCloud attempts.
 
 The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
 
