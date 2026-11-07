@@ -446,7 +446,7 @@
           vars:
             warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
     # Every item of the setup is a block of its own with its own rescue, so a failure in one cannot skip another. A rescue records a
-    # warning: it is printed, written to the run folder (see the end of the part) and shown in the operation output.
+    # warning, which the end of the part prints in Ansible's log.
     - name: Make the log files
       block:
         - name: Make the folder of the logs
@@ -507,17 +507,20 @@
                 group: root
                 mode: "0644"
               notify: Restart rsyslog
-          always:
-            - name: Remove the staged rsyslog rule
-              ansible.builtin.file: { path: /etc/rsyslog.d/19-orbit-egress.conf.new, state: absent }
       rescue:
+        # The command module's `msg` is only "non-zero return code": the reason is in stderr and stdout.
         - name: Record that the rsyslog rule failed
           ansible.builtin.set_fact:
             egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
           vars:
-            warning: >-
-              WARNING egress.setup_failed: {{ ansible_failed_task.name }}:
-              {{ ansible_failed_result.msg | default(ansible_failed_result.stderr | default('')) }}
+            reasons: "{{ [ansible_failed_result.msg | default(''), ansible_failed_result.stderr | default(''), ansible_failed_result.stdout | default('')] }}"
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ reasons | map('trim') | select | join(' | ') }}"
+      # Whatever happened, and also after a crash that left it, no staged file stays: it is not read by rsyslog, but a stale one is not
+      # a rule the part wrote. Nothing is reported for it.
+      always:
+        - name: Remove the staged rsyslog rule
+          ansible.builtin.file: { path: /etc/rsyslog.d/19-orbit-egress.conf.new, state: absent }
+          changed_when: false
     - name: Set up the log rotation
       block:
         - name: Write the log rotation
@@ -549,7 +552,8 @@
           ansible.builtin.set_fact:
             egress_warnings: "{{ egress_warnings | default([]) + [warning] }}"
           vars:
-            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ ansible_failed_result.msg | default('') }}"
+            reasons: "{{ [ansible_failed_result.msg | default(''), ansible_failed_result.stderr | default(''), ansible_failed_result.stdout | default('')] }}"
+            warning: "WARNING egress.setup_failed: {{ ansible_failed_task.name }}: {{ reasons | map('trim') | select | join(' | ') }}"
     - name: Apply the changed rules
       ansible.builtin.meta: flush_handlers
     # A unit that stays active does not bring back a table that something deleted.
@@ -639,19 +643,11 @@
           or egress_units.results[1].status.ActiveState | default('') != 'active'
       ansible.builtin.set_fact:
         egress_warnings: "{{ egress_warnings | default([]) + ['WARNING egress.service_inactive: rsyslog or orbit-egress-log.service is not active'] }}"
-    # The warnings are printed and written to the run folder on the Swamp Node, before the safety checks so that a failed part shows them
-    # too. The workflow `task-vm-host-phase` prints the file in its own step, which is how they reach the operation output.
+    # The warnings are printed in Ansible's log, before the safety checks so that a failed part shows them too. An operation does not carry
+    # the log of a step, so the lasting signs are the end checks above and the missing `egress` fact of the agent.
     - name: Print the warnings
       when: egress_warnings | default([]) | length > 0
       ansible.builtin.debug: { msg: "{{ egress_warnings }}" }
-    - name: Write the warnings to the run folder
-      when: egress_warnings | default([]) | length > 0
-      delegate_to: localhost
-      become: false
-      ansible.builtin.copy:
-        dest: "{{ run_dir }}/egress-warnings.txt"
-        content: "{{ egress_warnings | join(newline) }}{{ newline }}"
-        mode: "0600"
     # Safety: the log must change nothing for a task VM. The bridge has no IPv6, and the ACL still drops the private ranges.
     - name: Check that the bridge has no IPv6
       when: not ansible_check_mode

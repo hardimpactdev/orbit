@@ -77,11 +77,11 @@ def render(folder, raw=None, bridge='orbittask0'):
     return run_local(folder, tasks, {'host': {'network': bridge}, 'bridge_before': {'stdout': bridge_config(raw)}})
 
 
-def local_file_tasks(root, validator='test -s'):
+def local_file_tasks(root, validator=('test', '-s')):
     """The file tasks of the part with every path moved below `root`, as an unprivileged user can run them twice.
 
     The block structure stays, so the `when` of a block and its rescue run as on a host. Owners go (the test is not root), the tool that checks
-    the rsyslog rule becomes `validator` (`test -s`, or `false` for a rule that does not pass), the tools that validate on the temporary file
+    the rsyslog rule becomes `validator` (an argv prefix: `test -s`, or a command that fails for a rule that does not pass), the tools that validate on the temporary file
     become a size check, and notifications go. Tasks that need systemd or Incus are left out.
     """
     def moved(path):
@@ -104,7 +104,7 @@ def local_file_tasks(root, validator='test -s'):
                 argv = task[module]['argv']
                 if '/usr/sbin/rsyslogd' not in argv:
                     continue
-                task[module] = {'argv': [*validator.split(), moved(argv[-1])]}
+                task[module] = {'argv': [*validator, moved(argv[-1])]}
             elif module in ('ansible.builtin.file', 'ansible.builtin.copy', 'ansible.builtin.stat'):
                 args = task[module]
                 for key in ('dest', 'path', 'src'):
@@ -225,7 +225,10 @@ class TaskVmHostEgressTest(unittest.TestCase):
         self.assertEqual(set(asserts.values()), SAFETY)
         for code in asserts.values():
             self.assertRegex(code, r'^[a-z]+\.[a-z_]+$')
-        self.assertLess(names.index('Write the warnings to the run folder'), names.index('Check that the bridge has no IPv6'))
+        self.assertLess(names.index('Print the warnings'), names.index('Check that the bridge has no IPv6'))
+        # An operation does not carry the log of a step: the part writes no file for it and the workflow has no step for it.
+        self.assertNotIn('egress-warnings', PLAYBOOK.read_text())
+        self.assertNotIn('delegate_to', PLAYBOOK.read_text())
         warnings = [task for task in play['tasks'] if task['name'].startswith('Warn about')]
         self.assertEqual(len(warnings), 5)
         for task in warnings + [task for task in play['tasks'] if 'ansible.builtin.assert' in task]:
@@ -249,7 +252,14 @@ class TaskVmHostEgressTest(unittest.TestCase):
         # Only when the content differs, and the staged file goes whatever the check says.
         replace = next(task for task in block['block'] if task['name'] == 'Check and replace the rsyslog rule')
         self.assertIn("hash('sha1')", replace['when'])
-        self.assertEqual(replace['always'][0]['ansible.builtin.file'], {'path': stage, 'state': 'absent'})
+        self.assertNotIn('always', replace)
+        # The cleanup is in the `always` of the whole block, outside the guard: a staged file that a crash left is removed on every run.
+        self.assertEqual(block['always'][0]['ansible.builtin.file'], {'path': stage, 'state': 'absent'})
+        self.assertIs(block['always'][0]['changed_when'], False)
+        # The warning carries the tool's own words: the command module's `msg` is only "non-zero return code".
+        warning = json.dumps(block['rescue'][0]['vars'])
+        self.assertIn('ansible_failed_result.stderr', warning)
+        self.assertIn('ansible_failed_result.stdout', warning)
 
     def test_the_rate_limit_is_per_source_and_the_log_comes_before_the_add(self):
         rules = egress_play()['vars']['nft_rules']
@@ -336,7 +346,7 @@ class TaskVmHostEgressTest(unittest.TestCase):
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_the_checks_pass_on_the_expected_end_state_safety_damage_fails_and_the_rest_warns(self):
         checks = [task for task in egress_play()['tasks']
-                  if task['name'].startswith(('Warn about', 'Check that', 'Print the warnings', 'Write the warnings'))]
+                  if task['name'].startswith(('Warn about', 'Check that', 'Print the warnings'))]
         acl = json.loads(end_state()['egress_acl']['stdout'])
 
         def with_acl(rules):
@@ -378,16 +388,13 @@ class TaskVmHostEgressTest(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
-            warnings = folder / 'egress-warnings.txt'
 
             def run(state):
-                warnings.unlink(missing_ok=True)
-                return run_local(folder, checks, {**state, 'run_dir': str(folder)})
+                return run_local(folder, checks, state)
 
             passed = run(end_state())
             self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
             self.assertNotIn('WARNING', passed.stdout)
-            self.assertFalse(warnings.exists())
             for code, state in safety:
                 with self.subTest(code=code, state=state):
                     failed = run(state)
@@ -398,26 +405,23 @@ class TaskVmHostEgressTest(unittest.TestCase):
                     warned = run(state)
                     self.assertEqual(warned.returncode, 0, warned.stdout + warned.stderr)
                     self.assertIn(f'WARNING {code}', warned.stdout)
-                    # The line is also in the run folder, which the workflow prints.
-                    self.assertIn(f'WARNING {code}', warnings.read_text())
                     self.assertEqual(code in SAFETY, False)
-            # A safety failure still leaves the observation warnings readable.
+            # A safety failure still prints the observation warnings first.
             both = run(end_state(egress_bridge={'stdout': bridge_config(OURS, **{'ipv6.address': 'fd42:1::1/64'})}, egress_end_table={'stdout': ''}))
             self.assertNotEqual(both.returncode, 0)
-            self.assertIn('WARNING egress.rules_missing', warnings.read_text())
+            self.assertIn('WARNING egress.rules_missing', both.stdout)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_failed_setup_action_is_recorded_and_the_part_goes_on(self):
         block = next(task for task in egress_play()['tasks'] if task['name'] == 'Set up the log rotation')
-        printing = [task for task in egress_play()['tasks'] if task['name'] in ('Print the warnings', 'Write the warnings to the run folder')]
+        printing = [task for task in egress_play()['tasks'] if task['name'] == 'Print the warnings']
         broken = {'name': 'Write into a folder that is gone', 'ansible.builtin.copy': {'dest': '/nonexistent-egress-test/x/y', 'content': 'x'}}
         tasks = [{'block': [broken], 'rescue': block['rescue']}, {'name': 'Next', 'ansible.builtin.debug': {'msg': 'went on'}}, *printing]
         with tempfile.TemporaryDirectory() as folder:
-            result = run_local(Path(folder), tasks, {'run_dir': folder})
+            result = run_local(Path(folder), tasks, {})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('WARNING egress.setup_failed: Write into a folder that is gone', result.stdout)
             self.assertIn('went on', result.stdout)
-            self.assertIn('WARNING egress.setup_failed: Write into a folder that is gone', (Path(folder) / 'egress-warnings.txt').read_text())
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_rsyslog_rule_that_fails_its_check_keeps_the_old_rule_and_skips_nothing_else(self):
@@ -425,23 +429,42 @@ class TaskVmHostEgressTest(unittest.TestCase):
             folder = Path(folder)
             root = folder / 'root'
             rule = root / 'etc/rsyslog.d/19-orbit-egress.conf'
-            variables = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(OURS)}, 'run_dir': str(folder)}
-            printing = [task for task in egress_play()['tasks'] if task['name'] in ('Print the warnings', 'Write the warnings to the run folder')]
+            variables = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(OURS)}}
+            printing = [task for task in egress_play()['tasks'] if task['name'] == 'Print the warnings']
             (root / 'etc/rsyslog.d').mkdir(parents=True)
             rule.write_text('# the old rule\n')
-            failing = run_local(folder, local_file_tasks(root, validator='false') + printing, variables)
+            refusing = ('sh', '-c', 'echo "could not open config file: Permission denied" >&2; exit 1', 'rsyslogd')
+            failing = run_local(folder, local_file_tasks(root, validator=refusing) + printing, variables)
             self.assertEqual(failing.returncode, 0, failing.stdout + failing.stderr)
             self.assertEqual(rule.read_text(), '# the old rule\n')
             self.assertFalse((root / 'etc/rsyslog.d/19-orbit-egress.conf.new').exists())
-            # The rotation and the log files were still set up, and the failure is in the run folder.
+            # The rotation and the log files were still set up. The warning names the task and carries the tool's own words.
             self.assertTrue((root / 'etc/logrotate.d/orbit-egress').is_file())
             self.assertTrue((root / 'var/log/orbit/dnsmasq-orbittask0.log').is_file())
-            self.assertIn('WARNING egress.setup_failed: Check the staged rsyslog rule', (folder / 'egress-warnings.txt').read_text())
+            self.assertIn('WARNING egress.setup_failed: Check the staged rsyslog rule', failing.stdout)
+            self.assertIn('could not open config file: Permission denied', failing.stdout)
             # A rule that passes replaces the old one, and the staged file is gone.
             passing = run_local(folder, local_file_tasks(root), variables)
             self.assertEqual(passing.returncode, 0, passing.stdout + passing.stderr)
             self.assertEqual(rule.read_text(), egress_play()['vars']['rsyslog_rules'])
             self.assertFalse((root / 'etc/rsyslog.d/19-orbit-egress.conf.new').exists())
+
+    @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
+    def test_a_staged_file_that_a_crash_left_is_removed_even_when_the_rule_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            root = folder / 'root'
+            variables = {'host': {'network': 'orbittask0'}, 'bridge_before': {'stdout': bridge_config(OURS)}}
+            tasks = local_file_tasks(root)
+            self.assertEqual(run_local(folder, tasks, variables).returncode, 0)
+            leftover = root / 'etc/rsyslog.d/19-orbit-egress.conf.new'
+            leftover.write_text('# left by a crash\n')
+            rerun = run_local(folder, tasks, variables)
+            self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+            self.assertFalse(leftover.exists())
+            self.assertEqual((root / 'etc/rsyslog.d/19-orbit-egress.conf').read_text(), egress_play()['vars']['rsyslog_rules'])
+            # Removing the leftover is not a change of the part, so the run still reports none.
+            self.assertRegex(rerun.stdout, r'changed=0\s')
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')
     def test_a_second_run_of_the_file_tasks_changes_nothing_and_leaves_the_logs_world_readable(self):

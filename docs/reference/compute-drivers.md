@@ -1120,9 +1120,11 @@ The value is merged. The part keeps every line of the operator and adds `log-que
 
 Only a safety check fails the part, and with it the refresh. An observation check records a warning with its code, and the refresh goes on, because the missing agent fact shows the gap. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. Each Incus and systemd task has a timeout, so a hung task fails or warns and does not hold the refresh.
 
-Each setup item is a block of its own with its own rescue: the connection log, the log files, the rsyslog rule, the log rotation and the DNS log. A failure in one block cannot skip another. The connection log comes first. A rescued failure keeps the part green, so the part writes every warning to `egress-warnings.txt` in the run folder, one line each, before the safety checks. The step `Print the host phase warnings` of `task-vm-host-phase` prints the file, so the warnings are in the operation output.
+Each setup item is a block of its own with its own rescue: the connection log, the log files, the rsyslog rule, the log rotation and the DNS log. A failure in one block cannot skip another. The connection log comes first.
 
-AppArmor confines `rsyslogd` to `/etc/rsyslog.conf` and `/etc/rsyslog.d/**`, even for `-N1`. The rsyslog rule is therefore not checked with `validate:` on a temporary file. When the content differs, the part stages the rule as `/etc/rsyslog.d/19-orbit-egress.conf.new`, a name that rsyslog does not include. It runs `rsyslogd -N1 -f` on that path and then copies the file to its name. It removes the staged file in every case. A rule that fails the check never replaces the old rule.
+A rescued failure keeps the part green. The part prints each warning in Ansible's log before the safety checks, with the error text of the failed tool. An operation does not carry the log of a step, so the lasting signs are the end checks, such as `egress.config_missing` for an rsyslog rule or a rotation file that is absent, and the `egress` fact that the agent does not send.
+
+AppArmor confines `rsyslogd` to `/etc/rsyslog.conf` and `/etc/rsyslog.d/**`, even for `-N1`. The rsyslog rule is therefore not checked with `validate:` on a temporary file. When the content differs, the part stages the rule as `/etc/rsyslog.d/19-orbit-egress.conf.new`, a name that rsyslog does not include. It runs `rsyslogd -N1 -f` on that path and then copies the file to its name. It removes the staged file in every case, also when the rule is unchanged and a crash left the file. A rule that fails the check never replaces the old rule.
 
 | Check | Result |
 |---|---|
