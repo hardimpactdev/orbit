@@ -19,7 +19,7 @@ sequenceDiagram
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
   %%> - one host exec: `incus delete --force` and the seed clone; a few seconds
-  SW->>HUB: Remove the hub peer<br/>wg set · remove
+  SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
   %%> - the VM's peer leaves the WireGuard hub; the claim's model key is revoked at the model router beside it; the Pi token goes with the VM

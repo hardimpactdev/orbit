@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -55,6 +56,21 @@ function slotPoolHost(int $maxVms = 6, bool $snapshot = true): array
 function slotPoolGroup(Project $project): Task
 {
     return Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo]);
+}
+
+/** The Gateway, Swamp and VPN Node a release intent names, and a Swamp dispatch that starts nothing. */
+function slotPoolSweepWorld(): void
+{
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:gateway', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-public-key', 'wireguard_public_key' => str_repeat('g', 43).'=']));
+    foreach ([RoleName::Gateway, RoleName::Swamp, RoleName::Vpn] as $role) {
+        $gateway->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+    app()->instance(SwampDispatch::class, new class
+    {
+        public function start(Operation $operation): void {}
+    });
 }
 
 it('takes the lowest free slot number and mints a fresh identity, its Node active with the public keys pinned', function (): void {
@@ -160,16 +176,7 @@ it('has the sweep release each slot that no group holds and no Operation works o
     $busy->update(['group_id' => null, 'state' => TaskVmState::Failed]);
     Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $busy->id, 'node_id' => $host->id,
         'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
-    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
-        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit',
-        'ssh_host_fingerprint' => 'SHA256:gateway', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'gateway-public-key', 'wireguard_public_key' => str_repeat('g', 43).'=']));
-    foreach ([RoleName::Gateway, RoleName::Swamp, RoleName::Vpn] as $role) {
-        $gateway->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
-    }
-    app()->instance(SwampDispatch::class, new class
-    {
-        public function start(Operation $operation): void {}
-    });
+    slotPoolSweepWorld();
 
     app()->call([new SweepTaskVmHosts, 'handle']);
 
@@ -178,4 +185,44 @@ it('has the sweep release each slot that no group holds and no Operation works o
         ->and($releases->sole()->input['intent']['hub_peer']['public_key'])->toBe(TaskVmSlotIdentity::wireguardPublicKey((string) $stale->wireguard_private_key))
         ->and($stale->refresh()->state)->toBe(TaskVmState::Releasing)
         ->and($held->refresh()->state)->toBe(TaskVmState::Provisioning)->and($busy->refresh()->state)->toBe(TaskVmState::Failed);
+});
+
+it('refuses a group of a Project whose checkout the base does not carry', function (): void {
+    slotPoolHost();
+    $other = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
+
+    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskCapacityException::class, 'carries only the checkout of Project')
+        ->and(TaskVm::query()->count())->toBe(0);
+});
+
+it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 12);
+    $pool = app(TaskVmSlotPool::class);
+    $broken = $pool->take(slotPoolGroup($project));
+    $stale = $pool->take(slotPoolGroup($project));
+    // A row without its keys has no hub peer to remove, so its intent cannot be built.
+    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'wireguard_private_key' => null]);
+    $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
+    slotPoolSweepWorld();
+    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+
+    $refresh->update(['status' => OperationStatus::Succeeded]);
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->pluck('target_id')->all())->toBe([$stale->id])
+        ->and($broken->refresh()->state)->toBe(TaskVmState::Failed);
+});
+
+it('leaves task VM Nodes out of the workers\' known hosts and keeps every other pinned Node', function (): void {
+    [$host, $project] = slotPoolHost();
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    slotPoolSweepWorld();
+
+    $content = app(SwampWorkerKnownHostsInput::class)->capture()['known_hosts_content'];
+
+    expect(SwampWorkerKnownHostsInput::covers($slot->node))->toBeFalse()->and(SwampWorkerKnownHostsInput::covers($host))->toBeTrue()
+        ->and($content)->toContain('10.44.0.7 ssh-ed25519 fixture-public-key')->not->toContain((string) $slot->wireguard_ip.' ');
 });

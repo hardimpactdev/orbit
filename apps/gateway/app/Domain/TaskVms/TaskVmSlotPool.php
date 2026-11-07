@@ -39,10 +39,14 @@ final readonly class TaskVmSlotPool
      * slots of it left free as a report-only proof asks. It records the task VM and mints its identity: the Node with its `app-dev` role
      * and `pi-server` Process, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node now so nothing is read back.
      *
-     * @throws TaskCapacityException when no host has room
+     * @throws TaskCapacityException when no host has room, or the group's Project is not the one whose checkout the base carries
      */
     public function take(?Task $group, ?int $host = null, int $keepFree = 0): TaskVm
     {
+        // The base VM carries the checkout of the proof Project only, so a task VM can serve no other Project.
+        if ($group !== null && $group->project_id !== $this->proof->projectId()) {
+            throw new TaskCapacityException(TaskWait::Capacity, "Task VM: the task VM base carries only the checkout of Project {$this->proof->projectId()}.");
+        }
         $size = TaskVmSize::Large;
         // A group needs a host with a base snapshot; a refresh proves the snapshot it just took, before the Gateway records it.
         $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)

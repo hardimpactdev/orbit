@@ -18,6 +18,7 @@ sequenceDiagram
   %%> What it does:
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
   %%> - a host without a base VM gets one once, from its recipe image and seed (`task_vm.image_build`)
+  %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container

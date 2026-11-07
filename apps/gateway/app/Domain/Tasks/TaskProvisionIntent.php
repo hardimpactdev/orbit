@@ -84,18 +84,11 @@ final readonly class TaskProvisionIntent
         }));
     }
 
-    /**
-     * The slot's workspace Instance, bound to the group: one per slot, at the warm checkout the image carries. A release unbinds it; it is
-     * never deleted with a task.
-     */
+    /** The workspace Instance of the new slot's Node, at the warm checkout the base carries. The release deletes it with the Node. */
     private function workspace(TaskVm $slot, Task $group, string $branch, string $checkout): Instance
     {
-        $instance = Instance::query()->where('node_id', $slot->node_id)->where('checkout_path', $checkout)->lockForUpdate()->first()
-            ?? new Instance(['project_id' => $group->project_id, 'node_id' => $slot->node_id, 'source_layout' => InstanceSourceLayout::Checkout,
-                'checkout_path' => $checkout, 'root' => null, 'task_workspace_routed' => false]);
-        if ($instance->exists && $instance->task_workspace_owner_id !== null) {
-            throw new ResourceOperationException('tasks.capacity_unavailable', 'The slot\'s workspace is still bound to another group.', 409);
-        }
+        $instance = new Instance(['project_id' => $group->project_id, 'node_id' => $slot->node_id, 'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $checkout, 'root' => null, 'task_workspace_routed' => false]);
         $instance->fill(['name' => TaskWorkspaceName::for($group), 'branch_override' => $branch, 'task_workspace_owner_id' => $group->id,
             'source_prepare_id' => (string) Str::uuid(), 'status' => InstanceState::Reserved, 'first_setup_pending' => false,
             'failed_step' => null, 'error_code' => null])->save();
