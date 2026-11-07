@@ -11,5 +11,5 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapInputName(SnakeCaseMapper::class)]
 final class StartProofRunData extends Data
 {
-    public function __construct(public string $commit, public bool $all = false, public bool $reportOnly = false) {}
+    public function __construct(public string $commit, public bool $all = false, public bool $reportOnly = false, public bool $keepFailed = false) {}
 }

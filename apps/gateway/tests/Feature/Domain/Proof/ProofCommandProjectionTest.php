@@ -20,6 +20,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -179,5 +180,100 @@ describe('the proof of the CLI', function (): void {
             'input' => ['commit' => str_repeat('a', 40), 'uncovered' => [], 'runs' => []]]);
         app(ProofRunSettlement::class)->settle($empty->id);
         expect($empty->refresh()->status)->toBe(OperationStatus::Running);
+    });
+});
+
+/** The terminal event of a run that got its VM ready and proved the command: the workflow skipped or ran its destroy as `$destroy` says. */
+function proofKeptEnd(TaskVm $vm, string $report, string $destroy = 'skipped', array $steps = []): array
+{
+    // A VM that is no longer provisioning keeps its state, so the enrollment of the receipt records nothing here.
+    $vm->update(['state' => TaskVmState::Ready]);
+    $ended = proofEnded('failed', ['Create the VM' => ['status' => 'succeeded'], 'Pin the VM' => ['status' => 'succeeded'], 'Prove the command' => ['status' => 'succeeded'],
+        'Destroy the VM' => ['status' => $destroy], ...$steps], $report);
+    $ended['result']['provision'] = ['task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'ready' => true, 'enrollment' => ['ready' => true],
+        'provider' => ['image_fingerprint' => 'fingerprint', 'running' => true, 'settled' => true], 'source' => ['branch' => 'main', 'commit' => str_repeat('a', 40), 'php_version' => '8.5', 'laravel' => false]];
+
+    return $ended;
+}
+
+describe('keep_failed', function (): void {
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('keeps the VM and the group of a failed run, for 60 minutes, and records them on the run and on the proof', function (): void {
+        Queue::fake();
+        Carbon::setTestNow('2026-11-07 10:00:00');
+        [$proof, [[$run, $group, $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofKeptEnd($vm, PROOF_PASSED."\n".PROOF_FAILED));
+
+        $kept = ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z', 'cancel_requested_at' => null];
+        expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('proof.cases_failed')->and($projected->result['kept'])->toBe($kept)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
+            ->and($proof->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($proof->result['kept'])->toBe([['command' => 'firewall:allow', 'vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z']]);
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('keeps the VM of a run that Swamp ended as succeeded, because the cases printed a failed verdict', function (): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        $ended = proofKeptEnd($vm, PROOF_FAILED);
+        $ended['status'] = 'succeeded';
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('proof.cases_failed')->and($projected->result['kept']['vm'])->toBe('tvm-600');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('keeps one VM of two and leaves the proof open until the other run has ended', function (): void {
+        Queue::fake();
+        [$proof, [[$first, , $firstVm], [$second]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+        $first->forceFill(['input' => [...$first->input, 'keep_failed' => true]])->save();
+
+        app(ProofCommandProjection::class)->apply($first, proofKeptEnd($firstVm, PROOF_FAILED));
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running);
+
+        app(ProofCommandProjection::class)->apply($second, proofEnded('failed', ['Create the VM' => ['status' => 'failed']]));
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and(array_column($proof->result['kept'], 'command'))->toBe(['firewall:allow']);
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $second->id);
+    });
+    it('cancels the group the normal way when the flag is off, and records nothing kept', function (): void {
+        Queue::fake();
+        [$proof, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofKeptEnd($vm, PROOF_FAILED));
+
+        expect($projected->result)->not->toHaveKey('kept')->and($proof->refresh()->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('cancels the group the normal way when the destroy step ran and failed, or the VM was never ready, although the flag is on', function (array $steps, string $destroy): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+
+        $projected = app(ProofCommandProjection::class)->apply($run, proofKeptEnd($vm, PROOF_FAILED, $destroy, $steps));
+
+        expect($projected->result)->not->toHaveKey('kept');
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    })->with([
+        'a destroy that failed' => [[], 'failed'],
+        'a pin that did not succeed' => [['Pin the VM' => ['status' => 'failed']], 'skipped'],
+    ]);
+
+    it('does not keep a VM for a run that passed', function (): void {
+        Queue::fake();
+        [, [[$run, , $vm]]] = proofRuns(['firewall:allow']);
+        $run->forceFill(['input' => [...$run->input, 'keep_failed' => true]])->save();
+        $ended = proofKeptEnd($vm, PROOF_PASSED);
+        $ended['status'] = 'succeeded';
+
+        $projected = app(ProofCommandProjection::class)->apply($run, $ended);
+
+        expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->result)->not->toHaveKey('kept');
     });
 });

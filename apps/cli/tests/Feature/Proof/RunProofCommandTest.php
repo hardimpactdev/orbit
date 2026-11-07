@@ -161,6 +161,24 @@ describe('proof:run', function (): void {
         $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'report_only' => true]);
     });
 
+    it('sends keep_failed only when the VM of a failed run is to be kept', function (): void {
+        $mock = proof_run_gateway([proof_run_operation('passed')]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--json' => true]);
+
+        $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'keep_failed' => true]);
+    });
+
+    it('prints the VM that a failed run kept, with its group and the time it is destroyed', function (): void {
+        $failed = proof_run_operation('failed');
+        $kept = ['command' => 'firewall:allow', 'vm' => 'tvm-600', 'group_id' => 3832, 'keep_until' => '2026-11-07T11:00:00Z'];
+        proof_run_gateway([[...$failed, 'result' => [...$failed['result'], 'kept' => [$kept]]]]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--no-interaction' => true]);
+
+        expect(Artisan::output())->toContain('Kept VM: tvm-600 of firewall:allow, group 3832, destroyed after 2026-11-07T11:00:00Z');
+    });
+
     it('sends the given idempotency key unchanged', function (): void {
         $mock = proof_run_gateway([proof_run_operation('passed')]);
 

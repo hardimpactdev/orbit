@@ -14,11 +14,14 @@ use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. It ends a proof only when the request that admitted
  * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
  * `runs: []`. It also closes a proof whose runs have all ended, and frees the admission lock that the dead request held.
+ * It also ends the keep of a failed run (`proof:run --keep-failed`) when its 60 minutes are up, by cancelling the group of that run.
  * A run that waits for VM capacity does not exist: capacity is decided at admission (docs/cli/proof/run.mmd).
  */
 final readonly class ProofRunWatch
@@ -35,7 +38,16 @@ final readonly class ProofRunWatch
      */
     public const int DispatchSilenceSeconds = 300;
 
-    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement) {}
+    /** The format of the times in the record of a kept VM; it sorts as text. */
+    public const string Time = 'Y-m-d\TH:i:s\Z';
+
+    /** A cancel of an expired kept VM that has not ended is asked for again after this many minutes. */
+    public const int KeptRetryMinutes = 5;
+
+    /** A keep that is still open this many hours after its time is no longer asked to cancel. */
+    public const int KeptGiveUpHours = 24;
+
+    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofGroup $groups) {}
 
     /** The owner of the admission lock while this proof is admitted, so the lock ends with the proof. */
     public static function lockOwner(int $proofId): string
@@ -47,16 +59,66 @@ final readonly class ProofRunWatch
     public function sweep(): int
     {
         $ended = 0;
-        $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
-            ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
-        foreach ($open as $id) {
-            // Reads first: a healthy proof takes the write lock for nothing on every pass.
-            if ($this->needsAction(ValidatedData::integer($id))) {
-                $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+        // The kept VMs expire on every pass, whatever the watch of the proofs does.
+        try {
+            $open = Operation::query()->where('kind', OperationKinds::ProofRun)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+                ->where('created_at', '<', now()->subSeconds(self::AdmissionSeconds))->pluck('id');
+            foreach ($open as $id) {
+                // Reads first: a healthy proof takes the write lock for nothing on every pass.
+                if ($this->needsAction(ValidatedData::integer($id))) {
+                    $ended += DB::transaction(fn (): int => $this->watch(ValidatedData::integer($id)));
+                }
             }
+        } finally {
+            $this->expireKept();
         }
 
         return $ended;
+    }
+
+    /** Whether the run kept its VM and the 60 minutes are not up: its group stays open. */
+    public static function keeps(Operation $run): bool
+    {
+        $until = is_array($run->result['kept'] ?? null) ? ($run->result['kept']['keep_until'] ?? null) : null;
+
+        return is_string($until) && $until > now()->utc()->format(self::Time);
+    }
+
+    /**
+     * Cancels the group of each kept VM (`proof:run --keep-failed`) when its time is up. The cancel is the one every run gets, with the trigger
+     * `proof-run`; it is asked for again every few minutes until the group and its VM are gone, so nobody has to come back. A keep that is
+     * still there a day after its time is left alone: something other than the time holds it, and the warning names the run.
+     */
+    private function expireKept(): void
+    {
+        $due = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereNotNull('result->kept')
+            ->whereBetween('result->kept->keep_until', [now()->utc()->subHours(self::KeptGiveUpHours)->format(self::Time), now()->utc()->format(self::Time)])->pluck('id');
+        foreach ($due as $id) {
+            try {
+                DB::transaction(fn () => $this->askForCancel(ValidatedData::integer($id)));
+            } catch (Throwable $exception) {
+                // One run that cannot be cancelled must not hold the others.
+                report($exception);
+            }
+        }
+    }
+
+    private function askForCancel(int $id): void
+    {
+        $run = Operation::query()->lockForUpdate()->find($id);
+        $kept = $run instanceof Operation && is_array($run->result['kept'] ?? null) ? $run->result['kept'] : null;
+        if (! $run instanceof Operation || $kept === null || ! $this->groups->needsCancel($run)) {
+            return;
+        }
+        $asked = $kept['cancel_requested_at'] ?? null;
+        if (is_string($asked)) {
+            if ($asked > now()->utc()->subMinutes(self::KeptRetryMinutes)->format(self::Time)) {
+                return;
+            }
+            Log::warning('A kept proof VM is still there after its cancel was asked for.', ['operation_id' => $run->id, 'group_id' => $kept['group_id'] ?? null, 'asked_at' => $asked]);
+        }
+        $this->store->change($run, ['result' => [...ValidatedData::object($run->result), 'kept' => [...$kept, 'cancel_requested_at' => now()->utc()->format(self::Time)]]]);
+        DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
     }
 
     private function needsAction(int $id): bool

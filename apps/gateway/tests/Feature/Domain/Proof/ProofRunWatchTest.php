@@ -6,11 +6,18 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 
@@ -161,4 +168,145 @@ it('leaves a run alone that Swamp may have accepted: its start is uncertain, and
 
     Queue::assertNotPushed(CancelProofGroup::class);
     expect($uncertain->refresh()->status)->toBe(OperationStatus::Running)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+/**
+ * A failed run that kept its VM (`proof:run --keep-failed`): its group is still running, and the run records the keep.
+ *
+ * @return array{0: Operation, 1: Task}
+ */
+function watchKept(Operation $proof, string $until, ?string $asked = null, TaskGroupStatus $status = TaskGroupStatus::Running, string $command = 'firewall:allow'): array
+{
+    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => $status]);
+    $run = watchRun($proof, $command, OperationStatus::Failed, 'proof.cases_failed', started: true);
+    $run->forceFill(['target_id' => $group->id, 'input' => [...$run->input, 'group_id' => $group->id, 'keep_failed' => true],
+        'result' => ['kept' => ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => $until, 'cancel_requested_at' => $asked]]])->save();
+
+    return [$run, $group];
+}
+
+describe('the keep of a failed run', function (): void {
+    beforeEach(fn () => Carbon::setTestNow('2026-11-07 10:00:00'));
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('leaves the VM and the group alone until the 60 minutes are up', function (): void {
+        Queue::fake();
+        $proof = watchProof(watchNode(), 900);
+        watchKept($proof, '2026-11-07T10:00:01Z');
+
+        app(ProofRunWatch::class)->sweep();
+
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('cancels the group of the run when the time is up, with the trigger of the proof, and asks again only after a few minutes', function (): void {
+        Queue::fake();
+        $proof = watchProof(watchNode(), 900);
+        [$run] = watchKept($proof, '2026-11-07T10:00:00Z');
+        $sweep = static fn () => app(ProofRunWatch::class)->sweep();
+
+        $sweep();
+        $sweep();
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
+        expect($run->refresh()->result['kept']['cancel_requested_at'])->toBe('2026-11-07T10:00:00Z');
+
+        Carbon::setTestNow('2026-11-07 10:06:00');
+        $sweep();
+
+        Queue::assertPushed(CancelProofGroup::class, 2);
+    });
+
+    it('lets go of a keep whose group and VM are gone', function (): void {
+        Queue::fake();
+        $proof = watchProof(watchNode(), 900);
+        watchKept($proof, '2026-11-07T09:00:00Z', status: TaskGroupStatus::Cancelled);
+
+        app(ProofRunWatch::class)->sweep();
+
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('stops asking a day after the time is up, and a run whose cancel cannot be admitted does not hold the others', function (): void {
+        Queue::fake();
+        $node = watchNode();
+        $proof = watchProof($node, 900);
+        [$old] = watchKept($proof, '2026-11-06T09:00:00Z');
+        [$broken] = watchKept($proof, '2026-11-07T09:00:00Z', command: 'firewall:deny');
+        [$fine] = watchKept($proof, '2026-11-07T09:30:00Z', command: 'firewall:list');
+        $armed = true;
+        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
+            if ($armed && $operation->id === $broken->id) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        try {
+            app(ProofRunWatch::class)->sweep();
+        } finally {
+            $armed = false;
+        }
+
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $fine->id);
+        expect($old->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
+    });
+
+    it('says that a run keeps its VM only until the time is up', function (): void {
+        $proof = watchProof(watchNode(), 900);
+        [$open] = watchKept($proof, '2026-11-07T10:00:01Z');
+        [$over] = watchKept($proof, '2026-11-07T10:00:00Z', command: 'firewall:deny');
+        $plain = watchRun($proof, 'firewall:list', OperationStatus::Failed, 'proof.cases_failed');
+
+        expect(ProofRunWatch::keeps($open))->toBeTrue()->and(ProofRunWatch::keeps($over))->toBeFalse()->and(ProofRunWatch::keeps($plain))->toBeFalse();
+    });
+    it('cancels only the group of the run that kept its VM, never one of another proof for the same commit and command', function (): void {
+        Queue::fake();
+        $node = watchNode();
+        $mine = watchProof($node, 900);
+        $other = watchProof($node, 900);
+        [$kept] = watchKept($mine, '2026-11-07T09:00:00Z');
+        // The same commit and command, in a proof that was started without the flag: its failed run has no keep, and its group is running.
+        $group = Task::query()->create(['title' => 'Proof firewall:allow', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
+        $stranger = watchRun($other, 'firewall:allow', OperationStatus::Failed, 'proof.cases_failed', started: true);
+        $stranger->forceFill(['target_id' => $group->id, 'result' => ['cases' => []]])->save();
+
+        app(ProofRunWatch::class)->sweep();
+
+        Queue::assertPushed(CancelProofGroup::class, 1);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id);
+        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('expires a keep although the watch of the proofs fails, so nobody has to come back', function (): void {
+        Queue::fake();
+        $node = watchNode();
+        // A proof with no run: the watch ends it, and that write fails.
+        watchProof($node, 900);
+        [$run] = watchKept(watchProof($node, 60), '2026-11-07T09:00:00Z');
+        $armed = true;
+        Operation::saving(static function (Operation $operation) use (&$armed): void {
+            if ($armed && $operation->kind === 'proof.run') {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        try {
+            expect(fn () => app(ProofRunWatch::class)->sweep())->toThrow(RuntimeException::class);
+        } finally {
+            $armed = false;
+        }
+
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('counts a kept VM against the capacity of its host until the group is cancelled', function (): void {
+        $node = watchNode();
+        $proof = watchProof($node, 900);
+        [, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-600', 'wireguard_ip' => '10.44.0.150',
+            'state' => TaskVmState::Ready, 'size' => TaskVmSize::Normal]);
+
+        expect(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->count())->toBe(1);
+    });
 });

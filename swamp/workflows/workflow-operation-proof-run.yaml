@@ -52,6 +52,8 @@ inputs:
     execution_secrets:
       type: object
       additionalProperties: *reference
+    # `proof:run --keep-failed`: a run whose cases did not all pass keeps its VM (the Gateway destroys it 60 minutes later).
+    keep_failed: {type: boolean}
   required:
   - operation_id
   - node_id
@@ -113,9 +115,11 @@ jobs:
         intent: '${{ steps["Pin the VM"].outputs.verify }}'
         execution_secrets: {}
   # Always, also after a failure: no proof VM is left behind. The Gateway captured this input with the VM.
+  # With `keep_failed` a run whose VM was ready and whose cases did not all pass skips it; the Gateway keeps the group and cancels it after 60 minutes.
   - name: Destroy the VM
     labels: {role: swamp}
     writes: true
+    guard: '${{ !(inputs.?keep_failed.orValue(false) && steps[?"Pin the VM"].?status.orValue("") == "succeeded" && !(steps[?"Prove the command"].?status.orValue("") == "succeeded" && steps[?"Prove the command"].?outputs.?report.?stdout.orValue("").trim().split("\n").all(l, l.contains("\"verdict\": \"passed\"")))) }}'
     dependsOn:
     - step: Create the VM
       condition: &always

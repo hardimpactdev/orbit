@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
+use App\Domain\Proof\ProofRunWatch;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
@@ -47,6 +48,10 @@ final readonly class CancelOperationAction
         // A proof owns a task group with a VM for each of its runs; cancelling the proof without the groups would leave the VMs running.
         if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
             foreach (ProofRunSettlement::children($operation->id) as $run) {
+                // A run that kept its VM (`--keep-failed`) keeps it until its time is up.
+                if (ProofRunWatch::keeps($run)) {
+                    continue;
+                }
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
             }
         }

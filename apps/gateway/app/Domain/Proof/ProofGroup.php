@@ -37,6 +37,22 @@ final readonly class ProofGroup
     }
 
     /**
+     * Whether the group of `$owner` still needs its cancel: it is not cancelled, or it is and its VM is not destroyed. A cancelled run marks its
+     * group cancelled and leaves its VM as it was, in provisioning or failed, with its slot taken; that group still needs its cancel.
+     */
+    public function needsCancel(Operation $owner): bool
+    {
+        $group = $owner->target_type === 'task_group' && $owner->kind === self::OwnerKind ? Task::topLevel()->find($owner->target_id) : null;
+
+        return $group !== null && $this->holdsVm($group);
+    }
+
+    private function holdsVm(Task $group): bool
+    {
+        return $group->status !== TaskGroupStatus::Cancelled || TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists();
+    }
+
+    /**
      * Cancels the task group that `$owner` targets through a keyed admission, so a retry never admits a second cancel. Only the Operation
      * that owns the group may ask: its `proof.command`, or its image refresh. An Operation that targets anything else cancels nothing.
      * `$trigger` names who asks, in the Activity of the cancel.
@@ -49,8 +65,7 @@ final readonly class ProofGroup
             return;
         }
         $group = Task::topLevel()->find($owner->target_id);
-        // A cancelled run marks its group cancelled and leaves its VM as it was, in provisioning or failed, with its slot taken; that group still needs its cancel.
-        if ($group === null || ($group->status === TaskGroupStatus::Cancelled && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists())) {
+        if ($group === null || ! $this->holdsVm($group)) {
             return;
         }
         try {

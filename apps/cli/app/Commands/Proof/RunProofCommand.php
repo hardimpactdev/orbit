@@ -29,6 +29,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         {commit? : Full 40 or 64 character lowercase commit SHA}
         {--all : Run every case, not only the cases that the commit selects}
         {--report-only : Yield capacity to task and proof work}
+        {--keep-failed : Keep the VM of a run that failed for 60 minutes, to read it}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -74,7 +75,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.run.'.Str::uuid();
-        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key), OperationResponse::class);
+        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key, $this->option('keep-failed') === true), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Prove commit '.substr($commit, 0, 12), 'Proof')
@@ -129,6 +130,12 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
 
         foreach (self::entries($result['uncovered'] ?? null) as $path) {
             $this->writeHumanMessage('Uncovered: '.self::text($path['path'] ?? null).' ('.self::text($path['reason'] ?? null).')');
+        }
+
+        // `--keep-failed`: the VM of a run that failed stays until the time shown, and then the Gateway destroys it.
+        foreach (self::entries($result['kept'] ?? null) as $kept) {
+            $group = $kept['group_id'] ?? null;
+            $this->writeHumanMessage('Kept VM: '.self::text($kept['vm'] ?? null).' of '.self::text($kept['command'] ?? null).', group '.(is_int($group) ? $group : '?').', destroyed after '.self::text($kept['keep_until'] ?? null));
         }
 
         foreach (['vm' => 'VM', 'receipt_url' => 'Receipt'] as $field => $label) {

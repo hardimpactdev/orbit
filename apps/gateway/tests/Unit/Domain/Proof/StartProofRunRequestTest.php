@@ -19,6 +19,24 @@ it('maps report_only of the body to the data of the run, and leaves all and the 
     'both' => [['all' => true, 'report_only' => true], true, true],
 ]);
 
+it('maps keep_failed of the body to the data of the run, off unless it is given', function (array $body, bool $keepFailed): void {
+    expect(StartProofRunData::from(['commit' => START_PROOF_SHA, ...$body])->keepFailed)->toBe($keepFailed);
+})->with([
+    'not given' => [[], false],
+    'given' => [['keep_failed' => true], true],
+]);
+
+it('accepts keep_failed as a boolean only', function (mixed $value, bool $valid): void {
+    $rules = (new StartProofRunRequest)->rules();
+
+    expect(Validator::make(['commit' => START_PROOF_SHA, 'keep_failed' => $value], $rules)->passes())->toBe($valid);
+})->with([
+    'true' => [true, true],
+    'false' => [false, true],
+    'a string' => ['yes', false],
+    'a number' => [1, false],
+]);
+
 it('accepts report_only as a boolean only', function (mixed $value, bool $valid): void {
     $rules = (new StartProofRunRequest)->rules();
 
