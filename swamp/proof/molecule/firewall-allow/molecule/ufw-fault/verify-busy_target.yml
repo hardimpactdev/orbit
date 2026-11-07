@@ -1,0 +1,29 @@
+---
+# busy-target (refusal, no request). The second write was refused (converge.yml checked exit 1 and operation.target_busy). Here: no new
+# Operation, and UFW and the records did not change between the snapshots taken while the lock was held (s0 before, s1 after the refusal).
+# The held write ended after the release (held_end), so no Operation runs on. The probe is checked in verify.yml.
+- name: busy-target
+  block:
+    - name: No Operation was created by the refused write
+      ansible.builtin.assert:
+        that: snaps.s0.ops == snaps.s1.ops
+        fail_msg: "new Operations: {{ snaps.s1.ops | difference(snaps.s0.ops) }}"
+        quiet: true
+
+    - name: UFW and the records did not change
+      ansible.builtin.include_tasks: unchanged.yml
+      vars: {from_snap: s0, to_snap: s1, except_port: ''}
+
+    - name: The held write ended, so the next case meets no running Operation
+      ansible.builtin.assert:
+        that: held_end in ['succeeded', 'failed', 'cancelled']
+        fail_msg: "the held Operation {{ held_id }} ended as {{ held_end }}"
+        quiet: true
+
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"
