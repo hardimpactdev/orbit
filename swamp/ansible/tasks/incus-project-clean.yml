@@ -1,7 +1,7 @@
 ---
 # One Incus project of a task VM host, `clean_entry.name`, loses its images; with `clean_entry.whole` also its instances, its custom
-# volumes on every pool, and then the project itself. Images and volumes go only when the project keeps its own: a project that shares
-# them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves the next project its turn.
+# volumes on every pool, its own profiles, and then the project itself. Images, volumes and profiles go only when the project keeps its own: a
+# project that shares them with `default` lists those of `default`. A failure records the project in `clean_failed` and leaves the next project its turn.
 # A volume or image that a task VM's ZFS clone depends on stays in the pool's `deleted/` until that VM goes.
 - name: Empty the project
   vars:
@@ -10,6 +10,7 @@
     config: "{{ (clean_projects.stdout | from_json | selectattr('name', 'equalto', project) | first).config }}"
     own_images: "{{ config['features.images'] | default('false') | bool }}"
     own_volumes: "{{ config['features.storage.volumes'] | default('false') | bool }}"
+    own_profiles: "{{ config['features.profiles'] | default('false') | bool }}"
   block:
     - name: Read the instances, the images and the pools
       ansible.builtin.command: { argv: "{{ item }}" }
@@ -47,6 +48,17 @@
       ansible.builtin.command: { argv: [incus, --project, "{{ project }}", storage, volume, delete, "{{ item.0 }}", "{{ item.1 }}"] }
       loop: "{{ project_custom }}"
       loop_control: { label: "{{ item.0 }}/{{ item.1 }}" }
+      changed_when: true
+    # A project with a profile of its own cannot be deleted: Incus keeps only `default` in an empty project.
+    - name: Read the profiles
+      when: whole and own_profiles
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", profile, list, --format, json] }
+      register: project_profiles
+      changed_when: false
+    - name: Remove the profiles
+      when: whole and own_profiles
+      ansible.builtin.command: { argv: [incus, --project, "{{ project }}", profile, delete, "{{ item }}"] }
+      loop: "{{ project_profiles.stdout | from_json | map(attribute='name') | reject('equalto', 'default') | list }}"
       changed_when: true
     - name: Remove the project
       when: whole

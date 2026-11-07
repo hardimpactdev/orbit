@@ -10,7 +10,11 @@ const hasAnsible =
 const playbook =
   new URL("../ansible/task-vm-host.yml", import.meta.url).pathname;
 
-const own = { "features.images": "true", "features.storage.volumes": "true" };
+const own = {
+  "features.images": "true",
+  "features.storage.volumes": "true",
+  "features.profiles": "true",
+};
 const projects = [
   { name: "default", config: {} },
   { name: "orbit-tasks", config: own },
@@ -66,6 +70,11 @@ const listings: Record<string, unknown> = {
   "--project orbit-measure-nr storage volume list orbit-tasks --format json": [
     { name: "nr-seed-new", type: "custom" },
     { name: "nr-builder", type: "virtual-machine" },
+  ],
+  // A retired project keeps the profile its instances used; Incus refuses to delete the project while it exists.
+  "--project orbit-baselines profile list --format json": [
+    { name: "default" },
+    { name: "baseline" },
   ],
   "--project orbit-proto list --format json": [],
   "--project orbit-proto image list --format json": [{
@@ -184,6 +193,7 @@ Deno.test({
       "--project orbit-baselines delete --force orbit-baseline-gateway",
       "--project orbit-baselines image delete faf0e887aa8d",
       "--project orbit-baselines storage volume delete orbit-tasks orbit-baseline-verify-seed",
+      "--project orbit-baselines profile delete baseline",
       "project delete orbit-baselines",
       "--project orbit-measure-nr delete --force nr-builder",
       "--project orbit-measure-nr delete --force nr-task",
@@ -226,6 +236,46 @@ Deno.test({
       assertEquals(passed, false);
       assertStringIncludes(output, "task_vm.host_clean_refused");
       assertEquals(deletes(log), []);
+    } finally {
+      listings["project list --format json"] = projects;
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn",
+  ignore: !hasAnsible,
+  fn() {
+    const { log, passed, output } = run(
+      "host-clean",
+      host,
+      "--project orbit-baselines profile delete baseline",
+    );
+    assertEquals(passed, false);
+    assertStringIncludes(output, "task_vm.host_clean_failed: orbit-baselines");
+    assert(!log.includes("project delete orbit-baselines"));
+    assert(log.includes("project delete orbit-measure-nr"));
+    assert(log.includes("--project orbit-proto image delete c1c2cf4051fb"));
+  },
+});
+
+Deno.test({
+  name:
+    "a retired project that shares its profiles with default loses none of them",
+  ignore: !hasAnsible,
+  fn() {
+    // Its profile list is that of `default`, so deleting from it would delete the host's own profiles.
+    listings["project list --format json"] = projects.map((project) =>
+      project.name === "orbit-baselines"
+        ? { ...project, config: { ...own, "features.profiles": "false" } }
+        : project
+    );
+    try {
+      const { log, passed, output } = run("host-clean", host);
+      assert(passed, output);
+      assert(!log.some((call) => / profile delete /.test(` ${call} `)));
+      assert(log.includes("project delete orbit-baselines"));
     } finally {
       listings["project list --format json"] = projects;
     }
