@@ -27,7 +27,7 @@ final class RefreshTaskVmImagesCommand extends Command
 
             return self::INVALID;
         }
-        foreach ($trigger->admitAll($commit === null ? 'operator' : 'release', $commit) as $host => $result) {
+        foreach ($trigger->admitAll($commit === null ? 'operator' : 'release', $commit, attempts: 6) as $host => $result) {
             $this->line($host.': '.$result);
         }
 
