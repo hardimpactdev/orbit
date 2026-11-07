@@ -13,7 +13,7 @@ it('drops both package cache tables, and runs again after a run that stopped hal
     Schema::create('package_cache_snapshots', static function (Blueprint $table): void {
         $table->integer('project_id')->primary();
     });
-    $migration = require database_path('migrations/2027_01_29_000000_drop_the_package_cache_tables.php');
+    $migration = require database_path('migrations/2027_01_30_000000_drop_the_package_cache_tables.php');
 
     $migration->up();
     $migration->up();
