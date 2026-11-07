@@ -1,0 +1,23 @@
+---
+# The native cfgmgmt step applies the worker template after this phase. It starts the timer only after both workers are started.
+- name: Make the Swamp runtime folder
+  ansible.builtin.file: { path: /usr/local/lib/orbit-swamp, state: directory, owner: root, group: root, mode: '0755' }
+- name: Install sequential worker renewal
+  ansible.builtin.copy:
+    src: swamp-worker-renewal.py
+    dest: /usr/local/lib/orbit-swamp/worker-renewal.py
+    owner: root
+    group: root
+    mode: '0644'
+- name: Write worker renewal units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { name: orbit-swamp-worker-renewal.service, content: "{{ rt.swamp.units.renewal_service }}" }
+    - { name: orbit-swamp-worker-renewal.timer, content: "{{ rt.swamp.units.renewal_timer }}" }
+  loop_control: { label: "{{ item.name }}" }
+  notify: Reload units

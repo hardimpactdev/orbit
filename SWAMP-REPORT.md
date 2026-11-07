@@ -33,20 +33,44 @@ For reproduction, start an authenticated worker with the default persistent conn
 
 Could an authenticated worker revalidate its server credential on the existing connection, or use a native, time-based drain before this deadline? Revocation and real token expiry should still end access. Increasing token TTL or reconnecting after the forced close does not address the interrupted write. A systemd runtime restart alone moves the interruption to another time.
 
-## Orbit's configuration workaround
+## Orbit's temporary mitigation
 
-The swamp role renders `--max-dispatches 1 --idle-timeout 5m`, retaining `--concurrency auto` and the persistent `--cache-dir`. The first completed dispatch starts Swamp's native drain. Remaining dispatches finish; two `worker.drain` acknowledgments ensure their replies reach serve before the worker closes. systemd uses `Restart=always` and `RestartSec=1` so a clean drain starts a fresh process and authenticated connection. No wrapper, timer, runtime kill, credential change or Swamp fork is involved.
+Workers remain persistent, with `--concurrency auto` and their existing cache and machine identity. We removed per-dispatch recycling: a dispatch is one step, so `--max-dispatches 1` adds about 2.3–2.4 seconds per step and can make both workers drain while each still holds a long dispatch. The earlier six-hour-five-minute figure was an estimate, not a proven bound.
 
-The bound is five minutes idle, at most one three-hour run until the first completion, then at most another three-hour run admitted just before the drain: six hours and five minutes, below eight hours. A regression test ties that bound to Orbit's serve `--max-run-duration`. This assumes normal run cancellation and a responsive control connection; it does not promise recovery from a network loss or hung process. A native self-drain does not invoke systemd's five-minute stop timeout.
+One systemd service controls both workers. It checks hourly and renews connections at least three hours old. Before renewing a, it requires b's accepting status and a successful official `swamp worker verify b` probe of the live scheduling/data path. `systemctl restart` sends the first SIGTERM to a's main process; Swamp drains active dispatches. The controller waits for a different enrolled instance and a successful native probe before it considers b. It never intentionally drains both. A lock also excludes manual overlap. Failed probes, unhealthy peers and failed re-enrollment stop the sequence. Five-minute retries skip a freshly renewed connection.
 
-This workaround adds one second plus process startup between batches. It is suitable for Orbit's current workflows, which have no worker-affinity groups. Swamp deliberately fails an affinity group when its worker drains, so this is not a general replacement for safe connection renewal. We would prefer to remove the workaround when Swamp provides that path.
+Workers allow 75 minutes to stop (`TimeoutStopSec=4500`, `KillMode=mixed`), against an observed cold refresh step of about 50 minutes. Crashes use `Restart=on-failure`, a 30-second backoff and a limit of five starts in five minutes. A permanent startup failure leaves a failed worker for diagnosis. The renewal service has a three-hour execution deadline; its failure stops the sequence without intentionally stopping the other worker.
 
-## Local validation
+With healthy peers and dispatches inside the stop allowance, an hourly age check plus two possible drains leaves headroom below the socket cap. This is operational headroom, not a proof for arbitrary workload duration or failures. A hung dispatch past 75 minutes can still be killed. An unavailable peer or a failed native probe can prevent renewal. Native probes also need a dispatch slot, so sustained saturation can defer renewal. These conditions must be visible in the service journal. Worker-affinity groups remain unsuitable for this mitigation because Swamp fails them on drain; Orbit's current operations do not use them.
 
-The five Gateway unit tests pass, including the unit flags, clean-exit restart policy and session-duration bound. The new lifecycle assertion fails on the old unit. Documentation lint and Gateway static analysis pass. A local proof against the unmodified pinned Swamp source held two dispatch slots with explicit completion barriers: the first success began draining, the second stayed connected and succeeded, both replies arrived, then the second drain acknowledgment preceded socket close. The pinned source's 47 worker connection and dispatch tests also pass, with its shared HTTP client initialized before test resource accounting. These checks do not replace the live renewal observation after activation.
+We would prefer to remove this mitigation when Swamp supports renewal that preserves active dispatches.
 
-## Delivery and proof
+## Signal proof and regression tests
 
-After this PR ships in a Gateway release, apply `orbit node:role:add swamp swamp --converge`. The existing Ansible role writes the Gateway-rendered worker template and reloads systemd; release Swamp load alone does not apply it. Convergence leaves active workers running. Activate the new command in the existing quiet restart window, after current operations finish; this PR performs no live restart. Serve does not need a restart for these flags, unless the separate official runtime upgrade is applied too.
+A disposable process on mini invoked the unmodified pinned `workerConnectCommand` action, with its real SIGTERM handler and runner subprocesses. A loopback mock orchestrator/data server dispatched two actual built-in `command/shell.execute` steps. Each step used an explicit completion barrier. After an OS SIGTERM, both remained active and the control connection stayed open. A late dispatch was refused. Releasing the barriers produced:
 
-Before activation, the next expected old-session expiry is about **2026-11-08 06:40:32Z** for `a` and 06:40:37Z for `b`. After activation, watch `orbit-swamp-worker@a`, `@b` and `orbit-swamp-serve`: `Draining (...) — finishing in-flight work...`, successful dispatch completion, `Drain complete — disconnecting`, then fresh enrollment. Keep a representative multi-step run active across a renewal and verify both its active dispatch and later steps succeed. At the old eight-hour boundary, there should be no code 4002 session expiry, aborted dispatch or write-then-drop failure. If the new command has not been activated, the old processes remain exposed.
+```text
+Draining (received shutdown signal) — finishing in-flight work...
+Dispatch first: command/shell.execute succeeded
+Dispatch second: command/shell.execute succeeded
+Drain complete — disconnecting
+Disconnected: drained
+Worker stopped: received shutdown signal
+exit 0
+```
+
+Observed protocol order: `SIGTERM`, first drain acknowledgment, new work refused, first success, second success, final drain acknowledgment, socket close. The test exercised the pinned CLI action directly, not the account-login wrapper or systemd. It used synthetic test enrollment, read no credentials and changed no Node. The local proof is at `~/tmp/orbit-swamp-signal-proof/proof.ts`; the official source checkout is `~/tmp/swamp-official-session-source` at `db3f6373207cc41235d2334f19a7901b2b84620f`.
+
+The committed renewal regression test holds a at drain and re-enrollment barriers. It asserts b remains accepting and is not restarted until a has a new instance and passes the native probe. It also covers an unhealthy peer, a failed live probe despite an idle record, an enrollment timeout and a retry that preserves a freshly renewed peer. This replaces the earlier arithmetic-only test. Gateway tests cover persistent worker flags, stop allowance, crash limits and the single timer/service rendering.
+
+## Delivery and live proof
+
+After this PR ships in a Gateway release and its Swamp load, apply `orbit node:role:add swamp swamp --converge`. The Ansible node phase installs the renewal program and Gateway-rendered renewal units. The native **Apply Swamp worker unit** `@swamp/cfgmgmt/systemd` step in `workflow-operation-node-role-add.yaml` applies the worker template; it is not an Ansible worker-unit write. A new dependent native job enables the timer after the worker-start job. Convergence leaves the active workers running. One minute later, the timer starts sequential renewal. Serve needs no restart for this mitigation. No live application or restart was performed in this PR.
+
+The old connections next expire about **2026-11-08 06:40:32Z** for a and 06:40:37Z for b. For the first cycle, allow two 75-minute drains plus startup and probes: begin activation by about **04:00Z**, rather than relying on the later 05:30Z application deadline. The observed 50-minute cold step is not a bound.
+
+Watch `orbit-swamp-worker-renewal.service`, `orbit-swamp-worker@a`, `@b` and `orbit-swamp-serve`. Confirm active work succeeds during a's drain, a re-enrolls with a different instance UUID and passes its probe, and only then b drains. Keep a representative multi-step run active across renewal and verify its later steps finish on available capacity. At 06:40Z there should be no code 4002 expiry, aborted dispatch or write-then-drop failure. Check that the timer remains active and the next cycles renew the workers well before eight hours.
+
+## Upstream report status
+
+This is a Swamp core bug: the hard socket cap aborts an in-flight dispatch despite normal credential refresh. **Not filed yet: no Lab login.** At the user's instruction, no login or credential was created tonight. The complete Lab draft is `~/migration-dashboard/drafts/swamp-lab-8h-session-cap.md`, with title, version, reproduction, evidence, source trace and expected versus actual behavior. The evaluation ledger records it as B8 with the same filing status. Nick will file it in the morning; no Lab number exists yet.
