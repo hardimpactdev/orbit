@@ -173,8 +173,9 @@ final readonly class NativeNodeEnrollmentInput
             $peers = implode("\n", array_map(static fn (array $peer): string => ValidatedData::string($peer['content']), RouteExecutionProof::objects($hub['peers'])));
             $trust = app(NodeFirewallRuleCatalog::class)->forNode($node)[1];
 
-            return ['is_hub' => true, 'files' => [['path' => '/etc/wireguard/orbit.conf',
-                'content' => explode('PostUp = for f in', ValidatedData::string($hub['config']))[0]."\n".$peers],
+            // The hub's file is the one the hub converge writes: no peer in it, and wg-quick loads every peer file at start, so a peer
+            // that only has its file (the operator of a task VM's nested fleet) survives a restart.
+            return ['is_hub' => true, 'files' => [['path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hub['config'])],
                 ['path' => '/etc/wireguard/orbit.peers', 'content' => '']],
                 'sync_path' => '/etc/wireguard/orbit.peers', 'private_key_file' => '/etc/wireguard/orbit.key',
                 'sync_body' => 'ListenPort = '.ValidatedData::integer($hub['port'])."\n\n".$peers,
@@ -194,7 +195,6 @@ final readonly class NativeNodeEnrollmentInput
         }
         $sections[] = ValidatedData::string($joining['section']);
         $peers = implode("\n", $sections);
-        $config = explode('PostUp = for f in', ValidatedData::string($hubPlan['config']))[0]."\n".$peers;
         $syncBody = 'ListenPort = '.ValidatedData::integer($hubPlan['port'])."\n\n".$peers;
         $ssh = ValidatedData::object($joining['ssh']);
         $files = [['path' => '/etc/wireguard/orbit.conf', 'content' => $network['config']],
@@ -205,7 +205,7 @@ final readonly class NativeNodeEnrollmentInput
             'hubs' => [['ssh' => $ssh, 'sync_path' => '/etc/wireguard/orbit.enrollment-sync',
                 'private_key_file' => '/etc/wireguard/orbit.key', 'public_key' => $hub->wireguard_public_key, 'sync_body' => $syncBody]],
             'hub_files' => [['ssh' => $ssh, 'path' => $joining['file'], 'content' => $joining['section']],
-                ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.conf', 'content' => $config],
+                ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.conf', 'content' => ValidatedData::string($hubPlan['config'])],
                 ['ssh' => $ssh, 'path' => '/etc/wireguard/orbit.enrollment-sync', 'content' => '']],
             'participant_node_ids' => [$hub->id]];
     }
