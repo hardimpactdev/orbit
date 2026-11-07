@@ -153,6 +153,23 @@
            /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json,
            /home/orbit/orbit/apps/agent/delivery/manifest.json]
   changed_when: true
+# The nested Gateway's Swamp checks its account with the Swamp Club at every start, so the fleet needs its way out first.
+- name: Check the nested way out
+  block:
+    - name: Reach the Swamp Club from the nested Gateway
+      ansible.builtin.command: { argv: [incus, exec, "{{ fleet_guests.gateway }}", --, curl, -sS, -o, /dev/null, -m, "15", "https://swamp-club.com/"] }
+      changed_when: false
+  rescue:
+    - name: Read how the VM routes the nested bridge
+      ansible.builtin.command: { argv: "{{ item }}" }
+      loop: [[sysctl, net.ipv4.ip_forward], [iptables, -S, FORWARD], [nft, list, tables], [ufw, status, verbose]]
+      register: fleet_route
+      changed_when: false
+      failed_when: false
+    - name: Stop with how the VM routes
+      ansible.builtin.fail:
+        msg: "The nested Gateway cannot reach the Swamp Club: {{ ansible_failed_result.stderr | default('') }}
+          {{ fleet_route.results | map(attribute='stdout') | list }}"
 - name: Renew the nested Swamp tokens
   block:
     - name: Run the token renewal of the nested Gateway
