@@ -11,7 +11,6 @@ export const ProvisionCommandIntent = z.object({
     host_node_id: Id.nullable(),
     guest_node_id: Id,
     gateway_node_id: Id,
-    model_router_node_id: Id,
     provider: z.enum(["incus", "upcloud"]),
     name: Name,
     image_fingerprint: z.string().min(1),

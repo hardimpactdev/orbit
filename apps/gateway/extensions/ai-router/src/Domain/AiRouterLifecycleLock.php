@@ -7,7 +7,7 @@ namespace Orbit\Extensions\AiRouter\Domain;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 
-/** Serializes collector setup, teardown, and reconvergence without locking task model keys. */
+/** Serializes collector setup, teardown, and reconvergence. */
 final readonly class AiRouterLifecycleLock
 {
     public const string Name = 'orbit:ai-router:lifecycle';

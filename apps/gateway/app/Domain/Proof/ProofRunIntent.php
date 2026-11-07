@@ -19,7 +19,6 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\TaskVms\TaskVmCapacity;
-use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Domain\TaskVms\TaskVmSeedFloor;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\Proof\AdmitProofRun;
@@ -41,7 +40,7 @@ use Throwable;
  */
 final readonly class ProofRunIntent
 {
-    /** How long a proof that cannot be placed waits for VMs to be released: the last try then starts before 220 s and may wait 60 s for the admission lock, still under the 300 s after which the watch ends a proof with no runs. */
+    /** How long a proof that cannot be placed waits for VMs to be released: the last try then starts before 220 s and admits in about a minute, still under the 300 s after which the watch ends a proof with no runs. */
     public const int WaitSeconds = 200;
 
     public const int RetrySeconds = 20;
@@ -112,10 +111,9 @@ final readonly class ProofRunIntent
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
-            // the groups roll back with it, and Swamp starts no run before the whole proof is admitted. The router fence spans the
-            // transaction, so a router teardown never sees a half-admitted proof.
+            // the groups roll back with it, and Swamp starts no run before the whole proof is admitted.
             $fresh = $this->freshHosts($selection->mergeBase);
-            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => app(TaskVmModelAdmission::class)->run(fn (): array => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
                 // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
                 if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
@@ -134,7 +132,7 @@ final readonly class ProofRunIntent
                 $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs], 'current_step' => null]);
 
                 return $runs;
-            }), ProofRunWatch::lockOwner($proof->id)));
+            }));
         } catch (Throwable $exception) {
             if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForRoom($proof, $reportOnly || ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
                 return;

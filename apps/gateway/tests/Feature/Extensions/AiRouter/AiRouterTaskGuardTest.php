@@ -33,7 +33,7 @@ function guardRouter(): Node
     guardNode('swamp', '10.44.0.15')->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
         [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+        '/pi', str_repeat('a', 64), ['gpt-6']));
     // A stand-in for the vault write: it returns the reference, as the Swamp copy does.
     app()->instance(SwampCommandStep::class, new class
     {

@@ -24,28 +24,16 @@ use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
-use Closure;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Shared intent capture for enrollment and its provisioning parent. No host effects or child Operations. */
 final readonly class TaskVmEnrollmentIntent
 {
-    public function __construct(private TaskVmSettings $settings, private ModelKeyIssuer $keys,
+    public function __construct(private TaskVmSettings $settings, private TaskVmModelRoute $route,
         private NodeAgentSshExecutor $agents, private AgentDelivery $delivery,
         private RecordProcessIntentAction $processes, private SystemdProcessRenderer $systemd,
         private PiConnection $pi, private NodeBootstrapCommandFactory $bootstrap, private ProcessOperationAdmission $admissions) {}
-
-    /** Keep the existing router teardown fence through the outer admission transaction.
-     * @template TReturn
-     *
-     * @param  Closure():TReturn  $admit
-     * @return TReturn
-     */
-    public function admit(Closure $admit): mixed
-    {
-        return app(TaskVmModelAdmission::class)->run($admit);
-    }
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
@@ -55,21 +43,16 @@ final readonly class TaskVmEnrollmentIntent
             if ($vm->state !== TaskVmState::Provisioning || ($vm->group === null ? $vm->slot_project_id === null : $vm->group->parent_id !== null)) {
                 throw new TaskVmException('task_vm.enrollment_invalid', 'Enrollment requires the provisioning VM owned by a task group, or a slot.');
             }
-            $origin = $this->keys->origin();
-            if (($vm->ai_router_origin !== null && $vm->ai_router_origin !== $origin)
-                || $this->settings->piArtifactPath === null || $this->settings->piArtifactSha256 === null
+            $this->route->assertReady();
+            if ($this->settings->piArtifactPath === null || $this->settings->piArtifactSha256 === null
                 || $this->settings->piModels === [] || $vm->pi_token === null) {
                 throw new TaskVmException('task_vm.invalid_config', 'Enrollment requires the pinned Pi artifact, models and group credentials.');
             }
-            $this->keys->assertReady();
             $node = $this->reserveNode($vm);
             $pin = $this->delivery->pin($node);
             $process = $this->recordPiProcess($node);
             $installation = Arr::only($this->admissions->inputFor($process, 'create', target: $this->processTarget($node)),
                 ['process_id', 'name', 'runtime', 'content_hash', 'desired', 'on_demand', 'activation_pending']);
-            if ($vm->model_key === null) {
-                $vm->update(['model_key' => bin2hex(random_bytes(32)), 'ai_router_origin' => $origin]);
-            }
 
             return [
                 'task_vm_id' => $vm->id, 'guest_node_id' => $node->id,
@@ -84,7 +67,7 @@ final readonly class TaskVmEnrollmentIntent
                     'platform' => $node->platform, 'architecture' => $node->architecture, 'wireguard_ip' => $node->wireguard_ip,
                     'cluster_id' => $node->cluster_id, 'ssh_jump_node_id' => $node->ssh_jump_node_id],
                 'runtime' => ['guest_node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $pin,
-                    'pi_sha256' => $this->settings->piArtifactSha256, 'origin' => $origin, 'models' => $this->settings->piModels,
+                    'pi_sha256' => $this->settings->piArtifactSha256, 'origin' => $this->route->origin(), 'models' => $this->settings->piModels,
                     // The VM records the app-dev role, so it gets the role's runtime folders: a served workspace site writes its hibernation log there.
                     'app_dev' => ['directories' => AppDevRuntimeFootprint::directories(), 'files' => AppDevRuntimeFootprint::files()],
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
@@ -94,7 +77,7 @@ final readonly class TaskVmEnrollmentIntent
 
     /**
      * The Node of a task start's VM, its `app-dev` role and its `pi-server` Process, made at admission and deleted at its release. Mints
-     * nothing: the keys come from {@see TaskVmSlotIdentity}, and the Pi token and model key from the task start.
+     * nothing: the keys come from {@see TaskVmSlotIdentity}, and the Pi token from the task start.
      */
     public function slotNode(TaskVm $vm): Node
     {

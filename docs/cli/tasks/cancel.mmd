@@ -22,7 +22,7 @@ sequenceDiagram
   SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
-  %%> - the VM's peer leaves the WireGuard hub; the claim's model key is revoked at the model router beside it; the Pi token goes with the VM
+  %%> - the VM's peer leaves the WireGuard hub; the Pi token goes with the VM. There is no model key to revoke: the fixed key stays with the guard, for every other VM
   SW-->>GW: Run succeeded<br/>slot free
   Note over GW: Delete the Node record<br/>target under 10 s
   %%> Result:

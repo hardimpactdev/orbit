@@ -32,7 +32,6 @@ const TerminalArgs = z.object({
     provider: Provider,
     guest: Guest,
     peer: z.object({ public_key: Key }),
-    model_stdout: z.string(),
     runtime_stdout: z.string(),
     observer_stdout: z.string(),
 });
@@ -42,13 +41,9 @@ export function enrollmentTerminal(raw: unknown) {
         provider,
         guest,
         peer,
-        model_stdout,
         runtime_stdout,
         observer_stdout,
     } = TerminalArgs.parse(raw);
-    const model = z.object({ task_vm_id: Id, issued: z.literal(true) }).parse(
-        JSON.parse(model_stdout),
-    );
     const runtime = z.object({
         task_vm_id: Id,
         guest_node_id: Id,
@@ -62,7 +57,6 @@ export function enrollmentTerminal(raw: unknown) {
         ),
     };
     if (
-        model.task_vm_id !== intent.task_vm_id ||
         runtime.task_vm_id !== intent.task_vm_id ||
         runtime.guest_node_id !== intent.guest_node_id ||
         runtime.process_id !== intent.runtime.process.process_id

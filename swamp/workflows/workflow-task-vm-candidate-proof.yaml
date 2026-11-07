@@ -35,7 +35,7 @@ jobs:
       type: workflow
       workflowIdOrName: operation-task-vm-slot-release
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: task_vm.image_refresh,
-        intent: '${{ inputs.prove.release.intent }}', execution_secrets: '${{ inputs.prove.release.execution_secrets }}'}
+        intent: '${{ inputs.prove.release.intent }}', execution_secrets: {}}
 - name: check
   labels: {role: swamp}
   dependsOn: [{job: prove, condition: {type: completed}}]

@@ -8,7 +8,6 @@ use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
-use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -29,7 +28,7 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
     {
         $input = ValidatedData::object($operation->input);
 
-        // A release without a model key to revoke takes no secret; the submission sends the empty map as an object.
+        // A release takes no secret; the submission sends the empty map as an object.
         return ['intent' => ValidatedData::object($input['intent']), 'execution_secrets' => ValidatedData::object($input['execution_secrets'])];
     }
 
@@ -43,29 +42,27 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
             }
             $slot = TaskVm::query()->lockForUpdate()->findOrFail($operation->target_id);
             $passed = ($data['status'] ?? null) === 'succeeded';
-            $revoked = $passed || NativeRunResult::stepStatus(ValidatedData::object($data['result'] ?? []), 'Revoke the model key') === 'succeeded';
-            $this->record($slot, $passed, $passed ? null : (ValidatedData::nullableString($data['error_code'] ?? null) ?? 'task_vm.slot_release_failed'), $revoked);
+            $this->record($slot, $passed, $passed ? null : (ValidatedData::nullableString($data['error_code'] ?? null) ?? 'task_vm.slot_release_failed'));
             $result = ['slot' => $slot->name, 'released' => $passed];
 
             return app(DirectOperation::class)->project($operation, [...$data, 'result' => $result], $result);
         });
     }
 
-    /** A refused start never ran: the VM and the model key are still there, so it is failed with its key and the sweep releases it again. */
+    /** A refused start never ran: the VM is still there, so it is failed and the sweep releases it again. */
     public function refused(Operation $operation): void
     {
         $slot = TaskVm::query()->lockForUpdate()->find($operation->target_id);
         if ($slot instanceof TaskVm) {
-            $this->record($slot, false, $operation->error_code ?? 'task_vm.slot_release_failed', false);
+            $this->record($slot, false, $operation->error_code ?? 'task_vm.slot_release_failed');
         }
     }
 
-    /** The slot after its release: destroyed with its Node deleted, or failed, still holding its model key unless the release revoked it. */
-    public function record(TaskVm $slot, bool $passed, ?string $errorCode, bool $revoked): void
+    /** The slot after its release: destroyed with its Node deleted, or failed. */
+    public function record(TaskVm $slot, bool $passed, ?string $errorCode): void
     {
         if (! $passed) {
-            $slot->update(['state' => TaskVmState::Failed, 'group_id' => null, 'error_code' => $errorCode, 'error_message' => 'The task VM release did not pass.',
-                ...$revoked ? ['model_key' => null, 'ai_router_origin' => null] : []]);
+            $slot->update(['state' => TaskVmState::Failed, 'group_id' => null, 'error_code' => $errorCode, 'error_message' => 'The task VM release did not pass.']);
 
             return;
         }
@@ -79,7 +76,7 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
             });
             app(NodeRemovalRecords::class)->remove(['node_id' => $node->id, 'name' => $node->name, 'task_vm_id' => $slot->id, 'route_ids' => []], []);
         }
-        $slot->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'group_id' => null, 'node_id' => null, 'pi_token' => null, 'model_key' => null,
-            'ai_router_origin' => null, 'wireguard_private_key' => null, 'ssh_host_private_key' => null, 'agent_secret' => null, 'error_code' => null, 'error_message' => null]);
+        $slot->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'group_id' => null, 'node_id' => null, 'pi_token' => null,
+            'wireguard_private_key' => null, 'ssh_host_private_key' => null, 'agent_secret' => null, 'error_code' => null, 'error_message' => null]);
     }
 }

@@ -29,7 +29,7 @@ final readonly class TaskGroupEnding
             if ($slot->group_id !== null && $slot->group_id !== $group->id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup no longer owns its slot.', 422);
             }
-            app(TaskVmSlotReleaseProjection::class)->record($slot, true, null, true);
+            app(TaskVmSlotReleaseProjection::class)->record($slot, true, null);
         }
         $group->taskable()->dissociate();
         $group->fill(['status' => $kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled,

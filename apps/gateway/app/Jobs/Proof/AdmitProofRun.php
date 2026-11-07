@@ -21,7 +21,7 @@ final class AdmitProofRun implements ShouldQueue
 
     public int $tries = 1;
 
-    /** The wait for the admission lock is 60 s, and each hand-over to Swamp is answered within 120 s. */
+    /** Each hand-over to Swamp is answered within 120 s. */
     public int $timeout = 1200;
 
     public function __construct(public int $operationId)

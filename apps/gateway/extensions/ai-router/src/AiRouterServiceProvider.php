@@ -10,7 +10,7 @@ use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
-use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Firewall\ContributedNodeFirewallRules;
 use App\Providers\ExtensionServiceProvider;
@@ -28,9 +28,9 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardFirewall;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskVmModelRoute;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
@@ -44,7 +44,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        ModelKeyIssuer::class => AiRouterModelKeyIssuer::class,
+        TaskVmModelRoute::class => AiRouterTaskVmModelRoute::class,
         AiRouterAccountControlClient::class => HttpAiRouterAccountControlClient::class,
     ];
 

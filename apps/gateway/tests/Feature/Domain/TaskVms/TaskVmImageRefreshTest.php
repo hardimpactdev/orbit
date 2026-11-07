@@ -50,7 +50,7 @@ function imageRefreshHost(): Node
     ]));
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
         [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
-        'http://10.44.0.3:8317', '/pi', str_repeat('a', 64), ['gpt-6']));
+        '/pi', str_repeat('a', 64), ['gpt-6']));
     TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
         'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed',
             'snapshot' => ImageRefreshSnapshot]]]);
@@ -104,7 +104,7 @@ it('returns the open refresh of a host for a second admission, and none once it 
 it('promotes the proven snapshot of the base VM as the host\'s latest build and releases the slot that proved it; nothing for a failed run', function (): void {
     $host = imageRefreshHost();
     $slot = TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-        'name' => 'beast-tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.201', 'model_key' => str_repeat('c', 64)]);
+        'name' => 'beast-tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.201']);
     $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
         'status' => OperationStatus::Running, 'triggered_by' => 'test', 'state' => ['swamp_run_id' => 'fixture-refresh'], 'input' => ['commit' => ImageRefreshCommit, 'recipe_identity' => 'recipe-9', 'task_vm_id' => $slot->id,
             'intent' => ['host' => ['node_id' => $host->id, 'project' => 'orbit-tasks', 'current' => null, 'snapshot' => 'r20261107131500',
@@ -116,15 +116,15 @@ it('promotes the proven snapshot of the base VM as the host\'s latest build and 
     $failed->save();
     $projection->apply($failed, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
     expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id))['snapshot'])->toBe(ImageRefreshSnapshot);
-    // A refresh that failed before its proof released leaves the slot failed with its key, for the sweep to release.
-    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->model_key)->toBe(str_repeat('c', 64));
+    // A refresh that failed before its proof released leaves the slot failed, for the sweep to release.
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed);
     $slot->update(['state' => TaskVmState::Provisioning]);
 
     $projection->apply($operation, ['status' => 'succeeded', 'result' => ['steps' => ['Prove the candidate' => ['status' => 'succeeded']]], 'run_id' => 'fixture-refresh', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect(app(TaskVmPromotedImage::class)->snapshot($host, app(TaskVmSettings::class)->host($host->id)))
         ->toBe(['vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107131500', 'recipe_identity' => 'recipe-9'])
         ->and($operation->refresh()->result)->toMatchArray(['refreshed' => true, 'snapshot' => 'r20261107131500', 'previous_snapshot' => null]);
-    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed)->and($slot->model_key)->toBeNull();
+    expect($slot->refresh()->state)->toBe(TaskVmState::Destroyed);
 });
 
 it('uses only a refresh snapshot as the base: a promoted image of the retired build is no base', function (): void {

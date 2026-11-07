@@ -20,7 +20,7 @@ sequenceDiagram
   SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
-  %%> - beside it, the claim's model key is revoked at the model router
+  %%> - the VM's peer leaves the WireGuard hub; there is no model key to revoke
   alt the run passes
     SW-->>GW: Run succeeded<br/>slot free
     Note over GW: Delete the Node record

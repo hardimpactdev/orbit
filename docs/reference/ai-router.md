@@ -40,7 +40,7 @@ A Valkey server publishes its port on the Node's WireGuard address. The collecto
 
 ## Set up
 
-Create the Valkey server and the collector's user, enable the extension, then set up the collector. This example uses a loopback URL with task VMs off; with task VMs enabled, replace it with `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`:
+Create the Valkey server and the collector's user, enable the extension, then set up the collector. This example uses a loopback URL:
 
 ```bash
 orbit node:role:add db-1 database
@@ -54,7 +54,7 @@ The collector Node must be an active Linux Node with a WireGuard address. Otherw
 
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. With task VMs off, use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node.
 
-When task VMs are enabled (`ORBIT_TASK_VMS_ENABLED`), the URL must equal `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` (`task_vms.model_proxy_origin`), the CLIProxyAPI origin used by Pi on the VMs. Use that configured reachable origin, for example `http://10.44.0.3:8317`, rather than copying a collector's old loopback URL. Setup refuses a mismatching URL before saving settings or changing the collector, with HTTP 422 `validation.failed` for `cliproxy_url`. It never silently changes the task VM origin. This check belongs to ai-router setup; it does not change task VM provisioning or scheduling. [Configure task VMs](/reference/compute-drivers#configure-task-vms) owns that origin's format and reachability requirements.
+Task VMs never call this URL. They call the [task VM guard](#task-vm-guard) on the router's Node, which reaches the router on loopback at the port of this URL. So the URL needs a port, and nothing else ties it to the task VM configuration.
 
 The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
@@ -214,6 +214,8 @@ The Gateway keeps both keys as secret settings:
 - `ai_router.anchor.<sha256(origin)>` is the anchor key. It also keeps the router's key list from ever being empty.
 - `ai_router.task_vm_key` is the task key. CLIProxyAPI never holds it.
 
+Every task VM holds the one task key. A task start writes it, with the guard origin, into the VM's Pi models file. No start and no release calls the router.
+
 The guard reads each key from a file in `/etc/orbit/ai-router-guard`. Two UFW rules sit above the WireGuard member trust. They admit port 8318 from the task VM range and deny it to every other member.
 
 ### Apply the guard
@@ -223,7 +225,7 @@ Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a k
 - On the router's Node, a source outside the range gets 403, with the task key and on the management API.
 - From the swamp Node, port 8318 does not answer.
 
-Rotate the task key only on an incident. Delete the setting, run the command again, and start new task VMs.
+Rotate the task key only on an incident, never on a schedule. Delete the setting, run the command again, and start new task VMs. A task VM that runs keeps the old key in its Pi models file, and the guard refuses it until its group ends.
 
 ## Teardown
 
@@ -235,16 +237,11 @@ orbit ai-router:teardown
 
 Teardown removes the collector Process and the previous Python source files, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
-Teardown refuses with HTTP 409 and changes nothing while it would strand Tasks:
+Teardown refuses with HTTP 409 `extension.required` and changes nothing while the `tasks` extension is enabled. Tasks depends on `ai-router`, because Pi on a task VM reaches models only through the task VM guard of this router. `error.details.required_by` is `tasks`. A task VM holds no key of its own that the router must revoke: every task VM holds the same placeholder key, which only the guard accepts, so a teardown strands no key.
 
-- `extension.required` while the `tasks` extension is enabled. Tasks depends on `ai-router`, because Pi on a task VM reaches models only through this CLIProxyAPI. `error.details.required_by` is `tasks`.
-- `ai_router.keys_outstanding` while a task VM holds a model key. Only the management key can revoke that key. `error.details.task_vms` is the number of such task VMs. Run teardown after they are destroyed.
+`extension:enable tasks` refuses with `ai_router.disabled` (409) while the ai-router is not set up: before the first setup or after a teardown. A task start writes the guard origin and the fixed key into the VM, so Tasks must not start without a guard. A task start checks the same thing and refuses with `ai_router.disabled`.
 
-Teardown holds the model key lock `orbit:compute:model-keys` from these checks until it has removed the collector and deleted the keys. Task VMs take the same lock to issue or revoke a key, so no task VM gets a key during a teardown. When a key operation holds the lock for more than 60 seconds, teardown refuses with `ai_router.keys_busy` and changes nothing. Run it again.
-
-`extension:enable tasks` refuses with `ai_router.disabled` (409) while no management key is stored: before the first setup or after a teardown. A task VM stores its key before CLIProxyAPI registers it, so Tasks must not start without a key that can revoke it. Task VM preparation checks the same thing under the model key lock before it stores a key, and refuses with `task_vm.model_key_failed` (409).
-
-Task VM code reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`. This extension binds it to `AiRouterModelKeyIssuer`, which holds the management key and the anchor key. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
+Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`. This extension binds it to `AiRouterTaskVmModelRoute`, which returns the guard origin and the fixed task key, and never the management key or the anchor key. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
 
 ## Errors
 
@@ -254,7 +251,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `ai-router` extension is disabled. |
 | `ai_router.disabled` | 409 | A read, the model list, a toggle, or `extension:enable tasks` runs while the collector is not set up. |
-| `validation.failed` | 422 | Invalid setup input, including a `cliproxy_url` that differs from `task_vms.model_proxy_origin` while task VMs are enabled. |
+| `validation.failed` | 422 | Invalid setup input. |
 | `ai_router.cache_missing` | 422 | No Database connection has the cache slug. |
 | `ai_router.cache_invalid` | 422 | The cache connection is not Redis. |
 | `ai_router.cache_unplaced` | 422 | The cache connection's Node is not in the fleet or has no active `database` role. |
@@ -266,14 +263,12 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `ai_router.caddy_publication_failed` | 422 | Setup could not install Caddy or build the Node's Caddy configuration. |
 | `ai_router.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
 | `extension.required` | 409 | Teardown runs while the `tasks` extension is enabled. Teardown changes nothing. |
-| `ai_router.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key. Teardown changes nothing. |
 | `ai_router.cutover_pending` | 409 | The release cutover is pending. The next extension tick retries it. Setup and teardown cannot replace its recorded intent. |
-| `ai_router.keys_busy` | 409 | A model key operation holds the lock for more than 60 seconds. Teardown changes nothing. Run it again. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
 ## Collector convergence
 
-The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
+The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action never restarts the router.
 
 `ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota reads resume when the tick renames the previous snapshot. The window includes up to one minute for dispatch, queue wait, and retirement of the old collector. When no snapshot exists, reads wait for the first successful poll.
 

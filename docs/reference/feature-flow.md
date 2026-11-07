@@ -62,7 +62,7 @@ A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on 
 - The workflow condition picks a self-hosted runner for a pull request from this repository. It picks a hosted runner for every other pull request.
 - `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
 - The job passes no secret.
-- The CI proof VM holds no Pi token and no model key.
+- The CI proof VM holds no Pi token and no real model key. The fixed model key it holds is a placeholder that only the model router guard accepts, from the task VM network.
 - Orbit refuses a commit that is not on a branch of the repository, so a job that reaches a runner can still prove only trusted code.
 
 **Required check**

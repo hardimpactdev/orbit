@@ -20,7 +20,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - an external task group in `todo`, a free slot under a host's `max_vms` and a promoted base snapshot on that host
   %%> Result:
-  %%> - the group holds the slot; its Node, WireGuard key, host key, agent secret, Pi token and model key are new, and the public keys are pinned on the Node
+  %%> - the group holds the slot; its Node, WireGuard key, host key, agent secret and Pi token are new, and the public keys are pinned on the Node. Every VM holds the same model key, the placeholder of the model router guard
   %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission answers `tasks.capacity_unavailable` and names the release the host's image comes from
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
@@ -61,4 +61,4 @@ sequenceDiagram
   end
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
-  %%> - at the end of the group the VM, its seed clone and its identity volume go, the hub peer is removed, the claim's model key is revoked and the Gateway deletes the Node (docs/cli/tasks/cancel.mmd)
+  %%> - at the end of the group the VM, its seed clone and its identity volume go, the hub peer is removed and the Gateway deletes the Node (docs/cli/tasks/cancel.mmd)

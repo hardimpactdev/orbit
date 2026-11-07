@@ -2,7 +2,7 @@ id: 8b920884-4d7f-4c4d-b740-1c00d0d809bc
 name: operation-task-vm-slot-release
 description: >-
   Release one task VM (docs/cli/tasks/vm-release.mmd) from full inputs on 209: the VM and its seed clone are deleted, its hub peer is
-  removed and the claim's model key is revoked, side by side. The Gateway then deletes its Node record. No step calls the Gateway.
+  removed, side by side. The Gateway then deletes its Node record. No step calls the Gateway or the model router.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -18,19 +18,12 @@ inputs:
         host: {type: object}
         slot: {type: object}
         hub_peer: {type: object}
-        model: {type: object}
       required: [host, slot, hub_peer]
       additionalProperties: true
     execution_secrets:
       type: object
-      # The claim's model key copies, when the claim issued one.
-      additionalProperties:
-        type: object
-        properties:
-          vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$'}
-        required: [vault, key]
-        additionalProperties: false
+      # A release takes no secret.
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -52,14 +45,3 @@ jobs:
       workflowIdOrName: task-vm-hub-peer-remove
       inputs: {hub: '${{ inputs.intent.hub_peer.hub }}', hub_ssh_execution: '${{ inputs.intent.hub_peer.hub_ssh_execution }}',
         public_key: '${{ inputs.intent.hub_peer.public_key }}', guest_node_id: '${{ inputs.intent.hub_peer.guest_node_id }}'}
-  # The model key of the claim goes; the next claim gets a new one. The Pi token goes with the VM.
-  - name: Revoke the model key
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ !has(inputs.intent.model) }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-model-revoke
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ has(inputs.intent.model) ? inputs.intent.model : {} }}',
-        execution_secrets: '${{ !has(inputs.intent.model) ? {} : {"model_key": inputs.execution_secrets.model_key,
-          "model_router_management": inputs.execution_secrets.model_router_management, "model_router_anchor": inputs.execution_secrets.model_router_anchor} }}'}

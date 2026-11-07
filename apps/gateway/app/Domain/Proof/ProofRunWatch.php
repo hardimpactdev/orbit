@@ -7,25 +7,23 @@ namespace App\Domain\Proof;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
-use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
  * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. It ends a proof only when the request that admitted
  * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
- * `runs: []`. It also closes a proof whose runs have all ended, and frees the admission lock that the dead request held.
+ * `runs: []`. It also closes a proof whose runs have all ended.
  * It also ends the keep of a failed run (`proof:run --keep-failed`) when its 60 minutes are up, by cancelling the group of that run.
  * A run that waits for VM capacity does not exist: capacity is decided at admission (docs/cli/proof/run.mmd).
  */
 final readonly class ProofRunWatch
 {
-    /** Without a run: the job may wait in the queue, then waits 60 s at most for the admission lock and admits in about a minute. Later, it is lost. */
+    /** Without a run: the job may wait in the queue, then admits in about a minute. Later, it is lost. */
     public const int AdmissionSeconds = 300;
 
     /** What the Operation says when the admission was lost. */
@@ -44,12 +42,6 @@ final readonly class ProofRunWatch
     public const int KeptGiveUpHours = 24;
 
     public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofKeptVms $kept) {}
-
-    /** The owner of the admission lock while this proof is admitted, so the lock ends with the proof. */
-    public static function lockOwner(int $proofId): string
-    {
-        return 'proof.run:'.$proofId;
-    }
 
     /** @return int how many proofs it ended or settled */
     public function sweep(): int
@@ -129,7 +121,6 @@ final readonly class ProofRunWatch
             $this->store->change($proof, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
                 'error_code' => ProofRunSettlement::AdmissionInterrupted, 'state' => [...($proof->state ?? []), 'native_failure' => ['failed_step' => null, 'detail' => self::Lost, 'stderr_recorded' => false]],
                 'result' => ['commit' => $input['commit'] ?? null, 'outcome' => 'failed', 'cases' => [], 'uncovered' => $input['uncovered'] ?? [], 'receipt_url' => null]]);
-            $this->freeLock($proof->id);
 
             return 1;
         }
@@ -141,7 +132,6 @@ final readonly class ProofRunWatch
                     'current_step' => null, 'lock_key' => null, 'result' => ['error_code' => ProofRunSettlement::AdmissionInterrupted]]);
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
             }
-            $this->freeLock($proof->id);
         }
         $this->settlement->settle($proof->id);
 
@@ -156,11 +146,5 @@ final readonly class ProofRunWatch
     {
         return ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0
             && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']);
-    }
-
-    /** Releases the admission lock only if this proof's request holds it; a lock another admission or a teardown holds stays. */
-    private function freeLock(int $proofId): void
-    {
-        Cache::restoreLock(ModelKeyIssuer::Lock, self::lockOwner($proofId))->release();
     }
 }

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\Pi;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
+use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -12,6 +14,8 @@ use App\Models\TaskVm;
 /** Resolves a task VM's Pi server address and token. A warm task VM has no token until a group claims it. */
 final readonly class PiConnection
 {
+    public function __construct(private TaskVmModelRoute $route) {}
+
     public function baseUrl(Node $node): string
     {
         $host = $node->wireguard_ip;
@@ -39,7 +43,8 @@ final readonly class PiConnection
     }
 
     /**
-     * Values that never leave the driver in a transcript: the token, and a task VM's model key.
+     * Values that never leave the driver in a transcript: the VM's Pi token, and the fixed model key every task VM holds while the
+     * model route is ready.
      *
      * @return list<string>
      */
@@ -47,6 +52,15 @@ final readonly class PiConnection
     {
         $vm = TaskVm::forNode($node);
 
-        return array_values(array_filter([$vm->pi_token ?? '', $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));
+        return array_values(array_filter([$vm->pi_token ?? '', $this->modelKey()], static fn (string $value): bool => $value !== ''));
+    }
+
+    private function modelKey(): string
+    {
+        try {
+            return $this->route->key();
+        } catch (ResourceOperationException) {
+            return '';
+        }
     }
 }

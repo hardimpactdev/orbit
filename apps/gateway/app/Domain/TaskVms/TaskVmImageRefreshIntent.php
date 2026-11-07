@@ -64,9 +64,9 @@ final readonly class TaskVmImageRefreshIntent
             return self::open($host) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
         }
         try {
-            // The proof's claim mints a model key, so the admission holds the model router fence and claims the identity in one transaction.
-            return self::open($host) ?? app(TaskVmModelAdmission::class)->run(fn (): Operation => DB::transaction(fn (): Operation => $this->operations->execute(
-                self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host), $caller, $request, lockKey: OperationStore::lockKey('task_vm_host', $host->id))));
+            // The proof's claim takes its identity in the admission transaction.
+            return self::open($host) ?? DB::transaction(fn (): Operation => $this->operations->execute(
+                self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host), $caller, $request, lockKey: OperationStore::lockKey('task_vm_host', $host->id)));
         } finally {
             $lock->release();
         }

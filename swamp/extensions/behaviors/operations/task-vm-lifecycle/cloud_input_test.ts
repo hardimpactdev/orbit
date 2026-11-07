@@ -14,7 +14,6 @@ const intent = {
     host_node_id: null,
     guest_node_id: 142,
     gateway_node_id: 14,
-    model_router_node_id: 6,
     provider: "upcloud",
     provider_id: null,
     name: "tvm-42",

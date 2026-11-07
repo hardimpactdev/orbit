@@ -38,7 +38,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
+            pattern: ^(task-vm-(pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|task-vm-upcloud-token|agent-secret-node-[1-9][0-9]*)$
         required:
         - vault
         - key
@@ -713,22 +713,6 @@ jobs:
     - step: observer-reload
       condition:
         type: succeeded
-  - name: model
-    labels:
-      role: swamp
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-model-issue
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} }}
-    dependsOn:
-    - step: observer-start
-      condition:
-        type: succeeded
   - name: runtime
     labels:
       role: swamp
@@ -751,7 +735,7 @@ jobs:
           ssh_execution: ${{ inputs.guest.ssh_execution }}
         execution_secrets: ${{ {"pi_models":inputs.execution_secrets.pi_models,"pi_token":inputs.execution_secrets.pi_token} }}
     dependsOn:
-    - step: model
+    - step: observer-start
       condition:
         type: succeeded
   - name: receipt
@@ -767,36 +751,12 @@ jobs:
         provider: ${{ inputs.provider }}
         guest: ${{ inputs.guest }}
         peer: ${{ steps["peer-key"].outputs }}
-        model_stdout: ${{ steps.model.outputs.result.stdout }}
         runtime_stdout: ${{ steps.runtime.outputs.result.stdout }}
         observer_stdout: ${{ steps["observer-identity"].outputs.stdout }}
     dependsOn:
     - step: runtime
       condition:
         type: succeeded
-  - name: model-revoke
-    labels:
-      role: swamp
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-model-revoke
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor} }}
-    dependsOn:
-    - step: receipt
-      condition:
-        type: or
-        conditions:
-        - type: failed
-        - type: skipped
-    - step: model
-      condition:
-        type: always
-    guard: ${{ "provider-plan" in steps && steps["provider-plan"].outputs.provider == "incus" && !("model" in steps && steps.model.status in ["succeeded","failed","cancelled"]) }}
   - name: result
     labels:
       role: swamp
@@ -811,30 +771,18 @@ jobs:
       methodName: forward
       inputs:
         receipt: ${{ steps.receipt.outputs }}
-  - name: cloud-revoked
-    labels:
-      role: swamp
-    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
-    dependsOn:
-    - step: model-revoke
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: ${{ "cloud-rollback-proof" }}
-      methodName: revocation
-      inputs:
-        intent: ${{ {"task_vm_id":inputs.intent.task_vm_id,"guest_node_id":null,"provider":"upcloud","model_key_required":true,"removal":null,"provider_input":{"task_vm_id":inputs.intent.task_vm_id,"name":inputs.intent.name,"provider":"upcloud","provider_id":inputs.provider.provider_id,"vm":null,"host_ssh_execution":null} } }}
-        stdout: ${{ steps["model-revoke"].outputs.result.stdout }}
+  # A failed or skipped receipt means the enrollment did not finish: the cloud server goes.
   - name: cloud-inspect
     labels:
       role: swamp
     guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
     dependsOn:
-    - step: cloud-revoked
+    - step: receipt
       condition:
-        type: succeeded
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power

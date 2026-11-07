@@ -38,8 +38,8 @@ it('counts a task VM ready only once a Swamp worker reaches it over WireGuard wi
     $steps = collect($workflow['jobs'][0]['steps'])->keyBy('name');
     $reach = $steps['Reach the VM by WireGuard']['task'];
 
-    expect(array_column($steps['Check ready']['dependsOn'], 'step'))->toContain('Reach the VM by WireGuard')->toContain('Issue the model key')
-        // The converge waits for the VM and its hub peer, not for the model key, which only Pi uses.
+    expect(array_column($steps['Check ready']['dependsOn'], 'step'))->toContain('Reach the VM by WireGuard')->not->toContain('Issue the model key')
+        // The converge waits for the VM and its hub peer. No model key is issued: the identity exec writes the fixed one.
         ->and(array_column($steps['Converge and branch']['dependsOn'], 'step'))->toBe(['Create and start the VM', 'Add the hub peer'])
         ->and($reach['globalArgs']['hosts'][0]['address'])->toBe('${{ inputs.intent.guest_ssh.target.host }}')
         ->and($reach['globalArgs']['hosts'][0]['transport']['hostKeys'])->toBe('${{ inputs.intent.guest_ssh.target.host_keys }}')

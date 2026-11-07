@@ -11,7 +11,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
- * Releases a slot whose task start did not pass (docs/cli/tasks/vm-release.mmd): its VM, hub peer, model key and Node go, so the slot
+ * Releases a slot whose task start did not pass (docs/cli/tasks/vm-release.mmd): its VM, hub peer and Node go, so the slot
  * is free again. A slot that another group holds by then, or that is already released, is left alone.
  */
 final class ReleaseTaskVmSlot implements ShouldBeUnique, ShouldQueue

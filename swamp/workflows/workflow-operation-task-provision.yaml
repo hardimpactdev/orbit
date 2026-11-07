@@ -2,8 +2,9 @@ id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
 description: >-
   Start a task VM for a task group (docs/cli/tasks/provision.mmd) from full inputs on 209: a copy of the host's base snapshot with a clone
-  of its seed, the identity the admission minted and the claim's Pi token and model key, with the hub peer added beside the boot; the
-  converge of the release refresh, which is a no-op on a current base, and the new task branch; then one ready check. No step calls the Gateway.
+  of its seed, the identity the admission minted and the claim's Pi token and models file (the guard origin and the fixed model key), with
+  the hub peer added beside the boot; the converge of the release refresh, which is a no-op on a current base, and the new task branch;
+  then one ready check. No step calls the Gateway or the model router.
 queueTimeout: 30
 vaults:
 - orbit-control-inputs
@@ -16,8 +17,7 @@ inputs:
     intent: {type: object}
     execution_secrets:
       type: object
-      # The slot's identity, which the start writes onto the new VM; the claim's model key, registered while the
-      # VM starts; and the claim's Pi token and model file.
+      # The slot's identity, which the start writes onto the new VM; and the claim: the Pi token and the models file with the fixed model key.
       properties:
         wireguard: &secret
           type: object
@@ -28,27 +28,6 @@ inputs:
           additionalProperties: false
         ssh_host: *secret
         agent_secret: *secret
-        model_key:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^task-vm-model-key-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_management:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-management-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-        model_router_anchor:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^model-router-anchor-node-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
         claim:
           type: object
           properties:
@@ -56,7 +35,7 @@ inputs:
             key: {type: string, pattern: '^task-vm-pi-claim-[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
-      required: [wireguard, ssh_host, agent_secret, model_key, model_router_management, model_router_anchor, claim]
+      required: [wireguard, ssh_host, agent_secret, claim]
       additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
@@ -82,20 +61,9 @@ jobs:
       workflowIdOrName: task-vm-hub-peer
       inputs: {hub: '${{ inputs.intent.hub_peer.hub }}', hub_ssh_execution: '${{ inputs.intent.hub_peer.hub_ssh_execution }}',
         public_key: '${{ inputs.intent.hub_peer.public_key }}', guest_node_id: '${{ inputs.intent.hub_peer.guest_node_id }}'}
-  # The claim's model key goes to the model router while the VM starts; Pi reads it from the claim's model file.
-  - name: Issue the model key
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: workflow
-      workflowIdOrName: task-vm-model-issue
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.model }}',
-        execution_secrets: '${{ {"model_key": inputs.execution_secrets.model_key, "model_router_management": inputs.execution_secrets.model_router_management,
-          "model_router_anchor": inputs.execution_secrets.model_router_anchor} }}'}
   - name: Converge and branch
     labels: {role: swamp}
     writes: true
-    # The model key is for Pi, which no converge step runs; the task is ready only once it is registered (Check ready).
     dependsOn: [{step: Create and start the VM, condition: {type: succeeded}}, {step: Add the hub peer, condition: {type: succeeded}}]
     task:
       type: workflow
@@ -149,7 +117,7 @@ jobs:
         timeoutSec: 30
   - name: Check ready
     labels: {role: swamp}
-    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}, {step: Reach the VM by WireGuard, condition: {type: succeeded}}, {step: Issue the model key, condition: {type: succeeded}}]
+    dependsOn: [{step: Read the readiness, condition: {type: succeeded}}, {step: Reach the VM by WireGuard, condition: {type: succeeded}}]
     task:
       type: assert
       expr: >-
