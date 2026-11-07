@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Proof\ProofSettings;
@@ -13,9 +14,11 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Models\Node;
 use App\Models\Project;
+use App\Support\ValidatedData;
 
 /**
  * The input of the one converge of a task VM (swamp/ansible/task-vm-role.yml), which the image refresh and every task start run
@@ -30,7 +33,8 @@ final readonly class TaskVmConvergeInput
     private const array Bun = ['apps/web', 'apps/pi-server', 'apps/desktop'];
 
     public function __construct(private TaskVmSettings $settings, private SwampSshExecutionInput $ssh, private ProofSettings $proof,
-        private RecipeImageBuilds $recipes, private TaskVmSlotWorkspace $workspace, private AgentDelivery $delivery) {}
+        private RecipeImageBuilds $recipes, private TaskVmSlotWorkspace $workspace, private AgentDelivery $delivery,
+        private LeafCertificateSigner $certificates, private PiConnection $pi) {}
 
     /**
      * The converge of a VM on `$host` to `$commit`; a task start names the task branch to start there, and its `$guest` Node: the converge then
@@ -61,7 +65,11 @@ final readonly class TaskVmConvergeInput
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']),
             'pi' => ['sha256' => $pi->digest, 'source' => ['ssh' => $this->ssh->forNode($gateway), 'path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location]],
             // The agent the image carries: the pinned build for this host's platform. A task start writes its unit and secret.
-            'boot' => ['authorized_key' => $identity['public_key'], 'agent' => $this->agent($host)],
+            'boot' => ['authorized_key' => $identity['public_key'], 'agent' => $this->agent($host),
+                // The same for every task VM, so the base carries them and a start's identity unit only unpacks what is its own.
+                'trust' => ['certificate' => $this->certificates->rootCertificate(),
+                    'control_ip' => ValidatedData::string(Node::query()->findOrFail($identity['control_node_id'])->wireguard_ip),
+                    'gateway_ip' => ValidatedData::string($gateway->wireguard_ip), 'pi_port' => $this->pi->port()]],
             'checkout' => $this->checkout($commit, $branch),
             // The outer VM joins the nested WireGuard network as its operator; the hub is the nested Gateway.
             'fleet' => [...TaskVmReadyCopiesIntent::fleet(), 'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24']],

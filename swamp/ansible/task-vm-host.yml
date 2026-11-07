@@ -236,15 +236,12 @@
             - { path: /etc/wireguard/orbit.conf, content: "{{ slot.identity.wireguard_config }}", mode: "0600" }
             - { path: /etc/wireguard/orbit.dns-link, content: "{{ slot.identity.dns_marker }}", mode: "0600" }
             - { path: /etc/orbit/agent/config.toml, content: "{{ slot.identity.agent_config }}", mode: "0644" }
-            - { path: /etc/orbit/agent/ca.pem, content: "{{ slot.identity.certificate }}", mode: "0644" }
-            - { path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt, content: "{{ slot.identity.certificate }}", mode: "0644" }
             - { path: /etc/systemd/system/orbit-agent.service, content: "{{ slot.identity.agent_unit }}", mode: "0644" }
             - { path: "{{ slot.identity.pi_unit_path }}", content: "{{ slot.identity.pi_unit }}", mode: "0644" }
-            # What the orbit-identity unit sets from the files: the name, the firewall and the services (task-vm-boot.yml).
+            # What the orbit-identity unit sets from the files: the name and the Pi service (task-vm-boot.yml).
             - path: /etc/orbit/identity.env
               mode: "0644"
-              content: "ORBIT_HOSTNAME={{ slot.name }}\nORBIT_PI_UNIT={{ slot.identity.pi_unit_name }}\nORBIT_PI_PORT={{ slot.identity.pi_port }}\n\
-                ORBIT_CONTROL_IP={{ slot.identity.control_ip }}\nORBIT_GATEWAY_IP={{ slot.identity.gateway_ip }}\n"
+              content: "ORBIT_HOSTNAME={{ slot.name }}\nORBIT_PI_UNIT={{ slot.identity.pi_unit_name }}\n"
           loop_control: { label: "{{ item.path }}" }
           changed_when: true
         - name: Give the VM its seed clone, its identity and its size

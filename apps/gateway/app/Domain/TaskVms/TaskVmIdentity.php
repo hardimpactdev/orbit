@@ -8,11 +8,9 @@ use App\Domain\Nodes\NodeNetworkConvergeInput;
 use App\Domain\Nodes\NodeNetworkInput;
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Models\Node;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -24,7 +22,7 @@ use App\Support\ValidatedData;
 final readonly class TaskVmIdentity
 {
     public function __construct(private TaskVmEnrollmentIntent $enrollment, private SwampSshExecutionInput $ssh,
-        private SwampCommandStep $shared, private PiConnection $pi) {}
+        private SwampCommandStep $shared) {}
 
     /**
      * The public files of the identity that a task start writes onto its new VM; the private keys go as vault copies ({@see self::secrets()}).
@@ -36,17 +34,12 @@ final readonly class TaskVmIdentity
         $guest = $vm->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409);
         $files = $this->enrollment->slotFiles($guest);
         $peer = NodeNetworkConvergeInput::peerFiles(ValidatedData::object(app(NodeNetworkInput::class)->capture($guest)['peer']));
-        $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q
-            ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-        $control = Node::query()->findOrFail($this->ssh->identity()['control_node_id']);
 
         return [
             'wireguard_config' => ValidatedData::string($peer['config']), 'dns_marker' => ValidatedData::string($peer['dns_marker']),
             'ssh_host_public_key' => TaskVmSlotIdentity::sshPublicKey(ValidatedData::string($vm->ssh_host_private_key)),
             'agent_config' => ValidatedData::string($files['agent']['configuration']), 'agent_unit' => ValidatedData::string($files['agent']['unit']),
-            'certificate' => ValidatedData::string($files['agent']['certificate']),
-            'pi_unit' => $files['unit'], 'pi_unit_name' => $files['unit_name'], 'pi_unit_path' => $files['unit_path'], 'pi_port' => (string) $this->pi->port(),
-            'control_ip' => ValidatedData::string($control->wireguard_ip), 'gateway_ip' => ValidatedData::string($gateway->wireguard_ip),
+            'pi_unit' => $files['unit'], 'pi_unit_name' => $files['unit_name'], 'pi_unit_path' => $files['unit_path'],
         ];
     }
 
