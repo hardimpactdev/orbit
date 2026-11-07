@@ -528,7 +528,7 @@ Cancelling a queued or running Operation with no `swamp_run_id` and zero attempt
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
-`firewall.allow`, `firewall.deny` and `firewall.remove` pass the admitted Node rule and shared tuple plan to `operation-firewall-direct`. Every step runs on Node 209. The official firewall model reaches the target over WireGuard after the admitted pin is verified in the published known_hosts snapshot. Doctor's `firewall` family owns the read-only UFW read and comparison. The Gateway projects the native terminal result.
+`firewall.allow`, `firewall.deny` and `firewall.remove` pass the admitted Node rule to `operation-firewall-ansible`. Every step runs on Node 209, and the Node side is one Ansible phase: it reads `ufw status numbered`, plans the lines, applies them with the `ufw` module and checks the result in one run. The phase reaches the target over SSH with the admitted host keys pinned. Doctor's `firewall` family owns the read-only UFW read and comparison. The Gateway projects the result that the phase prints.
 
 All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
 
