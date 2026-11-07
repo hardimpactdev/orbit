@@ -33,7 +33,8 @@ Deno.test("provision asks for the token beside the clone credential, writes both
     const needs = (name: string) => ((byName[name] as unknown as { dependsOn?: { step: string }[] }).dependsOn ?? []).map((edge) => edge.step);
 
     assertEquals(byName.deps_mint.task?.workflowIdOrName, "task-github-mint");
-    assertEquals(needs("deps_mint"), ["control"]);
+    // The token is asked for at the start, beside the clone credential: it waits for nothing.
+    assertEquals(needs("deps_mint"), []);
     assertEquals(byName.deps_revoke.task?.behaviorType, "command/shell");
     // The two writes depend on the same steps, so one barrier covers both; neither waits for the other.
     assertEquals(needs("deps_write_composer"), needs("deps_write_npm"));

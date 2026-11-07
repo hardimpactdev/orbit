@@ -131,11 +131,13 @@ When the workspace has a Route or Process definitions, three steps run between s
 
 The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish`, `tasks.park` and `tasks.cancel`), each with its own receipt and time budget.
 
-A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
+The first step of the workspace run asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
 
-Separate steps then clone the source on Node 209, with full history, and copy a Git bundle through official SSH. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
+One step on Node 209 then makes the run folder, clones the source with full history and writes a Git bundle. The VM never holds the credential: `origin` is the plain repository URL, and `.git/config`, a credential helper and the environment files hold none.
 
-Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Two reads take the checkout's HEAD and branch, and a `stat` of `composer.json` and the entry point. When the profile needs a regular `composer.json`, one official `@swamp/ssh copy` downloads it into the private worker directory. TypeScript on Node 209 turns them into the source profile; it reads and deletes the downloaded file.
+The VM is reached by two phases of one Ansible playbook, `task-vm-workspace.yml`, run from Node 209 with the pinned host key of the VM. The `prepare` phase makes the checkout folder and the output folder, and checks that the account can write the checkout folder. It runs beside the clone. The `checkout` phase runs once the bundle exists. It copies the bundle to the VM, clones it, sets `origin`, creates the task branch at the start commit, and reads the checkout's HEAD, its branch, and a `stat` of `composer.json` and the entry point. It also gives the Route's rows of Caddy access and fetches a regular `composer.json`.
+
+The playbook uses Ansible modules and `git` argument lists; no script is copied to the VM. It leaves two files in the private worker directory on Node 209, the facts and the `composer.json`. TypeScript on Node 209 turns them into the source profile; it reads and deletes both files. A failed phase sets `failed_step` `prepare` or `checkout` in the receipt.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)). Such a Gateway records finished runs through its own queue: its bootstrap starts the scheduler and Horizon units, and its `gateway` role keeps them.
 
@@ -812,7 +814,7 @@ The SSH steps keep their node id. An SSH definition holds the host keys and the 
 
 Other steps keep fixed names. The steps of `tasks.pr_ready`, `tasks.pr_merge` and the comment steps of `tasks.review_round` only make short GitHub calls, and Swamp never deletes a behavior instance, so a name per group would grow without bound. A few short check steps (`task-check-prepare`, `task-check-candidate` and the other `task-check-` preparation steps) are short too, and the `collect` step of the scheduled check observation is one step for every VM.
 
-The VM provision child (`tp-clone`, `tp-bundle` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
+The VM provision child (`tp-clone` and the other `tp-` names) and the per-group `task-check-pending` record still use their earlier names.
 
 ## Task workspace
 

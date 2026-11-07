@@ -426,6 +426,8 @@ A task VM is a Node with the `app-dev` role, and its software has its own Ansibl
 
 The wait for a nested fleet is not a phase of the role: it is the playbook `swamp/ansible/task-vm-fleet-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code.
 
+The workspace of a task is a third playbook, `swamp/ansible/task-vm-workspace.yml`, with the phases `prepare` and `checkout`. It runs as the workspace account with the input kind `task_vm.workspace`. `prepare` makes the folders and checks that the checkout path is writable. `checkout` copies the bundle that the Swamp Node made, clones it, sets the origin and the task branch, and runs the Route's access rows. It also brings back two files, the facts and `composer.json`, for the profile step. See [Tasks](/reference/tasks).
+
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
 On an image build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that an image build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
