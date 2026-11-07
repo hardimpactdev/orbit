@@ -1,45 +1,23 @@
 ---
-# The commands of the batch, run on the task VM (the operator side) with the real CLI against the nested Gateway.
-# Swamp does not run them. One data list per case (argv, what the answer must be); act.yml does the work.
+# The commands of the batch, run on the task VM (the operator side) with the real CLI against the nested Gateway. Swamp does not run them.
+# One host per case (molecule.yml, cases.yml). The independent cases run as many at a time as ANSIBLE_FORKS allows, on the free strategy so a
+# slow case holds none of the others; the exclusive ones, which compare global state, run one at a time after them.
 - ansible.builtin.import_playbook: facts.yml
 
-- name: Run the commands of the batch
-  hosts: localhost
+- name: Run the independent cases
+  hosts: independent_cases
   gather_facts: false
-  vars:
-    app_dev_id: "{{ node_ids['app-dev'] }}"
-    src: "{{ hostvars['nested-gateway'].gateway_src }}"
-    commands:
-      - id: new_restricted_allow
-        argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        expect: {rc: 0, status: succeeded}
-      - id: already_applied
-        setup:
-          - [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        argv: [firewall:allow, "{{ cases.already_applied.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        expect: {rc: 0, status: succeeded, skipped: firewall.rule_exists}
-      - id: partial_application
-        argv: [firewall:allow, "{{ cases.partial_application.port }}", "--node={{ app_dev_id }}", "--from={{ src }}"]
-        expect: {rc: 0, status: succeeded}
-      - id: conflict
-        setup:
-          - [firewall:deny, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        argv: [firewall:allow, "{{ cases.conflict.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        expect: {rc: 1, code: firewall.rule_conflict, request: false}
-      - id: failure_code
-        argv: [firewall:allow, "{{ cases.new_restricted_allow.port }}"]
-        expect: {rc: 1, code: firewall.node_id_invalid, request: false}
-      - id: protocols_tcp
-        argv: [firewall:allow, "{{ cases.protocols_tcp.port }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        expect: {rc: 0, status: succeeded}
-      - id: port_range
-        argv: [firewall:allow, "{{ cases.port_range.spec }}", "--node={{ app_dev_id }}", "--from={{ src }}", "--protocol=tcp"]
-        expect: {rc: 0, status: succeeded}
-      - id: protected_port
-        argv: [firewall:allow, "22", "--node={{ app_dev_id }}"]
-        expect: {rc: 0, status: succeeded, skipped: firewall.rule_exists}
+  strategy: free
+  # A limit of 1 means one case after the other; a larger limit is the forks of Ansible (ANSIBLE_FORKS), all hosts at once.
+  serial: "{{ 1 if (lookup('ansible.builtin.env', 'ANSIBLE_FORKS') | default('1', true) | int) == 1 else 0 }}"
+  vars_files: [cases.yml]
   tasks:
-    - name: Run each case
-      ansible.builtin.include_tasks: act.yml
-      loop: "{{ commands }}"
-      loop_control: {loop_var: c, label: "{{ c.id }}"}
+    - ansible.builtin.import_tasks: act.yml
+
+- name: Run the cases that check global state, alone
+  hosts: exclusive_cases
+  gather_facts: false
+  serial: 1
+  vars_files: [cases.yml]
+  tasks:
+    - ansible.builtin.import_tasks: act.yml

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPIKE, throwaway. Run by `orbit tasks:script` from the repository root of a task VM. Times three `orbit firewall:allow` calls against the nested
 # Gateway (a new rule, a repeat that only skips, and a partial apply that adds the UDP line) and prints each Operation's steps with their timestamps,
-# so the seconds of one call can be split into the CLI, the admission, the Swamp dispatch and each step.
+# so the seconds of one call can be split into the CLI, the admission, the Swamp dispatch, each step, the projection of the result and the CLI's wait.
 #
 #   scripts/firewall-allow-trace [PORT]     PORT is the first test port (default 47500); the calls use PORT, PORT+1 and PORT+2
 #
@@ -18,19 +18,51 @@ since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.2f", b - a }'; }
 
 say() { printf '%s\n' "$*"; }
 
-# One call: seconds on the wall, then the Operation it started, step by step.
+api() { curl -sS --max-time 5 --cacert "$HOME/.orbit/nested-ca.pem" -H 'Accept: application/json' "https://10.45.0.1/api/v1/$1"; }
+epoch() { date -u -d "$1" +%s.%N; }
+secs() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.2f", b - a }'; }
+
+# One call: seconds on the wall, the Operation it started step by step, and the gaps between the stages. A watcher reads the Operation from the
+# nested Gateway every 50 ms, so the moment the Gateway shows it, and the moment it shows it ended, are known; the steps give the Swamp times.
 traced() {
   local label=$1; shift
-  local start out rc id
-  start=$(now)
+  local start out rc id last next t0 t1 mark
+  last=$(api operations | jq -r '(.data // []) | map(.id) | max // 0')
+  next=$((last + 1))
+  mark=$(mktemp)
+  (
+    prev=""
+    while :; do
+      st=$(api "operations/$next" | jq -r '(.data // .) | .status // empty' 2>/dev/null)
+      if [ -n "$st" ] && [ "$st" != "$prev" ]; then printf '%s %s\n' "$(date +%s.%N)" "$st"; prev=$st; fi
+      case "$st" in succeeded | failed | cancelled) break ;; esac
+      sleep 0.05
+    done
+  ) >"$mark" &
+  local watcher=$!
+  t0=$(now)
   out=$(orbit "$@" --json 2>/dev/null); rc=$?
-  say "== $label: rc $rc, $(since "$start") s on the wall"
+  t1=$(now)
+  sleep 0.3; kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null
+  say "== $label: rc $rc, $(since "$t0") s on the wall"
   id=$(printf '%s' "$out" | jq -r '(.data // .) | (.id // .operation.id // empty)' 2>/dev/null)
-  if [ -z "$id" ]; then say "no operation id in the answer: $(printf '%s' "$out" | head -c 200)"; return; fi
-  orbit operation:show "$id" --json 2>/dev/null | jq -r '
+  if [ -z "$id" ]; then say "no operation id in the answer: $(printf '%s' "$out" | head -c 200)"; rm -f "$mark"; return; fi
+  local steps first_start last_end seen_first seen_end
+  steps=$(orbit operation:show "$id" --json 2>/dev/null)
+  printf '%s' "$steps" | jq -r '
     (.data // .) as $o
     | "op \($o.id) \($o.kind) \($o.status) created \($o.created_at) started \($o.started_at) finished \($o.finished_at)",
-      ($o.steps[]? | "  \(.job // "-") | \(.name) | \(.status) | \(.started_at // "-") | \(.finished_at // "-")")' | cut -c1-170
+      ($o.steps[]? | select(.status != "skipped") | "  \(.job // "-") | \(.name) | \(.status) | \(.started_at // "-") | \(.finished_at // "-")")' | cut -c1-170
+  first_start=$(printf '%s' "$steps" | jq -r '(.data // .) | [.steps[]? | select(.started_at != null) | .started_at] | sort | first // empty')
+  last_end=$(printf '%s' "$steps" | jq -r '(.data // .) | [.steps[]? | select(.finished_at != null) | .finished_at] | sort | last // empty')
+  seen_first=$(awk 'NR == 1 { print $1 }' "$mark")
+  seen_end=$(awk '$2 == "succeeded" || $2 == "failed" || $2 == "cancelled" { print $1; exit }' "$mark")
+  if [ -n "$first_start" ] && [ -n "$last_end" ] && [ -n "$seen_first" ] && [ -n "$seen_end" ]; then
+    say "stages: CLI start to the Gateway showing op $id: $(secs "$t0" "$seen_first") s | to the first Swamp step: $(secs "$seen_first" "$(epoch "$first_start")") s | steps: $(secs "$(epoch "$first_start")" "$(epoch "$last_end")") s | last step to the Gateway showing it ended: $(secs "$(epoch "$last_end")" "$seen_end") s | to the CLI returning: $(secs "$seen_end" "$t1") s"
+  else
+    say "stages: not computed (first step '$first_start', last '$last_end', seen '$seen_first' '$seen_end')"
+  fi
+  rm -f "$mark"
 }
 
 say "== VM $(hostname) commit $(git -C "$ROOT" rev-parse --short HEAD)"

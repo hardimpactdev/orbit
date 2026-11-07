@@ -1,0 +1,24 @@
+---
+# partial-application (changes-needed, succeeded). Independent.
+- name: partial-application
+  vars:
+    tcp_allow: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    udp_allow: "{{ rows | select('search', c.port ~ '/udp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    tcp_deny: "{{ rows | select('search', c.port ~ '/tcp +DENY IN +Anywhere') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    udp_deny: "{{ rows | select('search', c.port ~ '/udp +DENY IN +Anywhere') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+  block:
+    - name: The kept TCP line stays, the UDP line was added, each above its deny
+      ansible.builtin.assert:
+        that: [tcp_allow | length == 1, udp_allow | length == 1, tcp_allow | first < tcp_deny | first, udp_allow | first < udp_deny | first]
+        quiet: true
+    - name: TCP from the Gateway passes and TCP from app-prod is blocked (a UDP probe has no wait_for form)
+      ansible.builtin.include_tasks: probe.yml
+      tags: [probe]
+      vars: {probe: "{{ item }}"}
+      loop:
+        - {from: nested-gateway,  port: "{{ c.port }}", expect: connect}
+        - {from: nested-app-prod, port: "{{ c.port }}", expect: blocked}
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"
