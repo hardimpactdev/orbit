@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 pub const UNITS_INTERVAL: Duration = Duration::from_secs(10);
 /// How often the agent reads its host facts.
 pub const HOST_INTERVAL: Duration = Duration::from_secs(60);
+/// How often a task VM host's agent reads the egress sources.
+pub const EGRESS_INTERVAL: Duration = Duration::from_secs(5);
+/// A VM's `egress` fact is handed to the reporter at most once in this time.
+pub const EGRESS_DEBOUNCE: Duration = Duration::from_secs(15);
 /// An unchanged fact is sent again after this long.
 pub const RESYNC_INTERVAL: Duration = Duration::from_secs(600);
 /// The first wait before a failed report is sent again; each further wait doubles up to [`RETRY_MAX`].
