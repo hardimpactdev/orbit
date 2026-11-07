@@ -16,7 +16,7 @@ orbit proof:run <commit> [--all] [--report-only] [--keep-failed] [--idempotency-
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
 | `--report-only` | off | Yield capacity to task and proof work. The run takes a host only when one large VM stays free after it, and never overflows to UpCloud. It always clones its VM, so a host of 6 slots takes one only when idle. The proof CI job passes it while it is report-only. |
-| `--keep-failed` | off | Keep the VM of a run that failed, for 60 minutes. The run skips the destroy step, the group stays open, and the result names each kept VM with its group and the time it is destroyed. Nobody has to come back: the Gateway cancels the group when the time is up. A run that passes, or whose VM never got ready, destroys its VM as before. The API and MCP field is `keep_failed`. |
+| `--keep-failed` | off | Keep the VM of a run that failed, for 60 minutes. The run skips the destroy step, the group stays open, and the result names each kept VM with its group and the time it is destroyed. Nobody has to come back: the Gateway cancels the group when the time is up. A run that passes, or whose VM never got ready, destroys its VM as before. A proof that cannot be placed for lack of room (not a `--report-only` one) releases the kept VMs first and retries for up to 4 minutes, with the step `Wait for kept VMs to be released`; a kept VM otherwise stays until its time is up. The API and MCP field is `keep_failed`. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
