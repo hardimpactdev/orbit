@@ -16,6 +16,7 @@ use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
+use App\Domain\Proof\ProofReportOnlyProofs;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
@@ -826,7 +827,7 @@ describe('a proof that cannot be placed while report-only proofs run', function 
         Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
     });
 
-    it('waits on while their VMs are on their way out, and cancels nothing twice', function (): void {
+    it('waits on while their VMs are on their way out, and asks again for the keyed cancel of their group', function (): void {
         proofWorldWithoutCapacity();
         proofRunningElsewhere();
         $proof = proofAdmitted();
@@ -834,7 +835,8 @@ describe('a proof that cannot be placed while report-only proofs run', function 
         app(ProofRunIntent::class)->admit($proof->id);
 
         expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull();
-        Queue::assertPushed(CancelProofGroup::class, 1);
+        // The first cancel, and the same keyed cancel asked again on the second try.
+        Queue::assertPushed(CancelProofGroup::class, 2);
     });
 
     it('fails with the capacity code when their groups are gone and the room is still short', function (): void {
@@ -891,5 +893,44 @@ describe('a proof that cannot be placed while report-only proofs run', function 
         $proof = proofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->status)->toBe(OperationStatus::Cancelled);
+    });
+});
+
+describe('a proof that cannot be placed while a report-only proof is on its way out', function (): void {
+    it('counts a report-only proof that has ended but whose group is still there, and asks for its cancel again', function (): void {
+        proofWorldWithoutCapacity();
+        [$ended, $run] = proofRunningElsewhere();
+        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinute()]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
+
+    it('does not look at a report-only proof that ended long ago', function (): void {
+        proofWorldWithoutCapacity();
+        [$ended] = proofRunningElsewhere();
+        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinutes(ProofReportOnlyProofs::DrainMinutes + 1)]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
+        Queue::assertNotPushed(CancelProofGroup::class);
+    });
+
+    it('waits and tries again when the only report-only proof cannot be cancelled now', function (): void {
+        proofWorldWithoutCapacity();
+        [$broken] = proofRunningElsewhere();
+        Operation::saving(static function (Operation $operation) use ($broken): void {
+            if ($operation->id === $broken->id && $operation->isDirty('status')) {
+                throw new RuntimeException('The write failed.');
+            }
+        });
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
     });
 });
