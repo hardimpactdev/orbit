@@ -51,19 +51,4 @@ return [
             'operator_owned' => [],
         ],
     ],
-    /*
-     * UpCloud overflow: a `vm` group of an opted-in Project gets an UpCloud task VM when no Incus host has a free
-     * slot. Off by default. Unset token_file means not configured; enabled needs it, max_vms, and task VMs enabled.
-     */
-    'upcloud' => [
-        'enabled' => (bool) env('ORBIT_TASK_VMS_UPCLOUD_ENABLED', false),
-        'projects' => json_decode((string) (env('ORBIT_TASK_VMS_UPCLOUD_PROJECTS') ?: '[]'), true),
-        'token_file' => env('ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE'),
-        'max_vms' => env('ORBIT_TASK_VMS_UPCLOUD_MAX_VMS'),
-        'zone' => $env('ORBIT_TASK_VMS_UPCLOUD_ZONE', 'nl-ams1'),
-        'plan' => $env('ORBIT_TASK_VMS_UPCLOUD_PLAN', 'STARTER-2xCPU-4GB'),
-        'disk_gb' => $env('ORBIT_TASK_VMS_UPCLOUD_DISK_GB', 30),
-        // Ubuntu 26.04.
-        'source_template' => $env('ORBIT_TASK_VMS_UPCLOUD_SOURCE_TEMPLATE', '01000000-0000-4000-8000-000030260200'),
-    ],
 ];

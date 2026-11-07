@@ -1,8 +1,6 @@
 id: 9c42bead-f036-4bf8-a1ef-e883129af28f
 name: operation-task-park
 description: Park the admitted Task VM; the shared subscriber reads native provider completion.
-vaults:
-- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -15,22 +13,7 @@ inputs:
     kind: {type: string, enum: [tasks.park]}
     intent:
       type: object
-    execution_secrets:
-      type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^task-vm-upcloud-token$
-        required:
-        - vault
-        - key
-        additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
   required:
   - operation_id
   - node_id

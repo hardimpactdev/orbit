@@ -7,25 +7,13 @@ namespace App\Domain\TaskVms;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Models\Task;
-use App\Models\TaskVm;
 
-/**
- * Where a task VM goes: rank free slots. Hosts with as many free slots keep their config order. A size that no host has room for overflows to UpCloud when the rules
- * allow it, else the group waits.
- */
+/** Rank free slots on Incus hosts; a group waits when no host has room. */
 final readonly class TaskVmPlacementPolicy
 {
     public const string NoCapacity = 'Task VM: no capacity.';
 
-    public function __construct(private TaskVmSettings $settings) {}
-
     /**
-     * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
-     * their config order. Without room, a VM of a size that UpCloud supports goes to UpCloud: only while the overflow
-     * is on, the group's Project is opted in, and fewer than `max_vms` UpCloud VMs count against its cap, failed and
-     * parked ones too. This row cap is the placement rule; the native UpCloud provider child also counts the account's servers
-     * before each create, as its own cost guard. A VM of another size waits for an Incus host.
-     *
      * @param  array<int, int>  $free  host Node id => free slots, in config order
      *
      * @throws TaskCapacityException when the VM fits nowhere
@@ -42,16 +30,7 @@ final readonly class TaskVmPlacementPolicy
         if ($best !== null) {
             return TaskVmPlacementTarget::incusHost($best);
         }
-        // A report-only proof yields: it keeps `$reserve` slots free on an Incus host and never spends on UpCloud.
-        if ($reserve > 0 || ! TaskVmProviderKind::UpCloud->supports($size)) {
-            throw new TaskCapacityException(TaskWait::Capacity, self::noCapacityFor($size, $reserve));
-        }
-        $upcloud = $this->settings->upcloud;
-        if ($upcloud?->allows($group->project_id) === true
-            && TaskVm::query()->countedAgainstCap(TaskVmProviderKind::UpCloud)->count() < $upcloud->maxVms) {
-            return TaskVmPlacementTarget::upCloud();
-        }
-        throw new TaskCapacityException(TaskWait::Capacity, self::NoCapacity);
+        throw new TaskCapacityException(TaskWait::Capacity, $size === TaskVmSize::Normal && $reserve === 0 ? self::NoCapacity : self::noCapacityFor($size, $reserve));
     }
 
     /**

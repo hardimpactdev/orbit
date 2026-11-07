@@ -37,8 +37,7 @@ final readonly class NodeFirewallRuleCatalog
     }
 
     /**
-     * Public SSH to the Node's SSH port, which bootstrap opens and the first active role closes. The UpCloud task VM
-     * template bakes this exact rule, so enrollment finds it in place.
+     * Public SSH to the Node's SSH port, which bootstrap opens and the first active role closes.
      */
     public function publicSshRecovery(Node $node): UfwManagedRule
     {

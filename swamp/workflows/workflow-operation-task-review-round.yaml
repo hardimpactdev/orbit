@@ -53,15 +53,7 @@ inputs:
           additionalProperties: false
       required: [pi_token, write_token]
       additionalProperties: false
-    resume_secrets:
-      type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^task-vm-upcloud-token$'}
-        required: [vault, key]
-        additionalProperties: false
+    resume_secrets: {type: object, additionalProperties: false}
     publish_secrets:
       type: object
       properties:

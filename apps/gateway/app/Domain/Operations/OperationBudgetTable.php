@@ -70,10 +70,8 @@ final class OperationBudgetTable
         // builder with its phases (3,300 s at their bound; a VM at its pins takes a minute), the publication, the boot check and the
         // enrollment and converge of the check VM (a few minutes each), plus margin. Replace with the 14-day p95 after the first successes.
         'task_vm.image_refresh' => 10800,
-        'task_vm.sweep_host' => 600,
         // No run yet. Basis: the VM step of tasks.provision (about 160 s, op 11752), "Converge once" (about 60 s at the pins, 3,300 s at
         // its bound) and the stop (130 s at its bound), rounded up to one hour. Replace with the 14-day p95 after the first successes.
-        'task_vm.upcloud_image_build' => 2100,
         'tasks.provision' => 3900,
         // No run yet. One package manager run, bounded to 900 s by its step, plus the write and the removal of the configuration.
         // Replace with the 14-day p95 after the first success.

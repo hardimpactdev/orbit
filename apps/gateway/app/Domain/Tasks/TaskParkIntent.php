@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -71,12 +68,11 @@ final readonly class TaskParkIntent
     public function capture(Task $group): array
     {
         $vm = self::requireEligible($group);
-        $node = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
-            : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $node = Node::query()->findOrFail($vm->host_node_id);
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $group->taskable_id,
             'task_vm_id' => $vm->id, 'guest_node_id' => $vm->node_id, 'node_id' => $node->id, 'name' => $vm->name,
-            'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'provider' => $vm->provider->value,
             ...$this->provider->capture($vm)];
     }
 
@@ -91,9 +87,9 @@ final readonly class TaskParkIntent
             || ($input['group_id'] ?? null) !== $group->id || ($input['project_id'] ?? null) !== $group->project_id
             || ($input['instance_id'] ?? null) !== $group->taskable_id || ($input['task_vm_id'] ?? null) !== $vm->id
             || ($input['guest_node_id'] ?? null) !== $vm->node_id || ($input['name'] ?? null) !== $vm->name
-            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['provider_id'] ?? null) !== $vm->provider_id
+            || ($input['provider'] ?? null) !== $vm->provider->value
             || ($input['node_id'] ?? null) !== $operation->node_id
-            || ($vm->provider === TaskVmProviderKind::Incus && $vm->host_node_id !== $operation->node_id)) {
+            || ($vm->host_node_id !== $operation->node_id)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The park intent no longer owns its admitted group, workspace and VM.', 422);
         }
 

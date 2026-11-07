@@ -111,15 +111,12 @@ it('renders the full public intent of the save and sends only the vault name of 
     expect($envelope['intent'])->not->toHaveKey('execution_secrets')->toHaveKeys(['ssh_execution', 'fleet']);
 })->group('ready-copies');
 
-it('refuses a VM that is not ready, not on Incus, and a save without the club key, before any credential is copied', function (): void {
+it('refuses a VM that is not ready, and a save without the club key, before any credential is copied', function (): void {
     [$vm, , , $socket] = readyCopiesWorld(TaskVmState::Parked);
 
     expect(readyCopiesRefusal(fn () => app(TaskVmReadyCopiesIntent::class)->capture($vm)))->toBe('task_vm.ready_copies_refused');
 
-    $vm->update(['state' => TaskVmState::Ready, 'provider' => TaskVmProviderKind::UpCloud]);
-    expect(readyCopiesRefusal(fn () => app(TaskVmReadyCopiesIntent::class)->capture($vm->refresh())))->toBe('task_vm.ready_copies_refused');
-
-    $vm->update(['provider' => TaskVmProviderKind::Incus]);
+    $vm->update(['state' => TaskVmState::Ready]);
     config(['swamp.proof_club_api_key' => '']);
     expect(readyCopiesRefusal(fn () => app(TaskVmReadyCopiesIntent::class)->capture($vm->refresh())))->toBe('task_vm.ready_copies_unavailable');
     expect($socket->frames)->toBe([]);

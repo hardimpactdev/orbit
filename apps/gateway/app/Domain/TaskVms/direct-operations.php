@@ -9,8 +9,6 @@ use App\Domain\TaskVms\TaskVmImageRefreshProjection;
 use App\Domain\TaskVms\TaskVmReadyCopiesProjection;
 use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
-use App\Domain\TaskVms\TaskVmSweepProjection;
-use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
 // What a task start writes onto its new VM (docs/cli/tasks/provision.mmd): the slot's identity, and the claim with its Pi token and the Pi
 // models file that holds the fixed model key; and the proof Swamp Club key, which a refresh gives the base VM.
@@ -35,7 +33,7 @@ return ['task_vm.hub_converge' => [
     'workflow_inputs' => true,
     // No result step: the projector reads the run's step statuses; the native assert is the end check.
     'terminal_result' => ['job' => 'check', 'step' => 'Check the guest is ready', 'native' => true],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
+    'execution_copies' => [],
 ], 'task_vm.slot_release' => [
     // The delete takes no secret.
     'workflow' => 'operation-task-vm-slot-release', 'projection' => TaskVmSlotReleaseProjection::class, 'workflow_inputs' => true,
@@ -65,18 +63,4 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'end', 'step' => TaskVmReadyCopiesProjection::EndCheck, 'native' => true],
     // The proof Swamp Club key, which the scan looks for in the guests.
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^swamp-proof-club-api-key$']],
-], 'task_vm.sweep_host' => [
-    'workflow' => 'operation-task-vm-sweep',
-    'projection' => TaskVmSweepProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the plan of the UpCloud sweep; its native assert is the end check.
-    'terminal_result' => ['job' => 'check', 'step' => TaskVmSweepProjection::CloudCheck, 'native' => true, 'captures' => TaskVmSweepProjection::captures()],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
-], 'task_vm.upcloud_image_build' => [
-    'workflow' => 'operation-task-vm-upcloud-image-build',
-    'projection' => TaskVmUpCloudImageProjection::class,
-    'workflow_inputs' => true,
-    // No result step: the projector reads the template UUID and the run's step statuses; the native assert is the end check.
-    'terminal_result' => ['job' => 'check', 'step' => TaskVmUpCloudImageProjection::EndCheck, 'native' => true, 'captures' => TaskVmUpCloudImageProjection::captures()],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-upcloud-token|task-vm-image-bootstrap-[1-9][0-9]*)$']],
 ]];

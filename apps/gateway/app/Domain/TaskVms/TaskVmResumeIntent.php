@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -27,15 +26,14 @@ final readonly class TaskVmResumeIntent
             || ($vm->state === TaskVmState::Parked && ($vm->pi_token === null || $this->settings->piArtifactSha256 === null))) {
             throw new ResourceOperationException('task_vm.resume_refused', 'Resume requires the parked VM, its active guest identity with its recorded host key, and its configured runtime.', 409);
         }
-        $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
-            : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $host = Node::query()->findOrFail($vm->host_node_id);
         if ($host->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException('task_vm.resume_refused', 'Resume requires an active provider host.', 409);
         }
         $provider = $this->provider->capture($vm);
 
         return ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $guest->id,
-            'name' => $vm->name, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'name' => $vm->name, 'provider' => $vm->provider->value,
             'user' => $guest->user, 'pi_url' => $this->pi->baseUrl($guest),
             'admitted_state' => $vm->state->value, 'mode' => $vm->state === TaskVmState::Ready ? 'converge' : 'resume',
             'node' => ['node_id' => $guest->id, 'wireguard_ip' => $guest->wireguard_ip],
@@ -57,8 +55,8 @@ final readonly class TaskVmResumeIntent
             || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['guest_node_id'] ?? null) !== $guest->id
             || ($input['node_id'] ?? null) !== $operation->node_id || ($input['user'] ?? null) !== $guest->user
             || ($input['name'] ?? null) !== $vm->name || ($input['provider'] ?? null) !== $vm->provider->value
-            || ($input['provider_id'] ?? null) !== $vm->provider_id || ($input['pi_url'] ?? null) !== $this->pi->baseUrl($guest)
-            || ($vm->provider === TaskVmProviderKind::Incus && $vm->host_node_id !== $operation->node_id)) {
+            || ($input['pi_url'] ?? null) !== $this->pi->baseUrl($guest)
+            || ($vm->host_node_id !== $operation->node_id)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The resume no longer owns its admitted VM, guest and provider placement.', 422);
         }
 

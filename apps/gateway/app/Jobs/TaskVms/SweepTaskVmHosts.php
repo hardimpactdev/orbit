@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
@@ -15,7 +12,6 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -25,7 +21,7 @@ use Throwable;
 
 /**
  * Releases the task VMs that a failed start left on each Incus host, through the release of a task start
- * (docs/cli/tasks/vm-release.mmd), and records the sweep of the UpCloud servers. An Incus host has no sweep of its own.
+ * (docs/cli/tasks/vm-release.mmd). An Incus host has no sweep of its own.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 {
@@ -67,17 +63,13 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
+    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity): void
     {
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [, $node]) {
             $this->releaseStale($node->id);
         }
         foreach ($settings->enabled ? TaskVmHostAudit::strayNodes() : [] as $stray) {
             Log::warning('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => $stray->name]);
-        }
-        if ($settings->upcloud !== null) {
-            $gateway = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
-            $operations->execute($gateway->id);
         }
     }
 }

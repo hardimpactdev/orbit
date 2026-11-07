@@ -40,14 +40,14 @@ Deno.test("python_secret_flow_is_from_environment_not_internal_argument_names", 
 
 Deno.test("fixed_external_origin_with_dynamic_path_is_not_gateway_http", async () => {
     const source =
-        "import urllib.request\nORIGIN='https://api.upcloud.com/1.3/'\ndef request(method,path):\n    gateway_node_id=1\n    urllib.request.Request(ORIGIN+path,method=method)\n";
+        "import urllib.request\nORIGIN='https://api.provider.example/v1/'\ndef request(method,path):\n    gateway_node_id=1\n    urllib.request.Request(ORIGIN+path,method=method)\n";
     assertEquals(await scan(source), []);
     for (
         const variant of [
-            source.replaceAll("api.upcloud.com/1.3/", "gateway.orbit/api/v1/"),
+            source.replaceAll("api.provider.example/v1/", "gateway.orbit/api/v1/"),
             source.replaceAll(
-                "https://api.upcloud.com/1.3/",
-                "https://api.upcloud.com",
+                "https://api.provider.example/v1/",
+                "https://api.provider.example",
             ),
             source.replaceAll(
                 "def request(method,path):",
@@ -184,7 +184,7 @@ Deno.test("outer_lock_and_origin_bindings_include_loop_and_destructuring_writes"
     const lock =
         "import os,fcntl\nfd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\ndef acquire():\n    fcntl.flock(fd,fcntl.LOCK_EX)\n";
     const origin =
-        "import urllib.request\nORIGIN='https://api.upcloud.com/1.3/'\ndef request(path):\n    urllib.request.Request(ORIGIN+path)\n";
+        "import urllib.request\nORIGIN='https://api.provider.example/v1/'\ndef request(path):\n    urllib.request.Request(ORIGIN+path)\n";
     for (
         const write of [
             "for fd in [os.open('/tmp/workflow.lock',os.O_RDWR)]:\n    pass\n",

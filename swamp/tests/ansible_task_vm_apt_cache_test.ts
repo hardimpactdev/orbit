@@ -80,7 +80,7 @@ Deno.test("the cache opens on the nested bridge and stays in the image", () => {
         '{ proto: tcp, port: "3142" }',
     );
     // The clean phase and the download removal name their paths; none is the cache or its parent.
-    for (const name of ["task-vm-image-cache.yml", "task-vm-clean.yml"]) {
+    for (const name of ["task-vm-image-cache.yml"]) {
         const source = text(name);
         assertEquals(source.includes("apt-cacher-ng"), false, name);
         assertEquals(

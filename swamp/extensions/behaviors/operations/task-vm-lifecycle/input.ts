@@ -17,22 +17,18 @@ export const Ssh = z.object({
 }).strict();
 export const ProviderInput = z.object({
     task_vm_id: Id,
-    provider: z.enum(["incus", "upcloud"]),
+    provider: z.literal("incus"),
     name: Name,
-    provider_id: z.uuid().nullable(),
     vm: z.object({
         project: Name,
         name: Name,
         pool: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/).optional(),
-    }).strict().nullable(),
-    host_ssh_execution: Ssh.nullable(),
+    }).strict(),
+    host_ssh_execution: Ssh,
 }).strict().superRefine((v, ctx) => {
     if (
         v.name !== `tvm-${v.task_vm_id}` ||
-        (v.provider === "incus"
-            ? v.vm?.name !== v.name || !v.host_ssh_execution ||
-                v.provider_id !== null
-            : v.vm !== null || v.host_ssh_execution !== null)
+        v.vm.name !== v.name
     ) {
         ctx.addIssue({
             code: "custom",
@@ -45,49 +41,12 @@ export type ProviderIntent = z.infer<typeof ProviderInput>;
 export type PowerAction = z.infer<typeof Action>;
 export const ProviderReceipt = z.object({
     task_vm_id: Id,
-    provider: z.enum(["incus", "upcloud"]),
-    provider_id: z.uuid().nullable(),
+    provider: z.literal("incus"),
     action: Action,
     running: z.boolean(),
     absent: z.boolean(),
     settled: z.literal(true),
 }).strict();
-
-/**
- * Decode one UpCloud detail read: curl prints the body, then the HTTP status
- * on its own last line. 404 is the documented absence; any other non-2xx
- * status fails, so a provider error never supplies a missing-VM observation.
- */
-export function cloudRead(stdout: string): unknown {
-    const text = stdout.trimEnd();
-    const end = text.lastIndexOf("\n");
-    const status = text.slice(end + 1);
-    if (status === "404") return {};
-    if (end < 0 || !/^2[0-9][0-9]$/.test(status)) {
-        throw new Error("task_vm.upcloud_failed");
-    }
-    return JSON.parse(text.slice(0, end));
-}
-
-/** The one UpCloud power request for an admitted UUID; delete removes storage and backups. */
-export function cloudRequest(intent: ProviderIntent, action: PowerAction) {
-    if (
-        intent.provider !== "upcloud" || intent.provider_id === null ||
-        action === "inspect"
-    ) return null;
-    const server = `server/${intent.provider_id}`;
-    if (action === "delete") {
-        return { path: `${server}?storages=1&backups=delete`, data: null };
-    }
-    return {
-        path: `${server}/${action}`,
-        data: JSON.stringify(
-            action === "start" ? { server: {} } : {
-                stop_server: { stop_type: "soft", timeout: "120" },
-            },
-        ),
-    };
-}
 
 /** Decode one observation; the native provider phase owns any bounded state wait. */
 export function observation(
@@ -96,73 +55,24 @@ export function observation(
     stdout: string,
 ) {
     let state: "started" | "stopped" | "absent" | "pending";
-    let disk: string | null = null;
-    if (intent.provider === "incus") {
-        const rows = z.array(z.object({ name: z.string() }).passthrough())
-            .parse(JSON.parse(stdout))
-            .filter((v) => v.name === intent.name);
-        if (rows.length > 1) {
-            throw new Error("task_vm.provider_identity_invalid");
-        }
-        if (!rows.length) state = "absent";
-        else {
-            const row = z.object({
-                type: z.literal("virtual-machine"),
-                status: z.string(),
-            }).passthrough().parse(rows[0]);
-            state = row.status === "Running"
-                ? "started"
-                : row.status === "Stopped"
-                ? "stopped"
-                : "pending";
-        }
-    } else {
-        // An unknown UUID was already proven absent by the label list.
-        const value = intent.provider_id === null
-            ? {}
-            : z.object({ server: z.unknown().optional() }).parse(
-                cloudRead(stdout),
-            );
-        if (!value.server) state = "absent";
-        else {
-            const row = z.object({
-                uuid: z.uuid(),
-                title: z.string(),
-                hostname: z.string(),
-                state: z.string(),
-                labels: z.object({
-                    label: z.array(
-                        z.object({ key: z.string(), value: z.string() }),
-                    ),
-                }),
-                storage_devices: z.object({
-                    storage_device: z.array(
-                        z.object({ type: z.string(), storage: z.uuid() })
-                            .passthrough(),
-                    ),
-                }),
-            }).passthrough().parse(value.server);
-            if (
-                row.uuid !== intent.provider_id || row.title !== intent.name ||
-                row.hostname !== intent.name ||
-                !row.labels.label.some((v) =>
-                    v.key === "orbit-task-vm" &&
-                    v.value === String(intent.task_vm_id)
-                )
-            ) {
-                throw new Error("task_vm.provider_identity_invalid");
-            }
-            const disks = row.storage_devices.storage_device.filter((v) =>
-                v.type === "disk"
-            );
-            if (disks.length !== 1) {
-                throw new Error("task_vm.provider_identity_invalid");
-            }
-            disk = disks[0].storage;
-            state = row.state === "started" || row.state === "stopped"
-                ? row.state
-                : "pending";
-        }
+    const disk: string | null = null;
+    const rows = z.array(z.object({ name: z.string() }).passthrough())
+        .parse(JSON.parse(stdout))
+        .filter((v) => v.name === intent.name);
+    if (rows.length > 1) {
+        throw new Error("task_vm.provider_identity_invalid");
+    }
+    if (!rows.length) state = "absent";
+    else {
+        const row = z.object({
+            type: z.literal("virtual-machine"),
+            status: z.string(),
+        }).passthrough().parse(rows[0]);
+        state = row.status === "Running"
+            ? "started"
+            : row.status === "Stopped"
+            ? "stopped"
+            : "pending";
     }
     if (state === "absent" && action !== "delete" && action !== "inspect") {
         throw new Error("task_vm.vm_missing");
@@ -193,48 +103,9 @@ export function receipt(
     return ProviderReceipt.parse({
         task_vm_id: intent.task_vm_id,
         provider: intent.provider,
-        provider_id: intent.provider_id,
         action,
         running: observed.state === "started",
         absent: observed.state === "absent",
         settled: true,
-    });
-}
-
-export function discoverProvider(raw: unknown, stdout: string) {
-    const intent = ProviderInput.parse(raw);
-    if (intent.provider !== "upcloud" || intent.provider_id !== null) {
-        return intent;
-    }
-    const rows = z.object({
-        servers: z.object({
-            server: z.array(
-                z.object({
-                    uuid: z.uuid(),
-                    title: z.string(),
-                    labels: z.object({
-                        label: z.array(
-                            z.object({ key: z.string(), value: z.string() }),
-                        ),
-                    }).optional(),
-                }).passthrough(),
-            ),
-        }),
-    }).parse(JSON.parse(stdout)).servers.server.filter((v) =>
-        v.title === intent.name
-    );
-    if (
-        rows.length > 1 ||
-        rows.some((row) =>
-            row.labels &&
-            !row.labels.label.some((v) =>
-                v.key === "orbit-task-vm" &&
-                v.value === String(intent.task_vm_id)
-            )
-        )
-    ) throw new Error("task_vm.provider_identity_invalid");
-    return ProviderInput.parse({
-        ...intent,
-        provider_id: rows[0]?.uuid ?? null,
     });
 }

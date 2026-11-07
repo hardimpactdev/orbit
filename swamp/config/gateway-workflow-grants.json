@@ -14,8 +14,6 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^instance-env-import\\.content\\.[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^ai-router-(task|anchor)-key-node-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-credentials-operation-[1-9][0-9]*-(probe|apply|confirm)$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^(task-vm-upcloud-token|task-vm-image-bootstrap-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-role-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^node-role-relocate-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-update-intent-[1-9][0-9]*$", "actions": ["write", "read"]},

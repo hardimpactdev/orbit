@@ -60,7 +60,7 @@ final readonly class TaskVmFleetBuildIntent
     {
         $this->assertLarge($vm);
         $guest = $vm->node;
-        if ($vm->state !== TaskVmState::Ready || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null || ! $guest instanceof Node
+        if ($vm->state !== TaskVmState::Ready || $vm->host_node_id === null || ! $guest instanceof Node
             || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->status !== LifecycleStatus::Active || $guest->ssh_host_key === null) {
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs a ready Incus VM and its active guest identity with its recorded host key.', 409);
         }
@@ -78,7 +78,7 @@ final readonly class TaskVmFleetBuildIntent
     {
         $this->assertLarge($vm);
         $guest = $vm->node;
-        if (! $guest instanceof Node || $vm->provider !== TaskVmProviderKind::Incus || $vm->host_node_id === null) {
+        if (! $guest instanceof Node || $vm->host_node_id === null) {
             throw new ResourceOperationException('task_vm.fleet_build_refused', 'Building a fleet needs an Incus VM and its guest Node.', 409);
         }
 
