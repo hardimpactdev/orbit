@@ -65,6 +65,14 @@ sequenceDiagram
   %%> - the clone credential never reaches the VM, and the VM holds no other, outside the setup token files above: the clone runs on Node 209 with full history, the VM receives it as a bundle, and no credential stays in `.git/config`, a credential helper or an environment file
   %%> Why redacted:
   %%> - setup output stays on the VM; only a redacted 4 KiB tail reaches history
+  Note over SW: Accept the source<br/>fails on an error_code
+  %%> What it does:
+  %%> - fails the run when the receipt of the workspace step carries an error code, before the converge, the nested fleet, the Route and the Processes start
+  %%> Why:
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-07): a failed step of the checkout (the connection, the control folder, the clone credential, the clone, the bundle, the copy, the import, the origin, the task branch, the identity, the Route access rows, the inspection and the composer read) is not `allowFailure`: the run fails at the first of them with the message of the step, stderr included, and no later step that does work starts
+  %%> - the cleanups, the receipt, `Check the workspace` and `Accept the workspace` still run
+  %%> - the profile, the dependency files, the Project setup, the copy of its output, the proof club and the cleanups report in the receipt, which this step reads
+  %%> - the clone, the import, the task branch and the Project setup declare `writes: true`. Swamp runs a dispatch again when a worker loses it (the session of a worker ends after 8 hours) and the step does not write; a second `git clone` into the same folder exits 128 (`destination path already exists`). A lost dispatch of these steps fails the step instead
   opt the task declares a topology
     Note over SW: Pin the converge<br/>guest host key
     %%> Why:

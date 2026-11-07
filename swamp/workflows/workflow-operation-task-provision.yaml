@@ -155,6 +155,15 @@ jobs:
       condition:
         type: or
         conditions: [{type: succeeded}, {type: skipped}]
+  - name: Accept the source
+    labels: {role: swamp}
+    # The source step reports the failures of its allowFailure steps (the profile, the dependency files, the Project setup) in the receipt and ends as succeeded.
+    # Nothing that needs the workspace starts before this step accepts that receipt: not the converge, not the fleet, not the Route, not the Processes.
+    task: {type: assert, expr: '"outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs && !steps["Set up the workspace"].outputs.result.result_json.contains("\"error_code\"")', severity: high, message: tasks.provision_failed}
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
   - name: Pin the converge
     labels: {role: swamp}
     # Stage 2, "Converge once": the task VM role phases on the outer VM (Incus with the seed pool and the nested network); a VM at the pins reports no change.
@@ -170,7 +179,7 @@ jobs:
         # The inputs of a skipped step are still evaluated, so a provision without a nested topology (no converge input) needs a value here.
         intents: '${{ {"converge": has(inputs.converge) ? inputs.converge : {} } }}'
     dependsOn:
-    - step: Set up the workspace
+    - step: Accept the source
       condition:
         type: succeeded
   - name: Converge once
@@ -197,7 +206,7 @@ jobs:
     guard: '${{ inputs.intent.create == null || !inputs.intent.create.topology }}'
     task: {type: behavior, behaviorType: '@nckrtl/task-provision-data', behaviorName: '${{ "tp-data-guest-fleet" }}', methodName: guest, inputs: {intent: '${{ inputs.intent }}', vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'}}
     dependsOn:
-    - step: Set up the workspace
+    - step: Accept the source
       condition:
         type: succeeded
     - step: Converge once
@@ -230,7 +239,7 @@ jobs:
         intent: ${{ inputs.intent }}
         vm: '${{ (has(inputs.intent.slot) ? inputs.intent.slot.receipt : steps["Create and prepare the VM"].outputs.result) }}'
     dependsOn:
-    - step: Set up the workspace
+    - step: Accept the source
       condition:
         type: succeeded
     - step: Converge once
@@ -256,7 +265,7 @@ jobs:
         route: ${{ inputs.intent.route }}
         processes: ${{ inputs.intent.processes }}
     dependsOn:
-    - step: Set up the workspace
+    - step: Accept the source
       condition:
         type: succeeded
   - name: Hold the Route Nodes
@@ -275,7 +284,7 @@ jobs:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/route-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
     dependsOn:
-    - step: Set up the workspace
+    - step: Accept the source
       condition:
         type: succeeded
   - name: Route the workspace
@@ -379,12 +388,15 @@ jobs:
           ORBIT_HOLD: '${{ "Hold the Route Nodes" in steps ? steps["Hold the Route Nodes"].status : "skipped" }}'
           ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
           ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'
-          ORBIT_RESULT: '${{ "Set up the workspace" in steps && "outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs ? steps["Set up the workspace"].outputs.result.result_json : "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"vm\"}" }}'
+          ORBIT_RESULT: '${{ "Set up the workspace" in steps && "outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs ? steps["Set up the workspace"].outputs.result.result_json : "Set up the workspace" in steps && steps["Set up the workspace"].status == "failed" ? "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"source\"}" : "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"vm\"}" }}'
     dependsOn:
     - step: Create and prepare the VM
       condition:
         type: always
     - step: Set up the workspace
+      condition:
+        type: always
+    - step: Accept the source
       condition:
         type: always
     - step: Bind the workspace keys
