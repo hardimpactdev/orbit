@@ -9,7 +9,6 @@ covers:
   - {bin/{php-build,git-build-watch}}
   - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/database/migrations/2027_01_29_000001_drop_upcloud_task_vm_support.php
-  - swamp/ansible/task-vm-host.yml
   - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-operation-task-vm-ready-copies,workflow-operation-task-vm-fleet-build,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
 
