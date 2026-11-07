@@ -1,6 +1,6 @@
 id: 04961808-4346-47a8-aa0e-6e44f1d0cf5a
 name: operation-gateway-swamp-load
-description: Check out a release, write Gateway-rendered grants with official file resources, and confirm serve loaded it.
+description: Check out a release, write Gateway-rendered grants with official file resources, install the release's Ansible collections when they changed, and confirm serve loaded it.
 queueTimeout: 120
 vaults: []
 inputs:
@@ -71,10 +71,34 @@ jobs:
             group: orbit
             mode: '0640'
           inputs: {}
+      # The workers on this Node run Ansible with the collections under /opt/orbit/ansible/collections. The swamp role installs them from the
+      # pin beside them; a release whose requirements.yml differs from that pin installs its collections and moves the pin, before serve loads
+      # workflows that may need them. An unchanged file costs one compare.
+      - name: collections
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: checkout, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "gateway-swamp-collections" }}'
+          methodName: execute
+          inputs:
+            env:
+              REQUIREMENTS: /home/orbit/apps/orbit-monorepo-staging/checkout/swamp/ansible/requirements.yml
+              PIN: /opt/orbit/ansible/requirements.yml
+              COLLECTIONS: /opt/orbit/ansible/collections
+              GALAXY: /opt/orbit/ansible/venv/bin/ansible-galaxy
+            run: |
+              set -eu
+              if cmp -s "$REQUIREMENTS" "$PIN"; then echo unchanged; exit 0; fi
+              sudo -n timeout 600 "$GALAXY" collection install --upgrade -r "$REQUIREMENTS" -p "$COLLECTIONS"
+              sudo -n cp "$REQUIREMENTS" "$PIN"
+              echo installed
       - name: load
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: grants, condition: {type: succeeded}}]
+        dependsOn: [{step: grants, condition: {type: succeeded}}, {step: collections, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell

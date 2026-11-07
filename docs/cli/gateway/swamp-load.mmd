@@ -1,10 +1,11 @@
 sequenceDiagram
   %% Target design: swamp-load-git-checkout (Nick 2026-11-01), release-waits-for-swamp, single-swamp-node. docs/reference/gateway-recovery.md#load-swamp.
   %% Tightened: flow-tighten 2026-11-02, Nick approved Gateway grant rendering; official file actions run after checkout and before reload.
-  %% status: reviewed
+  %% Orchestrator 2026-11-08: the load installs the release's Ansible collections when requirements.yml changed (209's pins were stale; ansible.posix missed).
+  %% status: draft
   %% command: gateway:release:deploy · Load Swamp
   %% kind: gateway.swamp_load
-  %% behavior name: gateway-swamp-checkout, gateway-swamp-load, release-<gateway|serve>-grants-209 (fixed)
+  %% behavior name: gateway-swamp-checkout, gateway-swamp-collections, gateway-swamp-load, release-<gateway|serve>-grants-209 (fixed)
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
@@ -42,7 +43,14 @@ sequenceDiagram
   %%> - writes the Gateway-rendered `orbit-gateway.yaml` and `orbit-serve.yaml` under `swamp/grants/`
   %%> - uses the admitted SSH target with owner `orbit`, group `orbit` and mode `0640`
   %%> - the two fixed file behaviors run in parallel; a failed write stops the load
-  alt Load succeeds
+  SW->>N: collections<br/>ansible-galaxy · when changed
+  %%> Runs beside the grants: both start after the checkout.
+  %%> What it does:
+  %%> - compares the commit's `swamp/ansible/requirements.yml` with the swamp role's pin `/opt/orbit/ansible/requirements.yml`; equal files end the step
+  %%> - otherwise installs the pinned collections into `/opt/orbit/ansible/collections` with `ansible-galaxy collection install --upgrade`, then copies the file to the pin
+  %%> Why:
+  %%> - the workers run Ansible from those collections, and only `node:role:add` installed them, so a collection a release added never reached them
+  %%> - a failed install keeps the old pin and stops the load, so the next release tries again  alt Load succeeds
     N->>SW: load<br/>swamp serve reload, access reload
     %%> What it does:
     %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions

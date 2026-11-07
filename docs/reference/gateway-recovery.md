@@ -167,15 +167,18 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 
 1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
 2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
-3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-4. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
-5. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
+3. beside them, it installs the Ansible collections of a changed `swamp/ansible/requirements.yml` and copies the file to the swamp role's pin `/opt/orbit/ansible/requirements.yml`;
+4. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
 A load-input change must release before a workflow requires its new fields. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
+
+The collections step compares the commit's file with the pin, and an equal file ends it. A failed install stops the load and keeps the old pin, so the next release tries again.
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
