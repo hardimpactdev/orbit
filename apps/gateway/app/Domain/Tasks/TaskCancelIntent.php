@@ -122,7 +122,7 @@ final readonly class TaskCancelIntent
             'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
         ];
-        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? $this->slots->release($slot) : null;
+        $release = $slot instanceof TaskVm ? $this->slots->release($slot) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
             ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'push' => $push, 'release' => $release];

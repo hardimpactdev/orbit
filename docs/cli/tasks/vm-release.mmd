@@ -13,6 +13,10 @@ sequenceDiagram
   participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
   Note over GW: Admit the release
+  %%> Requirements:
+  %%> - the VM and its seed clone are neither the host's base VM or base seed nor the seed clone of another live task VM of the host; otherwise `task_vm.release_refused`
+  %%> - the host is a configured task VM host, and the VM's Node records the WireGuard public key that names its hub peer
+  %%> - a VM of the old pool, with no slot number, is released the same way: its seed clone is `<name>-topology-seed`
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:

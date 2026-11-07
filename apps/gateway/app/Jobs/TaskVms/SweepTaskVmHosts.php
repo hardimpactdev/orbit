@@ -40,14 +40,14 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     /**
      * Releases each task VM of the host that no group holds and whose last release failed or whose Operation ended without its projection, such
-     * as a refused start (docs/cli/tasks/vm-release.mmd). One that a task start or a refresh proof still uses is left alone.
+     * as a refused start (docs/cli/tasks/vm-release.mmd); a VM of the old pool, which has no slot number, too. One that a task start or a refresh proof still uses is left alone.
      */
     private function releaseStale(int $hostNodeId): void
     {
         if (TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation) {
             return;
         }
-        $stale = TaskVm::query()->where('host_node_id', $hostNodeId)->whereNotNull('slot_number')->whereNull('group_id')
+        $stale = TaskVm::query()->where('host_node_id', $hostNodeId)->whereNull('group_id')
             ->whereIn('state', [TaskVmState::Failed, TaskVmState::Provisioning, TaskVmState::Releasing])->get()
             ->reject(static fn (TaskVm $vm): bool => Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists());

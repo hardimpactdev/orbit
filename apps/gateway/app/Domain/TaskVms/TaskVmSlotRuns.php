@@ -90,8 +90,21 @@ final readonly class TaskVmSlotRuns
      */
     public function release(TaskVm $slot): array
     {
-        // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host.
-        return ['intent' => ['host' => $this->host($slot), 'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot)],
+        // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host. It deletes by name, so
+        // a name that is the host's base or its seed, or that another live row of the host holds, is refused before anything runs.
+        $host = $this->host($slot);
+        $names = [$slot->name, self::seedClone($slot)];
+        $node = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
+        $taken = [TaskVmPromotedImage::baseVm($node), TaskVmPromotedImage::baseSeed($node)];
+        foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereKeyNot($slot->id)->get() as $other) {
+            array_push($taken, $other->name, self::seedClone($other));
+        }
+        if (array_intersect($names, $taken) !== []) {
+            throw new ResourceOperationException('task_vm.release_refused', "The release of task VM [{$slot->name}] would delete the base or another live task VM of [{$node->name}].", 409,
+                details: ['task_vm_id' => $slot->id, 'names' => array_values(array_intersect($names, $taken))]);
+        }
+
+        return ['intent' => ['host' => $host, 'slot' => ['name' => $slot->name, 'seed_clone' => $names[1]],
             'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
     }
 
