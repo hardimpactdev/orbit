@@ -510,7 +510,7 @@ The removal of other Instances moves a checkout within one filesystem only. [Ins
 
 Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it.
 
-When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. The task VM sweep admits a `destroying` row without a group again; that admission claims the Node as `removing` again. When admission refuses one row, the sweep logs its code and still admits the other rows and sweeps the hosts. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
+When cleanup fails, is interrupted or exceeds its budget, the row stays `destroying` with the error, and its guest Node becomes `failed` with `failed_step` `remove:operation` and the same `error_code`. A `failed` guest Node is an ordinary member again, as for any failed Node removal: the hub keeps its peer until a later cleanup removes it. A failed Tasks cancel stays that way until the group is cancelled again.
 
 A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
@@ -524,9 +524,7 @@ When the group has ended, or is `settling` or `waiting_for_review`, each tick th
 
 For a `ready` VM, the job reads the host to check whether it runs. While it runs, the job leaves the workspace to normal removal. When a reviewed, unpublished head needs preservation and the VM is still stopped 5 seconds after a stopped reading, the shared wake path parks the `ready` row and queues its start. Removal waits for the Node agent and Pi before it retries the push. A failed start stays `failed`; it never enters the wake path again.
 
-A `ready` VM that is absent keeps its reviewed work until the host sweep records `failed` after two consecutive misses. The destroy job records this wait as `task_vm.awaiting_host_sweep` on the VM and owns its `removal_failure` assistance. Workspace removal waits under that reason before lease admission, so it makes no SSH snapshot or push attempt. Repeated ticks and removal sweeps leave the reason and Activity unchanged.
-
-A later observation that finds the VM clears the wait so removal can retry. The Incus sweep runs only while task VMs are enabled and the host Node is active. If either is off, the reason names the blocker: task VMs are disabled, or the named host is inactive. A recorded wait needs no provider or host read while the sweep is paused. Cleanup waits until the sweep can run again. The destroy job does not make its own missing verdict.
+A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it. No sweep fails the row.
 
 A `failed` VM, whether missing or unable to start, cannot preserve its work. Orbit records the lost reviewed SHA and original VM failure once in the group's Activity and `removal_failure` assistance reason, then deletes the VM and removes the workspace offline. A failed deletion keeps that reason on retry; its delete error stays on the VM row. Removal never retries a lost head's push after destruction starts. A stopped VM without work to preserve is removed the same way:
 

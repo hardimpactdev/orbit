@@ -90,8 +90,9 @@
           when: (base_read.stdout | from_json | map(attribute='status') | first | default('Stopped')) != 'Running'
           ansible.builtin.command: { argv: "{{ incus + ['start', '--', base.vm] }}" }
           changed_when: true
+        # The first boot of a new base VM takes minutes; a base VM that has run answers at once.
         - name: Wait for its guest agent
-          ansible.builtin.command: { argv: "{{ ['timeout', '130'] + incus + ['wait', '--timeout', '120', '--interval', '1', '--', base.vm, 'agent'] }}" }
+          ansible.builtin.command: { argv: "{{ ['timeout', '630'] + incus + ['wait', '--timeout', '600', '--interval', '1', '--', base.vm, 'agent'] }}" }
           changed_when: false
         # A new VM makes its host keys and installs the SSH server in its first boot; a base VM that has booted before returns at once.
         - name: Wait for the first boot

@@ -69,7 +69,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, StartTaskVmSweepOperationAction $operations): void
     {
-        foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host,$node]) {
+        foreach ($settings->enabled ? $capacity->activeHosts() : [] as [, $node]) {
             $this->releaseStale($node->id);
         }
         foreach ($settings->enabled ? TaskVmHostAudit::strayNodes() : [] as $stray) {
