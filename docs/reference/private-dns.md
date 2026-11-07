@@ -1,9 +1,10 @@
 ---
 title: "Private DNS"
-description: "How a managed Node selects its resolver, how the Gateway answers Cluster Router addresses, and how to inspect and repair one peer."
+description: "How a managed Node selects its resolver, how the vpn Node answers private names from one rendered dnsmasq configuration, and how to inspect and repair one peer."
 covers:
-  - apps/gateway/app/Infrastructure/AppDev/{DnsmasqPrivateDnsManager,DevelopmentDnsConfigRenderer,PrivateDns*,*PrivateDns*,*DnsRequester*,DnsAddress,DecodedDnsQuery,VpnDnsmasqBackendListen,NativeClusterRouterDnsSelectionReconciler}.php
-  - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
+  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentDnsConfigRenderer,PrivateDnsPublication,PrivateDnsRevision,SwampPrivateDnsManager,DnsAddress,NativeClusterRouterDnsSelectionReconciler}.php
+  - apps/gateway/app/Domain/AppDev/{ClusterTldTargets,PrivateDnsState,PrivateDnsManager,DnsPublishProjection,ClusterRouterDnsSelectionReconciler}.php
+  - apps/gateway/app/Actions/AppDev/AdmitPrivateDnsPublicationAction.php
   - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
@@ -12,17 +13,11 @@ covers:
 
 # Private DNS
 
-Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
+Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It is one stock dnsmasq on the Node with the `vpn` role. The Gateway renders the complete private DNS from its database, and one Ansible phase writes it. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the vpn Node's dnsmasq, the answers it gives, and how to inspect or repair one peer.
 
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) replaces the plan of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), which proposed moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. The approved behavior returns members automatically to healthy LAN DNS after VPN fallback. The recovery mechanism and member acceptance checks remain implementation gates. Until the DNS service and member steps are built, this page describes the listener.
+[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) holds the design and replaces the plan of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Every caller gets the same answer: a Cluster name resolves to the Router's WireGuard address, also for a Cluster member on the Router's LAN.
 
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) is in progress. It renders the whole private DNS from the Gateway database into one dnsmasq configuration, written by one Ansible phase, and deletes the listener, the catalog and the three-way merge. Nick chose option A on 2026-11-07; the chart is `docs/cli/dns/publish.mmd`.
-
-Build step 1 adds only the [Router LAN DNS firewall families](/cli/firewall#router-lan-member-rules), alongside HTTPS, with exact eligible-member IPv4 sources and Router LAN destination port 53 over UDP and TCP. It preserves this listener, current resolver selection, and Route answers; it does not install dnsmasq on Routers or switch members.
-
-Before later Cluster DNS enablement, the [firewall rollout](/cli/firewall#safe-dns-firewall-rollout) requires authorized narrowing of overlapping allowances, preservation of bridge-scoped Incus DNS, and authorized success plus unauthorized LAN denial over both transports. Disposable tests are not live acceptance. Exact outside-TLD Route NODATA, descendant forwarding, no-TLD behavior, bind-overlap refusal, and automatic member return remain later implementation gates, not claims made by the firewall step.
-
-Node and Route parents capture Gateway-rendered records and the requester catalog, then publish them through the shared `route-dns-publish` child in their native run. The Node footprint installs the listener before publication. Private DNS publication starts no separate Operation.
+Each Route, Node, Cluster or role change stores its rows first, then publishes the whole state through the shared `dns-publish` child of its native run. A Gateway code path that must have DNS live before it goes on admits a `dns.publish` operation and waits for its end. Private DNS publication starts no other Operation.
 
 ## Resolver selection
 
@@ -99,56 +94,47 @@ A failure of this step does not fail bootstrap or the role. The role stays `acti
 
 Removing the `gateway` role removes the drop-in and reverts the `orbit` link. When that step fails, the role stays `failed` with `failed_step=remove:gateway-private-dns-resolver`, and running the removal again finishes it. `--offline` removal changes nothing on the machine and lists the drop-in under `retained_on_node`. [Relocating the gateway role](/solutions/relocate-gateway-role) adds the route on the target and removes it from the source.
 
-## The listener
+## The vpn Node DNS
 
-The listener and the published catalog live on the Node that holds `vpn`. The listener answers private names from the catalog on the VPN WireGuard DNS address. It forwards every other query to a dnsmasq backend on `127.0.0.55`. The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node. This uses the managed account and host key established during bootstrap. Local `sudo` would retain the HTTP worker’s read-only filesystem namespace and could not publish DNS configuration. The worker’s filesystem protection stays enabled.
+The vpn Node runs the stock `dnsmasq.service`. It binds the VPN DNS address with `listen-address` and `bind-dynamic`, and it answers private names from three files that the `dns-publish` phase writes. The Gateway sends the publication to the `vpn` Node over pinned SSH, including when both roles share one Node.
 
-Gateway bootstrap starts `orbit-private-dns.service` after the dnsmasq backend is bound, so the first managed peer can resolve ordinary names during its role setup.
+| File | Content | On change |
+| --- | --- | --- |
+| `orbit.conf` | `listen-address`, `bind-dynamic`, `no-resolv`, `no-hosts`, `local-ttl=30`, the uplink `server=` lines, and one `address=/.TLD/ADDRESS` with `local=/TLD/` for each TLD | dnsmasq restarts |
+| `orbit.hosts` | One `ADDRESS NAME` line for each record | SIGHUP |
+| `orbit.servers` | For each exact name outside every TLD, `server=/NAME/` and `server=/*.NAME/#` | SIGHUP |
+| `orbit.revision` | The revision of the installed state | None |
+
+### What the Gateway renders
+
+The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
+
+The render reads stored rows only. A change stores its state before it asks for a render. A Cluster change that publishes before it commits stores its pending TLD, state or Router on the Cluster row, and the change clears it when it ends. A hold that nothing cleared expires after an hour.
+
+### Revision and parallel publications
+
+Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one.
+
+### The phase
+
+The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run:
+
+1. It skips a revision that is not newer than `orbit.revision`, and succeeds with `dns.revision_superseded`.
+2. It renders the files in a temporary folder and runs `dnsmasq --test` on them. A refusal fails with `dns.config_invalid` and installs nothing.
+3. It saves the installed files as the last good set and installs the files whose content changed, each in one rename.
+4. It compares `orbit.conf` with `orbit.conf.loaded`, the copy dnsmasq last started with. An equal file gets SIGHUP. A changed file gets a restart and a new copy.
+5. It asks the running dnsmasq for the reserved names and one name per TLD.
+6. For each exact Route it asks for the A answer, for NODATA on AAAA, and for a forwarded child name.
+7. A mismatch in step 5 or 6 restores the last good files and fails with `dns.check_failed`.
+8. It writes `orbit.revision`.
+
+An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart.
 
 ### Upstream resolvers
 
-The dnsmasq backend sets `no-resolv` and forwards only to the IPv4 resolvers that the `vpn` Node itself uses on its uplink. At convergence the Gateway reads them from `/run/systemd/resolve/resolv.conf`. When that file lists none, it reads the DHCP lease of the default-route interface. It skips loopback addresses and the `orbit` interface, so forwarding never returns to the VPN DNS listener. When it finds no resolver, the backend uses `1.1.1.1` and `8.8.8.8`.
+dnsmasq sets `no-resolv` and forwards only to the IPv4 resolvers that the `vpn` Node itself uses on its uplink. The phase reads them from `/run/systemd/resolve/resolv.conf`. When that file lists none, it reads the DHCP lease of the default-route interface. It skips loopback addresses and the `orbit` interface, so forwarding never returns to VPN DNS. When it finds no resolver, it uses `1.1.1.1` and `8.8.8.8`.
 
-Convergence also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/lib/orbit/dnsmasq/disabled`, because it would add listen addresses beside the backend.
-
-### Release and sockets
-
-Every publication self-tests the installed release with the installed PHP before any service changes, even when the release is unchanged. Every listener start or restart, including rollback, requires a passing self-test. A listener whose process executable differs from the installed PHP binary, including a deleted executable after a package update, is stale and restarts behind its socket after validation.
-
-After the PHP installer reports `applied` on an active VPN Node, recipe and VPN role convergence call this publication path. The VPN Node remains active while role reconvergence temporarily claims its assignment as provisioning. Publication owns listener activation, including socket ownership and catalog confirmation. Failed self-tests retain the running listener and report the failure.
-
-If activation fails, publication restores the previous records, catalog, and units, reloads systemd, and restarts dnsmasq. It self-tests the previous listener release before attempting to enable or restart it. A failed listener self-test does not skip the systemd reload or dnsmasq restart.
-
-The Gateway installs the listener itself. The listener is a small release: `serve.php` and the Gateway classes it uses, with no Composer dependencies. Every publication that activates the listener sends the release from the Gateway's own code to the `vpn` Node. It lands in `/var/lib/orbit/private-dns/releases/<id>/`, where `<id>` is a digest of its files. So a Gateway deploy that changes the listener code produces a new id, and the next publication installs it. The publication keeps the previous release for rollback and removes older ones.
-
-The `vpn` recipe profile owns `php:8.5`, including the listener’s CLI runtime and its `sockets` and `pcntl` modules. VPN role convergence installs and verifies that build before the role completes its prerequisites. When provisioning requests VPN with other roles, VPN converges first so publishing roles have their listener runtime.
-
-VPN-only Nodes keep shared PHP-FPM disabled and inactive and preserve an existing mask. On a Node with Gateway or application roles, package changes validate and restart all active colocated PHP 8.5 FPM masters; a failed validation or restart fails installation and rolls it back. Recipe convergence verifies the same build on the VPN Node; an unmanaged PHP installation is not a listener prerequisite.
-
-Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication installs the release again and restarts the listener on it.
-
-`orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener. On `SIGTERM` the listener finishes the query in hand and exits. The unit gives it 5 seconds.
-
-The listener limits each TCP read or write to two seconds. Its upstream client also limits each socket wait to two seconds. It reads a UDP answer as one datagram without waiting for the upstream socket to close. A missing or truncated UDP answer triggers a TCP attempt. When that attempt fails, the listener can still answer the next catalog query.
-
-| Unit | Content |
-| --- | --- |
-| `/etc/systemd/system/orbit-private-dns.socket` | `ListenDatagram` and `ListenStream` on the VPN DNS address, with `FreeBind=yes`, and no ordering on the WireGuard tunnel, which would form a boot cycle |
-| `/etc/systemd/system/orbit-private-dns.service` | `php8.5 /var/lib/orbit/private-dns/releases/<id>/serve.php --listen=… --port=53 --catalog=… --upstream=127.0.0.55:53`, `Sockets=orbit-private-dns.socket`, and `After=wg-quick@orbit.service` without `Requires=` or `Wants=`, so a query never starts a stopped tunnel |
-
-### Catalog confirmation
-
-The listener reads the catalog again on every query and once a second while idle. It compares file contents, not cached file status. After each load it writes the catalog's SHA-256 digest to `/var/lib/orbit/private-dns/catalog.json.loaded`. A catalog change never restarts a current listener.
-
-Every publication checks that confirmation while the listener runs.
-
-| Listener state | Publication result |
-| --- | --- |
-| The confirmation matches the published catalog within 5 seconds | The listener keeps running. |
-| The catalog changed and the confirmation does not match within 5 seconds | The publication removes the confirmation and restarts the service behind its socket. |
-| The catalog is unchanged and the confirmation names another catalog | The publication removes the confirmation and restarts the service once. |
-
-A failed start or restart restores the previous units, DNS files, and services. A failed publication logs the target Node, exit code, duration, stdout, stderr, and whether the output was truncated before a role operation wraps the error. Read the Gateway log for `Private DNS publication failed.` when an activity reports `app-dev.dns_config_failed`.
+The phase also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/lib/orbit/dnsmasq/disabled`, because it would add listen addresses beside `bind-dynamic`.
 
 ### Publication target
 
@@ -159,22 +145,17 @@ This matters during these commands:
 - `node:add` on an existing `gateway` or `vpn` Node marks the Node `provisioning` and keeps its assignments active.
 - `node:role:add NODE ROLE --converge` marks the assignment `provisioning` and keeps the Node active.
 
-In both cases, publication still finds the `vpn` Node and publishes there over SSH. The reserved records also keep their holder: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, the analytics tracking hosts, and `collector.ai-router.orbit`.
+In both cases, publication still finds the `vpn` Node and publishes there. The reserved records also keep their holder: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, the analytics tracking hosts, and `collector.ai-router.orbit`.
 
-## Cluster Router addresses
+## Answers
 
-The requester's registered Node decides which Router address it gets for a Cluster name. Private DNS answers are selections of an address. They do not change how application traffic is routed. [Routes](/reference/routes#set-up-private-traffic) explains how a resolved Route reaches its workload.
+Private DNS answers select an address. They do not change how application traffic is routed. [Routes](/reference/routes#set-up-private-traffic) explains how a resolved Route reaches its workload.
 
-The Gateway answers with the Router's LAN address when all of these hold:
+Every caller gets the same answer. A Cluster name resolves to the Router's WireGuard address, also for a Cluster member that shares the Router's LAN. Such a member reaches the Router through the WireGuard hub. The Router's LAN address is never published.
 
-- the Cluster is active, and its Router has a LAN address;
-- the requester is an active member of that Cluster with a LAN address and a registered WireGuard identity.
+A Route change stores its rows, and the render follows them: a Route that is retiring or removed leaves the next render, and a failed Route keeps its record until an operator removes it. A domain inside a TLD needs no record when the TLD already gives its address.
 
-Every other requester gets the Router's WireGuard address. That includes a member without a LAN address, a member of another Cluster, and a source that is not an active registered WireGuard Node. The Gateway identifies the requester by the WireGuard source address that delivered the query. A shared LAN subnet or an identity in the DNS message does not count.
-
-A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records, whatever the status of a Route. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it. No later change is needed to clear it.
-
-The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, also a domain outside the Cluster TLD. Other names keep their own answers:
+The TLD of an active Cluster with a Router answers with that Router. A Node TLD answers with that Node. Other names keep their own answers:
 
 | Name | Answer |
 | --- | --- |
@@ -193,28 +174,27 @@ No Cluster or Node TLD can equal, contain, or sit below either private zone: `or
 
 Doctor does not report stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
 
-### Inspect the selection
+### Inspect the DNS
 
-Inspect the published catalog and the listener on the `vpn` Node. Then query from the Node whose answer you want to explain.
+Inspect the files and the daemon on the `vpn` Node. Then query from the Node whose answer you want to explain.
 
 | Command | Expected result |
 | --- | --- |
-| `sudo cat /var/lib/orbit/private-dns/catalog.json` | `requesters` maps each registered WireGuard address to a Node id. `records` and `suffixes` hold the WireGuard answers. `overrides` lists LAN answers by `node:<id>`. |
-| `systemctl is-active orbit-private-dns.socket orbit-private-dns.service` | Both units are active. |
-| `sudo cat /var/lib/orbit/private-dns/catalog.json.loaded` | The digest equals `sudo sha256sum /var/lib/orbit/private-dns/catalog.json`, so the listener serves the published catalog. |
-| `systemctl show -p ExecStart orbit-private-dns.service` | The service runs `serve.php` from the current release. |
-| `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `orbit-private-dns` owns the WireGuard address on UDP and TCP port 53. dnsmasq owns `127.0.0.55:53`. |
-| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | The answer selected for the querying Node. Add `+tcp` to check TCP. |
+| `sudo cat /etc/dnsmasq.d/orbit.conf` | The listen address, one `address=/.TLD/ADDRESS` pair for each TLD, and the uplink servers |
+| `sudo cat /etc/dnsmasq.d/orbit.hosts` and `orbit.servers` | One hosts line for each record, and the NODATA pair for each exact name outside a TLD |
+| `sudo cat /etc/dnsmasq.d/orbit.revision` | The revision of the last installed state |
+| `systemctl is-active dnsmasq` | `active` |
+| `ss -ulpn sport = :53` and `ss -tlpn sport = :53` | `dnsmasq` owns the VPN DNS address on UDP and TCP port 53 |
+| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | The address that the render gives. Add `+tcp` to check TCP. |
+| `dig +noall +comments @<vpn-dns-address> <route-domain> AAAA` | `NOERROR` with no answer for an exact Route |
 
 | Observation | Meaning |
 | --- | --- |
-| `overrides` has `node:<id>` for the name | That Node gets the Router's LAN address. |
-| The name is only under `records` or `suffixes` | The answer is the Router's WireGuard address. |
-| The query source is not in `requesters` | The Gateway treats the source as unknown and answers with the WireGuard address. |
+| The name is missing from `orbit.hosts` and sits below a TLD | The TLD wildcard answers it |
+| `orbit.revision` is older than the last publication | The publication failed or is still queued. Read its `dns.publish` Operation or the owning Operation. |
+| The query source does not matter | Every caller gets the same answer |
 
-To remove wrong LAN intent, run the Node's provision operation again without `lan_ip`, or with the right one. The Gateway republishes the affected answers before the new Node, Cluster, Router, or Route state becomes authoritative. A refused Cluster or Router change stays refused.
-
-An unreachable LAN address stays selected. Orbit does not fall back to WireGuard. HTTPS connections fail until you repair the LAN path, or remove the LAN address and provision again.
+To republish the state, run the owning command again, or `node:converge` on the vpn Node. A failed publication leaves the last good files in place.
 
 ## Repair one peer
 
@@ -263,18 +243,16 @@ The former `~.` default is rejected because a VPN DNS outage also breaks public 
 
 The Gateway repairs VPN DNS, so it must resolve ordinary names while VPN DNS is down. It therefore routes only the private domain to VPN DNS. `~.` on the Gateway machine is rejected for that reason. Resolving private names inside the CLI is rejected, because every other tool on the machine would still fail. Static `/etc/hosts` entries are rejected, because the records move with their roles.
 
-### Router LAN answers from registered intent
+### One answer for every caller
 
-A registered LAN address is operator intent. The Gateway selects the address centrally from registered Node data. Returning a LAN address to every client is rejected, because remote clients cannot reach that LAN. Detecting reachability or roaming on each client is rejected, because it needs client monitoring and automatic path changes. An unreachable LAN path shows as a failure instead of a silent WireGuard fallback.
+dnsmasq cannot choose an answer by the source of a query: `localise-queries` keys on the receiving interface, and every WireGuard query arrives on `orbit`. A custom listener could, but it needs its own codec, sockets, release and requester catalog. [ADR 0248](/decisions/0248-render-private-dns-as-desired-state) removes them. The cost is that a Cluster member on the Router's LAN reaches the Router through the WireGuard hub.
 
-### A listener release from the Gateway
+A Cluster DNS on each Router that answers the LAN address, with a member step that selects it first, is rejected. It needs a unit and a phase on every Router, a systemd-resolved delegate on every member, and automatic recovery after a fallback, and a failure of one Router's dnsmasq stops its names.
 
-The listener needs no framework: it reads a JSON catalog and answers DNS messages. A release built from the Gateway's own code reaches the `vpn` Node with the next publication, so the listener never runs stale code.
+### Complete state, newest revision wins
 
-Syncing a full checkout on the `vpn` Node is rejected, because every deploy would then need GitHub, Packagist, and a Composer install there. The socket unit keeps the DNS address open during a restart, so a restart never stops VPN DNS. Two listeners that hand over with `SO_REUSEPORT` are rejected, because systemd runs one main process per service, and the kernel drops datagrams queued on a closing socket.
+Each publication writes the whole current state, so two parallel publications cannot lose each other's change. A delta publication needs a merge of the pieces, and that merge does not fit one Ansible phase. The revision keeps a slow older run from overwriting a newer one.
 
 ### Uplink resolvers for the backend
 
-The backend must not forward to the systemd-resolved stub on `127.0.0.53` or `127.0.0.54`, because that path can loop back once the VPN DNS listener is bound. It forwards to the uplink resolvers instead, which a default-deny host firewall already admits.
-
-Owning native workflows pass the captured records and requester catalog directly to `route-dns-publish`. The Node footprint installs the listener and socket units before publication. The child validates and activates its captured data, and its parent owns terminal success or failure.
+dnsmasq must not forward to the systemd-resolved stub on `127.0.0.53` or `127.0.0.54`, because that path can loop back once dnsmasq owns the VPN DNS address. It forwards to the uplink resolvers instead, which a default-deny host firewall already admits.

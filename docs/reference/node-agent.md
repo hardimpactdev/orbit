@@ -408,7 +408,7 @@ Only binary staging may change a Node outside a named command. First admission u
 
 The Gateway owns validation, authorization, records, operations, placement, and error mapping. Rust commands own Node execution and its tests. [Extensions](/reference/extensions#add-a-plug-in-point) own their Rust command modules, startup hooks, and compiled services; one agent binary dispatches them. There is no dynamic loader or second command runner.
 
-Tasks workspace scripts retain their [existing runner](/reference/remote-programs). The private DNS listener and its publication scripts remain for the separate [DNS migration](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
+Tasks workspace scripts retain their [existing runner](/reference/remote-programs). Python outside the Gateway is outside this port. The Gateway's own Artisan entry point and OPcache adapter are control-plane code. Static configuration, templates, and certificates remain data.
 
 Operations own recovery. Mutations accept an `effect_key` as `op-<operation id>.<step key>`. Executor transports always supply it after contract authorization. After acquiring command target and resource locks, the shared command layer writes a private intent on the target before the effect and a durable receipt before returning. A repeated key with the same command, input and Operation nonce returns the saved result. A different command or input is refused with `agent.effect_conflict`. An interrupted intent has unknown outcome and is never executed again under that key.
 

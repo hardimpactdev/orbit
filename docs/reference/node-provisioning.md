@@ -78,7 +78,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
 | Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
-| DNS | Ansible phase `dns` writes the dnsmasq backend of a new VPN hub; native child workflows install its listener and publish private DNS. |
+| DNS | The shared `dns-publish` child writes the dnsmasq files of a new VPN hub and publishes private DNS. |
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
 Each role in the intent names its execution copies as a record: `{}` for a role without any.
@@ -359,7 +359,6 @@ Footprint convergence never changes an Instance, a Process unit, or a role, and 
 | `caddy-package` | A Node with a Caddy role or Caddy sites | The [Caddy package step](#package-sources). It installs Caddy only when it is missing or below the floor, so a running Caddy is not restarted |
 | `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). Caddy validates a candidate first; a refused Caddyfile fails the part and the published one stays. It reloads Caddy gracefully, only when the Caddyfile changed |
 | `network` | Managed Linux Nodes with an active VPN hub | [WireGuard and split DNS](/reference/wireguard-endpoints#native-peer-convergence), applied last and guarded by its digest plus live public state |
-| `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts dnsmasq and the listener, then asserts that the listener loaded the new catalog |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 | `php-runtime` | Every Linux Node with an active `app-dev` or `app-prod` role | The [managed PHP-FPM module](/reference/php-runtime#request-and-upload-limits) for the profile and active Instances. A change gracefully reloads valid active masters; `local.conf` stays unchanged |
 | `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, written with `@swamp/cfgmgmt/file`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
@@ -375,7 +374,7 @@ Each artifact has a digest that the Gateway computes from its own code and pins,
 
 The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, the site sources that [extensions contribute](/reference/extensions#plug-in-points), and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
 
-The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
+The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
 A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. Converge skips a version whose FPM binary is absent. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
 
@@ -781,7 +780,7 @@ The `.deb` on the GitHub release is the Caddy project's own build, and a digest 
 
 `orbit node:converge <node>` records a `node.converge` Operation and returns its ID for a workload Node. Every accepted request returns HTTP 202 with an Operation. Standalone targets with a selected worker start the native DAG directly. Nodes 1 and 18 and existing parent or bootstrap contexts retain the polled Operation path. Fleet children retain the declared Operation contract. Swamp re-applies one managed Linux Node's Gateway-rendered footprint. The input is `{force_artifacts: bool, first_visit: bool}`. The serving Node comes from the Operation. The Gateway records the plan, command payloads and optional child intents before effects. Child admission prepares this snapshot before the shared kit stamps its immutable input.
 
-The native Node converge run owns its captured Caddy, private DNS, residue and role steps. Required contributions must finish before its native end check succeeds. Unchanged contributions are skipped by guards. Private DNS uses `route-dns-publish` inside this run and starts no separate publication Operation.
+The native Node converge run owns its captured Caddy, private DNS, residue and role steps. Required contributions must finish before its native end check succeeds. Unchanged contributions are skipped by guards. On the `vpn` Node, private DNS republishes the complete state through the shared `dns-publish` child inside this run and starts no separate publication Operation.
 
 Caddy render or validation refusals and residue cleanup failures may be skipped. If Caddy refuses validation on the first visit and managed code changed, the footprint fails. An owned drift repair keeps the skip. Other child failures stop later artifacts. Completion derives its results from transport receipts and stamped children, then records only proven artifact digests.
 
@@ -789,7 +788,7 @@ For a required `php-runtime` artifact, the Gateway records one `php.configure-ru
 
 If `ai_router.collector_converge` is not registered, preparation keeps the required AI-router artifact in its ordered plan with `operation.kind_unavailable` and records no collector child intent. Earlier artifacts still need their normal proof, so protected agent configuration can install the selected Node worker before the unsupported collector boundary. At that boundary the footprint fails; it neither skips the collector nor records its digest. This does not report a successful full converge or invoke the retained PHP collector executor.
 
-On the active VPN owner, the Swamp footprint stages the private DNS listener release and units before publication. It restarts an active listener against its existing catalog. A fresh install stays inactive until the publication child atomically writes its first catalog and enables the socket. The footprint does not write DNS records itself. Retained synchronous fleet convergence keeps its existing private DNS scope and digests. A Gateway-only Node uses VPN DNS as a resolver client and receives no listener installation or publication child. A Node that holds both roles remains a DNS owner through its active VPN role.
+On the active VPN owner, the `dns-publish` child writes dnsmasq's three files and reloads or restarts it. A Gateway-only Node uses VPN DNS as a resolver client and receives no publication child. A Node that holds both roles remains a DNS owner through its active VPN role.
 
 Agent configuration stores its returned hash through the encrypted Node owner store. Target receipts retain only a presence marker. A lost live reply leaves the run uncertain and cannot prove storage or completion. Use the [operator re-key command](/reference/node-agent#recover-a-lost-agent-secret-reply) to restore authentication, then cancel the uncertain Operation and start a fresh converge.
 

@@ -4,7 +4,6 @@ description: "Move the Gateway to another Node while vpn and private DNS stay on
 covers:
   - apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php
   - apps/gateway/app/Actions/Nodes/GrantGatewayRoleAccessAction.php
-  - apps/gateway/app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php
   - apps/gateway/app/Domain/Gateway/GatewayServingHost.php
 ---
 
@@ -45,7 +44,7 @@ A failed private DNS route on the target does not stop the move, and `follow_up`
 4. Point CLI profiles that name the old WireGuard address at the new one.
 5. Stop Caddy and PHP-FPM on the old Node once the new `/up` answers.
 
-Private DNS publication now runs over SSH on the `vpn` Node. Inspect the catalog and the listener there, not on the Gateway. The `vpn` Node needs no Orbit checkout, and the WireGuard hub keys stay in `/etc/wireguard/orbit.conf` there.
+Private DNS publication runs on the `vpn` Node. Inspect its dnsmasq files and answers there, not on the Gateway. The `vpn` Node needs no Orbit checkout, and the WireGuard hub keys stay in `/etc/wireguard/orbit.conf` there.
 
 ## Limits
 

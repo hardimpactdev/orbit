@@ -72,7 +72,7 @@ Every composing workflow that forwards an environment execution copy declares `o
 
 Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
 
-Private DNS publication runs as `route-dns-publish` inside its owning native parent. Neither direct workflow uses the scheduled result read, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
+Private DNS publication runs as the shared `dns-publish` child inside its owning native parent. Neither direct workflow uses the scheduled result read, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
 
 A Route has one of three kinds. The kind never changes.
 
@@ -363,7 +363,7 @@ The first [Node Caddy build](/reference/caddy-configuration#replaced-configurati
 
 ## Set up private traffic
 
-Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. The Node footprint stages the listener release and units; the publication child validates and writes its catalog before activating an installed but inactive socket. A missing socket remains a refusal.
+Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. Each child carries the complete rendered state and the `dns-publish` phase writes it, as [Private DNS](/reference/private-dns#the-vpn-node-dns) describes.
 
 The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules of a new Route before it publishes private DNS. It publishes DNS last and then marks the Route and Instance active. It does not wait for the application to answer successfully.
 
@@ -397,7 +397,7 @@ When the preparation fails, the walk restores the saved ACLs, and the deny on th
 
 ### Cluster scope
 
-Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
+Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#answers) describes which Router address a name resolves to. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
 
 A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
 
@@ -803,7 +803,7 @@ A `node.add` parent may update a generated Route domain with exactly `{route_id,
 
 A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
 
-Private DNS publication inside Node and Route parents uses the captured records and requester catalog through the shared `route-dns-publish` child. Node convergence installs the serving listener before publication. Its parent owns terminal failure and task state; publication starts no separate Operation.
+Private DNS publication inside Node and Route parents uses the state rendered at admission through the shared `dns-publish` child. Its parent owns terminal failure and task state; publication starts no separate Operation.
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
