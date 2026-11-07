@@ -14,6 +14,8 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Projects the terminal event of one `operation-task-vm-image-refresh` run once (docs/cli/tasks/vm-image-refresh.mmd). When the run
@@ -62,7 +64,14 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
             $next = ($operation->state ?? [])[TaskVmImageRefreshIntent::Next] ?? null;
             if (is_string($next)) {
                 $host = $operation->target_id;
-                DB::afterCommit(static fn () => GatewaySchedule::dispatch(new RefreshTaskVmImages($host, $next)));
+                DB::afterCommit(static function () use ($host, $next): void {
+                    try {
+                        GatewaySchedule::dispatch(new RefreshTaskVmImages($host, $next));
+                    } catch (Throwable $failure) {
+                        // The daily trigger asks again; the end of a run is never held by it.
+                        Log::warning('The queued task image refresh was not dispatched.', ['node_id' => $host, 'message' => $failure->getMessage()]);
+                    }
+                });
             }
 
             return app(DirectOperation::class)->project($operation, $data, $result);

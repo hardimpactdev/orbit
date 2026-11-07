@@ -9,6 +9,7 @@ use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -57,4 +58,15 @@ it('schedules no recipe reconcile: only the refresh starts work on the image of 
 it('keys the queued job by its host and commit, so a repeat is one job', function (): void {
     expect((new RefreshTaskVmImages)->uniqueId())->toBe('daily:')
         ->and((new RefreshTaskVmImages(7, 'bbbbbbbbbbbb'))->uniqueId())->toBe('host-7:bbbbbbbbbbbb');
+});
+
+it('asks one host for a queued commit, and refuses a host that is none', function (): void {
+    $trigger = app(TaskVmImageRefreshTrigger::class);
+
+    expect($trigger->admitHost(999, 'release', str_repeat('c', 40)))->toBe('task_vm.host_unavailable');
+});
+
+it('validates the commit of the refresh command', function (): void {
+    $this->artisan('task-vms:refresh-images', ['--commit' => 'main'])->expectsOutputToContain('full lowercase SHA')->assertExitCode(Command::INVALID);
+    $this->artisan('task-vms:refresh-images', ['--commit' => str_repeat('d', 40)])->assertSuccessful();
 });

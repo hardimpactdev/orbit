@@ -119,6 +119,9 @@ it('queues the newest release commit behind the open refresh, and admits it when
     // The open refresh already runs for this commit: nothing waits. A newer commit waits, and the newest of two wins; the run's own state stays.
     expect($intent->start($host, 'test', commit: $same)->id)->toBe($operation->id);
     expect($operation->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next);
+    // A plain admission, as the daily trigger makes it, queues nothing.
+    $intent->start($host, 'test');
+    expect($operation->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next);
     $intent->start($host, 'test', commit: $older);
     $intent->start($host, 'test', commit: $newest);
     expect($operation->refresh()->state)->toMatchArray([TaskVmImageRefreshIntent::Next => $newest, 'swamp_run_id' => 'fixture-refresh'])

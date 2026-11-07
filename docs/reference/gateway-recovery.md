@@ -130,6 +130,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
+| Admit the task VM refreshes | Runs `task-vms:refresh-images --commit <sha>` from the new release: one base refresh per task VM host, beside the hand-over. Best effort: its failure never fails the release, and the hand-over waits only for it to end. It runs for every release, also one that later fails or switches back; the refresh is harmless then. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.

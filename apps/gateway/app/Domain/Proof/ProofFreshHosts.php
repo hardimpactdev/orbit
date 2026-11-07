@@ -12,7 +12,7 @@ use App\Domain\TaskVms\TaskVmImageInputs;
 
 /**
  * The task VM hosts a proof may use: those whose ready copies include every change of the files the image carries (playbooks, pins, lock
- * files: {@see TaskVmImageInputs}, the rule that starts a refresh) up to the merge base of the commit under proof with main. A release
+ * files: {@see TaskVmImageInputs}, the rule of what the image carries) up to the merge base of the commit under proof with main. A release
  * that changed other files, such as Gateway PHP or documents, makes no copies stale. A host with no recorded release commit, or with
  * a commit that GitHub does not know, is not one of them. GitHub is read once for each distinct commit, before the admission
  * transaction. For every other host the answer says why, so that the refusal can name it. See docs/reference/pipeline/2-development-environment.mmd.
