@@ -47,9 +47,6 @@ The table `task_vm_image_builds` has one row for each build. It holds the host, 
 
 A task VM boots from a base image that the same Gateway code built. Its enrollment no longer runs the `app-dev` software programs and reads no manifest. It still applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
 
-### Next step
-
-
 ## Rejected alternatives
 
 - **One provisioning script for the whole image.** A failure is a line in a long log, not a named step that can be retried alone.
