@@ -209,6 +209,8 @@
     - name: Check that the task VM project keeps its own images and volumes
       ansible.builtin.assert:
         that:
+          # An empty prefix list would make `retired` match every name.
+          - clean.prefixes | length > 0
           - task_project.config['features.images'] | default('false') | bool
           - task_project.config['features.storage.volumes'] | default('false') | bool
         fail_msg: "task_vm.host_clean_refused: project {{ host.project }} shares images or volumes with default"
