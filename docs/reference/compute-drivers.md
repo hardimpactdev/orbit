@@ -1156,7 +1156,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 |---|---|
 | `Log egress` | Phase `egress-log` of `task-vm-host.yml`, in a job of its own that runs first: sets up the [egress log](#log-task-vm-egress) of the host bridge. |
 | `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
-| `Converge` | The same converge as a task start, which runs it in one Ansible run with its host part (`task-vm-start`; the refresh runs `task-vm-image-ansible`; phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`). It waits for no nested Gateway and wipes no identity. |
+| `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It waits for no nested Gateway and wipes no identity. |
 | `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
 | `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free slot, then its release. |
 | `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
