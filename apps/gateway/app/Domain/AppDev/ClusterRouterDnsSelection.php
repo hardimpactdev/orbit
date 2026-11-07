@@ -49,6 +49,26 @@ final readonly class ClusterRouterDnsSelection
     }
 
     /**
+     * The TLD of every active Cluster with a Router, and the Router's WireGuard address that answers it.
+     *
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     * @return array<string, string> TLD => address
+     */
+    public function clusterTldTargets(array $nodeOverrides = [], array $clusterOverrides = []): array
+    {
+        $targets = [];
+
+        foreach ($this->projections($nodeOverrides, $clusterOverrides) as $projection) {
+            if ($projection['tld'] !== null && $projection['router_wireguard'] !== null) {
+                $targets[$projection['tld']] = $projection['router_wireguard'];
+            }
+        }
+
+        return $targets;
+    }
+
+    /**
      * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
      * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
      * @return list<string>

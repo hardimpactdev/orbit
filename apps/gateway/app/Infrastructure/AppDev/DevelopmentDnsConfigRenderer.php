@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterRouterDnsSelection;
+use App\Domain\AppDev\PrivateDnsState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -14,6 +15,7 @@ use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketHostname;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Container\Attributes\Tag;
@@ -28,6 +30,7 @@ final readonly class DevelopmentDnsConfigRenderer
         private ClusterRouterDnsSelection $selection = new ClusterRouterDnsSelection,
         private ClusterRouterTransition $routerTransitions = new ClusterRouterTransition,
         private WebSocketDnsTarget $websocket = new WebSocketDnsTarget,
+        private ?VpnSettings $vpn = null,
     ) {}
 
     /**
@@ -39,6 +42,67 @@ final readonly class DevelopmentDnsConfigRenderer
         array $nodeOverrides = [],
         array $clusterOverrides = [],
     ): string {
+        $collected = $this->collect($pendingNode, $nodeOverrides, $clusterOverrides);
+        $records = collect();
+
+        foreach ($collected['tlds'] as $tld => $address) {
+            $records->push("local=/{$tld}/");
+            $records->push("address=/.{$tld}/{$address}");
+        }
+
+        foreach ($collected['localOnly'] as $tld) {
+            $records->push("local=/{$tld}/");
+        }
+
+        foreach ($collected['hosts'] as $name => $address) {
+            $records->push("host-record={$name},{$address}");
+        }
+
+        return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
+    }
+
+    /**
+     * The complete private DNS as data, read from stored rows: the phase on the vpn Node writes it.
+     *
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     */
+    public function state(
+        ?Node $pendingNode = null,
+        array $nodeOverrides = [],
+        array $clusterOverrides = [],
+    ): PrivateDnsState {
+        $collected = $this->collect($pendingNode, $nodeOverrides, $clusterOverrides);
+
+        return PrivateDnsState::from(
+            listen: $this->listen($pendingNode),
+            tlds: $collected['tlds'],
+            hosts: $collected['hosts'],
+        );
+    }
+
+    /** @return list<string> The address that VPN DNS answers on: the configured one, else the VPN Node's. */
+    private function listen(?Node $pendingNode): array
+    {
+        $configured = ($this->vpn ?? app(VpnSettings::class))->dnsServer();
+
+        if (is_string($configured) && $configured !== '') {
+            return [DnsAddress::normalize($configured) ?? $configured];
+        }
+
+        $holder = $this->roleNode(RoleName::Vpn, $pendingNode) ?? $this->roleNode(RoleName::Gateway, $pendingNode);
+        $address = $holder instanceof Node ? app(RouteRenderContext::class)->wireguardIp($holder) : null;
+
+        return is_string($address) && $address !== '' ? [DnsAddress::normalize($address) ?? $address] : [];
+    }
+
+    /**
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     * @return array{tlds: array<string, string>, localOnly: list<string>, hosts: array<string, string>}
+     */
+    private function collect(?Node $pendingNode, array $nodeOverrides, array $clusterOverrides): array
+    {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
                 $q->where('status', LifecycleStatus::Active->value)
@@ -55,40 +119,49 @@ final readonly class DevelopmentDnsConfigRenderer
                 'role',
                 RoleName::AppDev->value,
             )->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]))
-
             ->get();
-        $clusterTlds = $this->selection->clusterTlds($nodeOverrides, $clusterOverrides);
-        $nodes = $nodes
-            ->flatMap(static function (Node $n) use ($clusterTlds): array {
-                $identity = app(RouteRenderContext::class);
-                $tld = $identity->tld($n);
-                $address = $identity->wireguardIp($n);
-                if ($tld === null || $address === null) {
-                    return [];
-                }
-                $records = ["local=/{$tld}/"];
+        $clusterTargets = $this->selection->clusterTldTargets($nodeOverrides, $clusterOverrides);
+        $tlds = [];
+        $localOnly = [];
 
-                if (! in_array(rtrim(strtolower($tld), '.'), $clusterTlds, true)) {
-                    $records[] = "address=/.{$tld}/{$address}";
-                }
+        foreach ($nodes as $node) {
+            $identity = app(RouteRenderContext::class);
+            $tld = $identity->tld($node);
+            $address = $identity->wireguardIp($node);
 
-                return $records;
-            });
+            if ($tld === null || $address === null) {
+                continue;
+            }
+
+            $tld = rtrim(strtolower($tld), '.');
+
+            if (array_key_exists($tld, $clusterTargets)) {
+                $localOnly[] = $tld;
+
+                continue;
+            }
+
+            $tlds[$tld] = $address;
+        }
+
+        // A Cluster TLD answers with its Router and wins over a Node that owns the same TLD.
+        $tlds = [...$tlds, ...$clusterTargets];
         // A Router selection names the Router Node that answers: a selection being published or
         // restored, else a stored Router replacement that has published DNS.
         $selectedRouters = array_values(array_replace(
             $this->routerTransitions->dnsRouters(),
             $this->routerOverrides($clusterOverrides),
         ));
-        $records = $nodes
-            ->toBase()
-            ->merge($this->sites
-                ->all()
-                ->groupBy('domain')
-                ->map(fn ($sites): string => $this->hostRecord(
-                    array_values($sites->all()),
-                    $selectedRouters,
-                )));
+        $hosts = [];
+
+        foreach ($this->sites->all()->groupBy('domain') as $sites) {
+            $record = $this->hostRecord(array_values($sites->all()), $selectedRouters);
+
+            if ($record !== null) {
+                $hosts[$record['domain']] = $record['address'];
+            }
+        }
+
         // `node:role:add gateway gateway --converge` marks the singleton assignment provisioning while
         // it republishes DNS, so a converging holder keeps gateway.orbit; an active holder wins.
         $gateway = null;
@@ -110,39 +183,35 @@ final readonly class DevelopmentDnsConfigRenderer
                 ->first();
         }
         if ($gateway instanceof Node) {
-            $records->push('host-record='.ReservedPrivateHostname::Gateway.','.app(RouteRenderContext::class)->wireguardIp($gateway));
+            $address = app(RouteRenderContext::class)->wireguardIp($gateway);
+            $hosts[ReservedPrivateHostname::Gateway] = $address;
 
-            $metrics = $this->roleNode(RoleName::Metrics, $pendingNode);
-            if ($metrics instanceof Node) {
-                $records->push('host-record='.ReservedPrivateHostname::Metrics.','.app(RouteRenderContext::class)->wireguardIp($gateway));
+            if ($this->roleNode(RoleName::Metrics, $pendingNode) instanceof Node) {
+                $hosts[ReservedPrivateHostname::Metrics] = $address;
             }
         }
 
         $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket, $pendingNode));
 
         if ($websocket instanceof Node) {
-            $records->push('host-record='.WebSocketHostname::Value.','.app(RouteRenderContext::class)->wireguardIp($websocket));
+            $hosts[WebSocketHostname::Value] = app(RouteRenderContext::class)->wireguardIp($websocket);
         }
 
         $analytics = $this->roleNode(RoleName::Analytics, $pendingNode);
 
         if ($analytics instanceof Node) {
-            $records->push('host-record='.AnalyticsHostname::Value.','.app(RouteRenderContext::class)->wireguardIp($analytics));
+            $hosts[AnalyticsHostname::Value] = app(RouteRenderContext::class)->wireguardIp($analytics);
         }
 
         foreach ($this->hostnames as $contribution) {
             foreach ($contribution->hostnames() as $hostname => $address) {
                 if ($address !== null) {
-                    $records->push("host-record={$hostname},{$address}");
+                    $hosts[$hostname] = $address;
                 }
             }
         }
 
-        foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
-            $records->push($record);
-        }
-
-        return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
+        return ['tlds' => $tlds, 'localOnly' => array_values(array_unique($localOnly)), 'hosts' => $hosts];
     }
 
     /**
@@ -214,8 +283,9 @@ final readonly class DevelopmentDnsConfigRenderer
      *
      * @param  list<DevelopmentSite>  $sites
      * @param  list<int>  $selectedRouters
+     * @return array{domain: string, address: string}|null
      */
-    private function hostRecord(array $sites, array $selectedRouters): string
+    private function hostRecord(array $sites, array $selectedRouters): ?array
     {
         $sites = collect($sites);
         $selected = $sites->filter(static fn (DevelopmentSite $site): bool => in_array($site->nodeId, $selectedRouters, true));
@@ -227,10 +297,10 @@ final readonly class DevelopmentDnsConfigRenderer
             ?? $sites->first();
 
         if (! $site instanceof DevelopmentSite) {
-            return '';
+            return null;
         }
 
-        return "host-record={$site->domain},{$site->nodeAddress}";
+        return ['domain' => strtolower(rtrim($site->domain, '.')), 'address' => $site->nodeAddress];
     }
 
     /**
