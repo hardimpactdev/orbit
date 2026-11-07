@@ -233,14 +233,14 @@ impl Proto {
     }
 }
 
-/// What the log line's `MAC=` field says about the sender.
+/// What the log line's MAC fields say about the sender.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Frame {
-    /// No `MAC=` field: the sender is found by its source address and the lease.
+    /// No MAC field: the sender is found by its source address and the lease.
     Absent,
-    /// The 14 octets `<dst6>:<src6>:<type2>` of an Ethernet header; this is the source MAC.
+    /// The source MAC, from `MACSRC=` or from octets 7 to 12 of the older `MAC=` field.
     Source(String),
-    /// A `MAC=` field of another shape. The line names no VM.
+    /// A MAC field of another shape. The line names no VM.
     Unusable,
 }
 
@@ -256,6 +256,12 @@ pub struct Connection {
     pub port: u16,
 }
 
+/// The source MAC of `MACSRC=<src MAC>`, which current kernels print with `log flags ether`.
+fn macsrc(field: &str) -> Frame {
+    mac(field).map_or(Frame::Unusable, Frame::Source)
+}
+
+/// The source MAC of the older `MAC=<dst6>:<src6>:<type2>` field, 14 octets of the Ethernet header.
 fn source_mac(field: &str) -> Frame {
     let octets: Vec<&str> = field.split(':').collect();
     match octets.get(6..12).and_then(|source| mac(&source.join(":"))) {
@@ -264,16 +270,20 @@ fn source_mac(field: &str) -> Frame {
     }
 }
 
-/// Parses a line with `orbit-egress ` and the kernel fields `IN=`, `MAC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`. Fields
-/// are found by name, so any timestamp, host or `kernel:` prefix is fine. Only TCP and UDP count.
+/// Parses a line with `orbit-egress ` and the kernel fields `IN=`, `MACSRC=` (or the older `MAC=`), `SRC=`, `DST=`,
+/// `PROTO=` and `DPT=`. Fields are found by name, so any timestamp, host or `kernel:` prefix is fine. `MACSRC=` wins
+/// over `MAC=`. Only TCP and UDP count.
 pub fn parse_connection_line(line: &str) -> Option<Connection> {
     let (_, fields) = line.split_once("orbit-egress ")?;
-    let (mut interface, mut frame, mut source, mut destination, mut protocol, mut port) =
-        (None, None, None, None, None, None);
+    let (mut interface, mut source_field, mut legacy_field) = (None, None, None);
+    let (mut source, mut destination, mut protocol, mut port) = (None, None, None, None);
     for token in fields.split_whitespace() {
         match token.split_once('=') {
             Some(("IN", value)) if interface.is_none() => interface = Some(value.to_owned()),
-            Some(("MAC", value)) if frame.is_none() => frame = Some(source_mac(value)),
+            Some(("MACSRC", value)) if source_field.is_none() => source_field = Some(macsrc(value)),
+            Some(("MAC", value)) if legacy_field.is_none() => {
+                legacy_field = Some(source_mac(value))
+            }
             Some(("SRC", value)) if source.is_none() => source = value.parse().ok(),
             Some(("DST", value)) if destination.is_none() => destination = value.parse().ok(),
             Some(("PROTO", value)) if protocol.is_none() => {
@@ -289,7 +299,7 @@ pub fn parse_connection_line(line: &str) -> Option<Connection> {
     }
     Some(Connection {
         interface,
-        frame: frame.unwrap_or(Frame::Absent),
+        frame: source_field.or(legacy_field).unwrap_or(Frame::Absent),
         source: source?,
         destination: destination?,
         protocol: protocol?,

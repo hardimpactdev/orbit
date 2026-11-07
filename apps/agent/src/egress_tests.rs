@@ -43,7 +43,8 @@ fn reply(serial: u64, name: &str, value: &str) -> String {
     dns(&format!("{serial} {VM_IP}/43210 reply {name} is {value}"))
 }
 
-/// A kernel log line from the VM, with the Ethernet header `<dst6>:<src6>:<type2>` in `MAC=`.
+/// A kernel log line from the VM, as current kernels print it with `log flags ether`: `MACSRC=`, `MACDST=` and
+/// `MACPROTO=`.
 fn connection(source: &str, destination: &str, protocol: &str, port: u16) -> String {
     from_mac(MAC, source, destination, protocol, port)
 }
@@ -51,17 +52,27 @@ fn connection(source: &str, destination: &str, protocol: &str, port: u16) -> Str
 fn from_mac(mac: &str, source: &str, destination: &str, protocol: &str, port: u16) -> String {
     format!(
         "Nov  7 19:00:05 beast kernel: [12345.678901] orbit-egress IN=orbittask0 OUT=enp5s0 \
+         MACSRC={mac} MACDST=aa:bb:cc:dd:ee:ff MACPROTO=0800 SRC={source} DST={destination} LEN=60 TOS=0x00 \
+         PREC=0x00 TTL=63 ID=1 DF PROTO={protocol} SPT=43210 DPT={port} WINDOW=64240 RES=0x00 SYN URGP=0"
+    )
+}
+
+/// The older form of the same line: one `MAC=<dst6>:<src6>:<type2>` field.
+fn legacy_mac(mac: &str, source: &str, destination: &str, protocol: &str, port: u16) -> String {
+    format!(
+        "Nov  7 19:00:05 beast kernel: [12345.678901] orbit-egress IN=orbittask0 OUT=enp5s0 \
          MAC=aa:bb:cc:dd:ee:ff:{mac}:08:00 SRC={source} DST={destination} LEN=60 TOS=0x00 \
          PREC=0x00 TTL=63 ID=1 DF PROTO={protocol} SPT=43210 DPT={port} WINDOW=64240 RES=0x00 SYN URGP=0"
     )
 }
 
-/// The same line without the `MAC=` field.
+/// The same line without any MAC field.
 fn without_mac(source: &str, destination: &str, protocol: &str, port: u16) -> String {
-    let line = connection(source, destination, protocol, port);
-    let start = line.find("MAC=").unwrap();
-    let end = start + line[start..].find(' ').unwrap() + 1;
-    format!("{}{}", &line[..start], &line[end..])
+    connection(source, destination, protocol, port)
+        .split(' ')
+        .filter(|token| !token.starts_with("MAC"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn lease(mac: &str, address: &str, name: &str) -> String {
@@ -287,28 +298,71 @@ fn a_connection_line_gives_source_destination_protocol_and_port_whatever_the_pre
     assert_eq!((udp.protocol, udp.port), (Proto::Udp, 53));
 }
 
+/// The line the kernel 7.0 on shark logged, byte for byte after the time stamp.
+const SHARK_LINE: &str = "kernel: orbit-egress IN=orbittask0 OUT=enp3s0 MACSRC=10:66:6a:25:ff:26 \
+MACDST=10:66:6a:ec:52:0e MACPROTO=0800 SRC=10.251.78.3 DST=140.82.121.3 LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=7783 DF \
+PROTO=TCP SPT=48336 DPT=443 WINDOW=64240 RES=0x00 SYN URGP=0";
+
 #[test]
-fn the_mac_field_names_the_source_by_its_fourteen_octets() {
-    let frame = |field: &str| {
-        let line = connection(VM_IP, "140.82.121.4", "TCP", 443);
-        let start = line.find("MAC=").unwrap();
-        let end = start + line[start..].find(' ').unwrap();
-        let line = format!("{}MAC={field}{}", &line[..start], &line[end..]);
-        parse_connection_line(&line).unwrap().frame
-    };
+fn the_line_a_real_kernel_logs_names_the_vm_by_macsrc() {
     assert_eq!(
-        frame("AA:BB:CC:DD:EE:FF:10:66:6A:F0:65:D4:08:00"),
+        parse_connection_line(SHARK_LINE),
+        Some(Connection {
+            interface: Some("orbittask0".into()),
+            frame: Frame::Source("10:66:6a:25:ff:26".into()),
+            source: ip("10.251.78.3"),
+            destination: ip("140.82.121.3"),
+            protocol: Proto::Tcp,
+            port: 443,
+        })
+    );
+    let udp = SHARK_LINE
+        .replace("PROTO=TCP", "PROTO=UDP")
+        .replace("DPT=443", "DPT=53");
+    let udp = parse_connection_line(&udp).unwrap();
+    assert_eq!((udp.protocol, udp.port), (Proto::Udp, 53));
+}
+
+#[test]
+fn macsrc_wins_over_the_older_mac_field_and_the_older_form_still_works() {
+    let frame = |line: String| parse_connection_line(&line).unwrap().frame;
+    assert_eq!(
+        frame(legacy_mac(MAC, VM_IP, "140.82.121.4", "TCP", 443)),
         Frame::Source(MAC.into())
     );
+    let both = format!(
+        "{} MAC=aa:bb:cc:dd:ee:ff:10:66:6a:00:00:99:08:00",
+        connection(VM_IP, "140.82.121.4", "TCP", 443)
+    );
+    assert_eq!(frame(both), Frame::Source(MAC.into()));
+    let only_legacy = legacy_mac("10:66:6A:F0:65:D4", VM_IP, "140.82.121.4", "TCP", 443);
+    assert_eq!(frame(only_legacy), Frame::Source(MAC.into()));
+}
+
+#[test]
+fn a_malformed_mac_field_names_no_vm_and_no_field_names_none_either() {
+    let with = |field: &str| {
+        let line = format!("{} {field}", without_mac(VM_IP, "140.82.121.4", "TCP", 443));
+        parse_connection_line(&line).unwrap().frame
+    };
+    assert_eq!(with("MACSRC=10:66:6a:f0:65"), Frame::Unusable);
+    assert_eq!(with("MACSRC=10:66:6a:f0:65:zz"), Frame::Unusable);
+    assert_eq!(with("MACSRC="), Frame::Unusable);
+    assert_eq!(with("MACSRC=10:66:6A:F0:65:D4"), Frame::Source(MAC.into()));
+    // A bad MACSRC is not rescued by the older field.
     assert_eq!(
-        frame("aa:bb:cc:dd:ee:ff:10:66:6a:f0:65:d4"),
+        with("MACSRC=nonsense MAC=aa:bb:cc:dd:ee:ff:10:66:6a:f0:65:d4:08:00"),
         Frame::Unusable
     );
     assert_eq!(
-        frame("aa:bb:cc:dd:ee:ff:10:66:6a:f0:65:zz:08:00"),
+        with("MAC=aa:bb:cc:dd:ee:ff:10:66:6a:f0:65:d4"),
         Frame::Unusable
     );
-    assert_eq!(frame(""), Frame::Unusable);
+    assert_eq!(
+        with("MAC=aa:bb:cc:dd:ee:ff:10:66:6a:f0:65:zz:08:00"),
+        Frame::Unusable
+    );
+    assert_eq!(with("MAC="), Frame::Unusable);
     let bare = parse_connection_line(&without_mac(VM_IP, "140.82.121.4", "TCP", 443)).unwrap();
     assert_eq!(bare.frame, Frame::Absent);
 }
@@ -703,8 +757,10 @@ fn the_mac_of_the_log_line_names_the_vm_and_the_lease_is_the_fallback_only_witho
         // Without the field the source address and the lease name the VM.
         without_mac(VM_IP, "140.82.121.3", "TCP", 443),
         without_mac("10.251.78.99", "140.82.121.4", "TCP", 443),
+        // The older form names the VM too.
+        legacy_mac(MAC, "10.251.78.99", "140.82.121.6", "TCP", 443),
         // A field of another shape names no VM, and no guess is made from the address.
-        connection(VM_IP, "140.82.121.5", "TCP", 443).replace(":08:00 ", " "),
+        connection(VM_IP, "140.82.121.5", "TCP", 443).replace(MAC, "10:66:6a"),
     ]);
     observe(&mut observer, STAMP);
 
@@ -714,7 +770,10 @@ fn the_mac_of_the_log_line_names_the_vm_and_the_lease_is_the_fallback_only_witho
         .map(|row| row["destination"].as_str().unwrap().to_owned())
         .collect();
     destinations.sort();
-    assert_eq!(destinations, ["140.82.121.1", "140.82.121.3"]);
+    assert_eq!(
+        destinations,
+        ["140.82.121.1", "140.82.121.3", "140.82.121.6"]
+    );
 }
 
 #[test]
