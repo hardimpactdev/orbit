@@ -35,6 +35,7 @@ sequenceDiagram
   SW->>VM: Converge and branch<br/>the release's converge
   %%> What it does:
   %%> - the same Ansible converge as the release refresh, over WireGuard with the address and host key of the admission; it starts as soon as sshd answers and reads nothing back from the host
+  %%> - the glue is two steps: write the intent once, then one step that builds the playbook input and starts Ansible; the address and host key come from the admission, so nothing is read from the host
   %%> - with no delta every part is skipped, and it catches up a small delta when main moved since the last release
   %%> - then the new task branch on the checkout; it waits for no nested service
   SW->>VM: Reach the VM by WireGuard<br/>ssh from 209 · pinned key
