@@ -5,6 +5,7 @@
 #   changed                     the number of changes the phase reports for the Node (only where it is exact)
 #   pid                         `same` after a reload or a skip, `new` after a restart
 #   files_kept                  after a failure, orbit.conf, orbit.hosts, orbit.servers and orbit.revision are as they were
+#   stop_dnsmasq                dnsmasq is stopped before the step (it crashed); the files are not touched
 #   leak                        a stray config makes dnsmasq answer an AAAA for gateway.orbit during the step
 #   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata
 tld_test: &tld_test {name: test, address: 10.99.99.7}
@@ -121,6 +122,19 @@ steps:
     tlds: [*tld_test, *tld_prod, *tld_dev]
     records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
     result: {revision: "1762540000000007", dnsmasq: restarted}
+    pid: new
+    queries:
+      - {name: foo.dev, type: A, data: [10.99.99.14]}
+      - {name: gateway.orbit, type: A, data: [10.99.99.2]}
+      - {name: gateway.orbit, type: AAAA, nodata: true}
+
+  # dnsmasq crashed; the files and the data are the same, only the revision is newer. Nothing drifts, yet dnsmasq must start again.
+  - name: a stopped dnsmasq is restarted although no file changed
+    revision: "1762540000000008"
+    tlds: [*tld_test, *tld_prod, *tld_dev]
+    records: [*rec_gateway, *rec_x, *rec_app, *rec_x2, *rec_new]
+    stop_dnsmasq: true
+    result: {revision: "1762540000000008", dnsmasq: restarted}
     pid: new
     queries:
       - {name: foo.dev, type: A, data: [10.99.99.14]}

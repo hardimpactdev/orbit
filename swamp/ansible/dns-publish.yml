@@ -74,7 +74,9 @@
     # dnsmasq reads orbit.conf only at start, so it restarts when the rendered file is not the one it started with, or when it is down.
     dns_restart: "{{ dns_sums[dns_loaded_file] | default('') != (dns_files.conf | hash('sha256')) or dns_unit.status.ActiveState | default('') != 'active' }}"
     dns_reload: "{{ (dns_drift.hosts or dns_drift.servers) and not dns_restart }}"
-    dns_changing: "{{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0 }}"
+    # The Node changes when a file differs, and also when dnsmasq must be (re)started with files that are already right: it crashed, or an
+    # earlier restart failed after the file was installed.
+    dns_changing: "{{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0 or dns_restart }}"
     dns_action: "{{ 'restarted' if dns_restart else ('reloaded' if dns_reload else 'unchanged') }}"
     # The files that make the last good set. The files of the new set keep their names; the old listener's go to previous/legacy/.
     dns_save_keep: "{{ dns_sums.keys() | select('in', [dns_conf_file, dns_hosts_file, dns_servers_file]) | list }}"

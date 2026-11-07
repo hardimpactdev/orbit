@@ -24,6 +24,12 @@
         mode: "0644"
       become: true
       when: step.leak | default(false)
+    - name: Stop dnsmasq, as a crash does
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: stopped
+      become: true
+      when: step.stop_dnsmasq | default(false)
     - name: Write the intent
       ansible.builtin.copy:
         content: >-
