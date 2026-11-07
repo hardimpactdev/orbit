@@ -1,0 +1,176 @@
+---
+# The state asserts of five firewall:allow cases. converge.yml has run the CLI and checked the answers and receipts; this play only reads:
+# the facts converge cached, traffic from the Nodes (wait_for), the UFW table of app-dev (command) and the nested Gateway's records (uri).
+# Each block names its case; the chart paths they cover are in swamp/proof/firewall/allow.cases.yaml.
+- ansible.builtin.import_playbook: facts.yml
+
+- name: Verify firewall:allow
+  hosts: localhost
+  gather_facts: false
+  vars:
+    app_dev_ip: "{{ hostvars['nested-app-dev'].app_dev_ip }}"
+    src: "{{ hostvars['nested-gateway'].gateway_src }}"
+    app_dev_id: "{{ hostvars['localhost'].node_ids['app-dev'] }}"
+    case_names: [new_restricted_allow, already_applied, partial_application, conflict, failure_code]
+    row_pattern: '^\[ *([0-9]+)\].*$'
+  tasks:
+    # ---- shared reads, once ----
+    # `act`, `ufw_before`, `ufw_after`, `ops_before`, `ops_after` and `failures` come from converge.yml through the fact cache.
+    - name: Read the UFW table of app-dev
+      ansible.builtin.command: ufw status numbered
+      delegate_to: nested-app-dev
+      register: ufw_now
+      changed_when: false
+
+    - name: Read the firewall records of app-dev from the nested Gateway
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/firewall-rules?node={{ app_dev_id }}"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: records
+
+    - name: Keep the rules
+      ansible.builtin.set_fact:
+        rules: "{{ records.json.data.nodes | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first }}"
+        rows: "{{ ufw_now.stdout_lines }}"
+
+    # ---- case: new-restricted-allow (main, changes-needed, succeeded) ----
+    - name: new-restricted-allow
+      vars:
+        c: "{{ cases.new_restricted_allow }}"
+        allow_row: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        deny_row: "{{ rows | select('search', 'proof:deny-new_restricted_allow$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        matching: >-
+          {{ rules | selectattr('action', 'equalto', 'allow') | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src)
+          | selectattr('status', 'equalto', 'active') | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+      block:
+        - name: The Gateway reaches the port, app-prod does not, the control port works for both
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: "{{ item }}"}
+          loop:
+            - {from: nested-gateway,  port: "{{ c.port }}",    expect: connect}
+            - {from: nested-app-prod, port: "{{ c.port }}",    expect: blocked}
+            - {from: nested-gateway,  port: "{{ c.control }}", expect: connect}
+            - {from: nested-app-prod, port: "{{ c.control }}", expect: connect}
+        - name: One active record, and the allow line sits above the test deny
+          ansible.builtin.assert:
+            that:
+              - matching | length == 1
+              - allow_row | length == 1
+              - deny_row | length > 0
+              - allow_row | first < deny_row | first
+            quiet: true
+        - name: Nothing else changed in UFW (rows without the port, numbers removed)
+          ansible.builtin.assert:
+            that: >-
+              (ufw_before.new_restricted_allow.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.port | string) | list)
+              ==
+              (ufw_after.new_restricted_allow.split('\n') | select('search', '^\[') | map('regex_replace', '^\[ *[0-9]+\] *', '') | reject('search', c.port | string) | list)
+            quiet: true
+      rescue:
+        - name: Record the failed check of new-restricted-allow
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'new_restricted_allow': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: already-applied (already-applied, succeeded) ----
+    - name: already-applied
+      vars:
+        c: "{{ cases.already_applied }}"
+        matching: >-
+          {{ rules | selectattr('action', 'equalto', 'allow') | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+      block:
+        - name: One record, one allow line above the deny, and UFW did not change at all
+          vars:
+            allow_row: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+            deny_row: "{{ rows | select('search', 'proof:deny-already_applied$') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+          ansible.builtin.assert:
+            that:
+              - matching | length == 1
+              - allow_row | length == 1
+              - deny_row | length > 0
+              - allow_row | first < deny_row | first
+              - ufw_before.already_applied == ufw_after.already_applied
+            quiet: true
+      rescue:
+        - name: Record the failed check of already-applied
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'already_applied': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: partial-application (changes-needed, succeeded) ----
+    - name: partial-application
+      vars:
+        c: "{{ cases.partial_application }}"
+        tcp_allow: "{{ rows | select('search', c.port ~ '/tcp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        udp_allow: "{{ rows | select('search', c.port ~ '/udp +ALLOW IN +' ~ src) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        tcp_deny: "{{ rows | select('search', c.port ~ '/tcp +DENY IN +Anywhere') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+        udp_deny: "{{ rows | select('search', c.port ~ '/udp +DENY IN +Anywhere') | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+      block:
+        - name: The kept TCP line stays, the UDP line was added, each above its deny
+          ansible.builtin.assert:
+            that:
+              - tcp_allow | length == 1
+              - udp_allow | length == 1
+              - tcp_allow | first < tcp_deny | first
+              - udp_allow | first < udp_deny | first
+            quiet: true
+        - name: TCP from the Gateway passes and TCP from app-prod is blocked (a UDP probe has no wait_for form)
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: "{{ item }}"}
+          loop:
+            - {from: nested-gateway,  port: "{{ c.port }}", expect: connect}
+            - {from: nested-app-prod, port: "{{ c.port }}", expect: blocked}
+      rescue:
+        - name: Record the failed check of partial-application
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'partial_application': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: conflict (refusal, no request) ----
+    - name: conflict
+      vars:
+        c: "{{ cases.conflict }}"
+      block:
+        - name: No Operation was created and UFW did not change
+          ansible.builtin.assert:
+            that:
+              - ops_before.conflict == ops_after.conflict
+              - ufw_before.conflict == ufw_after.conflict
+            quiet: true
+        - name: The Gateway is still blocked on the port
+          ansible.builtin.include_tasks: probe.yml
+          tags: [probe]
+          vars: {probe: "{{ item }}"}
+          loop:
+            - {from: nested-gateway, port: "{{ c.port }}", expect: blocked}
+      rescue:
+        - name: Record the failed check of conflict
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'conflict': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- case: failure code (missing Node, no terminal: firewall.node_id_invalid) ----
+    - name: failure-code
+      block:
+        - name: Nothing was requested and UFW did not change
+          ansible.builtin.assert:
+            that:
+              - ops_before.failure_code == ops_after.failure_code
+              - ufw_before.failure_code == ufw_after.failure_code
+            quiet: true
+      rescue:
+        - name: Record the failed check of failure-code
+          ansible.builtin.set_fact:
+            failures: "{{ failures | default({}) | combine({'failure_code': (ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))))}) }}"
+
+    # ---- the verdicts, one line a case; the play fails when any case failed ----
+    - name: Verdict of each case
+      ansible.builtin.debug:
+        msg: "{{ item }}: {{ 'failed | ' ~ failures[item] if item in (failures | default({})) else 'passed' }} (command {{ ((act[item].secs.split(':')[0] | int * 3600) + (act[item].secs.split(':')[1] | int * 60) + (act[item].secs.split(':')[2] | float)) | round(1) }} s)"
+      loop: "{{ case_names }}"
+
+    - name: Fail when a case failed
+      ansible.builtin.assert:
+        that: failures | default({}) | length == 0
+        fail_msg: "{{ failures | default({}) | to_nice_json }}"
+        quiet: true
