@@ -143,7 +143,7 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.options.useTLS' => $connection->scheme === 'https',
             'broadcasting.connections.reverb.client_options.handler' => new CurlHandler(['handle_factory' => self::$caFactory ??= new OrbitCaCurlFactory]),
             'broadcasting.connections.reverb.client_options.verify' => $connection->caCertificatePath,
-            // A broadcast runs inside the request that changed the record, so a stuck server must not hold it.
+            // A stuck server must not hold the job or the PHP worker that sends the broadcast.
             // The old server of a `websocket` move gets a much shorter limit, so it never slows the serving one.
             'broadcasting.connections.reverb.client_options.connect_timeout' => $oldServer ? self::OldServerConnectSeconds : 2,
             'broadcasting.connections.reverb.client_options.timeout' => $oldServer ? self::OldServerRequestSeconds : 5,
