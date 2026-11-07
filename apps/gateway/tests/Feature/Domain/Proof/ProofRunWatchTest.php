@@ -7,6 +7,9 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofKeptVms;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCancelProjection;
+use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmCapacity;
@@ -346,5 +349,69 @@ describe('the keep of a failed run', function (): void {
         $vm->update(['state' => TaskVmState::Destroyed]);
 
         expect($free())->toBe(6)->and(app(ProofKeptVms::class)->releaseAll())->toBe(0);
+    });
+});
+
+describe('the released marker of a kept VM', function (): void {
+    beforeEach(fn () => Carbon::setTestNow('2026-11-07 10:00:00'));
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('marks the kept VM of a group as released, with the time and the operation of the cancel, on the run and on the result of its proof', function (): void {
+        $proof = watchProof(watchNode(), 900);
+        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        [$other] = watchKept($proof, '2026-11-07T11:00:00Z', command: 'firewall:list');
+        $proof->forceFill(['status' => OperationStatus::Failed, 'result' => ['commit' => WATCH_SHA, 'kept' => [
+            ['command' => 'firewall:allow', 'vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z'],
+            ['command' => 'firewall:list', 'vm' => 'tvm-601', 'group_id' => $other->target_id, 'keep_until' => '2026-11-07T11:00:00Z']]]])->save();
+        $cancel = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'input' => [], 'state' => [],
+            'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+
+        app(ProofKeptVms::class)->released($cancel, $group->id);
+
+        $mark = ['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $cancel->id];
+        expect($run->refresh()->result['kept'])->toMatchArray($mark)->and($other->refresh()->result['kept'])->not->toHaveKey('released_at')
+            ->and($proof->refresh()->result['kept'][0])->toMatchArray($mark)->and($proof->result['kept'][1])->not->toHaveKey('released_at');
+    });
+
+    it('marks the release once, and leaves a group that kept nothing alone', function (): void {
+        $proof = watchProof(watchNode(), 900);
+        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        $first = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'input' => [], 'state' => [],
+            'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+        $second = $first->replicate();
+        $second->save();
+
+        app(ProofKeptVms::class)->released($first, $group->id);
+        Carbon::setTestNow('2026-11-07 10:30:00');
+        app(ProofKeptVms::class)->released($second, $group->id);
+        app(ProofKeptVms::class)->released($first, $group->id + 999);
+
+        expect($run->refresh()->result['kept'])->toMatchArray(['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $first->id]);
+    });
+
+    it('marks the release when the cancel of the group completes, as the projection of tasks.cancel settles it', function (): void {
+        $proof = watchProof(watchNode(), 900);
+        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        $cancel = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'],
+            'input' => ['instance_id' => 7], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
+        // The cleanup that the cancel captured is not the subject here: the group ends, and the projection must then say that the kept VM is released.
+        app()->instance(TaskGroupEnding::class, new class
+        {
+            public function settle(Task $group, array $captured, string $kind): void
+            {
+                $group->update(['status' => TaskGroupStatus::Cancelled]);
+            }
+        });
+        app()->instance(TaskCancelIntent::class, new class
+        {
+            public function input(Operation $operation): array
+            {
+                return $operation->input;
+            }
+        });
+
+        app(TaskCancelProjection::class)->apply($cancel, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['group_id' => $group->id, 'instance_id' => 7, 'cleanup_complete' => true]]);
+
+        expect($run->refresh()->result['kept'])->toMatchArray(['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $cancel->id]);
     });
 });

@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofKeptVms;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
@@ -48,6 +49,8 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                     throw new ResourceOperationException('operation.invalid_result', 'Cancellation requires its exact complete cleanup receipt.', 422);
                 }
                 app(TaskGroupEnding::class)->settle($group, $operation->input, $operation->kind);
+                // A VM that a failed proof run kept (--keep-failed) is released now: the kept list says so.
+                app(ProofKeptVms::class)->released($operation, $group->id);
             } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                 $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }

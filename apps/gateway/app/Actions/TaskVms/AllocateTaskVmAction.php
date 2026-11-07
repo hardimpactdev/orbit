@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmFleetSeed;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSeedFloor;
@@ -17,6 +18,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\UpCloudServers;
+use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -132,7 +134,7 @@ final readonly class AllocateTaskVmAction
                     // The seed follows the image the VM boots from, so a host with room is skipped when that image's seed holds no copies.
                     if ($needsFleet && $free[$host->nodeId] >= $size->slots() && ! $this->seeds->usable($host->nodeId, $build->id)) {
                         unset($free[$host->nodeId]);
-                        $unseeded[] = $node->name;
+                        $unseeded[$host->nodeId] = $node->name;
 
                         continue;
                     }
@@ -153,8 +155,8 @@ final readonly class AllocateTaskVmAction
                 }
                 if ($unseeded !== []) {
                     throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::noCapacityFor($size, $reserveSlots)
-                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'. Refresh their task image.'
-                        .(app(TaskVmSeedFloor::class)->active() ? ' A proof needs copies that include every change of the playbooks, pins and lock files up to the merge base of its commit.' : ''));
+                        .' Hosts with room but no usable nested fleet seed are skipped: '.implode(', ', $unseeded).'.'
+                        .(app(TaskVmSeedFloor::class)->active() ? $this->staleCopies($unseeded) : ' Refresh their task image.'));
                 }
                 throw $exception;
             }
@@ -170,5 +172,23 @@ final readonly class AllocateTaskVmAction
 
             return $vm;
         });
+    }
+
+    /**
+     * What a proof needs to be told about the hosts that its copies rule out: the copies it needs, why each host lacks them, and whether a refresh of
+     * that host is running, so that the caller knows when to run the proof again. A refusal starts no refresh.
+     *
+     * @param  array<int,string>  $unseeded  host Node id => name
+     */
+    private function staleCopies(array $unseeded): string
+    {
+        $text = ' A proof needs copies that include every change of the playbooks, pins and lock files up to the merge base of its commit.';
+        foreach ($unseeded as $id => $name) {
+            $refresh = TaskVmImageRefreshIntent::open($id);
+            $text .= " {$name}: ".(app(TaskVmSeedFloor::class)->reason($id) ?? 'no refresh has saved usable ready copies for it').'; '
+                .($refresh instanceof Operation ? "a refresh is running (operation {$refresh->id}), run the proof again when it ends." : 'no refresh is running; a release that changes the playbooks, pins or lock files starts one.');
+        }
+
+        return $text;
     }
 }

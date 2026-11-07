@@ -135,7 +135,10 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         // `--keep-failed`: the VM of a run that failed stays until the time shown, and then the Gateway destroys it.
         foreach (self::entries($result['kept'] ?? null) as $kept) {
             $group = $kept['group_id'] ?? null;
-            $this->writeHumanMessage('Kept VM: '.self::text($kept['vm'] ?? null).' of '.self::text($kept['command'] ?? null).', group '.(is_int($group) ? $group : '?').', destroyed after '.self::text($kept['keep_until'] ?? null));
+            $released = self::text($kept['released_at'] ?? null);
+            $by = $kept['released_by'] ?? null;
+            $this->writeHumanMessage('Kept VM: '.self::text($kept['vm'] ?? null).' of '.self::text($kept['command'] ?? null).', group '.(is_int($group) ? $group : '?').', '
+                .($released !== '' ? 'released at '.$released.(is_int($by) ? ' (operation '.$by.')' : '') : 'destroyed after '.self::text($kept['keep_until'] ?? null)));
         }
 
         foreach (['vm' => 'VM', 'receipt_url' => 'Receipt'] as $field => $label) {
