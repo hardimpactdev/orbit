@@ -139,7 +139,7 @@ def table_rows(text):
         if TABLE_BOTTOM in line:
             break
         if '│' in line:
-            rows.append([cell.strip() for cell in line.strip().strip('│').split('│')])
+            rows.append([cell.strip(' ┃') for cell in line.strip().strip('│').split('│')])   # a long table keeps its scrollbar in the last cell
     return rows
 
 
@@ -148,17 +148,20 @@ def choose_row(session, label, deadline):
     session.mark = len(session.text)
     session.send(label.encode())
     # The table is drawn again after the typed text: the search line shows the label, or the rows say that nothing matched.
-    frame = session.wait_for(lambda fresh: (fresh[fresh.rfind(TABLE_TOP):] if re.search(r'│\s+/\s+' + re.escape(label), fresh[fresh.rfind(TABLE_TOP):]) else None), deadline,
-                             f'the table filtered by {label!r}')
-    rows = table_rows(frame)
+    def filtered(fresh):
+        frame = fresh[fresh.rfind(TABLE_TOP):]
+        return frame if TABLE_BOTTOM in frame and re.search(r'│\s+/\s+' + re.escape(label), frame) else None
+
+    rows = table_rows(session.wait_for(filtered, deadline, f'the table filtered by {label!r}'))
     position = next((number for number, cells in enumerate(rows) if label in cells), None)
     if position is None:
-        raise TerminalError(f'no option {label!r} in {[cells for cells in rows]}')
+        raise TerminalError(f'no option {label!r} in {rows}')
     for _ in range(position):
         session.mark = len(session.text)
         session.send(DOWN)
         session.wait_for(lambda fresh: True if fresh else None, deadline, 'the table to move')
     session.send(b'\r')
+
 
 def drive(argv, script, env, seconds=120, cwd='/'):
     """Run `argv` in a terminal and play `script`. Returns `{rc, text}`; the text has no escape codes."""

@@ -163,6 +163,10 @@ class TerminalTest(unittest.TestCase):
         text = ' ┌ Node ┐\n │ / Search │\n ├──┬──┤\n │ ID │ Name │\n ├──┼──┤\n │ 1 │ old │\n └──┴──┘\n ┌ Node ┐\n │ / ap │\n ├──┬──┤\n │ ID │ Name │\n ├──┼──┤\n │ 2 │ app-dev │\n └──┴──┘\n'
         self.assertEqual(terminal.table_rows(text), [['2', 'app-dev']])
 
+    def test_a_long_table_keeps_its_scrollbar_out_of_the_cells(self):
+        text = ' ┌ Node ┐\n │ / Search │\n ├──┬──┤\n │ ID │ Name │\n ├──┼──┤\n │ 1 │ app-dev ┃\n │ 2 │ app-prod │\n └──┴──┘\n'
+        self.assertEqual(terminal.table_rows(text), [['1', 'app-dev'], ['2', 'app-prod']])
+
     def test_plain_removes_escape_codes_and_returns(self):
         self.assertEqual(terminal.plain('\x1b[36mred\x1b[0m\r\n'), 'red\n')
 

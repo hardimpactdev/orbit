@@ -215,8 +215,8 @@ class NodeCliTest(unittest.TestCase):
                 return completed(1, '', 'it failed')
             if argv[:4] == ['incus', 'config', 'device', 'get']:
                 return completed(0 if mounted else 1, str(fleet_module.CHECKOUT) + '\n' if mounted else '')
-            if 'gateway:list' in argv:
-                return completed(0 if profile else 1, '{"gateways": [{"name": "nested"}]}' if profile else '')
+            if argv[-3:-1] == ['-q', '"nested"']:   # the check of the profile: grep in config.json
+                return completed(0 if profile else 1)
             return completed(0, '{"nodes": []}')
         return run
 

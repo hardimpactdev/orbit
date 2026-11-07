@@ -83,8 +83,8 @@ class Fleet:
         mounted = subprocess.run(['incus', 'config', 'device', 'get', guest, 'checkout', 'source'], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         if mounted.returncode != 0 or mounted.stdout.strip() != str(CHECKOUT):
             self.must(['incus', 'config', 'device', 'add', guest, 'checkout', 'disk', f'source={CHECKOUT}', f'path={NODE_CHECKOUT}', 'shift=true'], f'{node}: cannot mount the tested checkout')
-        listed = self.incus_exec(node, [*NODE_ORBIT, 'gateway:list', '--json'])
-        if listed.returncode == 0 and f'"{PROFILE}"' in listed.stdout:
+        # The CLI keeps its profiles in config.json under the home it is given; the call reads the file, which a restore of `base` may have taken away.
+        if self.incus_exec(node, ['grep', '-q', f'"{PROFILE}"', NODE_HOME + '/.orbit/config.json']).returncode == 0:
             return
         self.must(['incus', 'exec', guest, '--user', NODE_USER, '--', 'install', '-d', '-m', '0700', NODE_HOME + '/.orbit'], f'{node}: cannot make the CLI home')
         self.must(['incus', 'file', 'push', OUTER_CA, f'{guest}{NESTED_CA}', '--uid', NODE_USER, '--gid', NODE_USER, '--mode', '0644'],
