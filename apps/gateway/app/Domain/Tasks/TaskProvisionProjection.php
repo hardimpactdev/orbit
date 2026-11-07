@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 /** State projection only: the claim of a slot (docs/cli/tasks/provision.mmd). Swamp owns the start, the fetch, the containers and readiness. */
 final readonly class TaskProvisionProjection implements DirectOperationProjection
 {
-    /** The end check of a claim: one exec checks the agent, Pi, the tunnel and the nested Gateway. */
+    /** The end check of a task start: what a task needs, the agent, Pi, the tunnel and the three containers running. */
     public const string EndCheck = 'Check ready';
 
     /** @return array<string,mixed> */

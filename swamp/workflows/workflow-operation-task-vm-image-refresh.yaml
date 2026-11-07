@@ -18,9 +18,11 @@ inputs:
       properties:
         host: {type: object}
         converge: {type: object}
+        # Whether the converge needs the Pi server: only when the base's recipe is older than the release's.
+        with_pi: {type: boolean}
         # The task start that proves the candidate with a free slot identity, and its release: their intents and vault key names.
         prove: {type: object}
-      required: [host, converge, prove]
+      required: [host, converge, with_pi, prove]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -63,7 +65,7 @@ jobs:
         intent: ${{ inputs.intent.converge }}
         guest: ${{ inputs.intent.host.base.vm }}
         tags: software,tools,boot,checkout,fleet,check
-        with_pi: true
+        with_pi: ${{ inputs.intent.with_pi }}
   - name: Stop and snapshot
     labels: {role: swamp}
     writes: true

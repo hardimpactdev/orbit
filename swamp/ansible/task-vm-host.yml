@@ -3,7 +3,7 @@
 # its ZFS snapshot is the base a task start copies (docs/cli/tasks/vm-image-refresh.mmd):
 # - `base-start`: start the base VM; a host without one gets it once, from its recipe image and that image's seed.
 # - `base-snapshot`: stop the base VM and snapshot it and its seed volume under the run's name.
-# - `base-prune`: keep the newest two snapshots of each, the new one and `-previous`; remove older ones.
+# - `base-prune`: keep the new snapshot and the recorded one, which becomes `-previous`; remove the others.
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
 # A task start and a release (docs/cli/tasks/provision.mmd, docs/cli/tasks/cancel.mmd):
 # - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), start the copy, write the slot identity and the
@@ -53,6 +53,12 @@
         - name: Make the base VM from the recipe image
           when: base_read.stdout | from_json | length == 0
           block:
+            # A creation that failed half way leaves the seed; the VM does not exist, so its seed is not in use.
+            - name: Remove the seed a failed creation left
+              ansible.builtin.command: { argv: "{{ incus + ['storage', 'volume', 'delete', host.pool, base.seed] }}" }
+              register: base_seed_delete
+              changed_when: base_seed_delete.rc == 0
+              failed_when: base_seed_delete.rc != 0 and 'not found' not in base_seed_delete.stderr
             - name: Clone the seed of the recipe image
               ansible.builtin.command:
                 argv: "{{ seed_lock + incus + ['storage', 'volume', 'copy', '--', host.pool ~ '/' ~ host.seed_prefix ~ host.image[:12],
@@ -65,11 +71,12 @@
                        '--', host.image, base.vm] }}"
                 stdin: "{{ base.launch_config }}"
               changed_when: true
-            # The disk name is the one the nested Incus database of the image knows its seed pool by.
-            - name: Attach the seed
-              ansible.builtin.command:
-                argv: "{{ incus + ['config', 'device', 'add', base.vm, 'topology-seed', 'disk', 'pool=' ~ host.pool, 'source=' ~ base.seed] }}"
-              changed_when: true
+        # The disk name is the one the nested Incus database of the image knows its seed pool by. A creation that stopped before it adds it now.
+        - name: Attach the seed
+          when: "'topology-seed' not in ((base_read.stdout | from_json | first | default({})).devices | default({}))"
+          ansible.builtin.command:
+            argv: "{{ incus + ['config', 'device', 'add', base.vm, 'topology-seed', 'disk', 'pool=' ~ host.pool, 'source=' ~ base.seed] }}"
+          changed_when: true
         - name: Start the base VM
           when: (base_read.stdout | from_json | map(attribute='status') | first | default('Stopped')) != 'Running'
           ansible.builtin.command: { argv: "{{ incus + ['start', '--', base.vm] }}" }
@@ -117,15 +124,15 @@
             - [storage, volume, snapshot, list, --format, json, "{{ host.pool }}", "{{ base.seed }}"]
           register: base_snapshots
           changed_when: false
-        # The newest two stay: the new base and `-previous`. A task VM copied from an older one keeps its own clone.
-        - name: Remove the older snapshots
+        # The new base and the recorded one, which becomes `-previous`, stay. A task VM copied from an older one keeps its own clone.
+        - name: Remove the other snapshots
           ansible.builtin.command: { argv: "{{ incus + command }}" }
           loop: >-
-            {{ (base_snapshots.results[0].stdout | from_json | sort(attribute='created_at') | map(attribute='name') | list)[:-2]
-               | map('regex_replace', '^', 'vm:') | list
-               + (base_snapshots.results[1].stdout | from_json | sort(attribute='created_at') | map(attribute='name') | map('regex_replace', '^.*/', '')
-               | list)[:-2] | map('regex_replace', '^', 'seed:') | list }}
+            {{ (base_snapshots.results[0].stdout | from_json | map(attribute='name') | reject('in', keep) | map('regex_replace', '^', 'vm:') | list)
+               + (base_snapshots.results[1].stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | reject('in', keep)
+               | map('regex_replace', '^', 'seed:') | list) }}
           vars:
+            keep: "{{ [host.snapshot, host.current] | select | list }}"
             command: "{{ ['snapshot', 'delete', base.vm, item[3:]] if item is match('vm:') else
                         ['storage', 'volume', 'snapshot', 'delete', host.pool, base.seed, item[5:]] }}"
           changed_when: true

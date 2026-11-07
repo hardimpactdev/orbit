@@ -65,12 +65,10 @@ final readonly class TaskVmImageRefreshProjection implements DirectOperationProj
     }
 
     /**
-     * The promoted image as the host's latest build. Its recipe identity is the one of the release the run converged to, so a claim finds
-     * it as the current image.
+     * The promoted snapshot as the host's latest build. Its recipe identity is the one of the release the run converged to.
      *
      * @return array<string,mixed>
      */
-    /** @return array<string,mixed> the promoted snapshot, now the host's latest build */
     private function record(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input);

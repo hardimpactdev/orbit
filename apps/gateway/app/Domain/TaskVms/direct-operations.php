@@ -72,7 +72,7 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-image-refresh',
     'projection' => TaskVmImageRefreshProjection::class,
     'workflow_inputs' => true,
-    // No result step: the projector reads the promotion's status and the aliases it printed.
+    // No result step: the projector reads the prune's status and promotes the snapshot the run took.
     'terminal_result' => ['job' => 'refresh', 'step' => TaskVmImageRefreshProjection::EndCheck, 'native' => true],
     // The proof Swamp Club key, which the nested Gateway's Swamp runs with while the refresh converges it, and what the task start that
     // proves the candidate writes.

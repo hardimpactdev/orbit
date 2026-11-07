@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Admits the refresh of one task VM host's image (docs/cli/tasks/vm-image-refresh.mmd) as one run on the host: one VM from the
- * current image, the converge of a task start, then the image and its seed are published, proven with one task start from a free slot
- * identity, and promoted. The intent holds everything the run needs; no step calls the Gateway.
+ * Admits the refresh of one task VM host's base (docs/cli/tasks/vm-image-refresh.mmd) as one run on the host: the host's base VM starts,
+ * converges as a task start would, stops and is snapshotted; the snapshot is proven with one task start from a free slot identity, and the
+ * projection promotes it. The intent holds everything the run needs; no step calls the Gateway.
  */
 final readonly class TaskVmImageRefreshIntent
 {
@@ -98,7 +98,7 @@ final readonly class TaskVmImageRefreshIntent
         $slot = TaskVmSlotPool::slots($host->id)->whereNull('group_id')->where('state', TaskVmState::Parked)->orderBy('slot_number')->lockForUpdate()->first()
             ?? throw new ResourceOperationException('task_vm.image_refresh_unavailable', 'A refresh proves its candidate with a free slot identity; none is free.', 409);
         $slot->update(['state' => TaskVmState::Provisioning]);
-        // The run's snapshot: named when it is admitted, so that a rerun finds it and a discard removes it.
+        // The run's snapshot, named at admission: the run takes it, and a discard after a failure removes it.
         $snapshot = 'r'.now()->utc()->format('YmdHis');
         $start = $this->runs->claim($slot, null, $commit, $snapshot);
 
@@ -113,6 +113,8 @@ final readonly class TaskVmImageRefreshIntent
                         'memory' => $large->memory, 'disk' => $location->disk, 'launch_config' => TaskVmLaunchConfig::for($identity['public_key']),
                         'club_key' => self::ClubKey]],
                 'converge' => $converge['converge'],
+                // The Pi server is fetched only when the base's recipe is older than the release's, or a recipe image becomes the base VM.
+                'with_pi' => $base['snapshot'] === null || $base['recipe_identity'] !== $converge['recipe_identity'],
                 'prove' => ['start' => $start, 'release' => $this->runs->release($slot)],
             ],
             'execution_secrets' => ['club' => $this->shared->executionCopy('orbit-control-inputs', 'swamp-proof-club-api-key', $club)],
