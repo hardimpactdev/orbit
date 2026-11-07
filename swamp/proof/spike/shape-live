@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Live measurement of the shape spike (draft PR #3134), run in a task VM with `tasks:script`.
+# Throwaway: it exists so that the spike's playbooks run in the VM from a tracked script. Delete it with the spike.
+#
+#   shape-live env               what the VM has: tools, the nested fleet, the checkout
+#   shape-live apply REF         put the files that origin/REF changed since main over the workspace (REF comes from tasks:sync)
+#   shape-live unit              run the two Molecule `unit` scenarios and time them
+#
+# The program reads and writes only the workspace, /tmp and its own Python venv. It prints no secret.
+set -euo pipefail
+
+step=${1:-}
+tools=/tmp/shape-live
+gate=$(find /opt/orbit-shape-gate -maxdepth 1 -type d -name 'venv-*' 2>/dev/null | head -1 || true)
+
+now() { date +%s.%N; }
+took() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.1f s", b - a }'; }
+
+case "$step" in
+env)
+    echo "== who and where"
+    date -u +%FT%TZ
+    whoami
+    uname -srm
+    git rev-parse --short HEAD
+    git branch --show-current || true
+    echo "== remote refs"
+    git for-each-ref --format='%(refname:short) %(objectname:short)' refs/remotes | head -10
+    echo "== tools"
+    for tool in php deno python3 pip3 incus ansible-playbook molecule uuidgen; do
+        printf '%s: ' "$tool"
+        command -v "$tool" || echo "missing"
+    done
+    echo "gate venv: ${gate:-none}"
+    if [ -n "$gate" ]; then
+        "$gate/bin/ansible-playbook" --version | head -1
+        "$gate/bin/ansible-lint" --version 2>/dev/null | head -1 || true
+        find /opt/orbit-shape-gate -maxdepth 1 | head
+    fi
+    echo "== nested fleet"
+    if command -v incus >/dev/null; then
+        incus list --format csv -c ns4 2>&1 | head -12 || true
+    fi
+    echo "== CLI profile"
+    # Names only: the profile file holds credentials, so it is never printed.
+    php apps/cli/orbit gateway:list --json 2>&1 | head -c 600 || true
+    echo
+    php apps/cli/orbit node:list --json 2>&1 | head -c 1500 || true
+    echo
+    ;;
+apply)
+    ref=${2:?usage: shape-live apply REF}
+    git rev-parse --verify -q "origin/$ref^{commit}" >/dev/null || {
+        echo "origin/$ref is missing: run tasks:sync first" >&2
+        exit 2
+    }
+    base=$(git merge-base origin/main "origin/$ref")
+    mapfile -t paths < <(git diff --name-only "$base" "origin/$ref")
+    echo "base $(git rev-parse --short "$base"), ${#paths[@]} files from origin/$ref"
+    git checkout "origin/$ref" -- "${paths[@]}"
+    git status --short | wc -l
+    ;;
+unit)
+    started=$(now)
+    mkdir -p "$tools"
+    if [ ! -x "$tools/venv/bin/molecule" ]; then
+        python3 -m venv "$tools/venv"
+        "$tools/venv/bin/pip" install -q --disable-pip-version-check -r swamp/ansible/requirements.txt molecule
+        echo "installed molecule in $(took "$started")"
+    fi
+    export PATH="$tools/venv/bin:$PATH" ANSIBLE_COLLECTIONS_PATH="$tools/collections"
+    if [ ! -d "$tools/collections/ansible_collections" ]; then
+        ansible-galaxy collection install -r swamp/ansible/requirements.yml -p "$tools/collections" >/dev/null
+        echo "installed collections in $(took "$started")"
+    fi
+    for scenario in firewall-allow instance-destroy; do
+        run=$(now)
+        (cd "swamp/proof/molecule/$scenario" && molecule test -s unit 2>&1 | grep -E "ok=|failed=|SCENARIO|unit  ")
+        echo "unit $scenario: $(took "$run")"
+    done
+    ;;
+*)
+    echo "usage: shape-live env | apply REF | unit" >&2
+    exit 64
+    ;;
+esac
