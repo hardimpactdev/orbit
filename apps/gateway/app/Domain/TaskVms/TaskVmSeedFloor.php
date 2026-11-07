@@ -19,19 +19,30 @@ final class TaskVmSeedFloor
     /** @var list<int>|null */
     private ?array $hosts = null;
 
+    /** @var array<int,string> */
+    private array $reasons = [];
+
     /**
      * @param  list<int>  $hostNodeIds  the hosts whose copies are fresh enough
+     * @param  array<int,string>  $reasons  host Node id => why its copies are not, for the refusal
      * @param  Closure(): mixed  $admit
      */
-    public function during(array $hostNodeIds, Closure $admit): mixed
+    public function during(array $hostNodeIds, array $reasons, Closure $admit): mixed
     {
-        $previous = $this->hosts;
+        [$previousHosts, $previousReasons] = [$this->hosts, $this->reasons];
         $this->hosts = $hostNodeIds;
+        $this->reasons = $reasons;
         try {
             return $admit();
         } finally {
-            $this->hosts = $previous;
+            [$this->hosts, $this->reasons] = [$previousHosts, $previousReasons];
         }
+    }
+
+    /** Why the copies of the host are not fresh enough for the proof that is admitted, or null when nothing is known. */
+    public function reason(int $hostNodeId): ?string
+    {
+        return $this->reasons[$hostNodeId] ?? null;
     }
 
     public function active(): bool

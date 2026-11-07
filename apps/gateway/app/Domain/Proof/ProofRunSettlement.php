@@ -60,7 +60,7 @@ final readonly class ProofRunSettlement
                 $interrupted = $interrupted || $child->error_code === self::AdmissionInterrupted || ($child->error_code === 'operation.timed_out' && ! isset($child->state['swamp_run_id']));
                 $childInput = ValidatedData::object($child->input);
                 if (is_array($child->result['kept'] ?? null)) {
-                    $kept[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['kept']), ['vm' => 0, 'group_id' => 0, 'keep_until' => 0])];
+                    $kept[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['kept']), ['vm' => 0, 'group_id' => 0, 'keep_until' => 0, 'released_at' => 0, 'released_by' => 0])];
                 }
                 // A run that ended with no record of its cases, such as one the Gateway timed out, is one unrun row.
                 $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];

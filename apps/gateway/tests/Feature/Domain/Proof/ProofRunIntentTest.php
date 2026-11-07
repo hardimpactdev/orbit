@@ -514,6 +514,29 @@ describe('proof:run admission', function (): void {
         Queue::assertNotPushed(CancelProofGroup::class);
     });
 
+    it('tells the caller what a refused proof waits for: the change the copies lack, and whether a refresh of the host is running', function (bool $running): void {
+        $source = proofSource();
+        $copies = 'aaaaaaaaaaaa0000000000000000000000000000';
+        $base = proofHostWithCopies($source, $copies);
+        $source->ranges[$copies] = new ProofCommitRange(GitHubComparisonStatus::Ahead, new ProofChangedFiles(str_repeat('f', 40), [new ProofChangedFile('swamp/ansible/task-vm-role.yml', 'modified')], true));
+        $refresh = $running ? Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_group', 'target_id' => 2, 'node_id' => Node::query()->firstOrFail()->id, 'status' => OperationStatus::Running,
+            'input' => ['refresh' => ['host_node_id' => Node::query()->firstOrFail()->id]], 'triggered_by' => 'test']) : null;
+
+        $proof = proofAdmitted();
+
+        Process::run(['rm', '-rf', $base]);
+        $detail = proofFailureDetail($proof) ?? '';
+        expect($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($detail)->toContain('beast: its ready copies come from release aaaaaaaaaaaa and lack a change of swamp/ansible/task-vm-role.yml; ')
+            ->and($detail)->not->toContain('Refresh their task image');
+        if ($refresh !== null) {
+            expect($detail)->toContain("a refresh is running (operation {$refresh->id}), run the proof again when it ends.");
+        } else {
+            expect($detail)->toContain('no refresh is running; a release that changes the playbooks, pins or lock files starts one.');
+        }
+        // A refusal starts no refresh.
+        expect(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe($running ? 2 : 1);
+    })->with(['a refresh is running' => true, 'no refresh is running' => false]);
     it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');

@@ -72,4 +72,38 @@ final readonly class ProofKeptVms
 
         return $leaving;
     }
+
+    /**
+     * Marks the kept VM of a group as released when the cancel of the group ended with its cleanup complete: `released_at` and `released_by`
+     * (the operation of the cancel) on the kept record of the run and on the entry in the result of its proof. The cancel may have come from
+     * the expiry, from the release for a waiting proof, or from a person. Call it in the transaction that settles the cancel.
+     */
+    public function released(Operation $cancel, int $groupId): void
+    {
+        $mark = ['released_at' => now()->utc()->format(ProofRunWatch::Time), 'released_by' => $cancel->id];
+        $runs = Operation::query()->where('kind', ProofGroup::OwnerKind)->where('target_type', 'task_group')->where('target_id', $groupId)->whereNotNull('result->kept')->lockForUpdate()->get();
+        foreach ($runs as $run) {
+            $kept = ValidatedData::object($run->result['kept'] ?? []);
+            if (isset($kept['released_at'])) {
+                continue;
+            }
+            $this->store->change($run, ['result' => [...ValidatedData::object($run->result), 'kept' => [...$kept, ...$mark]]]);
+            $this->markProof($run, $groupId, $mark);
+        }
+    }
+
+    /**
+     * @param  array{released_at:string,released_by:int}  $mark
+     */
+    private function markProof(Operation $run, int $groupId, array $mark): void
+    {
+        $proofId = $run->input['proof_operation_id'] ?? null;
+        $proof = is_int($proofId) ? Operation::query()->lockForUpdate()->find($proofId) : null;
+        $list = $proof instanceof Operation && is_array($proof->result['kept'] ?? null) ? $proof->result['kept'] : null;
+        if ($list === null) {
+            return;
+        }
+        $marked = array_map(static fn (mixed $entry): mixed => is_array($entry) && ($entry['group_id'] ?? null) === $groupId && ! isset($entry['released_at']) ? [...$entry, ...$mark] : $entry, $list);
+        $this->store->change($proof, ['result' => [...ValidatedData::object($proof->result), 'kept' => $marked]]);
+    }
 }

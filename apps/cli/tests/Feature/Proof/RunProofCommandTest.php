@@ -179,6 +179,15 @@ describe('proof:run', function (): void {
         expect(Artisan::output())->toContain('Kept VM: tvm-600 of firewall:allow, group 3832, destroyed after 2026-11-07T11:00:00Z');
     });
 
+    it('prints a kept VM as released, with the time and the operation, once its group was cancelled', function (): void {
+        $failed = proof_run_operation('failed');
+        $kept = ['command' => 'firewall:allow', 'vm' => 'tvm-853', 'group_id' => 3905, 'keep_until' => '2026-11-07T11:00:00Z', 'released_at' => '2026-11-07T10:05:00Z', 'released_by' => 12632];
+        proof_run_gateway([[...$failed, 'result' => [...$failed['result'], 'kept' => [$kept]]]]);
+
+        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--no-interaction' => true]);
+
+        expect(Artisan::output())->toContain('Kept VM: tvm-853 of firewall:allow, group 3905, released at 2026-11-07T10:05:00Z (operation 12632)')->not->toContain('destroyed after');
+    });
     it('sends the given idempotency key unchanged', function (): void {
         $mock = proof_run_gateway([proof_run_operation('passed')]);
 
