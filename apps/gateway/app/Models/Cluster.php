@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  * @property string $name
  * @property string|null $tld
  * @property ClusterState $state
- * @property array<string, array{at: int, values: array{tld?: ?string, state?: string, router_node_id?: ?int}}>|null $dns_pending
+ * @property array<string, mixed>|null $dns_pending Per source: `{at: timestamp, values: {tld?, state?, router_node_id?}}`.
  * @property-read Collection<int, Node> $nodes
  * @property-read NodeRole|null $routerAssignment
  * @property-read NodeRole|null $ingressAssignment
@@ -102,14 +102,26 @@ final class Cluster extends Model
      */
     public function pendingDns(): array
     {
-        $holds = array_filter(is_array($this->dns_pending) ? $this->dns_pending : [],
+        $holds = array_filter($this->dns_pending ?? [],
             static fn (mixed $hold): bool => is_array($hold) && is_int($hold['at'] ?? null) && is_array($hold['values'] ?? null)
                 && $hold['at'] >= now()->subHour()->getTimestamp());
         uasort($holds, static fn (array $a, array $b): int => $a['at'] <=> $b['at']);
         $pending = [];
 
         foreach ($holds as $hold) {
-            $pending = [...$pending, ...$hold['values']];
+            $values = $hold['values'];
+
+            if (array_key_exists('tld', $values)) {
+                $pending['tld'] = is_string($values['tld']) ? $values['tld'] : null;
+            }
+
+            if (is_string($values['state'] ?? null)) {
+                $pending['state'] = $values['state'];
+            }
+
+            if (array_key_exists('router_node_id', $values)) {
+                $pending['router_node_id'] = is_int($values['router_node_id']) ? $values['router_node_id'] : null;
+            }
         }
 
         return $pending;
