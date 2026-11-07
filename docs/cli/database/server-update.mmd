@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2, R4, flow-tighten rule 22 and Q-DBAUTH (one valkey-cli call per step, AUTH as the first stdin line from the vault; no rollback). docs/reference/database-servers.md#close-an-adopted-server.
   %% status: draft
-  %% command: database:server:close
+  %% command: database:server:update
   %% kind: database_server.close
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
@@ -12,12 +12,13 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: database:server:close<br/>beast-valkey
+  CLI->>GW: database:server:update<br/>--require-password
   %%> Command:
-  %%> - `orbit database:server:close beast-valkey`
-  %%> - syntax: `<slug> [--idempotency-key=KEY] [--json]`
+  %%> - `orbit database:server:update beast-valkey --require-password`
+  %%> - syntax: `<slug> --require-password [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the slug of an adopted Valkey server
+  %%> - `--require-password` is required; missing or false input is refused
   Note over GW: Validate, write two inputs<br/>task #5170 · vault
   %%> Requirements:
   %%> - the server is an active Valkey server

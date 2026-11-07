@@ -15,9 +15,9 @@ use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
-use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\UpdateDatabaseServerRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
@@ -50,7 +50,7 @@ it('follows database Operations and forwards the start key without reading a del
 })->with([
     'connection-update' => ['database:update', ['slug' => 'throwaway', '--host' => '192.0.2.80'], UpdateDatabaseConnectionRequest::class],
     'server-create' => ['database:server:create', ['slug' => 'dev-db', '--node' => '7'], CreateDatabaseServerRequest::class],
-    'server-close' => ['database:server:close', ['slug' => 'dev-db'], CloseDatabaseServerRequest::class],
+    'server-update' => ['database:server:update', ['slug' => 'dev-db', '--require-password' => true], UpdateDatabaseServerRequest::class],
     'server-destroy' => ['database:server:destroy', ['slug' => 'dev-db', '--force' => true], DestroyDatabaseServerRequest::class],
     'create' => ['database:create', ['slug' => 'throwaway', '--server' => 'dev-db'], CreateDatabaseConnectionRequest::class],
     'user-create' => ['database:user:create', ['slug' => 'throwaway', '--username' => 'reader'], CreateDatabaseUserRequest::class],
