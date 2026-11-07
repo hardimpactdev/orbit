@@ -49,6 +49,9 @@
     content: |
       #!/bin/sh
       set -eu
+      # A VM applies its identity once; a parked VM that starts again keeps what it has.
+      applied=/var/lib/orbit/identity-applied
+      [ -e "$applied" ] && exit 0
       mounts=/run/incus_agent/agent-mounts.json
       for i in $(seq 300); do [ -e "$mounts" ] && break; sleep 0.1; done
       grep -q '"/run/orbit-identity"' "$mounts" 2>/dev/null || exit 0
@@ -70,6 +73,7 @@
       systemctl daemon-reload
       # They are ordered after this unit, so they start when it ends.
       systemctl --no-block enable --now wg-quick@orbit.service orbit-agent.service "$ORBIT_PI_UNIT"
+      install -D -m 0644 /dev/null "$applied"
 - name: Install the identity unit
   ansible.builtin.copy:
     dest: /etc/systemd/system/orbit-identity.service
@@ -77,16 +81,23 @@
     content: |
       [Unit]
       Description=Apply the task VM identity of its start
-      After=local-fs.target ufw.service
-      Before=ssh.socket ssh.service wg-quick@orbit.service orbit-agent.service
+      # Early boot: before ssh.socket, which sockets.target and basic.target need, so no default dependency on basic.target.
+      DefaultDependencies=no
+      After=sysinit.target local-fs.target ufw.service incus-agent.service
+      Before=ssh.socket ssh.service wg-quick@orbit.service orbit-agent.service shutdown.target
+      Conflicts=shutdown.target
 
       [Service]
       Type=oneshot
       ExecStart=/usr/local/sbin/orbit-identity
-      TimeoutStartSec=60
+      TimeoutStartSec=90
 
       [Install]
       WantedBy=multi-user.target
+# An ordering cycle would make systemd drop a unit at boot without a word; the refresh fails here instead.
+- name: Check the identity unit
+  ansible.builtin.command: { argv: [systemd-analyze, verify, /etc/systemd/system/orbit-identity.service] }
+  changed_when: false
 - name: Run the identity unit at every boot
   ansible.builtin.systemd: { name: orbit-identity.service, enabled: true, daemon_reload: true }
 - name: Read the units again

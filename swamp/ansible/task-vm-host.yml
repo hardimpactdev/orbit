@@ -177,7 +177,6 @@
   gather_facts: false
   vars:
     incus: [incus, --project, "{{ host.project }}"]
-    in_vm: "{{ incus + ['exec', slot.name, '--'] }}"
   tasks:
     # The identity is on the VM's disk before it boots: a small volume of its own holds the files, and the base's orbit-identity unit
     # applies them before sshd, WireGuard and the agent start (docs/cli/tasks/provision.mmd). The start waits for nothing in the guest.
