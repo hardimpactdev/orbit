@@ -1,0 +1,38 @@
+sequenceDiagram
+  %% Target design (Nick 2026-11-07): a release stops the slot and rolls it back to its `clean` snapshot. The identity stays. There are no record deletes, no DNS withdrawal, no Metrics membership and no hub peer removal. Enrol: docs/cli/tasks/vm-slot-enrol.mmd; claim: docs/cli/tasks/provision.mmd.
+  %% status: draft
+  %% command: none · the end of a task group
+  %% kind: task_vm.slot_release
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Incus over ssh
+  Note over GW: Release the slot<br/>the group ends
+  %%> Started by:
+  %%> - `tasks:cancel` and `tasks:complete`, as the last child of their run, after approved work is pushed
+  %%> - a failed claim
+  %%> Result:
+  %%> - the intent holds the slot name and its seed clone name
+  GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
+  SW->>H: Stop the slot<br/>incus stop --force
+  %%> What it does:
+  %%> - stops `shark-tvm-3`; a stopped slot counts as done
+  SW->>H: Roll back to clean<br/>VM and seed clone
+  %%> What it does:
+  %%> - restores the `clean` snapshot of the VM and of its seed clone; the task's checkout, containers and files are gone
+  %%> Not included:
+  %%> - the Node, the WireGuard peer, the identity volume, the agent secret, the Pi token and the model key stay as they are
+  alt the run passes
+    SW-->>GW: Run succeeded<br/>slot clean
+    Note over GW: Record the slot free
+    %%> Result:
+    %%> - the group lets go of the slot; the slot is `free`
+    %%> - when the slot's image is not the host's promoted image, the Gateway admits its re-enrol (docs/cli/tasks/vm-slot-enrol.mmd)
+  else a step failed
+    SW--xGW: Run failed<br/>failed step
+    %%> On failure:
+    %%> - the slot is `failed` and no claim takes it; a new release or a re-enrol repairs it
+  end

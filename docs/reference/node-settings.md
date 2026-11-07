@@ -106,11 +106,11 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
-| `slots` | No | `null` | Ready slots the host keeps: `{"count": 5, "project_id": 46, "size": "large"}` (chart `docs/cli/tasks/vm-slots.mmd`) |
+| `slots` | No | `null` | Fixed slots the host keeps, `<node>-tvm-1` to `<node>-tvm-<count>`: `{"count": 5, "project_id": 46, "size": "large"}` (chart `docs/cli/tasks/vm-slot-enrol.mmd`) |
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-With `slots`, the host keeps `count` stopped task VMs of `size`, enrolled for the Project `project_id`, ready for a provision of that Project and size. A stopped slot takes no `max_vms` capacity.
+With `slots`, the host keeps `count` fixed slots of `size` for the Project `project_id`, named `<node>-tvm-1` to `<node>-tvm-<count>`. Each slot is a permanent Node with an identity written once at enrol. A claim starts a free slot; the end of its group stops it and rolls it back to `clean`. A stopped slot takes no `max_vms` capacity.
 
 Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 

@@ -1,7 +1,5 @@
 sequenceDiagram
-  %% Decided by the orchestrator, for Nick's review (2026-11-06): only the Route-publish step of this run holds the Route-serving Nodes, for its seconds, through the Gateway's `route-hold` call; the rest of the run is not held (docs/reference/routes.md#coordinate-publication).
-  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, Nick 2026-11-06: the push step mints its token when it runs, and a task VM never holds a GitHub credential.
-  %% Tightened: flow-tighten 2026-11-02, rules 16, 20 (no power read first: each guest step carries a guard on the VM's power, and the delete is safe to repeat).
+  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, Nick 2026-11-06: the push step mints its token when it runs, and a task VM never holds a GitHub credential. Nick 2026-11-07: the task VM is a fixed slot; the end of a group releases it (docs/cli/tasks/vm-slot-release.mmd), with no record deletes, no Route or DNS withdrawal and no hub peer removal.
   %% status: draft
   %% command: tasks:cancel
   %% kind: tasks.cancel
@@ -9,13 +7,11 @@ sequenceDiagram
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=target tone=amber
-  %% lane H icon=server pill=target tone=purple
+  %% lane VM icon=server pill=slot tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant VM as Task VM<br/>tvm-88 over ssh
-  participant H as Incus host<br/>Node 14 · VM power
+  participant VM as Slot<br/>shark-tvm-3
   CLI->>GW: tasks:cancel 42
   %%> Command:
   %%> - `orbit tasks:cancel 42 --yes`
@@ -23,7 +19,7 @@ sequenceDiagram
   %%> Input:
   %%> - the task group id; omitting it uses the standard selector
   %%> Confirmation:
-  %%> - without `--yes`, the CLI first asks to cancel group 42 and remove its task VM; the default is No
+  %%> - without `--yes`, the CLI first asks to cancel group 42 and release its slot; the default is No
   %%> Also:
   %%> - `tasks:complete 42` admits the same ending when its pull request merged or closed; the group then ends `completed`
   %%> Who can call it:
@@ -34,19 +30,19 @@ sequenceDiagram
   %%> - group 42 is not `completed`, and not `settling` with a pull request (complete it instead)
   %%> - no other ending task holds `task_group:42`
   %%> Result:
-  %%> - task #5141 recorded with the full intent: VM 88, Node 14, the workspace, its Route, the teardown steps and the last approved commit
+  %%> - task #5141 recorded with the full intent: the slot `shark-tvm-3`, its host and the last approved commit
   %%> - a group with no workspace ends `cancelled` at once, with no run (R1)
   GW->>SW: Cancel the group run<br/>native cancel · task #5140
   %%> What it does:
   %%> - cancels the group's root task; Swamp cancels its running Pi turn or check and tears down their SSH sessions
   %%> Busy:
   %%> - the Gateway waits briefly for the terminal event within the budget; a run that does not end returns `operation.target_busy`, and nothing changes
-  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): this request changes nothing itself, but a provision run it cancelled stays cancelled; when that provision ends, the Gateway admits this ending itself, unless one was admitted since, so the VM it was creating is destroyed (docs/cli/tasks/provision.mmd)
+  %%> - Decided by the orchestrator, for Nick's review (2026-11-06): this request changes nothing itself, but a provision run it cancelled stays cancelled; when that provision ends, the Gateway admits this ending itself, unless one was admitted since, so the slot it was claiming is released (docs/cli/tasks/provision.mmd)
   GW->>SW: Start run, full intent<br/>operation-task-cancel
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - VM 88, Node 14, the checkout path and its SSH host key; the SSH identity comes from the `swamp` role
+  %%> - the slot, its host and the checkout path; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5141
   %%> What you get:
   %%> - the task number and a compact input summary; the full execution plan stays in the Gateway
@@ -59,67 +55,32 @@ sequenceDiagram
     %%> - admission names the vault key of the push token; the push step asks the Gateway for the token (`operation:direct:github-token`) right before the push, and the VM never holds it
     %%> - uncommitted changes are never pushed
     %%> If it fails:
-    %%> - the run stops before any removal, so the work stays in the VM
+    %%> - the run stops before any removal, so the work stays on the slot
     %%> Guard:
-    %%> - runs only while VM 88 runs; guest steps never run on a stopped VM, so no power read runs first
+    %%> - runs only while the slot runs
   end
-  SW->>GW: Hold the Route Nodes<br/>operation:direct:route-hold
+  SW->>SW: Release the slot<br/>workflow · task-vm-slot-release
   %%> What it does:
-  %%> - asks the Gateway for the hold of each Node that serves the Route's site, for the seconds of this step only, not the whole operation
-  %%> - the Gateway reads the Nodes from the admitted intent; the call carries the run ID
-  %%> - a Node that another Route write holds is waited for, up to 5 s per call and 2 minutes in all; then the step fails with `route_hold.busy` and the Route step does not run
-  %%> - the hold has a 5-minute lease and ends with the Operation, so a lost run cannot keep a Node
-  Note over SW: Withdraw the Route<br/>@swamp/ssh · only this workspace
-  %%> When:
-  %%> - only when one Route targets this workspace alone; a shared or foreign Route refuses the end
-  %%> What it does:
-  %%> - removes the Route's Caddy site on its Node before the VM goes
-  SW->>GW: Release the Route Nodes<br/>operation:direct:route-release
-  %%> What it does:
-  %%> - gives the Nodes back as soon as the Route step ends, whatever its result; the Route writes that wait for them then start
-  %%> - runs beside the next step, so it adds no time
-  opt VM still running
-    SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
-    %%> When:
-    %%> - a `guard` on the provider's power state: only while VM 88 runs; a stopped VM skips guest teardown
-    %%> How:
-    %%> - each command writes its output to a file on the VM; `output_copy` downloads them and `output` keeps a redacted 4 KiB tail of each, so raw output never reaches native history
-  end
-  SW->>H: Destroy the task VM<br/>delete VM · revoke model key
-  %%> What it does:
-  %%> - deletes VM 88 and revokes its model key
-  %%> Per provider:
-  %%> - Incus: `incus delete` on Node 14 over SSH
-  %%> - UpCloud overflow: the UpCloud API from 209
-  %%> Guard:
-  %%> - skipped when the task has no VM, or when the Route is not withdrawn; the check below then reads the VM as not destroyed and the run fails
-  SW->>H: Check the VM is gone<br/>provider absence
-  %%> Why:
-  %%> - the VM only counts as removed when the provider no longer has it
+  %%> - stops the slot and rolls it back to its `clean` snapshot (docs/cli/tasks/vm-slot-release.mmd)
+  %%> - the slot keeps its Node, WireGuard peer, identity, Pi token and model key; nothing is deleted or withdrawn
+  %%> Not included:
+  %%> - no Project teardown and no Route withdrawal: the claim ran no setup steps and published no Route, and the rollback removes the task's files
   alt every step passes
-    H-->>SW: VM 88 absent
-    %%> Returns:
-    %%> - the check passed
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result<br/>group 42 cancelled · VM 88 gone
+    Note over GW: Record result<br/>group 42 cancelled · slot free
     %%> Result:
     %%> - group 42 and its open subtasks are `cancelled`; comments, threads and transcripts stay as history
-    %%> - the workspace Instance, its Route record, VM 88 and the `tvm-88` Node record are removed
+    %%> - the slot is `free`; its Node and workspace Instance stay
     %%> - task #5141 succeeds
   else a step fails
-    H--xSW: exit ≠ 0 or VM still there
-    %%> When:
-    %%> - the push, Route withdrawal, teardown or deletion fails
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
     Note over GW: Keep the records<br/>group asks for help · rerun cancel
     %%> Result:
-    %%> - task #5141 fails; group 42 keeps its status, its workspace and VM 88, and asks for `removal_failure` assistance
-    %%> On the Node:
-    %%> - steps done before the failure stay; there is no rollback
+    %%> - task #5141 fails; group 42 keeps its status and its slot, and asks for `removal_failure` assistance
     %%> Retry:
     %%> - run `tasks:cancel 42` again after fixing the cause; it is a new task, and done steps find nothing left to do
   end
