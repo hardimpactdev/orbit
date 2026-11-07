@@ -74,12 +74,21 @@ final readonly class StartSwampRun
         $byId = [];
         $failures = [];
         $outcomes = [];
-        $finish = static function (Operation $operation, string $outcome) use (&$outcomes, $started): void {
+        $runs = [];
+        $finish = static function (Operation $operation, string $outcome) use (&$outcomes, &$runs, $started): void {
             $outcomes[$operation->id] = $outcome;
-            Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)]);
+            $runs[$operation->id] = ['outcome' => $outcome, 'duration_ms' => (int) round((microtime(true) - $started) * 1000)];
+            Log::info('Swamp direct start', ['operation_id' => $operation->id, ...$runs[$operation->id]]);
         };
+        // Ends one run and never throws: when the Gateway cannot record the end, the run still has its failure here, so the caller sees it and
+        // the other runs go on. The 600 s admission limit ends a run whose record could not be written.
         $fail = function (Operation $operation, Throwable $exception, bool $accepted) use (&$failures, $finish): void {
-            $failure = $this->failStart($operation, $exception, $accepted);
+            try {
+                $failure = $this->failStart($operation, $exception, $accepted);
+            } catch (Throwable $unrecorded) {
+                report($unrecorded);
+                $failure = $this->startFailure($operation, $this->safeStart($exception, $accepted));
+            }
             $failures[$operation->id] = $failure;
             $finish($operation, $failure->errorCode);
         };
@@ -133,16 +142,11 @@ final readonly class StartSwampRun
             if (isset($outcomes[$id])) {
                 continue;
             }
-            try {
-                $fail($operation, $this->uncertain(), true);
-            } catch (Throwable $exception) {
-                // Failing one run must not leave the others without their sweep.
-                report($exception);
-            }
+            $fail($operation, $this->uncertain(), true);
         }
-        Log::info('Swamp direct start batch', ['count' => count($operations), 'sent' => count($payloads),
+        Log::info('Swamp direct start batch', ['count' => count($operations), 'requests' => count($payloads),
             'started' => count(array_filter($outcomes, static fn (string $outcome): bool => $outcome === 'started')),
-            'duration_ms' => (int) round((microtime(true) - $started) * 1000)]);
+            'duration_ms' => (int) round((microtime(true) - $started) * 1000), 'runs' => $runs]);
         foreach ($operations as $operation) {
             if (isset($failures[$operation->id])) {
                 throw $failures[$operation->id];
@@ -177,11 +181,22 @@ final readonly class StartSwampRun
     /** Ends the run that failed to start and returns the error that `start()` throws for it. */
     private function failStart(Operation $operation, Throwable $exception, bool $accepted): ResourceOperationException
     {
-        $safe = $exception instanceof ResourceOperationException
-            ? $exception : ($accepted ? $this->uncertain()
-                : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
+        $safe = $this->safeStart($exception, $accepted);
         $this->fail($operation, $safe->errorCode);
 
+        return $this->startFailure($operation, $safe);
+    }
+
+    /** What a caller may be told about a start that failed: a raw exception is never passed on. */
+    private function safeStart(Throwable $exception, bool $accepted): ResourceOperationException
+    {
+        return $exception instanceof ResourceOperationException
+            ? $exception : ($accepted ? $this->uncertain()
+                : new ResourceOperationException('swamp.start_unavailable', 'The native workflow start is unavailable.', 503));
+    }
+
+    private function startFailure(Operation $operation, ResourceOperationException $safe): ResourceOperationException
+    {
         return new ResourceOperationException($safe->errorCode, $safe->getMessage(), $safe->status, details: ['operation_id' => $operation->id]);
     }
 

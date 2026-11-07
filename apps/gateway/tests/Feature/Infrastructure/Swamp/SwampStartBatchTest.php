@@ -34,6 +34,9 @@ function batchSwamp(array $script, bool $failSendForB = false, bool $failConnect
 
         public bool $open = true;
 
+        /** Seconds that each write takes on the fake clock. */
+        public float $sendCost = 0.0;
+
         /** @var array<string, array{at:float, message:array<string,mixed>}> */
         private array $due = [];
 
@@ -58,6 +61,7 @@ function batchSwamp(array $script, bool $failSendForB = false, bool $failConnect
             if ($entry !== null && $entry['reply'] !== null) {
                 $this->due[$message['id']] = ['at' => $this->time + $entry['after'], 'message' => ['id' => $message['id'], ...$entry['reply']]];
             }
+            $this->time += $this->sendCost;
         }
 
         public function receive(float $timeoutSeconds): array
@@ -428,7 +432,7 @@ it('makes a run that was never sent unavailable, not uncertain, when the exchang
     expect($results['a'])->toBeInstanceOf(ResourceOperationException::class)->and($results['a']->errorCode)->toBe('swamp.start_unavailable')->and($socket->log)->toBe([]);
 });
 
-it('starts the other runs and throws nothing raw when the Gateway cannot record the outcome of one run', function (): void {
+it('starts the other runs and tells the caller, with no raw exception, when the Gateway cannot record the outcome of one run', function (): void {
     [$a, $b] = [batchOperation(), batchOperation()];
     $socket = batchSwamp([(string) $a->id => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_A, 'operation-task-pr-merge')],
         (string) $b->id => ['after' => 2.0, 'reply' => batchStarted(BATCH_RUN_B, 'operation-task-pr-merge')]]);
@@ -440,8 +444,74 @@ it('starts the other runs and throws nothing raw when the Gateway cannot record 
         }
     });
 
-    app(StartSwampRun::class)->startMany([$a, $b]);
+    $code = batchThrown(fn () => app(StartSwampRun::class)->startMany([$a, $b]));
 
-    expect($b->refresh()->state['swamp_run_id'])->toBe(BATCH_RUN_B)->and($b->status)->toBe(OperationStatus::Running)
+    // The first run could not be bound, so it may exist in Swamp: uncertain, and the caller is told, as `start()` would tell it.
+    expect($code)->toBe('swamp.start_uncertain')->and($b->refresh()->state['swamp_run_id'])->toBe(BATCH_RUN_B)->and($b->status)->toBe(OperationStatus::Running)
         ->and($a->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('fails the other runs even when the Gateway cannot record the failure of one', function (): void {
+    [$a, $b] = [batchOperation(), batchOperation()];
+    $socket = batchSwamp([]);
+    batchUse($socket);
+    config(['swamp.address' => '']);
+    Operation::saving(static function (Operation $operation) use ($a): void {
+        if ($operation->id === $a->id && $operation->isDirty('error_code')) {
+            throw new RuntimeException('The write failed.');
+        }
+    });
+
+    $code = batchThrown(fn () => app(StartSwampRun::class)->startMany([$a, $b]));
+
+    expect($code)->toBe('swamp.start_unavailable')->and($b->refresh()->status)->toBe(OperationStatus::Failed)->and($b->error_code)->toBe('swamp.start_unavailable')
+        ->and($a->refresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('counts the confirmation of each run from its own send', function (): void {
+    // The write of one request takes 100 s, so the second is sent at 1100. The first never answers: its 120 s ends at 1120, not at the end of the sends.
+    $socket = batchSwamp(['a' => ['after' => 0.0, 'reply' => null], 'b' => ['after' => 110.0, 'reply' => batchStarted(BATCH_RUN_B)]]);
+    $socket->sendCost = 100.0;
+
+    $results = batchRun($socket, ['a' => batchPayload('a'), 'b' => batchPayload('b')]);
+
+    expect($results['a'])->toBeInstanceOf(ResourceOperationException::class)->and($results['a']->errorCode)->toBe('swamp.start_uncertain')
+        ->and($results['b'])->toEqual(new SwampStartReply(BATCH_RUN_B, false))->and($socket->time)->toBeLessThan(1300.0);
+});
+
+it('ignores a reply for an unknown request and a second reply for a request it has settled', function (): void {
+    $socket = batchSwamp(['a' => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_A)], 'b' => ['after' => 1.0, 'reply' => batchStarted(BATCH_RUN_B)]]);
+    $client = new class($socket) implements WebSocketClient
+    {
+        public function __construct(private object $inner) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->inner->send($message);
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $messages = $this->inner->receive($timeoutSeconds);
+
+            return [...$messages, ...$messages, ['id' => 'unknown', ...batchStarted(BATCH_RUN_C)]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return $this->inner->open;
+        }
+    };
+    $taken = [];
+
+    $results = batchRun($socket, ['a' => batchPayload('a'), 'b' => batchPayload('b')], $client, static function (string $key) use (&$taken): void {
+        $taken[] = $key;
+    });
+
+    expect($taken)->toBe(['a', 'b'])->and(array_keys($results))->toBe(['a', 'b'])
+        ->and($results['a'])->toEqual(new SwampStartReply(BATCH_RUN_A, false))->and($results['b'])->toEqual(new SwampStartReply(BATCH_RUN_B, false));
 });
