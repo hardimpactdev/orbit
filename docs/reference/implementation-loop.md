@@ -112,9 +112,14 @@ After native validation resolves the pinned extensions, the job runs `swamp/test
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants.
 
-Operation Deno unit tests and the shape gate run on every CI change. Operation unit tests run in one job with four Deno workers. Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Baseline and ratchet checks stay serial, and every failure remains in the final result. Keeping one job avoids five separate waits for the shared runner pool.
+Swamp check selection follows their inputs. Shape policy changes select the shape gate; baseline and analyser inputs also select the Operation tests that read them. Ansible changes also select Operation tests that read the playbooks. Workflows, grants, extension sources and shared runtime pins select shape, native validation and Operation tests. Swamp prose and skills select Docs only; shared CI or unclassified tooling changes keep the broad check set. New application, package or top-level source roots fail planning until their checks are declared.
 
-Workflow validation runs only when the change selects the Swamp checks, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
+Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Baseline and ratchet checks stay serial, and every failure remains in the final result.
+
+
+Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.
+
+Workflow validation runs only when the change selects its workflow, grant, extension or runtime inputs, and validates every workflow on the nightly schedule. It needs the Swamp account secrets. GitHub gives Dependabot pull requests no Actions secrets, so a dependency update outside `swamp/` does not wait on them.
 
 Required checks target five minutes. Project checks are removed from CI for now; Nick decides which checks return. Their local commands remain available. Orbit keeps fast TypeScript unit tests and no native workflow suite or custom runtime harness. Workflow validation and pinned `serve check-config` remain required. No nightly workflow replaces removed checks.
 
@@ -130,9 +135,12 @@ Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective toke
 
 CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, which checks out one script from the base branch and passes only a commit SHA to Orbit ([the proof CI](/reference/feature-flow#the-proof-ci)). The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules.
+Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy.
+
+The three Swamp subjobs read their own selections; their aggregate remains the one Swamp dependency of `Required checks`. Known documentation, contract-generation and proof tools select only their consumers. The planner fixture job always runs. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 On agent source, Cargo or test changes, CI runs `cargo check --locked --all-targets` and `scripts/check-crates test --locked`, including composed extension crates, within a 15-minute job budget. On Pi source changes, CI runs its check, tests and build within an eight-minute job budget. Shared CI changes select both jobs too. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 

@@ -48,12 +48,12 @@ class ScopeActionTest(unittest.TestCase):
         self.git('add', '.')
         self.git('commit', '-m', message)
 
-    def scope(self, base, *, history=False, root=None, enabled=True):
+    def scope(self, base, *, history=False, root=None, enabled=True, job="swamp"):
         root = root or self.root
         output = root / '.git/scope-output'
         output.write_text('')
         result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', COMMAND], cwd=root,
-            env=dict(os.environ, SCOPE_JOB='swamp', SCOPE_ENABLED=str(enabled).lower(),
+            env=dict(os.environ, SCOPE_JOB=job, SCOPE_ENABLED=str(enabled).lower(),
                 SWAMP_BASE=str(history).lower(), BASE=base, EVENT_SHA='HEAD', MAIN='false',
                 GITHUB_OUTPUT=str(output)), capture_output=True, text=True, timeout=60, check=False)
         values = dict(line.split('=', 1) for line in output.read_text().splitlines())
@@ -90,6 +90,21 @@ class ScopeActionTest(unittest.TestCase):
         self.commit('Swamp tip')
         self.assertEqual(self.scope(self.imported)[1]['selected'], 'true')
         self.assertEqual(self.scope(gateway)[1]['selected'], 'true')
+
+    def test_swamp_subjobs_use_the_same_plan_and_unknown_roots_fail_the_action(self):
+        (self.root / 'swamp/ansible').mkdir()
+        (self.root / 'swamp/ansible/task-vm-runtime.yml').write_text('---\n')
+        self.commit('Ansible only')
+        self.assertEqual(self.scope(self.imported, job='swamp-shape')[1]['selected'], 'true')
+        self.assertEqual(self.scope(self.imported, job='swamp-tests')[1]['selected'], 'true')
+        self.assertEqual(self.scope(self.imported, job='swamp-validate')[1]['selected'], 'false')
+        (self.root / 'apps/new').mkdir()
+        (self.root / 'apps/new/source.ts').write_text('export {};\n')
+        self.commit('Unknown source root')
+        done, values = self.scope(self.imported)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertNotIn('selected', values)
+        self.assertIn('Unknown CI source root', done.stderr)
 
     def test_bad_comparison_fails_and_zero_event_base_uses_parent(self):
         result, _ = self.scope('f' * 40)

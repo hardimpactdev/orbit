@@ -73,6 +73,51 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual(set(), self.selected(['']))
         self.assertEqual({'web'}, self.selected([], main=True))
 
+    def test_prose_and_known_tooling_do_not_select_unrelated_apps(self):
+        for path in ('.agents/skills/example/SKILL.md', '.agents/skills/example/scripts/check.py',
+                     'swamp/docs/swamp-shape.md', 'swamp/extensions/behaviors/operations/README.md', 'bin/docs-flows'):
+            with self.subTest(path=path):
+                self.assertEqual({'docs'}, self.selected([path]))
+                self.assertEqual({'docs', 'web'}, self.selected([path], True))
+        self.assertEqual({'proof'}, self.selected(['tools/swamp-proof-guest/terminal.py']))
+        self.assertEqual({'api-reference', 'web'}, self.selected(['bin/build-api']))
+        self.assertEqual({'docs', 'api-reference', 'web'}, self.selected(['bin/docs-navigation']))
+        self.assertEqual(set(), self.selected(['tools/test_ci_build_plan.py']))
+
+    def test_unknown_source_roots_fail_closed_even_for_docs_under_new_apps(self):
+        for path in ('apps/new/src/main.ts', 'packages/new/src/lib.rs', 'apps/new/README.md',
+                     'new-source/main.py', 'new-tool.py'):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'Unknown CI source root'):
+                plan.select([path])
+        # Desktop's paused coverage is explicit, rather than an unrecognised app silently omitted.
+        self.assertNotIn('project-check', plan.select(['apps/desktop/src/main.ts'])['jobs'])
+
+    def test_swamp_checks_follow_their_inputs(self):
+        cases = {
+            'swamp/docs/swamp-shape.md': set(),
+            'swamp/config/swamp-shape-baseline.json': {'shape', 'tests'},
+            'swamp/bin/bounded-phase-scripts.ts': {'shape', 'tests'},
+            'swamp/bin/workflow-placement.ts': {'shape', 'tests'},
+            'swamp/bin/swamp-shape-relocations.ts': {'shape', 'tests'},
+            'swamp/ansible/task-vm-runtime.yml': {'shape', 'tests'},
+            'swamp/workflows/workflow-operation-firewall-direct.yaml': {'shape', 'validate', 'tests'},
+            'swamp/config/serve-grants.json': {'shape', 'validate', 'tests'},
+            'swamp/extensions/behaviors/node-worker/config.ts': {'shape', 'validate', 'tests'},
+            'swamp/extensions/behaviors/_lib/public_output.ts': {'shape', 'validate', 'tests'},
+            'swamp/deno.lock': {'shape', 'validate', 'tests'},
+            'swamp/bin/check-swamp-base-policy.py': {'shape'},
+            'swamp/bin/validate-swamp-workflows.py': {'shape', 'validate'},
+            'swamp/proof/runner/steps.py': {'shape'},
+            'bin/swamp-shape-gate': {'shape', 'validate'},
+            'apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php': {'shape', 'validate', 'tests'},
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                result = plan.select([path])
+                checks = {name for name, value in result['swamp_checks'].items() if value}
+                self.assertEqual(expected, checks)
+                self.assertEqual(bool(expected), result['jobs']['swamp'])
+
     def test_shared_ci_changes_run_all_builds(self):
         self.assertEqual(set(plan.JOBS), self.selected(['.github/workflows/ci.yml']))
         self.assertEqual(set(plan.JOBS), self.selected(['bin/ci-build-plan']))
@@ -165,7 +210,7 @@ class BuildPlanTest(unittest.TestCase):
         self.assertFalse(self.proof_run(['swamp/proof/firewall/x.md'], SELECTION))
 
     def test_an_unmapped_path_starts_the_job_so_the_gateway_refuses_it(self):
-        self.assertTrue(self.proof_run(['newdir/file.txt'], SELECTION))
+        self.assertTrue(plan.proof_run(['newdir/file.txt'], SELECTION))
 
     def test_no_change_or_no_list_decides_as_the_gateway_does(self):
         self.assertFalse(self.proof_run([''], SELECTION))
