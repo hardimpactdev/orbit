@@ -414,21 +414,25 @@ pub struct Logs {
 }
 
 pub fn logs(input: &LogsInput) -> Result<Logs, ScheduleError> {
+    logs_with(Path::new(crate::logs::journalctl::JOURNALCTL), input)
+}
+
+fn logs_with(program: &Path, input: &LogsInput) -> Result<Logs, ScheduleError> {
     let paths = paths(&input.id)?;
     if !(1..=1000).contains(&input.lines) {
         return Err(failed("logs-validation"));
     }
-    let output = Process::new("journalctl")
+    let output = Process::new(program)
         .args([
             "--unit",
             &paths.service_unit,
             "--lines",
             &input.lines.to_string(),
             "--no-pager",
-            "--output",
-            "cat",
+            "--quiet",
             "--reverse",
         ])
+        .args(crate::logs::journalctl::TEXT_FORMAT)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Schedules\ScheduleLogsData;
 use App\Domain\AgentView\AgentNodeView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
@@ -13,6 +14,7 @@ use App\Domain\Logs\LogStreamBroadcast;
 use App\Domain\Logs\LogStreamRecordType;
 use App\Domain\Logs\LogStreamSource;
 use App\Domain\Logs\LogStreamStore;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Infrastructure\Logs\CacheLogStreamStore;
@@ -20,6 +22,7 @@ use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -98,4 +101,26 @@ it('redacts the owning Instance environment from Schedule output', function (): 
     $schedule->setRelation('target', $instance);
     $redactor = app(LogRedactor::class);
     expect($redactor->redact('output schedule-secret-sentinel', $redactor->valuesFor($schedule)))->toBe('output [REDACTED]');
+});
+
+it('redacts unlabeled stored Instance values from the snapshot used during polling fallback', function (): void {
+    $project = Project::query()->create([
+        'name' => 'Schedule logs', 'slug' => 'schedule-logs',
+        'repository_url' => 'https://github.com/example/schedule-logs.git',
+    ]);
+    $instance = Instance::withoutEvents(fn (): Instance => Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $this->node->id,
+        'name' => 'schedule-logs', 'checkout_path' => '/srv/schedule-logs', 'status' => 'active',
+    ]));
+    $instance->environmentValues()->create(['env_key' => 'CUSTOM_VALUE', 'env_value' => 'synthetic-schedule-value']);
+    $this->schedule->update(['target_type' => Instance::class, 'target_id' => $instance->id]);
+    $this->mock(ScheduleRuntimeManager::class)->shouldReceive('logs')->once()
+        ->withArgs(fn (Schedule $schedule, int $lines): bool => $schedule->id === $this->schedule->id && $lines === 2)
+        ->andReturn(new ScheduleLogsData("worker printed synthetic-schedule-value\nnormal output\n", true));
+
+    $this->getJson('/api/v1/schedules/'.$this->schedule->id.'/logs?lines=2')
+        ->assertOk()
+        ->assertJsonPath('data.output', "worker printed [REDACTED]\nnormal output\n")
+        ->assertJsonPath('data.truncated', true)
+        ->assertDontSee('synthetic-schedule-value');
 });

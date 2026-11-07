@@ -19,6 +19,7 @@ use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
@@ -1059,4 +1060,62 @@ it('follows Schedule journal logs through a viewer lease and closes it on interr
         ->and(log_follow_sent($mock, CreateLogStreamRequest::class)[0]->getUrl())->toBe('https://10.44.0.1/api/v1/schedules/'.$id.'/log-streams')
         ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->not->toBeEmpty()
         ->and(log_follow_sent($mock, DestroyLogStreamRequest::class))->toHaveCount(1);
+});
+
+it('prints each Schedule journal line once across live polling and live recovery', function (): void {
+    log_follow_profile();
+    $id = '123e4567-e89b-42d3-a456-426614174000';
+    $first = '2026-09-25T10:15:02+00:00 host job[1]: first';
+    $polled = '2026-09-25T10:15:03+00:00 host job[1]: printed [REDACTED]';
+    $resumed = '2026-09-25T10:15:04+00:00 host job[1]: resumed';
+    $transport = log_follow_transport(log_follow_handshake('1.1', log_follow_stream_id('a')));
+    $creates = 0;
+    $renewals = 0;
+    $mock = MockClient::global([
+        CreateLogStreamRequest::class => function () use (&$creates): MockResponse {
+            return MockResponse::make(log_follow_stream_envelope(++$creates === 1 ? 'a' : 'b'), 201);
+        },
+        RenewLogStreamRequest::class => function () use (&$renewals, $transport, $first, $polled, $resumed): MockResponse {
+            if (++$renewals === 1) {
+                $transport->enqueue([
+                    log_follow_lines('a', 1, [$first]),
+                    log_follow_ended('a', 'agent_left'),
+                ]);
+            } else {
+                $transport->enqueue([
+                    log_follow_lines('b', 1, [$first, $polled, $resumed]),
+                    log_follow_ended('b', 'closed'),
+                ]);
+            }
+
+            return log_follow_renewed($renewals === 1 ? 'a' : 'b');
+        },
+        DestroyLogStreamRequest::class => log_follow_stream_mocks('a')[DestroyLogStreamRequest::class],
+        ScheduleLogsRequest::class => MockResponse::make([
+            'data' => ['id' => $id, 'name' => 'cleanup', 'lines' => 1000, 'output' => "$first\n$polled\n", 'truncated' => false],
+            'meta' => ['request_id' => log_follow_request_id()],
+        ]),
+    ]);
+    $queued = false;
+    $start = $this->clock->now();
+    $this->clock->onTick(function (float $now) use ($start, &$queued, $transport): void {
+        if (! $queued && $now - $start >= 30.0) {
+            $queued = true;
+            $transport->enqueue(log_follow_handshake('2.2', log_follow_stream_id('b')));
+        }
+        if ($now - $start >= 40.0) {
+            InterruptIntent::record(SIGINT);
+        }
+    });
+
+    expect(Artisan::call('schedule:logs', ['schedule' => $id, '--follow' => true, '--json' => true]))->toBe(0)
+        ->and(log_follow_json_lines(Artisan::output()))->toBe([
+            ['type' => 'lines', 'lines' => [$first], 'dropped' => 0, 'skipped' => 0],
+            ['type' => 'notice', 'code' => 'logs.live_unavailable', 'reason' => 'agent_left'],
+            ['type' => 'lines', 'lines' => [str_replace('[REDACTED]', '[redacted]', $polled)], 'dropped' => 0, 'skipped' => 0],
+            ['type' => 'lines', 'lines' => [$resumed], 'dropped' => 0, 'skipped' => 0],
+        ])
+        ->and(log_follow_sent($mock, ScheduleLogsRequest::class))->not->toBeEmpty()
+        ->and(log_follow_sent($mock, CreateLogStreamRequest::class))->toHaveCount(2)
+        ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->toHaveCount(2);
 });

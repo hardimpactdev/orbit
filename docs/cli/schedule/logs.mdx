@@ -15,7 +15,7 @@ orbit schedule:logs <schedule> [--lines=COUNT] [--follow] [--json]
 
 Without `--follow`, Orbit returns a bounded snapshot of the service journal. `--follow` opens a viewer lease and subscribes to the private log channel. The Node agent reads the Schedule journal. Orbit renews the lease while the command runs and closes it on Ctrl-C. The same line limits, redaction, reconnect handling, and loss markers apply as for [Process logs](/cli/process/logs).
 
-When the live path is unavailable, the shared follower uses bounded reads until streaming is available again. It does not poll while a stream runs. See [Live logs](/reference/live-logs).
+When the live path is unavailable, the shared follower uses bounded reads until streaming is available again. Both paths use UTC journal timestamps and redact the owning Instance's stored environment values. It does not poll while a stream runs. See [Live logs](/reference/live-logs).
 
 ## How it works
 
