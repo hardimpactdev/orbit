@@ -51,7 +51,7 @@ sequenceDiagram
   Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
   %%> What it does:
   %%> - the load child: checkout, grants the new release rendered, serve reload
-  SW->>GN: Admit the task VM refreshes<br/>artisan · new release
+  SW->>GN: Admit VM refreshes<br/>artisan · new release
   %%> What it does:
   %%> - runs `task-vms:refresh-images --commit <sha>` from the new release: one `task_vm.image_refresh` run per task VM host, admitted by the new commit's code, started on the workflows the load installed, and running while the release goes on to switch (docs/cli/tasks/vm-image-refresh.mmd)
   %%> - every release refreshes, code-only ones too: the base holds the warm checkout and the nested Gateway agent of the commit

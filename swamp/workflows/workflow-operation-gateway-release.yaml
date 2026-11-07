@@ -211,7 +211,7 @@ jobs:
     # Serve now holds the new commit's workflows and playbooks, so the refresh of every task VM host starts on them while the release goes on
     # to switch. The release's own artisan admits the runs, so each intent holds the new commit's recipe, pins and checkout. Best effort: the
     # release never fails for it (docs/cli/tasks/vm-image-refresh.mmd).
-  - name: Admit the task VM refreshes
+  - name: Admit VM refreshes
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Load Swamp on Node 209, condition: {type: succeeded}}]
@@ -233,7 +233,7 @@ jobs:
     writes: true
     dependsOn:
     - {step: Load Swamp on Node 209, condition: {type: succeeded}}
-    - {step: Admit the task VM refreshes, condition: {type: always}}
+    - {step: Admit VM refreshes, condition: {type: always}}
     task:
       type: workflow
       workflowIdOrName: gateway-release-activate

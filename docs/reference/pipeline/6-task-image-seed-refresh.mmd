@@ -14,7 +14,7 @@ sequenceDiagram
   participant VM as Base VM<br/>shark-base
   Note over GW: Start the refresh<br/>release · daily
   %%> Triggers:
-  %%> - every Gateway release, as soon as Swamp has loaded its commit and while the release switches (the release's step "Admit the task VM refreshes"); a code-only release refreshes too, because the base holds the warm checkout and the nested Gateway agent of the commit
+  %%> - every Gateway release, as soon as Swamp has loaded its commit and while the release switches (the release's step "Admit VM refreshes"); a code-only release refreshes too, because the base holds the warm checkout and the nested Gateway agent of the commit
   %%> - a daily Schedule; it only dispatches the admission
   %%> - a host with a refresh open keeps it, and the newest commit waits behind it; the run that ends admits that commit
   GW->>SW: Start one run per host<br/>all in parallel
