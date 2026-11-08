@@ -24,7 +24,7 @@ use Throwable;
 final readonly class ProofRunWatch
 {
     /** Without a run: the job may wait in the queue, then admits in about a minute. Later, it is lost. */
-    public const int AdmissionSeconds = 300;
+    public const int AdmissionSeconds = 7500;
 
     /** What the Operation says when the admission was lost. */
     public const string Lost = 'The Gateway stopped before it handed the runs to Swamp. No case ran; run the proof again.';

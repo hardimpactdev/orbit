@@ -41,7 +41,7 @@ sequenceDiagram
   %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that proves nothing; `apps/**` stays `skip` until then
   %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break; the shared files are named in the list
   %%> - a file is chosen by what a change to it can affect: `OperationBudgetTable.php` (the run budget of each kind, one entry per kind, and the serve cap derived from it) is data and selects nothing; the rules that read it (`OperationRunBudgets.php`) and the kind registry stay shared. A change to a Swamp unit, a role template or the manifest touches no command and selects nothing; `everything` stays for a change whose reach is unknown, such as the selection list or the proof runner
-  %%> - the proof CI job qualifies for the per-host reserve through its authenticated active ci-runner Node; `--report-only` does not grant capacity, and another proof cannot preempt CI (rule and reason: the chart of `proof:run`, `docs/cli/proof/run.mmd`)
+  %%> - the proof CI job qualifies for the separate CI pool through its authenticated active ci-runner Node; `--report-only` does not grant capacity, and another proof cannot preempt CI (rule and reason: the chart of `proof:run`, `docs/cli/proof/run.mmd`)
   %%> Built:
   %%> - the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`) and the shared files, checked by Pest tests against the checked-in list
   Note over CI: Fast checks<br/>about 2 minutes
@@ -91,7 +91,7 @@ sequenceDiagram
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
     %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`task:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
-    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`task:prep-fix`), keyed by group and review, while the VM is parked (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
+    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`task:prep-fix`), keyed by group and review, while the group is idle (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below
@@ -105,7 +105,7 @@ sequenceDiagram
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
     %%> - the check for both modes, as the scheduled command `task:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
-    %%> - the admission of the corrections of a prep spec, for a parked prep group whose owner requested changes on the current head
+    %%> - the admission of the corrections of a prep spec, for an idle prep group whose owner requested changes on the current head
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and names the vault key of its token; the step mints the token when it runs
@@ -143,7 +143,7 @@ sequenceDiagram
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
-      %%> - it runs in the task VM, which the run resumes if it was parked; it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the same review rules as Nick
+      %%> - it runs in the task VM, which the run claims afresh if the previous VM was released; it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the same review rules as Nick
       %%> - the verdict is pass, or findings with file and reason; it is posted as a PR comment by the App so Nick can read it
       %%> Built:
       %%> - the comment, as steps of the round run: it mints its own token when it runs, and a comment that GitHub refuses does not fail the run

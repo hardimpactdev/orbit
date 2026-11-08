@@ -37,7 +37,7 @@ final class ReleaseTaskVmSlot implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSlotRuns $runs): void
     {
         $slot = TaskVm::query()->find($this->slotId);
-        if ($slot instanceof TaskVm && $slot->group_id === $this->groupId && $slot->state !== TaskVmState::Releasing) {
+        if ($slot instanceof TaskVm && $slot->group_id === $this->groupId && $slot->state !== TaskVmState::Destroyed) {
             $runs->startRelease($slot, 'task-start');
         }
     }

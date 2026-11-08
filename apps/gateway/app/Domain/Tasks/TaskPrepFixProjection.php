@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Tasks\StartTaskParkAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationWorkflowInput;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -21,11 +20,16 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Projects the terminal event of one `operation-task-prep-fix` run once: the task VM as ready once its resume step succeeded,
- * the metrics of each thread, and the result of the corrections. A run that pushed them parks the group again. See
+ * the metrics of each thread, and the result of the corrections. A run that pushed them releases its VM. See
  * docs/reference/tasks.md#apply-the-corrections.
  */
-final readonly class TaskPrepFixProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskPrepFixProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationWorkflowInput
 {
+    public function refused(Operation $operation): void
+    {
+        TaskVmReentry::refused($operation);
+    }
+
     /** The workflow steps whose failure has a code of its own; any other failed step of a turn is `tasks.turn_failed`. */
     private const array StepCodes = [
         'Resume the VM' => 'task_vm.resume_failed',
@@ -44,7 +48,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
         $input = ValidatedData::object($operation->input);
 
         return [
-            'intent' => ['task_vm_id' => $input['task_vm_id'], ...(isset($input['resume']) ? ['resume' => $input['resume']] : []), 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
+            'intent' => ['task_vm_id' => $input['task_vm_id'], ...(isset($input['provision']) ? ['provision' => $input['provision']] : []), ...(isset($input['resume']) ? ['resume' => $input['resume']] : []), 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
             'execution_secrets' => $input['execution_secrets'],
             // An empty map must reach the workflow as an object, not as an empty JSON list.
             'resume_secrets' => (object) ValidatedData::object($input['resume_secrets'] ?? []),
@@ -72,8 +76,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
     /** @param array<string,mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
-        $first = false;
-        $projected = DB::transaction(function () use ($operation, $data, &$first): Operation {
+        return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $native = ValidatedData::object($data['result'] ?? []);
             $status = ValidatedData::string($data['status']);
@@ -81,8 +84,8 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
-            $first = true;
             $intent = ValidatedData::object($operation->input);
+            TaskVmReentry::record($operation, $native);
             $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Push the corrections' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
 
@@ -114,27 +117,10 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
             $data['result'] = $result;
             $data['error_code'] = $code;
 
-            return app(DirectOperation::class)->project($operation, $data, $result);
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            TaskVmReentry::release($projected);
+
+            return $projected;
         });
-        // Only the first projection of the end parks the group; a replay of the terminal event admits nothing.
-        if ($first && $projected->status->value === 'succeeded') {
-            $this->parkAgain($projected);
-        }
-
-        return $projected;
-    }
-
-    /** The corrections are on the pull request, so the group stops its VM again while the spec waits for the owner. A refusal is kept in the result. */
-    private function parkAgain(Operation $operation): void
-    {
-        $group = Task::topLevel()->find($operation->target_id);
-        if (! $group instanceof Task) {
-            return;
-        }
-        try {
-            app(StartTaskParkAction::class)->execute($group, 'prep-fix', null);
-        } catch (ResourceOperationException $exception) {
-            app(OperationStore::class)->change($operation, ['result' => [...ValidatedData::object($operation->result ?? []), 'park_refused' => $exception->errorCode]]);
-        }
     }
 }

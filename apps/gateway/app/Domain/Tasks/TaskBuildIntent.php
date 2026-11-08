@@ -30,10 +30,9 @@ final readonly class TaskBuildIntent
 
     /**
      * A prep group whose spec is done and whose build has not started: its only subtask is the completed spec subtask, a prep run
-     * succeeded, and no build was admitted. Manual prep parks the group (`waiting_for_review`); automatic prep leaves it `running`, and
-     * so does a park that was refused. A group with a build subtask never matches, whatever its status.
+     * succeeded, and no build was admitted. Publication leaves the group `waiting_for_review`. A group with a build subtask never matches, whatever its status.
      */
-    public static function waiting(Task $group): bool
+    public static function waiting(Task $group, ?int $admission = null): bool
     {
         $subtasks = $group->tasks()->get();
         $runs = static fn (string $kind) => Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->where('kind', $kind);
@@ -41,12 +40,12 @@ final readonly class TaskBuildIntent
         return in_array($group->status, [TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)
             && $subtasks->count() === 1 && $subtasks->first()?->status === TaskStatus::Completed
             && $runs(OperationKinds::TasksPrep)->where('status', OperationStatus::Succeeded)->exists()
-            && ! $runs(OperationKinds::TasksBuild)->exists();
+            && ! $runs(OperationKinds::TasksBuild)->when($admission !== null, static fn ($query) => $query->whereKeyNot($admission))->exists();
     }
 
     public function start(Task $group, string $head, string $caller, ?string $request): Operation
     {
-        return $this->operations->start($group, OperationKinds::TasksBuild, [], static function (Task $group): void {
+        return $this->operations->start($group, OperationKinds::TasksBuild, ['head' => $head], static function (Task $group): void {
             if (! self::waiting($group)) {
                 throw new ResourceOperationException('tasks.build_refused', 'The build needs a prep group whose spec is done and whose build has not started.', 409);
             }
@@ -54,8 +53,9 @@ final readonly class TaskBuildIntent
     }
 
     /** @return array<string,mixed> */
-    private function capture(Task $group, string $head): array
+    public function capture(Task $group, string $head): array
     {
+        $provision = TaskVmReentry::capture($group, $head);
         $group->loadMissing('project', 'taskable');
         $instance = $group->taskable;
         $vm = TaskVm::forGroup($group);
@@ -66,7 +66,7 @@ final readonly class TaskBuildIntent
             || ! $prep instanceof Operation || $repository === null || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
             throw new ResourceOperationException('tasks.build_refused', 'The build needs the owned task VM workspace of a prep group, its Pi credential and its GitHub repository.', 409);
         }
-        if (! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true)) {
+        if (! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready, TaskVmState::Provisioning], true)) {
             throw new ResourceOperationException('tasks.build_refused', 'The build needs the task VM parked or running.', 409);
         }
         $prompts = TaskPrepPrompts::for(ValidatedData::string(ValidatedData::object($prep->input)['command']));
@@ -76,7 +76,7 @@ final readonly class TaskBuildIntent
         $sync = $this->sync->capture($group);
         $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $subtask = $this->appendSubtask($group, $prompts, $head, $branch);
-        // Park or not, the group builds from here on; it is no longer settled.
+        // The group builds from here on; it is no longer settled.
         $group->update(['status' => TaskGroupStatus::Running, 'settled_at' => null]);
         $thread = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
         // A query update: every subtask row carries `review_mode`, and a model save of a subtask refuses it.
@@ -85,6 +85,7 @@ final readonly class TaskBuildIntent
         return [
             'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'subtask' => $subtask->id,
             'task_vm_id' => $vm->id,
+            ...($provision === null ? [] : ['provision' => $provision]),
             'approval' => ['head' => $head, 'mode' => $group->review_mode->value, 'reviewer' => $group->review_mode === TaskReviewMode::Manual ? TaskPullRequestEvidence::reviewer() : null],
             ...($resume === null ? [] : ['resume' => $resume['intent'], 'resume_secrets' => $resume['execution_secrets']]),
             'sync' => $sync,

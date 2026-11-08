@@ -40,47 +40,51 @@ final readonly class TaskProvisionIntent
      * Claims a slot in one admission transaction and records the intent as the Operation of `$kind`. A kind that runs the claim as one step
      * of a larger run, such as `tasks.prep`, adds its own intent through `$extend`, which receives the provision intent, the group, its
      * workspace Instance and its slot, and returns the whole input of the Operation; the node of the Operation stays the slot's host.
-     * Only `proof.command` with persisted authenticated CI eligibility may use the reserve or a CI-only host; every task-work kind leaves both alone.
+     * Only `proof.command` with persisted authenticated CI eligibility uses the CI pool; task work uses the task pool.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciReserve = false): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
-        // A group that cannot be provisioned is refused before any GitHub read; the locked recheck below stays.
         $this->assertProvisionable($group);
-        // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
-
-        return DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $ciReserve): Operation {
+        $capture = function () use ($group, $startCommit, $extend, $kind, $ciPool): array {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
-            if (($replay = $this->idempotency->replay($kind)) !== null) {
-                return $replay;
-            }
             $this->assertProvisionable($group);
-            $project = $group->project;
-            try {
-                $slot = $this->slots->take($group, proof: $kind === 'proof.command' && $ciReserve);
-            } catch (TaskCapacityException $exception) {
-                throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
-                    previous: $exception, details: ['reason' => $exception->wait->value]);
-            }
-            $branch = TaskWorkspaceName::for($group);
-            $claim = $this->runs->claim($slot, $branch, $startCommit);
-            $instance = $this->workspace($slot, $group, $branch, ValidatedData::string(ValidatedData::object($claim['intent']['slot'])['checkout']));
-            $input = ['group_id' => $group->id, 'instance_id' => $instance->id, 'task_vm_id' => $slot->id, 'node_id' => (int) $slot->host_node_id,
-                'project_id' => $project->id,
-                'workspace' => ['checkout_path' => $instance->checkout_path, 'user' => 'orbit', 'repository' => $project->repository_url,
-                    'branch' => $branch, 'start_commit' => $startCommit],
-                'intent' => $claim['intent'],
-                'execution_secrets' => $claim['execution_secrets']];
-            $group->taskable()->associate($instance);
-            $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+            $input = $this->capture($group, $startCommit, $kind === 'proof.command' && $ciPool);
 
-            return $this->start->execute($kind, 'task_group', $group->id, (int) $slot->host_node_id, $extend($input, $group, $instance, $slot), $caller, $request);
-        });
+            return $extend($input, $group, Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), TaskVm::query()->findOrFail(ValidatedData::integer($input['task_vm_id'])));
+        };
+        if ($kind === 'proof.command') {
+            return DB::transaction(fn (): Operation => $this->start->execute($kind, 'task_group', $group->id,
+                ValidatedData::integer(($input = $capture())['node_id']), $input, $caller, $request));
+        }
+
+        return app(TaskVmAdmission::class)->start($group, $kind, ['commit' => $startCommit], $capture, $caller, $request);
+    }
+
+    /** Claims a fresh workspace. Re-entry uses the published branch after the VM was deleted. Call in the admission transaction.
+     * @return array<string,mixed>
+     */
+    public function capture(Task $group, string $commit, bool $ci = false): array
+    {
+        $slot = $this->slots->take($group, proof: $ci);
+        $branch = TaskWorkspaceName::for($group);
+        $claim = $this->runs->claim($slot, $branch, $commit);
+        $instance = $this->workspace($slot, $group, $branch, ValidatedData::string(ValidatedData::object($claim['intent']['slot'])['checkout']));
+        $input = ['group_id' => $group->id, 'instance_id' => $instance->id, 'task_vm_id' => $slot->id, 'node_id' => (int) $slot->host_node_id,
+            'project_id' => $group->project_id,
+            'workspace' => ['checkout_path' => $instance->checkout_path, 'user' => 'orbit', 'repository' => $group->project->repository_url,
+                'branch' => $branch, 'start_commit' => $commit],
+            'intent' => $claim['intent'], 'execution_secrets' => $claim['execution_secrets']];
+        $group->taskable()->associate($instance);
+        $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+        $group->setRelation('taskable', $instance);
+
+        return $input;
     }
 
     /** The workspace Instance of the new slot's Node, at the warm checkout the base carries. The release deletes it with the Node. */
@@ -95,7 +99,7 @@ final readonly class TaskProvisionIntent
         return $instance;
     }
 
-    private function assertProvisionable(Task $group): void
+    public function assertProvisionable(Task $group): void
     {
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);

@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
+use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubPullRequest;
@@ -20,16 +24,26 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrepFixIntent;
+use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\Tasks\TaskRemoteBranch;
+use App\Domain\Tasks\TaskReviewMode;
+use App\Domain\Tasks\TaskReviewRoundIntent;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmException;
@@ -51,6 +65,8 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
+use App\Jobs\Tasks\AdmitTaskVm;
+use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -58,11 +74,13 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
@@ -70,8 +88,8 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
 uses(LazilyRefreshDatabase::class);
 
-/** A task VM host of `$maxVms` slots, with a base snapshot unless `$snapshot` is false. */
-function slotPoolHost(int $maxVms = 9, bool $snapshot = true, ?int $taskMaxVms = null): array
+/** A task VM host of `$taskPlaces` slots, with a base snapshot unless `$snapshot` is false. */
+function slotPoolHost(int $taskPlaces = 2, bool $snapshot = true, int $ciPlaces = 2): array
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
@@ -80,7 +98,7 @@ function slotPoolHost(int $maxVms = 9, bool $snapshot = true, ?int $taskMaxVms =
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     config(['proof.project' => $project->id]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB', taskMaxVms: $taskMaxVms)],
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: $ciPlaces)],
         '/pi', str_repeat('a', 64), ['gpt-6']));
     $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
         : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
@@ -109,6 +127,8 @@ function slotPoolSweepWorld(bool $dispatch = true): void
         app()->instance(SwampDispatch::class, new class
         {
             public function start(Operation $operation): void {}
+
+            public function copy(Closure $push): void {}
         });
     }
 }
@@ -176,8 +196,8 @@ it('takes the lowest free slot number and mints a fresh identity, its Node activ
     $first = $pool->take(slotPoolGroup($project));
     $second = $pool->take(slotPoolGroup($project));
 
-    expect($first->name)->toBe('beast-tvm-2')->and($first->slot_number)->toBe(2)->and($first->state)->toBe(TaskVmState::Provisioning)
-        ->and($second->name)->toBe('beast-tvm-3')->and($second->wireguard_ip)->not->toBe($first->wireguard_ip);
+    expect($first->name)->toBe('beast-tvm-1')->and($first->slot_number)->toBe(1)->and($first->state)->toBe(TaskVmState::Provisioning)
+        ->and($second->name)->toBe('beast-tvm-2')->and($second->wireguard_ip)->not->toBe($first->wireguard_ip);
     $node = $first->node;
     expect($node)->toBeInstanceOf(Node::class)->and($node->status)->toBe(LifecycleStatus::Active)
         ->and($node->agent_secret_hash)->toBe(hash('sha256', (string) $first->agent_secret))
@@ -191,18 +211,22 @@ it('takes the lowest free slot number and mints a fresh identity, its Node activ
     $old = [$first->wireguard_private_key, $first->agent_secret];
     app(TaskVmSlotReleaseProjection::class)->record($first, true, null);
     $third = $pool->take(slotPoolGroup($project));
-    expect($third->slot_number)->toBe(2)->and($third->id)->not->toBe($first->id)
+    expect($third->slot_number)->toBe(1)->and($third->id)->not->toBe($first->id)
         ->and([$third->wireguard_private_key, $third->agent_secret])->not->toBe($old);
 });
 
-it('keeps the reserve free when tasks fill the host', function (): void {
-    [, $project] = slotPoolHost(maxVms: 6);
+it('admits each pool independently and holds failed VMs until confirmed deletion', function (): void {
+    [, $project] = slotPoolHost(taskPlaces: 1, ciPlaces: 1);
     $pool = app(TaskVmSlotPool::class);
-    $pool->take(slotPoolGroup($project));
-
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class, 'outside the CI/refresh reserve');
-    $pool->take(slotPoolGroup($project), proof: true);
-    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
+    $task = $pool->take(slotPoolGroup($project));
+    $ci = $pool->take(slotPoolGroup($project), proof: true);
+    expect($task->capacity_pool)->toBe('task')->and($ci->capacity_pool)->toBe('ci');
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    $task->update(['state' => TaskVmState::Failed]);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    app(TaskVmSlotReleaseProjection::class)->record($task, true, null);
+    expect($pool->take(slotPoolGroup($project))->capacity_pool)->toBe('task');
+    expect(fn () => $pool->take(null))->toThrow(TaskCapacityException::class);
 });
 
 it('starts a group only from a base snapshot, while a refresh takes a slot on its own host before the host has one', function (): void {
@@ -263,7 +287,7 @@ it('fails a slot whose release start was refused, keeping its Node for the sweep
 });
 
 it('has the sweep release each slot that no group holds and no Operation works on, and leaves the others', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 12);
+    [$host, $project] = slotPoolHost(taskPlaces: 12);
     $pool = app(TaskVmSlotPool::class);
     $stale = $pool->take(slotPoolGroup($project));
     $held = $pool->take(slotPoolGroup($project));
@@ -292,7 +316,7 @@ it('refuses a group of a Project whose checkout the base does not carry', functi
 });
 
 it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 12);
+    [$host, $project] = slotPoolHost(taskPlaces: 12);
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
@@ -963,157 +987,154 @@ it('ends a removal failure assistance when the release deletes the group\'s work
         ->and($other->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)->and($other->assistance_requested)->toBeTrue();
 });
 
-it('never lets task work take the reserved VM place', function (): void {
-    [, $project] = slotPoolHost(maxVms: 9);
+it('allows CI and base refresh on a host with zero task places', function (): void {
+    [$host, $project] = slotPoolHost(taskPlaces: 0, ciPlaces: 2);
     $pool = app(TaskVmSlotPool::class);
-    $pool->take(slotPoolGroup($project));
-    $pool->take(slotPoolGroup($project));
-
     expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-    expect(TaskVm::query()->live()->pluck('slot_number')->all())->toBe([2, 3]);
-});
-
-it('lets CI use the reserve while task work fills the task places', function (): void {
-    [, $project] = slotPoolHost(maxVms: 9);
-    $pool = app(TaskVmSlotPool::class);
-    $pool->take(slotPoolGroup($project));
-    $pool->take(slotPoolGroup($project));
-
-    $ci = $pool->take(slotPoolGroup($project), proof: true);
-
-    expect($ci->slot_number)->toBe(1);
-    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
-});
-
-it('lets a refresh use the shared reserve while task work fills the task places', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 9);
-    $pool = app(TaskVmSlotPool::class);
-    $pool->take(slotPoolGroup($project));
-    $pool->take(slotPoolGroup($project));
-
-    $refresh = $pool->take(null, $host->id);
-
-    expect($refresh->slot_number)->toBe(1)->and($refresh->group_id)->toBeNull();
-});
-
-it('counts an occupied reserve once and keeps the full task budget available', function (): void {
-    [, $project] = slotPoolHost(maxVms: 9);
-    $pool = app(TaskVmSlotPool::class);
-    $ci = $pool->take(slotPoolGroup($project), proof: true);
-
-    expect($ci->slot_number)->toBe(1);
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2)
-        ->and($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-});
-
-it('exposes no CI-only host capacity to task work or operator proofs', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 6);
-    $settings = app(TaskVmSettings::class);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
-    $pool = app(TaskVmSlotPool::class);
-
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-    expect(TaskVm::query()->count())->toBe(0);
-    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($host->id);
-    expect($pool->take(null, $host->id)->slot_number)->toBe(2);
+    expect($pool->take(slotPoolGroup($project), proof: true)->capacity_pool)->toBe('ci')
+        ->and($pool->take(null, $host->id)->capacity_pool)->toBe('ci');
     expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
 });
 
-it('prefers CI-only capacity before a shared host with more room and keeps refresh pinned', function (): void {
-    [$beast, $project, $build] = slotPoolHost(maxVms: 12);
-    $sabre = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux',
-        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
-    $copy = $build->replicate();
-    $copy->host_node_id = $sabre->id;
-    $copy->save();
-    $settings = app(TaskVmSettings::class);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-        [...$settings->hosts, new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
-    $pool = app(TaskVmSlotPool::class);
-
-    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
-    expect($pool->take(null, $beast->id)->host_node_id)->toBe($beast->id);
-    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
-    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($beast->id);
-    expect(fn () => $pool->take(null, $sabre->id))->toThrow(TaskCapacityException::class);
+it('records a full task pool as a bounded wait without allocating any identity', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 0);
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    expect($operation->status)->toBe(OperationStatus::Waiting)->and($operation->error_code)->toBeNull()
+        ->and(TaskVm::query()->count())->toBe(0)->and($group->refresh()->taskable_id)->toBeNull();
+    Queue::assertPushed(AdmitTaskVm::class);
+    app(TaskVmAdmission::class)->admit($operation->id);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Waiting)->and(TaskVm::query()->count())->toBe(0);
+    $operation->forceFill(['created_at' => now()->subHours(2)->subSecond()])->save();
+    app(ExpireOperationAction::class)->execute($operation);
+    expect($operation->refresh()->error_code)->toBe('tasks.capacity_timeout')->and($operation->lock_key)->toBeNull();
 });
 
-it('limits task claims by VM count while CI and refresh can use the remaining capacity', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
-    $pool = app(TaskVmSlotPool::class);
-    $first = $pool->take(slotPoolGroup($project));
-    $first->update(['state' => TaskVmState::Parked]);
-    $pool->take(slotPoolGroup($project));
-
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-    expect($pool->take(slotPoolGroup($project), proof: true)->host_node_id)->toBe($host->id);
-    expect($pool->take(null, $host->id)->host_node_id)->toBe($host->id);
-    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
+it('cancels a waiting task admission without later creating a VM', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 0);
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    app(CancelOperationAction::class)->execute($operation);
+    app(TaskVmAdmission::class)->admit($operation->id);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)->and(TaskVm::query()->count())->toBe(0);
 });
 
-it('does not charge CI or refresh claims to the task limit', function (bool $refresh): void {
-    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
-    $pool = app(TaskVmSlotPool::class);
-    $ciGroup = slotPoolGroup($project);
-    $proof = $pool->take($refresh ? null : $ciGroup, $host->id, proof: ! $refresh);
-    if (! $refresh) {
-        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $ciGroup->id,
-            'status' => OperationStatus::Succeeded, 'input' => ['ci_reserve' => true], 'triggered_by' => 'proof-run']);
+it('admits the oldest waiting task after a place is released and does not duplicate its claim', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 1);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $group = slotPoolGroup($project);
+    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    expect($operation->status)->toBe(OperationStatus::Waiting);
+    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
+    app(TaskVmAdmission::class)->admit($operation->id);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->input)->not->toHaveKey('capacity_request')
+        ->and(TaskVm::query()->live()->where('group_id', $group->id)->count())->toBe(1);
+    app(TaskVmAdmission::class)->admit($operation->id);
+    expect(TaskVm::query()->live()->where('group_id', $group->id)->count())->toBe(1);
+});
+
+/** The control services a fresh claim captures; submission is faked by slotPoolSweepWorld. */
+function slotPoolClaimServices(): void
+{
+    $services = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:services', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'services-public-key']));
+    app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+    Operation::query()->forceCreate(['kind' => 'ai_router.task_guard', 'target_type' => 'node', 'target_id' => $services->id, 'node_id' => $services->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['intent' => ['state' => 'present']]]);
+    slotPoolSocket();
+    test()->mock(LeafCertificateSigner::class, fn ($mock) => $mock->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"));
+    $home = storage_path('framework/testing/admission-'.bin2hex(random_bytes(4)));
+    File::ensureDirectoryExists($home.'/wireguard');
+    file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32))."\n");
+    config(['orbit.home' => $home]);
+    test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($home));
+}
+
+it('claims a fresh VM at the published head for a build or a fix after release', function (bool $fix, bool $releasing): void {
+    Queue::fake();
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $group = slotPoolGroup($project);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
+        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
+    $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
+        'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
+    Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
+        'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
+    $head = str_repeat('a', 40);
+    app()->instance(RemoteBranchHeads::class, new class($head) implements RemoteBranchHeads
+    {
+        public function __construct(private string $head) {}
+
+        public function head(Project $project, string $branch): string
+        {
+            return $this->head;
+        }
+    });
+    $previous = $releasing ? app(TaskVmSlotPool::class)->take($group) : null;
+    $previous?->update(['state' => TaskVmState::Releasing]);
+    $operation = $fix
+        ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
+        : app(TaskBuildIntent::class)->start($group, $head, 'test', null);
+    if ($previous !== null) {
+        expect($operation->status)->toBe(OperationStatus::Waiting);
+        app(TaskVmSlotReleaseProjection::class)->record($previous, true, null);
+        app(TaskVmAdmission::class)->admit($operation->id);
+        $operation->refresh();
     }
-    expect($proof->slot_number)->toBe(1);
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2);
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-})->with(['CI' => false, 'base refresh' => true]);
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
+        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task')
+        ->and($operation->input)->not->toHaveKey('resume');
+    $projection = app(DirectOperation::class)->projection($operation);
+    $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
+    $projection->refused($operation);
+    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
+})->with([[false, false], [true, false], [false, true], [true, true]]);
 
-it('keeps task limits independent on each host', function (): void {
-    [$beast, $project, $build] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
-    $shark = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark', 'status' => 'active', 'platform' => 'linux',
-        'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '10.44.0.11', 'user' => 'orbit']));
-    $copy = $build->replicate();
-    $copy->host_node_id = $shark->id;
-    $copy->save();
-    $settings = app(TaskVmSettings::class);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-        [...$settings->hosts, new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: 2)], '/pi', str_repeat('a', 64), ['gpt-6']));
-    $pool = app(TaskVmSlotPool::class);
-    $pool->take(slotPoolGroup($project), $beast->id);
-    $pool->take(slotPoolGroup($project), $beast->id);
-    expect(fn () => $pool->take(slotPoolGroup($project), $beast->id))->toThrow(TaskCapacityException::class);
-    expect($pool->take(slotPoolGroup($project))->host_node_id)->toBe($shark->id);
-});
+it('claims a fresh VM and new author session for a review round at the published head', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $head = str_repeat('a', 40);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($head): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReviewsToken', 'repositoryChecksToken')->andReturn('read-token');
+        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', $head, 'main', draft: false, authorLogin: 'orbit-app[bot]'));
+        $github->shouldReceive('checkRuns')->andReturn([new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: $head, appSlug: 'github-actions')]);
+    }));
+    $project->update(['source_access' => 'github_app', 'merge_check' => 'Required checks', 'review_and_merge' => true]);
+    $group = slotPoolGroup($project);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'review_mode' => TaskReviewMode::Automatic,
+        'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_number' => 1,
+        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
+    $subtask = $group->tasks()->create(['title' => 'Build', 'brief' => 'Build', 'position' => 1, 'status' => TaskStatus::Running,
+        'deliverables' => [['id' => 'build', 'type' => 'review', 'description' => 'Build it.']]]);
+    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+        'pid' => 1, 'process_started' => 'x', 'head_before' => $head, 'tree_before' => str_repeat('b', 40),
+        'head_after' => $head, 'commit_sha' => $head, 'tree_after' => str_repeat('b', 40), 'exit_code' => 0, 'started_at' => now(), 'finished_at' => now()]);
+    Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $group->id,
+        'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded,
+        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $head, 'head' => $head, 'tree' => str_repeat('b', 40),
+            'ci' => ['state' => 'passed', 'commit' => $head, 'branch' => TaskRemoteBranch::handoff($group), 'check_name' => 'Required checks']]]);
 
-it('counts small task VMs individually and frees their task claim only on release', function (): void {
-    [, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
-    $pool = app(TaskVmSlotPool::class);
-    $first = $pool->take(slotPoolGroup($project));
-    $first->update(['size' => TaskVmSize::Normal, 'state' => TaskVmState::Parked]);
-    $pool->take(slotPoolGroup($project))->update(['size' => TaskVmSize::Normal]);
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-    app(TaskVmSlotReleaseProjection::class)->record($first, true, null);
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2);
-});
+    $operation = app(TaskReviewRoundIntent::class)->start($group, $head, 'test', null);
 
-it('does not charge CI claims in public slots to task work', function (): void {
-    [, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
-    $pool = app(TaskVmSlotPool::class);
-    foreach ([1, 2] as $number) {
-        $group = slotPoolGroup($project);
-        expect($pool->take($group, proof: true)->slot_number)->toBe($number);
-        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id,
-            'status' => OperationStatus::Running, 'input' => ['ci_reserve' => true], 'triggered_by' => 'proof-run']);
-    }
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
-    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(4);
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-});
-
-it('allows only proofs when the task count limit is zero', function (): void {
-    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 0);
-    $pool = app(TaskVmSlotPool::class);
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
-    expect($pool->take(slotPoolGroup($project), proof: true)->slot_number)->toBe(1);
-    expect($pool->take(null, $host->id)->slot_number)->toBe(2);
+    expect($operation->status)->toBe(OperationStatus::Queued)
+        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
+        ->and($operation->input['fix']['new_session'])->toBeTrue()
+        ->and($operation->input['review']['new_session'])->toBeTrue()
+        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
 });

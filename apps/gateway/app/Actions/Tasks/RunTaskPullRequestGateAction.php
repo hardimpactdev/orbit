@@ -130,7 +130,7 @@ final readonly class RunTaskPullRequestGateAction
      */
     private function corrections(Task $group, int $number, GitHubRepository $repository, string $head, string $request): ?array
     {
-        if (TaskVm::forGroup($group)?->state !== TaskVmState::Parked
+        if (($vm = TaskVm::forGroup($group)) !== null && $vm->state !== TaskVmState::Parked
             || ! Operation::query()->where('kind', OperationKinds::TasksPrep)->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->where('status', OperationStatus::Succeeded)->exists()) {
             return null;
         }

@@ -9,7 +9,6 @@ use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskPackageProjection;
-use App\Domain\Tasks\TaskParkProjection;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskProvisionProjection;
@@ -61,7 +60,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 'verdict' => ['job' => 'round', 'step' => 'Settle the review', 'field' => 'verdict', 'artifact' => 'verdict'], 'findings' => ['job' => 'round', 'step' => 'Settle the review', 'field' => 'findings', 'artifact' => 'verdict'],
                 'checked' => ['job' => 'round', 'step' => 'Settle the check', 'field' => 'result_json', 'artifact' => 'fix'], 'commit' => ['job' => 'round', 'step' => 'Settle the check', 'field' => 'commit', 'artifact' => 'fix'],
             ]],
-            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+            'execution_copies' => [...$claimCopies, ...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-comment-write-[a-f0-9-]{36}$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
         ], 'tasks.prep' => [
             'workflow' => 'operation-task-prep', 'projection' => TaskPrepProjection::class, 'github_token_issuer' => TaskGitHubTokens::class,
@@ -87,22 +86,17 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 'head' => ['job' => 'corrections', 'step' => 'Settle review 2', 'field' => 'head', 'artifact' => 'state'],
                 'findings' => ['job' => 'corrections', 'step' => 'Settle review 2', 'field' => 'findings', 'artifact' => 'state'],
             ]],
-            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+            'execution_copies' => [...$claimCopies, ...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-publish-token-[a-f0-9-]{36}$']],
         ], 'tasks.build' => [
             'workflow' => 'operation-task-build', 'projection' => TaskBuildProjection::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'build', 'step' => 'Run the first turn', 'native' => true, 'captures' => ['turn' => ['job' => 'build', 'step' => 'Run the first turn']]],
-            'execution_copies' => [...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
+            'execution_copies' => [...$claimCopies, ...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                 ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
         ], 'tasks.sync' => [
             'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class,
             'workflow_inputs' => true,
             'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout', 'artifact' => 'output']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
-        ], 'tasks.park' => [
-            'workflow' => 'operation-task-park',
-            'projection' => TaskParkProjection::class,
-            'workflow_inputs' => true,
-            'terminal_result' => ['job' => 'park', 'step' => 'provider', 'native' => true],
         ]];

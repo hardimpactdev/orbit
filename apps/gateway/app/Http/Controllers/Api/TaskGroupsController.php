@@ -14,7 +14,6 @@ use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskPackageAction;
-use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskPrepAction;
 use App\Actions\Tasks\StartTaskPrepFixAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
@@ -102,17 +101,6 @@ final class TaskGroupsController extends Controller
             'data' => OperationData::fromModel($operation)->toArray(),
             'meta' => $this->meta($request),
         ], 202);
-    }
-
-    /** Park an external group's existing VM and confirm stopped power before succeeding. */
-    #[StartsOperation(OperationKinds::TasksPark, requiresKey: true)]
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function park(EmptyTasksRequest $request, Task $task, StartTaskParkAction $action): JsonResponse
-    {
-        $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** Fetch the default branch and the task branch from origin into the VM workspace of an external group. */

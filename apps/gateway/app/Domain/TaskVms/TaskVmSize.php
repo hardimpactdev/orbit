@@ -37,9 +37,9 @@ enum TaskVmSize: string
     public function resources(): TaskVmResources
     {
         return match ($this) {
-            self::Normal => new TaskVmResources(slots: 1),
-            self::Medium => new TaskVmResources(slots: 2, cpus: 4, memory: '8GiB', disk: '40GiB', qemuConfig: self::FreePageReporting, testNodes: 1),
-            self::Large => new TaskVmResources(slots: 3, cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::FreePageReporting, testNodes: 2),
+            self::Normal => new TaskVmResources,
+            self::Medium => new TaskVmResources(cpus: 4, memory: '8GiB', disk: '40GiB', qemuConfig: self::FreePageReporting, testNodes: 1),
+            self::Large => new TaskVmResources(cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::FreePageReporting, testNodes: 2),
         };
     }
 
@@ -75,12 +75,6 @@ enum TaskVmSize: string
         }
 
         return array_last(self::cases());
-    }
-
-    /** The slots of the host's `max_vms` that a VM of this size takes. */
-    public function slots(): int
-    {
-        return $this->resources()->slots;
     }
 
     /** Whether a VM of this size can hold a topology. */

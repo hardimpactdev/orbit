@@ -40,6 +40,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 
@@ -183,14 +184,14 @@ it('refuses a build that has no workspace of its own and leaves the group as it 
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
 });
 
-it('writes nothing when the VM is neither ready nor parked', function (): void {
-    [$group] = buildWorld(vmState: TaskVmState::Provisioning);
-
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'parked or running')
+it('waits for deletion before a build can claim its next VM', function (): void {
+    Queue::fake();
+    [$group] = buildWorld(vmState: TaskVmState::Releasing);
+    $operation = app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null);
+    expect($operation->status)->toBe(OperationStatus::Waiting)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
-        ->and(AgentThread::query()->count())->toBe(0)
-        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
+        ->and(AgentThread::query()->count())->toBe(0);
 });
 
 it('clears the settled time of the group when the build starts', function (): void {

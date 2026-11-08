@@ -140,15 +140,15 @@ it('serializes independent SQLite claims', function (string $mode): void {
         $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux',
             'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.'.(7 + $index), 'wireguard_ip' => '10.44.0.'.(7 + $index), 'user' => 'orbit']));
         $nodes[] = $node;
-        $hosts[] = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.'.(7 + $index).'.0/24', 12, 6, '12GiB', '20GiB');
+        $hosts[] = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.'.(7 + $index).'.0/24', 3, 6, '12GiB', '20GiB', ciPlaces: 1);
         TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
             'promoted_at' => now(), 'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => $name.'-base', 'seed' => $name.'-base-seed', 'snapshot' => 'r20261107120000']]]);
-        $slots = $mode === 'task' && $index === 0 ? [2, 3] : [2, 3, 4];
+        $slots = $mode === 'task' ? ($index === 0 ? [2, 3] : [1, 2, 3]) : [];
         if ($mode !== 'task' && $index === 1) {
             $slots[] = 1;
         }
         foreach ($slots as $slot) {
-            TaskVm::query()->create(['host_node_id' => $node->id, 'slot_number' => $slot, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+            TaskVm::query()->create(['host_node_id' => $node->id, 'slot_number' => $slot, 'capacity_pool' => $mode === 'task' ? 'task' : 'ci', 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
                 'name' => $name.'-tvm-'.$slot, 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.'.(140 + $index * 5 + $slot)]);
         }
     }
@@ -162,5 +162,5 @@ it('serializes independent SQLite claims', function (string $mode): void {
 
     $results = concurrentSlotClaims($claims);
 
-    expect($results)->toBe([['host' => $nodes[0]->id, 'slot' => $mode === 'task' ? 4 : 1], ['refused' => true]]);
+    expect($results)->toBe([['host' => $nodes[0]->id, 'slot' => 1], ['refused' => true]]);
 })->with(['task', 'ci', 'refresh']);
