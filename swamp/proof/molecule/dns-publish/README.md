@@ -40,6 +40,8 @@ One checks the uncached withdrawn name and persisted VPN hook immediately
 after a replacement delegate reload, before the final VPN policy is applied.
 The other makes only the member policy commit unwritable, runs the real
 rollback, and checks that no successful receipt or resolver retirement follows.
+It also queries the restored delegate, which requires its original readable
+file mode to survive the private snapshot.
 Its private copy returns from the final member failure after rollback so the
 single-machine proof reaches the aggregate barrier, as a surviving second
 member would in the fleet. Production inputs have no fault-injection option.
