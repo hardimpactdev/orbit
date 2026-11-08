@@ -186,6 +186,15 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(len(out.strip().splitlines()), 1)
         self.assertIn('evidence', err)
 
+    def test_line_plan_uses_the_original_arguments_and_preserves_whole_batches(self):
+        loaded = runner.spec_module.load(CASES, runner.BATCHES)
+        code, out, err = self.call(['plan', '--lines', '--file', str(CASES)])
+        self.assertEqual(code, 0, err)
+        batches = {line.split()[0]: set(line.split()[2:]) for line in out.strip().splitlines()}
+        self.assertEqual(set(batches), {case.batch for case in loaded.cases})
+        for batch, cases in batches.items():
+            self.assertEqual(cases, {case.id for case in loaded.cases if case.batch == batch})
+
     def test_an_unknown_case_is_refused(self):
         code, _, err = self.call(['case', 'nope', '--file', str(CASES)])
         self.assertEqual(code, 3)

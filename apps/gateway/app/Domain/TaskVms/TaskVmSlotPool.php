@@ -47,20 +47,7 @@ final readonly class TaskVmSlotPool
             throw new TaskCapacityException(TaskWait::Capacity, "Task VM: the task VM base carries only the checkout of Project {$this->proof->projectId()}.");
         }
         $size = TaskVmSize::Large;
-        // A group needs a host with a base snapshot; a refresh proves the snapshot it just took, before the Gateway records it.
-        $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
-            && ($group === null || $this->currentImage($pair[1], $pair[0]) !== null)));
-        $free = $this->capacity->freeSlots($hosts, $proof || $group === null);
-        arsort($free);
-        $room = array_filter($free, static fn (int $places): bool => $places > 0);
-        // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
-        $skipped = $group === null ? [] : array_filter($room, static fn (int $slots, int $id): bool => ! app(TaskVmSeedFloor::class)->allows($id), ARRAY_FILTER_USE_BOTH);
-        $room = array_diff_key($room, $skipped);
-        if ($room === []) {
-            $names = Node::query()->whereKey(array_keys($skipped))->get()->mapWithKeys(static fn (Node $node): array => [$node->id => $node->name])->all();
-            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for a free '.($proof || $group === null ? 'CI' : 'task').' place.'
-                .($names === [] ? '' : self::staleImages($names)));
-        }
+        $room = $this->room($group !== null, $host, $proof || $group === null);
         $node = Node::query()->findOrFail(array_key_first($room));
         $used = TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotNull('slot_number')->get(['slot_number'])
             ->map(static fn (TaskVm $vm): ?int => $vm->slot_number)->all();
@@ -78,6 +65,33 @@ final readonly class TaskVmSlotPool
         $this->pin($this->keys->ensure($vm));
 
         return $vm->refresh();
+    }
+
+    /** Free CI places under the same image and seed policy as take(). Call in the admission transaction. */
+    public function freeCiPlaces(): int
+    {
+        return array_sum($this->room(true, null, true));
+    }
+
+    /** @return array<int,int> usable host id => free places */
+    private function room(bool $needsImage, ?int $host, bool $ci): array
+    {
+        // A group needs a host with a base snapshot; a refresh proves the snapshot it just took, before the Gateway records it.
+        $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
+            && (! $needsImage || $this->currentImage($pair[1], $pair[0]) !== null)));
+        $free = $this->capacity->freeSlots($hosts, $ci);
+        arsort($free);
+        $room = array_filter($free, static fn (int $places): bool => $places > 0);
+        // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
+        $skipped = ! $needsImage ? [] : array_filter($room, static fn (int $slots, int $id): bool => ! app(TaskVmSeedFloor::class)->allows($id), ARRAY_FILTER_USE_BOTH);
+        $room = array_diff_key($room, $skipped);
+        if ($room === []) {
+            $names = Node::query()->whereKey(array_keys($skipped))->get()->mapWithKeys(static fn (Node $node): array => [$node->id => $node->name])->all();
+            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for a free '.($ci ? 'CI' : 'task').' place.'
+                .($names === [] ? '' : self::staleImages($names)));
+        }
+
+        return $room;
     }
 
     /** @param array<int,string> $skipped host Node id => name */

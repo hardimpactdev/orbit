@@ -66,3 +66,5 @@ The command, the PR, net lines, the cases run and their verdicts, the gaps you f
 
 
 Each host has separate `task_places` and `ci_places`; one VM holds one place until confirmed deletion. Task publication releases the VM. Later build, fix and review work claims again from the base and task branch. Full pools wait within a two-hour budget; authenticated CI eligibility comes from the caller Node, never reporting flags.
+
+CI capacity is a bounded wait, never a passing no-case outcome. A proof report must account for every admitted case and every selected command. Read full Swamp output artifacts for merged reports; the native history summary keeps only 4 KiB.

@@ -62,23 +62,23 @@ sequenceDiagram
       %%> - the Gateway side, `proof:run` refusing an untrusted commit with `proof.commit_untrusted`
       %%> Decided by the orchestrator, for Nick's review:
       %%> - a workflow of its own, not a trigger on `ci.yml`: `pull_request_target` on `ci.yml` would run every job of the PR with the secrets and the write token of the base repository
-      %%> - the result is a run of that workflow; `Required checks` does not wait for it, as for the proof CI of a branch PR
+      %%> - the outside workflow publishes its proof status on the exact fork head; `Required checks` reads that status and fails unless it succeeded. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:
     %%> - a job on the beast or shark runner passes only the full SHA and an idempotency key; it checks out only its own script and chooses no cases
     %%> - a new push cancels the proof run of the previous push on the same PR (GitHub concurrency), so only the latest push finishes its proof
-    %%> - the Gateway checks the commit, selects the cases and starts one Swamp run per selected command, each on its own proof VM, as in the chart of `proof:run`
+    %%> - the Gateway checks the commit, selects whole batches and queues CI proofs first come first served; the front proof takes every free usable CI place up to its batch count, balances by measured case time and starts one Swamp run per VM, as in the chart of `proof:run`
     %%> - the run starts a fresh task VM from the current images, mounts its checkout of the commit in the nested fleet, converges that VM once when the PR changes playbooks or pins, and takes `base`; each batch restores `base` once, nothing converges again
     %%> - the base images stay as they are; only the merge and the seed refresh (stage 6) change them
     %%> Built:
     %%> - the job `proof-run` runs only when a changed path selects a command in `selection.txt`, passes only the SHA and an idempotency key, and a new push cancels the run of the previous push; it follows the one `proof.run` record until the last command run ended
-    %%> - a report-only capacity admission refusal with no case rows records not run, retains selected commands in a receipt and skips the separate optional assertion check; it is never a passing proof
+    %%> - capacity waits for up to two hours; a timeout fails clearly, and no capacity result can turn green with no case verdict
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
     %%> Built, not yet passed live:
     %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
-    %%> Not built:
-    %%> - the proof CI as part of the one CI result: the job `proof-run` calls `proof:run` but is report-only; today a merge needs `Required checks` alone, and Nick decides graduation after coverage and admission are reliable
+    %%> Built:
+    %%> - the proof CI is part of Required checks: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
     GW-->>CI: Verdict per case
     %%> Result:
     %%> - the job reads the operation until it ends; a missing result or a failed assertion fails the CI result

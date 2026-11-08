@@ -1,7 +1,7 @@
 id: a3b12de3-0faa-4465-8843-1b9af60794a2
 name: operation-proof-run
 description: >-
-  Prove one command of a commit on a task VM slot of its own, from full inputs on 209: the claim of the slot, the cases of the
+  Prove assigned whole batches of a commit on a task VM slot of its own, from full inputs on 209: the claim of the slot, the cases of the
   command through proof-fleet-verify, and the release of the slot, always. No step calls the Gateway.
 queueTimeout: 30
 vaults:
@@ -21,6 +21,7 @@ inputs:
       properties:
         provision: {type: object}
         verify: {type: object}
+        verifications: {type: array, minItems: 1, items: {type: object}}
         cancel:
           type: object
           properties:
@@ -29,7 +30,7 @@ inputs:
             execution_secrets: {type: object, additionalProperties: false}
           required: [node_id, intent, execution_secrets]
           additionalProperties: false
-      required: [provision, verify, cancel]
+      required: [provision, verify, verifications, cancel]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -127,7 +128,9 @@ jobs:
       severity: high
       message: The workspace of the proof VM is not at the commit under proof
   # Stage 3: the cases of this one command, in batches. The child succeeds whatever the verdicts are; the report holds them.
-  - name: Prove the command
+  - name: Prove assigned batches
+    forEach: {item: verify, in: '${{ inputs.intent.verifications }}'}
+    concurrency: 1
     labels: {role: swamp}
     writes: true
     dependsOn:
@@ -141,7 +144,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: '${{ inputs.intent.verify.node_id }}'
         kind: proof.verify
-        intent: '${{ inputs.intent.verify }}'
+        intent: '${{ self.verify }}'
         execution_secrets: {}
   # Always, also after a failure: the VM is deleted. The Gateway captured this input with the claim.
   # A guard that is true SKIPS the step (Swamp: "a truthy result skips the step"). With `keep_failed`, a run that did not succeed in every part (claim, cases,
@@ -149,12 +152,12 @@ jobs:
   - name: Release the slot
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.?keep_failed.orValue(false) && !(steps[?"Claim a slot"].?status.orValue("") == "succeeded" && steps[?"Prove the command"].?status.orValue("") == "succeeded" && steps[?"Prove the command"].?outputs.?report.?stdout.orValue("").trim().split("\n").all(l, l.contains("\"verdict\": \"passed\""))) }}'
+    guard: '${{ inputs.?keep_failed.orValue(false) && !(steps[?"Claim a slot"].?status.orValue("") == "succeeded" && inputs.intent.verifications.all(v, v.step in steps && steps[v.step].status == "succeeded" && steps[v.step].?outputs.?report.?stdout.orValue("").trim() != "" && steps[v.step].outputs.report.stdout.trim().split("\n").filter(l, l != "").all(l, l.contains("\"verdict\": \"passed\"")))) }}'
     dependsOn:
     - step: Claim a slot
       condition: &always
         type: always
-    - step: Prove the command
+    - step: Prove assigned batches
       condition: *always
     task:
       type: workflow
@@ -180,4 +183,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ ("Prove the command" in steps && "outputs" in steps["Prove the command"] && "report" in steps["Prove the command"].outputs) ? steps["Prove the command"].outputs.report.stdout.trim() : "" }}'
+          LINES: '${{ inputs.intent.verifications.map(v, v.step in steps ? steps[v.step].?outputs.?report.?stdout.orValue("").trim().split("\n").filter(l, l != "").map(l, v.command + "\t" + v.file + "\t" + v.batch + "\t" + l).join("\n") : "").filter(l, l != "").join("\n") }}'

@@ -1,111 +1,49 @@
 sequenceDiagram
-  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM; each run does provision, verify and cancel as children; Gateway projects each run once.
-  %% status: draft
+  %% status: reviewed
   %% command: proof:run
   %% kind: proof.run
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=target tone=amber
-  participant CLI as CI job / CLI<br/>orbit proof:run
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>parent workflow
-  participant VM as Proof task VM<br/>nested topology
-  CLI->>GW: proof:run COMMIT
-  %%> The CI job on a beast or shark runner, or a person, passes only the commit SHA.
-  Note over GW: Record the proof<br/>one insert · queue the admission
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
-  %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
-  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
-  %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
-  GW-->>CLI: 202 Accepted<br/>task ID
-  %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.
-  Note over GW: Check the commit<br/>orbit branch or approved PR
-  %%> Runs in the admission job. Refuses a commit that is not on a hardimpactdev/orbit branch, or an outside PR without review and the run-proofs label.
-  Note over GW: Select the cases<br/>diff · selection.txt
-  %%> Docs-only changes end here: skipped, nothing to prove.
-  Note over GW: Record intent<br/>proof group + full inputs
-  %%> Creates the proof task group on Project 46 at the commit and renders every input the run needs. No more Gateway work until the end.
-  %%> - the intent of each run also holds `head` and `merge_base`, for the proof that a new case fails on the merge base (stage 3 chart)
-  %%> - each run starts with the check of the head (stage 3 chart, "Check the head"): `proof.head_behind_platform` when the head lacks a platform change that main has, `proof.sync_needed` when the proof VM has no `origin/main` to compare with; not built yet
-  GW->>SW: Start one run per command<br/>operation-proof-run · parallel
-  %%> One PR changes one command, so usually one run. Each run has its own proof VM, as stage 3 says; one failing command does not stop the others.
-  %%> Built:
-  %%> - the Gateway admits one Operation `proof.command` for each selected command, each on a task group of its own, and Swamp runs the workflow `operation-proof-run` for it; the runs start at once and run in parallel
-  %%> - each run records itself once, from its terminal event, and the `proof.run` that the CLI follows closes when the last run has ended
-  %%> Decided by the orchestrator, for Nick's review:
-  %%> - the CLI follows one Gateway record, `proof.run`, because it needs one task ID; each run is an Operation of its own, so each has one Swamp run, one terminal event and one projection
-  %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
-  %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers even when a skipped host has free slots
-  %%> - the copies must also be fresh: only a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the proof commit with main is used (stage 2 chart, decided 2026-11-07); a host whose copies miss one is skipped, and the waiting reason says so
-  %%> - if one CI run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` waits within its admission budget
-  %%> Capacity rule:
-  %%> - an authenticated active ci-runner Node uses the CI pool; other callers use the task pool. Refresh candidate proofs use the CI pool too
-  %%> - one VM holds one place until confirmed deletion; the pools have separate admission and never borrow places from each other
-  %%> - operator proofs join the same FIFO task admission queue as prep, build, turns and review; each command waits without a VM and captures its full intent only when its place is admitted
-  %%> - a full CI pool waits visibly at `Wait for VMs to be released` and retries every 20 seconds within a two-hour total budget; timeout fails clearly with `proof.capacity_timeout`
-  %%> - waiting never preempts another proof or releases a kept VM
-  %%> - CI admission records all groups, VMs and the run list together; an operator proof records its children together and each joins task admission
-  SW->>VM: Provision the task VM<br/>child workflow · task provision
-  %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
-  SW->>VM: Reset and mount<br/>ready copies · the commit
-  %%> What it does:
-  %%> - Orbit's own Swamp reaches into the task VM over SSH, like every other step, and resets the nested topology from the ready copies
-  %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
-  %%> - the nested Gateway and app-dev have the VM's checkout of the commit as a disk device (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
-  %%> Built, not yet passed live:
-  %%> - the reset is the child `proof-fleet-restore` (restore the three containers, apply, readiness); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch is the fleet phase of the common converge, and the standalone kind that built it is gone
-  opt the commit changes playbooks or pins
-    SW->>VM: Converge once<br/>outer VM · nested Nodes
-    %%> What it does:
-    %%> - image playbooks on the outer VM; role playbooks and pins on the nested Nodes, through the nested Orbit's `node:converge`
-    %%> - the nested Orbit reads the playbooks from the mounted checkout; the proof never resets the outer VM, so this lasts the whole run
-    %%> - the base images are not touched; only the merge and the seed refresh change them
+  participant CLI as CI job / CLI
+  participant GW as Gateway
+  participant GH as GitHub
+  participant Q as CI queue<br/>FIFO
+  participant SW as Swamp
+  participant VM as Proof VMs
+  CLI->>GW: Record the proof
+  %%> Record commit, authenticated caller and options, then queue admission. Only an active authenticated ci-runner Node uses the CI pool. Operator proofs join task admission.
+  GW-->>CLI: Follow one proof Operation
+  GW->>GH: Select commands<br/>check trust
+  %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
+  GW->>GH: Read whole batches<br/>expand case ids
+  %%> Read the selected YAML at the commit. Empty or malformed selected cases fail. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
+  GW->>Q: Join by proof Operation id
+  %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
+  Q->>GW: Admit the front proof
+  %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green.
+  GW->>GW: Balance whole batches<br/>by measured time
+  %%> Longest measured batch first; assign each to the least loaded VM. A batch never splits. Record expected cases and all shard operations atomically.
+  GW->>SW: Start one run per VM
+  SW->>VM: Claim a slot
+  %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
+  SW->>VM: Read the workspace commit
+  SW->>SW: Check the workspace commit
+  loop each assigned whole batch, in order
+    SW->>VM: Restore the head checkout
+    %%> A prior new-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
+    SW->>VM: Read the command batches
+    SW->>SW: Select the assigned batch
+    SW->>VM: Restore the base snapshot
+    SW->>VM: Run the batch
+    SW->>VM: Prove new cases fail
+    VM-->>SW: Verdict lines
   end
-  SW->>VM: Take base<br/>snapshot
-  %%> What it does:
-  %%> - a plain Incus snapshot `base` of the three nested containers, with any converged state in it
-  %%> - it holds the Club key; accepted because the VM and its snapshots are destroyed after the run
-  SW->>VM: Check the workspace commit<br/>HEAD is the commit under proof
-  %%> Decided by the top orchestrator, for Nick's review (2026-11-07): before any case the run reads the HEAD of the workspace of its VM and asserts that it is the commit of the proof. Try 13's list run went on after the import of its bundle failed and proved a clone of main
-  %%> - a mismatch, or a workspace that prints no commit, fails the run with `proof.workspace_commit_mismatch`, with both commits in the result (`workspace`), and no case runs; the proof ends with the same code when no case ran in any command. A VM that cannot be read at all fails as `proof.run_failed`
-  %%> - it runs after the provision, so it is a second line; the gate of the provision is fixed in another lane. See the chart of the kind `proof.command`
-  SW->>VM: Run the proof<br/>child flow · proof-fleet verify
-  %%> What it does:
-  %%> - each batch applies its declared start state; its cases run one after another with their own resources and no undo
-  %%> - a batch setup that fails stops the run, and the remaining cases become `unrun`
-  %%> - built, not yet passed live: the restore of `base` before each batch and after a case that did not pass is the workflow `proof-fleet-restore`; 0 of 2 runs succeeded by 2026-11-06; the old restore was removed
-  %%> - one verdict per case, as in the proof stage of the [command development pipeline](/reference/command-development-pipeline)
-  %%> - built: the parent run starts the Swamp workflow `proof-fleet-verify` on Node 209 as a child, with the cases file and the pinned SSH target of this VM; it runs the runner over official SSH, one child per batch and one per case, and no second Swamp runs for this step
-  %%> - the parent run joins the verdict lines in its `Report` step; the Gateway reads that step once, when the run ends, and records the verdicts; no step calls back
-  SW->>VM: Destroy the task VM<br/>child workflow · always
-  %%> Runs after success or failure, so no proof VM is left behind.
-  %%> Decided by the top orchestrator, for Nick's review (2026-11-07), so that a person can read a fault that the destroy would hide:
-  %%> - `proof:run --keep-failed` (API and MCP: `keep_failed`) keeps the VM of a run that failed, for any reason: a case that failed, a run that failed, or a setup that failed; without it nothing changes
-  %%> - decided 2026-11-07 after M5 try 11, whose children failed in `Start the nested fleet` and `Pin the nested CA` inside `Create the VM`: the first version kept only a run whose VM was pinned and whose cases ran, so the faults that need reading most, those of the infrastructure, were destroyed
-  %%> - the step is skipped by its guard (Swamp skips a step whose guard is true) when the flag is set and the run did not succeed in every part: the VM was created, pinned, the cases ran and every case passed. A run that passes destroys its VM as before
-  %%> - what is kept is the VM that the group has at that time, whatever its state: a VM that failed to provision is kept as it is, and a run that never got a VM keeps nothing, so its group is cancelled the normal way
-  %%> - the Gateway then does not cancel the group. It records the VM (name, group, keep-until time) on the run and on the result of the proof, and the proof ends as usual
-  %%> - only the groups of this proof run (`proof_operation_id`) are kept. A kept VM holds real CPU and memory on its host whatever its record says, so the capacity of an Incus host counts every kept VM, also one in the state `failed` (decided 2026-11-07: over-committing a host causes slow-exec faults). A failed VM that no proof kept is not counted, because the normal cleanup removes it at once
-  %%> - a kept VM stops counting when its group is cancelled and the VM is destroyed, so the release of kept VMs for a waiting proof frees its slot
-  %%> - when the group of a kept VM is cancelled and its cleanup is complete, by the expiry, by the release for a waiting proof or by a person (`task:cancel`), the kept record on the run and on the result of the proof gets `released_at` and `released_by` (the operation of the cancel). A kept list entry without them is a VM that is still there
-  %%> - the keep lasts 60 minutes from the end of the run. The one-minute pass that watches proofs (`ReconcileSwampOperations`) cancels the group when the time is up, with the trigger `proof-run`, and asks again every 5 minutes. It needs nobody to come back
-  %%> - a cancel of the proof leaves a kept VM until its time is up; a keep that is still open a day after its time is no longer asked, and the Gateway logs a warning
-  %%> Built:
-  %%> - the child `operation-task-cancel` with the input that the Gateway captured with the VM at admission; if it did not run or failed, the Gateway cancels the group the normal way, which destroys the VM
-  %%> - the Gateway cancels the group of a run with the trigger `proof-run`; a group is cancelled only through the Operation that owns it (its `proof.command`, or its image refresh with the trigger `image-refresh`)
-  alt every case of every command passes
-    SW-->>GW: Run succeeded<br/>verdicts + receipt
-    Note over GW: Record the result once<br/>PASS
-  else a case fails or did not run
-    SW--xGW: Run failed<br/>failed case
-    Note over GW: Record the result once<br/>FAIL
-  end
-  loop until the run ends
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + verdicts
-  end
-  %%> Admission refusals retain the selected command names in `selected_commands`, without execution input.
-  %%> The CI proof job is still optional. The CI queue change adds it to Required checks; see the capacity ideal state. A capacity wait now ends only at admission or the clear two-hour timeout.
+  SW->>VM: Release the slot
+  %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.
+  SW-->>GW: Report verdicts<br/>full artifact
+  %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts fail the shard; a missing expected case is unrun.
+  GW->>GW: Merge all shard verdicts
+  %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Failed, cancelled, unrun and missing verdicts fail.
+  GW-->>CLI: One merged report
+  CLI->>CLI: Require the proof verdict
+  %%> The proof job is in Required checks. A selected command with a failed case or no verdict fails. No selected command passes. Capacity is only a bounded wait, never a successful no-case result.
+  %%> A fork uses the outside proof's status on this exact head. A missing, pending or failed status fails Required checks; rerun the failed Required job after the approved outside proof succeeds.
