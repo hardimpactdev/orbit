@@ -135,6 +135,7 @@ sequenceDiagram
       %%> What it does:
       %%> - before any DNS target successfully selects the candidate, restores only the owned candidate changes; any successful VPN or Router publication or member selection is the cutover, even if another parallel publication fails
       %%> - after any such success, retains both Routers, sites and DNS access until forward recovery or a fresh-revision rollback moves every consumer back and completes the shared grace
+      %%> - an interrupted DNS publication may already have selected consumers; retain the candidate whenever publication started and its outcome is uncertain
       SW--xGW: Run failed<br/>error_code, failed step
       %%> The Gateway reads:
       %%> - which step failed, its error code, and whether the restore passed

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Support\ValidatedData;
 use stdClass;
 
@@ -46,6 +47,9 @@ final readonly class NativeRoutePublicationArtifacts
      */
     public function intern(array &$artifacts, string $kind, array $artifact, array &$indexes): int
     {
+        if ($kind === 'dns') {
+            $artifact['content_digest'] = PrivateDnsPublication::contentDigest($artifact);
+        }
         if (! isset($indexes[$kind])) {
             $indexes[$kind] = [];
             foreach ($artifacts[$kind] as $index => $existing) {

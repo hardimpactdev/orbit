@@ -154,8 +154,10 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
                 account,
             });
         assertEquals(php(sparse), php(states));
-        // DNS is not composed: the artifact is the state the Gateway rendered.
-        assertEquals(sparse[to].dns, states[to].dns);
+        // DNS stays complete; content_digest is publication metadata used by the workflow.
+        const { content_digest, ...dns } = sparse[to].dns;
+        assertEquals(content_digest.length, 64);
+        assertEquals(dns, states[to].dns);
     }
     assertThrows(
         () =>

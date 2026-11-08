@@ -140,7 +140,7 @@ final readonly class DevelopmentDnsConfigRenderer
 
         $listen = [(string) $lan];
         foreach (Node::query()->where('settings->'.ClusterDnsEvidence::Key.'->effective->delegate->router_id', $router->id)->get() as $member) {
-            $previous = $member->settings[ClusterDnsEvidence::Key]['effective']['delegate'] ?? null;
+            $previous = data_get($member->settings, ClusterDnsEvidence::Key.'.effective.delegate');
             if (is_array($previous) && ($previous['cluster_id'] ?? null) === $cluster->id
                 && is_string($previous['server'] ?? null) && $previous['server'] !== $lan) {
                 $listen[] = $previous['server'];

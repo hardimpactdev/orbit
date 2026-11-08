@@ -47,7 +47,7 @@
       failed_when: "router_repeat.rc != 0 or 'changed=0 ' not in router_repeat.stdout"
     - name: Write the member selection
       ansible.builtin.copy:
-        content: "{{ {'ssh': {'target': node, 'identity_file': '/nonexistent'}, 'selection': {'server': '10.99.99.1', 'domains': ['orbit', 'foreign.test'], 'all_domains': ['orbit', 'test'], 'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['test', 'app.example.org']}}} | to_json }}"
+        content: "{{ {'ssh': {'target': node, 'identity_file': '/nonexistent'}, 'selection': {'revision': proof_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'foreign.test'], 'all_domains': ['orbit', 'test'], 'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['test', 'app.example.org']}}} | to_json }}"
         dest: "{{ run_dir }}/intent.json"
         mode: "0600"
     - name: Select the Cluster-only delegate

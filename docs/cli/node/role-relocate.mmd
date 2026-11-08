@@ -75,11 +75,8 @@ sequenceDiagram
   %%> Order:
   %%> - the target serves before anything leaves the source; the source's sites are not published again
   SW->>N: Publish the role DNS<br/>child dns-publish
-  opt private DNS moved
-    SW->>SW: Let DNS answers expire<br/>child route-dns-grace
-    %%> Why:
-    %%> - clients that still hold the old answer keep working until it expires
-  end
+  %%> What it does:
+  %%> - the shared DNS publication owns the durable 31-second grace before source withdrawal, including its remaining wait on retry
   SW->>S: Remove from the source<br/>child node-role-remove
   %%> What it does:
   %%> - removes the role's runtime and publications from the source and forgets its settings there; for `gateway` it does not stop Caddy or PHP-FPM, so clients on the old address keep working

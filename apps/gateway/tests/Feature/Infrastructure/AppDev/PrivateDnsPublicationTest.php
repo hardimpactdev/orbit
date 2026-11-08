@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Infrastructure\AppDev\PrivateDnsPublication;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -58,5 +59,21 @@ describe('PrivateDnsPublication', function (): void {
             ->and(PrivateDnsPublication::same(publicationState('1'), publicationState('1', '10.44.0.3')))->toBeFalse()
             ->and(PrivateDnsPublication::same(publicationState('1'), null))->toBeFalse()
             ->and(PrivateDnsPublication::same(null, null))->toBeTrue();
+    });
+
+    it('captures member-only policy changes while ignoring revisions in the publication content digest', function (): void {
+        $first = [...publicationState('1'), 'members' => [['policy' => ['revision' => '1', 'delegate' => ['server' => '192.168.6.20']]]]];
+        $newRevision = app(PrivateDnsPublication::class)->restamp($first);
+        $moved = $newRevision;
+        $moved['members'][0]['policy']['delegate']['server'] = '192.168.6.21';
+        $artifacts = ['dns' => []];
+        $indexes = [];
+        $capture = app(NativeRoutePublicationArtifacts::class);
+        $a = $capture->intern($artifacts, 'dns', $first, $indexes);
+        $b = $capture->intern($artifacts, 'dns', $newRevision, $indexes);
+        $c = $capture->intern($artifacts, 'dns', $moved, $indexes);
+
+        expect($artifacts['dns'][$a]['content_digest'])->toBe($artifacts['dns'][$b]['content_digest'])
+            ->not->toBe($artifacts['dns'][$c]['content_digest']);
     });
 });

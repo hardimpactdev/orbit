@@ -42,7 +42,8 @@ sequenceDiagram
   end
   opt domain outside the TLD
     SW->>V: Remove private DNS<br/>child dns-publish
-    SW->>SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+    %%> What it does:
+    %%> - the shared publication confirms every member and completes its durable 31-second grace before site withdrawal
   end
   SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent
   opt development targets

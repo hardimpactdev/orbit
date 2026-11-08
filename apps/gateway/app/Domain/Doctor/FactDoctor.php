@@ -135,7 +135,7 @@ final readonly class FactDoctor
         $policy = app(PeerDnsPolicy::class);
         $codes = ['node.cluster_dns_delegate_unsupported', 'node.cluster_dns_policy_mismatch', 'node.cluster_dns_unreachable'];
         if (! $policy->manages($node) || $policy->selection($node)['delegate'] === null) {
-            $evidence = $node->settings[ClusterDnsEvidence::Key]['effective'] ?? null;
+            $evidence = data_get($node->settings, ClusterDnsEvidence::Key.'.effective');
             if (is_array($evidence) && array_key_exists('delegate', $evidence)) {
                 if ($evidence['delegate'] !== null) {
                     $check->issue($codes[1], $node->id, $node->name, 'Cluster DNS withdrawal has not been confirmed. Complete the retained transition.');

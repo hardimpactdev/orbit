@@ -14,6 +14,7 @@ use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -61,7 +62,7 @@ final readonly class PrivateDnsPublication
             $policy = app(PeerDnsPolicy::class);
             foreach (Node::query()->with(['roles', 'cluster'])->orderBy('id')->get() as $member) {
                 $pending = isset($member->settings[ClusterDnsTransition::Key]);
-                $selected = $member->settings[ClusterDnsEvidence::Key]['effective']['delegate'] ?? null;
+                $selected = data_get($member->settings, ClusterDnsEvidence::Key.'.effective.delegate');
                 if (($pending || is_array($selected) || (app(RouteRenderContext::class)->clusterId($member) !== null && app(RouteRenderContext::class)->lanIp($member) !== null)) && $policy->manages($member)) {
                     $members[] = ['node_id' => $member->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member),
                         'policy' => [...$policy->selection($member), 'revision' => $revision]];
@@ -100,20 +101,7 @@ final readonly class PrivateDnsPublication
      */
     public function restamp(array $dns): array
     {
-        $revision = $this->revisions->next();
-        $dns['revision'] = $revision;
-        foreach ($dns['routers'] ?? [] as $index => $router) {
-            $dns['routers'][$index]['dns']['revision'] = $revision;
-        }
-        foreach ($dns['retired'] ?? [] as $index => $retired) {
-            $dns['retired'][$index]['revision'] = $revision;
-        }
-
-        foreach ($dns['members'] ?? [] as $index => $member) {
-            $dns['members'][$index]['policy']['revision'] = $revision;
-        }
-
-        return $dns;
+        return self::revisions($dns, $this->revisions->next());
     }
 
     /**
@@ -128,24 +116,56 @@ final readonly class PrivateDnsPublication
             return $a === $b;
         }
 
-        $strip = static function (array $value): array {
-            unset($value['revision']);
-            foreach ($value['routers'] ?? [] as $index => $router) {
-                unset($value['routers'][$index]['dns']['revision']);
-            }
-            foreach ($value['retired'] ?? [] as $index => $retired) {
-                unset($value['retired'][$index]['revision']);
-            }
+        return self::content($a) == self::content($b);
+    }
 
-            foreach ($value['members'] ?? [] as $index => $member) {
-                unset($value['members'][$index]['policy']['revision']);
+    /** @param array<string,mixed> $dns */
+    public static function contentDigest(array $dns): string
+    {
+        return hash('sha256', json_encode(self::content($dns), JSON_THROW_ON_ERROR));
+    }
+
+    /** @param array<string,mixed> $value
+     * @return array<string,mixed>
+     */
+    private static function content(array $value): array
+    {
+        unset($value['content_digest']);
+
+        return self::revisions($value, null);
+    }
+
+    /** @param array<string,mixed> $dns
+     * @return array<string,mixed>
+     */
+    private static function revisions(array $dns, ?string $revision): array
+    {
+        if ($revision === null) {
+            unset($dns['revision']);
+        } else {
+            $dns['revision'] = $revision;
+        }
+        foreach (['routers' => 'dns', 'retired' => null, 'members' => 'policy'] as $field => $nested) {
+            if (! array_key_exists($field, $dns)) {
+                continue;
             }
+            $entries = $dns[$field];
+            if (! is_array($entries)) {
+                throw new \UnexpectedValueException('DNS publication targets must be an array.');
+            }
+            foreach ($entries as $index => $entry) {
+                $entry = ValidatedData::object($entry);
+                $projection = $nested === null ? $entry : ValidatedData::object($entry[$nested]);
+                if ($revision === null) {
+                    unset($projection['revision']);
+                } else {
+                    $projection['revision'] = $revision;
+                }
+                $entries[$index] = $nested === null ? $projection : [...$entry, $nested => $projection];
+            }
+            $dns[$field] = $entries;
+        }
 
-            return $value;
-        };
-        $a = $strip($a);
-        $b = $strip($b);
-
-        return $a == $b;
+        return $dns;
     }
 }

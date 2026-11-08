@@ -108,9 +108,8 @@ Deno.test("restore keeps the observed candidate serving, then withdraws it after
         names.indexOf("restore_restore_prepare_caddy") <
             names.indexOf("restore_dns"),
     );
-    assert(names.indexOf("restore_dns") < names.indexOf("restore_dns_grace"));
     assert(
-        names.indexOf("restore_dns_grace") <
+        names.indexOf("restore_dns") <
             names.indexOf("restore_restore_caddy"),
     );
     for (const mode of ["forward", "restore", "withdraw"]) {
@@ -129,7 +128,6 @@ Deno.test("restore keeps the observed candidate serving, then withdraws it after
 Deno.test("Route primitive and shared publication children use one209selector", async () => {
     for (
         const name of [
-            "route-dns-grace",
             "route-environment-write",
             "route-certificate-publish",
             "route-certificate-remove",

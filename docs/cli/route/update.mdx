@@ -65,5 +65,5 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `app-dev.projection_busy` | The projection lock stayed busy for 30 seconds. Nothing changes. |
 | `http.404` | The Route is unknown. |
 | `node_access.required` | The caller has no access grant to the Route's Node, or to any member Node for a Cluster-scoped Route. |
-| `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.ingress_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | A step of the run failed. The change is `failed` as above, and the same request resumes it. |
+| `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.ingress_firewall_failed`, `private_dns.publication_failed`, `route.withdraw_failed` | A step of the run failed. The change is `failed` as above, and the same request resumes it. |
 | `instance.source_profile_missing` | A target has no recorded source profile (domain change only). Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |

@@ -81,7 +81,6 @@ final readonly class NativeRouteUpdatePlan
             'publish' => NativeRouteTargetPlan::phase($publish, $common, $installs['early']), 'app_url' => NativeRouteTargetPlan::phase($url, $common, []),
             'ingress' => $ingress, 'ingress_ports' => $ports, 'edge_nodes' => $edgeNodes,
             // Resolvers that honor the TTL stop asking for the old name before its site leaves.
-            'grace' => $dns === [] ? [] : [['seconds' => 31]],
             'retire' => $retire, 'cleanup' => $cleanup, 'lan_absent' => $lanAbsent, 'retire_nodes' => $retireNodes];
     }
 }

@@ -290,7 +290,7 @@ jobs:
     - step: Hold the Nodes to retire
       condition:
         type: always
-    # Only when preparing or publishing failed: the before Caddy, LAN and DNS state (cluster-router-revert).
+    # Restore preparation only before DNS publication was attempted; partial publication retains the candidate.
   - name: 'Restore the before state'
     labels: {role: swamp}
     dependsOn:
@@ -302,7 +302,7 @@ jobs:
     - {step: 'Probe the workloads', condition: {type: always}}
     - {step: 'Select the Router in DNS', condition: {type: always}}
     - {step: 'Retire the old Router', condition: {type: always}}
-    guard: '${{ inputs.intent.retain_dns_selection || !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Select the Router in DNS") && !k.startsWith("Retire the old Router") && !k.startsWith("Hold the Nodes to retire") && !k.startsWith("Release the retired Nodes")) }}'
+    guard: '${{ inputs.intent.retain_dns_selection || steps.exists(k, k.startsWith("Select the Router in DNS") && steps[k].status in ["running", "succeeded", "failed", "interrupted", "cancelled"]) || !steps.exists(k, steps[k].status == "failed" && !k.startsWith("Select the Router in DNS") && !k.startsWith("Retire the old Router") && !k.startsWith("Hold the Nodes to retire") && !k.startsWith("Release the retired Nodes")) }}'
     writes: true
     task:
       type: workflow

@@ -35,7 +35,7 @@ An Instance removal withdraws its Route with the `route-withdraw` workflow, not 
 
 A pending domain replacement and an unchanged request change no Node, so their Operation has already succeeded and no run starts. Instance rename records its own Operation and composes the Route update.
 
-A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Wait the DNS grace` or `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
+A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
 
 | Error code | Step |
 | --- | --- |
@@ -46,7 +46,6 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 | `route.probe_failed` | `Probe the site over TLS` |
 | `route.ingress_firewall_failed` | `Open or close the edge` |
 | `private_dns.publication_failed` | `Move private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
 | `route.withdraw_failed` | `Withdraw the old site` |
 | `route.update_failed` | A failure outside these steps |
 
@@ -61,7 +60,6 @@ With `--offline`, the run first tries each Node once. A Node that does not answe
 | Error code | Step |
 | --- | --- |
 | `private_dns.publication_failed` | `Remove private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
 | `route.withdraw_failed` | `Withdraw site, remove cert` |
 | `route.pool_converge_failed` | `Converge PHP-FPM pools` |
 | `route.lan_firewall_failed` | `Remove unused LAN rules` |

@@ -56,6 +56,33 @@
       register: forwarded_private
       changed_when: false
       failed_when: forwarded_private.stdout != '10.44.0.2'
+    - name: Restart resolved to prove it reloads the persistent delegate
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+    - name: The Cluster delegate survives resolver restart without repair
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, persisted.test]
+      register: persisted_answer
+      changed_when: false
+      failed_when: "'192.0.2.20' not in persisted_answer.stdout"
+    - name: Replay the persisted WireGuard hook after link DNS is lost
+      ansible.builtin.shell: |
+        hook=$(sed -n 's/^PostUp = //p' /etc/wireguard/orbit.conf)
+        test -n "$hook"
+        printf '%s\n' "$hook" | sed 's/%i/orbit/g' | sh
+        resolvectl default-route orbit no
+      changed_when: true
+    - name: Restore the disposable public uplink runtime policy after restart
+      ansible.builtin.command:
+        argv: [resolvectl, dns, eth0, 192.0.2.53]
+      changed_when: true
+    - name: The replayed hook preserves the delegate's exclusive Cluster scope
+      ansible.builtin.command:
+        argv: [resolvectl, domain, orbit]
+      register: replayed_domains
+      changed_when: false
+      failed_when: "'~test' in replayed_domains.stdout or '~orbit' not in replayed_domains.stdout"
     - name: Stop VPN DNS inside the disposable proof
       ansible.builtin.systemd:
         name: dnsmasq
@@ -113,12 +140,17 @@
       register: member_repeat
       changed_when: false
       failed_when: "member_repeat.rc != 0 or member_repeat.stdout is not search('node[ ]+:[ ]+ok=[0-9]+[ ]+changed=0[ ]')"
+    - name: Take a fresh member withdrawal revision
+      ansible.builtin.command:
+        argv: [date, +%s%6N]
+      register: proof_revision
+      changed_when: false
     - name: Keep an explicit withdrawal intent
       ansible.builtin.copy:
         content: >-
           {{ {'ssh': {'target': {'host': '127.0.0.1', 'user': 'root', 'port': 22,
           'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA']},
-          'identity_file': '/nonexistent'}, 'selection': {'server': '10.99.99.1', 'domains': ['orbit', 'test'],
+          'identity_file': '/nonexistent'}, 'selection': {'revision': proof_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'],
           'all_domains': ['orbit', 'test'], 'delegate': none}} | to_json }}
         dest: /tmp/orbit-cluster-proof/intent.json
         mode: '0600'
@@ -160,7 +192,7 @@
           'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}],
           'members': [{'node_id': 10, 'connection': {'nodeHost': '127.0.0.1', 'nodeUser': 'root', 'nodePort': 22, 'nodeIdentityFile': '/nonexistent'},
           'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA'],
-          'policy': {'server': '10.99.99.1', 'domains': ['orbit', 'test'], 'all_domains': ['orbit', 'test'], 'delegate': none}}],
+          'policy': {'revision': retire_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'], 'all_domains': ['orbit', 'test'], 'delegate': none}}],
           'retired': [{'node_id': 7, 'cluster_id': 999, 'revision': retire_revision.stdout,
           'connection': {'nodeHost': '127.0.0.1', 'nodeUser': 'root', 'nodePort': 22, 'nodeIdentityFile': '/nonexistent'},
           'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA']}]}} | to_json }}

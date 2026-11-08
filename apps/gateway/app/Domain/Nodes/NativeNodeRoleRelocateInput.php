@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Metrics\MetricsRoleInput;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
@@ -17,7 +16,6 @@ use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Support\ValidatedData;
 
 /**
  * The full public intent of operation-node-role-relocate. The Gateway captures both halves at admission:
@@ -66,8 +64,6 @@ final readonly class NativeNodeRoleRelocateInput
             'websocket' => $websocket, 'gateway' => $role === RoleName::Gateway ? $this->gateway($target) : null,
             'certificates' => $role === RoleName::Metrics ? ['leaves' => [], 'withdrawals' => []] : $this->certificates($target, $plan),
             'firewall' => $firewall, 'publications' => $publications,
-            'grace' => $websocket !== null && array_any($publications, static fn (array $p): bool => ValidatedData::object($p['after'])['dns'] !== null)
-                ? [['seconds' => PrivateDnsAnswerExpiry::WithdrawalGraceSeconds]] : [],
             'source' => $removal,
             // Metrics follows its own lifecycle: its converge rebuilds the scrape configuration for the moved sites.
             'metrics_converge' => $role === RoleName::Metrics ? null

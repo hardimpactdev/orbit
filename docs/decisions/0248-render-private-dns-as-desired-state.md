@@ -157,6 +157,8 @@ An offline member keeps its detach transition until policy withdrawal is verifie
 
 The shared DNS publication owns the grace once for all affected Routes and members. It records the last successful DNS selection time and waits its remaining 31 seconds before authorizing retirement. A retry reuses that time when selection is unchanged; each new successful selection resets the deadline. Route reconciliation and Router transitions consume this barrier and add no second wait. Any successful VPN or Router publication or member selection is the cutover, including success before another parallel target fails. Retain candidate serving resources after that point until forward recovery or a fresh-revision rollback has moved all consumers back and passed the same barrier.
 
+If publication is interrupted after it starts, its missing terminal receipt cannot prove that consumers stayed on the old Router. Retain the candidate and reconcile with a fresh revision. Restore candidate preparation only when DNS publication never started.
+
 ### Consistency, failure and rollback
 
 Every target records its installed revision and content digest. The publication returns per-target receipts, including the selected server and domain digest for each member. A superseded revision is a successful `dns.revision_superseded` skip on that target, but it does not by itself authorize a stale member switch or retirement. A dependent phase requires the effective projection it needs. If newer state differs, stop that obsolete transition and reconcile from current rows. Keep existing Cluster lifecycle serialization and the per-Node peer/DNS locks; do not add a fleet lock or claim distributed atomicity.

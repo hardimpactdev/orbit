@@ -76,9 +76,8 @@ sequenceDiagram
     end
     opt --domain outside the TLD
       SW->>V: Move private DNS<br/>child dns-publish
-      Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-      %%> Why:
-      %%> - the old DNS answer has 31 seconds to expire before the old site is withdrawn
+      %%> What it does:
+      %%> - the shared publication owns the durable 31-second grace before site withdrawal; a retry waits only its remaining time
     end
     opt a lasting site is replaced
       SW->>N: Withdraw the old site<br/>@swamp/cfgmgmt/file absent

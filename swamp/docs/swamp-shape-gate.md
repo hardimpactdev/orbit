@@ -166,19 +166,7 @@ polling, retries and lock calls are counted separately.
 
 A phase script invoked by official `@swamp/ssh.exec` may poll checked, read-only Incus VM state under a literal `timeout` argv. The gate binds the script body to its shipped source and checks every invocation, including conditional branches. Every body-output key occurrence must belong to a proved argv slot; bracket keys, escaped or joined keys, history reads, concatenation and unresolved selectors cannot earn a bound. It accepts fixed-interval `incus list --format json` observations that propagate command failures. Mutations, suppressed read failures, computed intervals and missing or computed bounds remain rejected. This does not admit local-shell Incus polls or another SSH transport.
 
-The approved Route private DNS grace is the sole sleep exception. It matches only
-`workflows/workflow-route-dns-grace.yaml`, job `grace`, step
-`wait-private-dns-ttl`, placed with step labels `{node: '209'}` or target
-`orbit-node-209` (or both with matching values), and the exact `command/shell`
-behavior `route-dns-grace.execute` with the sole input
-`run: /usr/bin/sleep 31`. Inherited targets still apply; a foreign target cannot
-qualify through 209 labels. The workflow contains one job and one step. This covers
-the existing 30-second private DNS TTL after replacement publication and before
-old Caddy sites, certificate scopes and LAN allowances retire, including restore.
-Core and the official workflows extension provide no native delay. The binding
-guide's **Approved exception: Route private DNS grace** records the approval.
-Other files, steps, tasks, durations, flags, wrappers and commands remain findings;
-the grandfather baseline does not grow. The Route owner owns phase ordering.
+Private DNS publication owns the durable TTL grace in its Ansible phase. Route, Router and role workflows consume that barrier before retiring old resources. A separate shell sleep has no exception.
 
 Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,

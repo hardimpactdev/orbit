@@ -119,9 +119,9 @@ The render reads stored rows only. A change stores its state before it asks for 
 
 ### Revision and parallel publications
 
-Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. The Node installs a state only when its revision is newer than `orbit.revision`. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. A restore, such as a failed Router change, uses a render with a newer revision than the forward one.
+Every render takes a revision, `max(stored + 1, now in microseconds)`, under a lock in the transaction that reads the rows. Each resolver and member fences stale revisions under its local lock. Two parallel publications are therefore safe: the newest render wins, and it holds every change stored before it. An explicit rollback uses a fresh revision and completes member confirmation and the shared grace before removing serving resources.
 
-A publication admitted after that holds a newer revision still, and the Node then skips the restore as superseded. So after the Gateway stores the failure of a Router change or an Instance transfer, it queues one fresh publication, and the newest render holds the rolled-back rows.
+A publication admitted after that holds a newer revision still, so an older restore cannot overwrite it. After a failed Router change or Instance transfer, the Gateway queues a fresh publication from retained intent. A Router candidate remains selected when publication may have moved any consumers, including an interrupted publication with no terminal receipt.
 
 ### The phase
 
@@ -264,7 +264,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Split private DNS on peers
 
-Nick approved split private DNS on 2026-10-19. Public names must not depend on the VPN Node. The Gateway owns the private namespace, so it renders and reconciles the routing domains from its records. One renderer serves provision, repair, scheduled reconciliation, and Doctor. The scheduled pass keeps fleet SSH out of record mutations. It retries unreachable peers independently.
+Nick approved split private DNS on 2026-10-19. Public names must not depend on the VPN Node. The Gateway owns the private namespace, so it renders resolver projections and routing domains from its records. Publication, provisioning and explicit repair use the shared member phase. Doctor compares its receipts and read-only health observations with that desired state. An unreachable member retains its transition until repair succeeds.
 
 The former `~.` default is rejected because a VPN DNS outage also breaks public lookups. A VPN-first, public-second fallback chain is rejected because systemd-resolved stays on the second server after failover, where private names remain broken. Static hosts are rejected because Routes and Router placement change and TLDs need DNS. The cost of split DNS is propagating private namespace changes and respecting the 512-domain bound.
 
