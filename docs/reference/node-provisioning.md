@@ -430,6 +430,8 @@ The nested guests are Incus system containers. The role serves them nothing: eac
 
 Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#size-of-a-task-vm). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
 
+A host without a recorded base snapshot first discards any unpromoted base VM and seed and builds from stock. This also removes the cached cloud-init state of a failed first boot, whose one-shot package installation does not run again on a restart. Recorded bases are preserved unless the refresh requests `--from-stock`.
+
 On a base snapshot refresh or a template build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
 The `checkout` phase materializes a new clone at the pinned release commit before installing dependencies. A clone made with `--no-checkout` already has a `HEAD`, so matching that commit alone does not mean its files exist. An existing checkout at the same commit stays unchanged, including its dependency trees and caches.

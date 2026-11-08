@@ -110,3 +110,5 @@ Detect a ZFS loop pool from its actual source file, not only a missing `zfs_data
 An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's first boot. A route allowance affects forwarded traffic only, and Incus's own accept rules cannot override another nftables input chain's drop. Scope DHCP to the bridge and DNS to its host address; keep the rest of host input closed. Give input rules catalog ownership and a shared settings/Node withdrawal phase. Assert the complete rendered input ruleset: a packet matcher that ignores unrestricted rules can miss a blanket allow.
 
 `git clone --no-checkout` sets HEAD without materializing files. A fresh clone must check out the admitted commit even when HEAD already matches it. Test fresh and existing checkouts with real Git before dependency installation.
+
+An unpromoted base is a failed build artifact, not a reusable base. Recreate it and its seed from stock on the next refresh. Cloud-init can report completion on a later boot even though a one-shot package module failed earlier and never installed SSH; compare proxy and firewall evidence before changing network policy.
