@@ -83,7 +83,7 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
 
-A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers a restore before the next case.
+A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers no restore; a case that cannot share the batch with others gets its own.
 
 ## Steps
 
@@ -201,9 +201,9 @@ A batch is a group of cases that run one after another after one restore. Every 
 
 - The run starts on the task's `base` snapshot. The first batch needs no restore.
 - A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).
-- Inside a batch, cases undo nothing. Each uses its own resources, so it does not see the others. The workflow runs them one after another with `runner case`; `runner batch BATCH` runs them [several at a time](#several-cases-at-a-time).
+- Inside a batch, cases undo nothing. Each uses its own resources, so it does not see the others. The workflow runs a batch in one step, `runner batch BATCH`, which runs the cases [several at a time](#several-cases-at-a-time).
 - A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
-- A case that does not pass triggers a restore of `base` and the batch setup before the next case.
+- A case that does not pass triggers no restore: it leaves only its own resources, and the next batch restores `base` anyway. A case that must not meet that state gets its own batch.
 - A restore that fails or is not healthy within 45 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
 - A case that needs a state that no batch offers gets a new batch. Do not build a different world inside one case.
 
@@ -222,7 +222,7 @@ The nested fleet has three Nodes, and the Gateway lets one firewall write run on
 - **Locks.** The runner finds out what a case needs of the fleet from its steps:
   - A case runs **alone** (`plan` prints `alone`) when it uses `fault`, `busy_node`, `node_down`, `agent_report`, `node_access_remove` or `ipv6_addresses`, expects `request: none`, compares `operations` with `unchanged`, or sets `exclusive: true`. These change or compare what every case shares: the Operation list, a Node's agent, a held lock. Such a case stays on `target`, takes no turn of `spread` and runs after the others.
   - Any other case is the **only case on its Node** while it runs (`alone on its Node`): `unchanged` compares the whole table and listeners of its Node, `doctor` waits on its Node, and writes on one Node queue anyway.
-- **Parallel.** `runner batch BATCH --file F` reads the fleet once, starts as many cases as `--parallel` (or `parallel` in the file) allows, never two on one Node, and prints a verdict line as each case ends. At most three cases run at once, one per Node, whatever the limit. The exit status is the worst verdict: 1 when a case failed, else 2 when one was unrun, else 0.
+- **Parallel.** `runner batch BATCH --file F` reads the fleet once, starts as many cases as `--parallel` (or `parallel` in the file) allows, never two on one Node, and prints the verdict lines at the end, those that did not pass first. `--only \"ID ID\"` runs some cases of the batch. Swamp cuts the output of a step at 4096 bytes: if the lines do not fit, the runner first shortens the failure messages to two of 100 characters, then ends the output with `{\"cut\": N}`, and the workflow reports a case without a line as `failed`, with the message that it printed no verdict. At most three cases run at once, one per Node, whatever the limit. The exit status is the worst verdict: 1 when a case failed, else 2 when one was unrun, else 0.
 - **Shared facts.** `runner batch` reads the fleet once, the guests, their addresses and the Node IDs of the nested Gateway, and every case of the batch uses that. `runner case` reads it for its one case.
 
 A case that is placed on a Node must not name that Node inside a longer text, such as an expected line of output: only a value that is a Node name, and the `${node.id}`, `${node.src}` and `${node.src6}` placeholders, trade places.

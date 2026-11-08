@@ -1,6 +1,6 @@
 id: 8e4d2b71-3c59-4a0e-b6d8-7f1a93c05e22
 name: proof-fleet-verify-batch
-description: One batch of proof cases on the task VM. The batch setup, then its cases one at a time, then one report of the verdict lines.
+description: One batch of proof cases on the task VM. The batch setup, then one runner step for all its cases (several at a time, the ones that run alone last), then one report of the verdict lines.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -90,38 +90,58 @@ jobs:
         - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
 - name: cases
   labels: {role: swamp}
-  concurrency: 1
   dependsOn:
   - job: start
     condition: {type: completed}
   steps:
-  # One child per case, one at a time, in file order. A failed setup (this batch's start, or after an earlier case) stops the rest.
-  - name: case-${{ self._index }}
+  # One step runs the batch: the runner reads the fleet once, runs the cases that share the fleet several at a time (the cases file sets how many), then the
+  # cases that run alone. It prints one verdict line a case, the ones that did not pass first. A failed restore or setup (this batch's start) skips it.
+  # A case that did not pass triggers no restore: cases use their own resources, and the next batch restores anyway.
+  - name: batch
     labels: {role: swamp}
-    forEach:
-      item: case
-      in: ${{ inputs.cases }}
-    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.exists(k, k.startsWith("case-") && steps[k].?outputs.?restored.?stdout.orValue("").contains("\"restore\": \"failed\"")) || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") || steps.exists(k, k.startsWith("case-") && steps[k].?outputs.?setup.?stdout.orValue("").contains("\"setup\": \"failed\"")) }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") }}'
     allowFailure: true
+    writes: true
     task:
-      type: workflow
-      workflowIdOrName: proof-fleet-verify-case
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
       inputs:
-        ssh_execution: ${{ inputs.ssh_execution }}
-        checkout_path: ${{ inputs.checkout_path }}
-        group_id: ${{ inputs.group_id }}
-        file: ${{ inputs.file }}
-        batch: ${{ inputs.batch }}
-        case: ${{ self.case }}
-        setup: ${{ inputs.setup }}
-        last: ${{ self._index == size(inputs.cases) - 1 }}
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 3600
+        argv:
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
+        - batch
+        - ${{ inputs.batch }}
+        - --file
+        - ${{ inputs.checkout_path + "/" + inputs.file }}
+        - --evidence
+        - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
+        - --only
+        - ${{ inputs.cases.join(" ") }}
 - name: report
   labels: {role: swamp}
   dependsOn:
   - job: cases
     condition: {type: completed}
   steps:
-  # The verdict lines of the batch, in order. A case that did not run, or printed no verdict, gets a line of its own, so every case has one.
+  # The verdict lines of the batch. A case with no line gets one of its own, so every case has one: unrun when the batch step printed nothing (the batch was
+  # stopped before it), failed when it printed lines but none for the case (the runner stopped, or the output was cut).
   - name: report
     labels: {role: swamp}
     task:
@@ -133,4 +153,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.filter(k, k.startsWith("case-")).map(k, [steps[k].?outputs.?case.?stdout.orValue("")].map(o, o.contains("\"verdict\"") ? o.trim() : "{\"id\": \"" + inputs.cases[int(k.substring(5))] + "\", \"verdict\": \"failed\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"the case printed no verdict\"]}")[0])].map(x, (x + [x.join("\n")].map(e, inputs.cases.filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'
+          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join(""))).trim())[0] }}'
