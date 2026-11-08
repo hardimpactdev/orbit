@@ -456,6 +456,8 @@ Every host has two independent fixed pools, configured with `task_places` and `c
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings. Operator proofs join the shared task admission queue.
 
+CI proofs join one first-come-first-served queue. The front proof takes every free CI place with a usable base, up to its batch count. Each place gets a fresh VM. Whole batches are balanced by measured case times; each VM restores its fleet and runs its assigned batches. Orbit merges the case verdicts into one report and deletes every VM before the proof finishes. A failed case or missing verdict fails the proof; a full pool never produces a passing report with no cases run.
+
 When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
