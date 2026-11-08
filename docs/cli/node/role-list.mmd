@@ -14,7 +14,7 @@ sequenceDiagram
   %%> - syntax: `<node> [--json]`
   Note over GW: Resolve and authorize NODE
   %%> Requirements:
-  %%> - Node access follows the shared [NodeAccessAuthorizer rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php).
+  %%> - Node access follows the [shared Node authority rule](/cli/node#authority).
   alt unknown Node
     %% path: node-not-found
     GW--xCLI: Refused<br/>http.404

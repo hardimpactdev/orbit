@@ -26,7 +26,7 @@ orbit node:role:list 7
 
 Orbit reads the Gateway's recorded role assignments. It contacts no Node, Grafana or other system, starts no Operation, and changes nothing. An unreachable Node or missing or stale agent facts do not delay or refuse the read: assignments are records, not agent observations. Running the command again reads the records again; it is not a skipped action and has no skip reason code.
 
-Access uses the shared [NodeAccessAuthorizer rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php) for the [Node family](/cli/node).
+Access uses the [shared Node authority rule](/cli/node#authority) for the [Node family](/cli/node).
 
 Every assigned role is included, with its state: `active`, `provisioning`, `failed`, or `removing`. The shared role projection supplies the same `role`, `status`, `failed_step` and `error_code` values to this command, [`node:list`](/cli/node/list) and [`node:show`](/cli/node/show).
 
