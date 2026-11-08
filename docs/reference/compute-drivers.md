@@ -948,7 +948,7 @@ Only the base snapshot refresh makes a base. The recipe image build is gone, wit
 
 A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that host preparation copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
 
-Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. A failed first boot can leave cloud-init's package module marked as run without installing the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
+Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. Cloud-init can mark its package module as run even when the first boot fails to install the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
 
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
