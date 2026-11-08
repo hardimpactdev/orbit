@@ -1,0 +1,199 @@
+# The target cases of node:role:add. Format: docs/reference/verification-cases.
+# No role-add cases file exists on origin/main; no existing case IDs or batches are replaced.
+# Shared prompts, JSON and keyed replay follow the CLI standard; they need no command-specific cases.
+command: node:role:add
+chart: node/role-add
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [ufw, operations]
+parallel: 1
+
+uncovered:
+  "path:node-ineligible": "Need recorded Node status, platform and SSH-management fixtures to prove operation.kind_unavailable before any Operation or host contact. node_down changes reachability, not recorded management eligibility."
+  "path:database-address-missing": "Need a recorded Node fixture without a WireGuard address to check database.wireguard_ip_missing without disabling the proof network."
+  "path:target-busy": "Need a role-Operation hold fixture to prove operation.target_busy without an assignment change. busy_node only holds a firewall Operation, whose node_firewall lock is not the role Operation's node lock."
+  "path:storage-path-refused": "Need effective application-storage fixtures for invalid, protected and managed-checkout paths, plus pre-host-contact assertions, to check the three node.settings_path_* errors."
+  "path:analytics-storage-refused": "Need storage Process fixtures and captured IDs to check missing Processes, wrong owner/runtime/engine, inactive database Nodes, unsafe bindings, missing ports and credentials, including managed PostgreSQL 18 owner resolution."
+  "path:analytics": "Need prepared PostgreSQL and ClickHouse Processes with captured IDs to prove each storage option, including analytics --converge, initialization, publication and retained runtime after a later failure."
+  "path:swamp": "Need a non-serving swamp-role fixture and file owner/mode assertions to prove binary publication, staggered worker renewal and repair of an existing compile cache without compilation."
+  "path:converge-refused": "Need assignment-state and clock fixtures to refuse fresh provisioning, removing and non-converge failures, then accept a provisioning claim at least 11 minutes old only without a live Node Operation."
+  "guard:singleton-and-cluster": "Need role-holder and Cluster fixtures to distinguish singleton refusal, ingress without a Cluster, a second Cluster ingress, and a repeated active ingress assignment. CLI status alone cannot distinguish these refusals from an unrelated role precondition."
+  "record:role-lifecycle": "Need role-record assertions for active, provisioning, failed and removing with role, status, failed_step and error_code, including retained active status after a failed convergence and unchanged assignments after refusals. Compare node:list, node:show and node:role:list using recorded Gateway state only and named related records."
+  "effect:role-state": "Need role-specific host-state assertions and safe negative mutations to prove packages, units, storage ownership, protected-path safety, ordered owned firewall rules and preservation of unrelated rules. The partial-failure case checks execution and recovery, not these host effects or a rollback."
+  "repeat:no-changes": "Need Ansible change-result or role host-state comparisons to prove a second convergence reports no changes; a second succeeded Operation alone does not prove that result."
+  "failure:role.os_unsupported": "Need an isolated managed non-Ubuntu target to prove role.os_unsupported before host changes while preserving the CLI control path."
+  "flow:phase-contract": "Need run/phase and private-file assertions to prove one run, Ansible ownership of idempotent role phases, terminal-only projection and cleanup after either result."
+  "path:tools": "Need Tool Manager version and executable assertions on a target receiving an application role to prove conditional tool setup rather than only Operation success."
+  "path:certificates": "Need certificate issuer, SAN and trust assertions for a role with certificate intent to prove signing on its admitted serving Node."
+  "path:php-pools": "Need PHP pool configuration and service-state assertions on admitted participant Nodes to prove conditional pool publication."
+  "path:dns": "Need role-specific private-DNS record and answer assertions to prove publication after site and firewall readiness."
+  "path:metrics": "Need exporter scrape and Prometheus membership assertions on recorded Metrics participants to prove conditional enrollment."
+  "path:analytics-cleanup": "Need prepared Analytics storage and init-container lifecycle assertions to prove best-effort cleanup after either terminal result, before private run files are removed."
+
+cases:
+  - id: required-only
+    batch: fresh-fleet
+    covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
+    summary: Add database with required arguments only, refuse an ordinary repeat, then converge twice successfully.
+    timeout: 1200
+    stages:
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 0, status: succeeded}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, code: validation.failed, request: none}}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], forms: [human], expect: {exit: 0, status: succeeded}}
+
+  - id: invalid-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: Supplied zero and negative Node IDs are local refusals, not charted Gateway paths.
+    variants:
+      - {name: zero, node_id: "0"}
+      - {name: negative, node_id: "-1"}
+    act:
+      - cli: {run: [node:role:add, --, "${node_id}", database], forms: [human], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: node-name-is-not-id
+    batch: fresh-fleet
+    covers: []
+    summary: A recorded name is not an explicit numeric record selector.
+    fails_today: The CLI resolves Node names and sends the role request instead of refusing a nonnumeric selector with node.id_invalid.
+    act:
+      - cli: {run: [node:role:add, app-dev, database], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: unknown-node
+    batch: fresh-fleet
+    covers: [main, node-not-found]
+    summary: An unrecorded positive Node ID is refused before any Operation or role change.
+    act:
+      - cli: {run: [node:role:add, "2147483647", database], expect: {exit: 1, code: http.404, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: unknown-role
+    batch: fresh-fleet
+    covers: [main, role-refused]
+    summary: A role outside the registry is refused before admission.
+    act:
+      - cli: {run: [node:role:add, "${app-dev.id}", not-a-role], expect: {exit: 1, code: validation.failed, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: protected-role
+    batch: fresh-fleet
+    covers: [main, role-refused]
+    summary: VPN and Router cannot be assigned by generic role mutation.
+    variants:
+      - {name: vpn, role: vpn}
+      - {name: router, role: router}
+    act:
+      - cli: {run: [node:role:add, "${app-dev.id}", "${role}"], forms: [human], expect: {exit: 1, code: validation.failed, request: none, human: protected from generic mutation}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: conflicting-role
+    batch: fresh-fleet
+    covers: [main, role-refused]
+    summary: app-prod cannot share the fleet's app-dev Node.
+    act:
+      - cli: {run: [node:role:add, "${app-dev.id}", app-prod], forms: [human], expect: {exit: 1, code: validation.failed, request: none, human: conflicts}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: converge-unassigned-role
+    batch: fresh-fleet
+    covers: [main, converge-requested, converge-mode, converge-refused]
+    summary: Convergence cannot create an absent ci-runner assignment on app-prod.
+    act:
+      - cli: {run: [node:role:add, "${app-prod.id}", ci-runner, --converge], forms: [human], expect: {exit: 1, code: validation.failed, request: none, human: not assigned}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: invalid-analytics-process-id
+    batch: fresh-fleet
+    covers: []
+    summary: Each supplied Analytics storage ID must be a positive integer before admission.
+    variants:
+      - {name: postgres, postgres: "0", clickhouse: "1"}
+      - {name: clickhouse, postgres: "1", clickhouse: "0"}
+    act:
+      - cli: {run: [node:role:add, "${app-dev.id}", analytics, "--postgres-process=${postgres}", "--clickhouse-process=${clickhouse}"], expect: {exit: 1, code: node_role.storage_process_required, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: analytics-option-on-other-role
+    batch: fresh-fleet
+    covers: [main, role-refused]
+    summary: Analytics-only storage options cannot be silently ignored on an otherwise valid app-dev convergence.
+    fails_today: The CLI ignores Analytics storage options for other roles and admits the convergence instead of returning validation.failed.
+    variants:
+      - {name: postgres, option: --postgres-process=1}
+      - {name: clickhouse, option: --clickhouse-process=1}
+    act:
+      - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge, "${option}"], expect: {exit: 1, code: validation.failed, request: none}}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: failure-after-partial-change
+    batch: ufw-fault
+    covers: [main, add, failed, converge-requested, converge-mode, converge, converge-succeeded]
+    summary: A firewall failure after role application leaves a recoverable assignment; explicit convergence succeeds after the fault clears.
+    exclusive: true
+    timeout: 1200
+    setup:
+      - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 1}}
+    stages:
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, status: failed, steps: {name: Open the firewall, count: 1}}}
+      - act:
+          - fault: {clear: true}
+          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
+
+  - id: unreachable-node
+    batch: node-down
+    covers: [main, add, failed, converge-requested, converge-mode, converge, converge-failed]
+    summary: Loss of SSH on an otherwise eligible recorded Node fails both an admitted add and convergence of its active app-dev assignment, not the eligibility check.
+    exclusive: true
+    timeout: 1200
+    setup:
+      - node_down: {node: app-dev}
+    stages:
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, status: failed}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], expect: {exit: 1, status: failed}}
+
+  - id: shared-node-authority
+    batch: no-grant
+    covers: [main, role-refused, access-refused, converge-requested, converge-mode, converge-refused]
+    summary: Gateway authority needs no target grant; refusal needs neither authority nor a target grant, and target-only authority also applies to Metrics.
+    exclusive: true
+    fails_today: Metrics role mutation authorizes against the Gateway Node instead of the target, refusing a caller who holds only the target grant.
+    setup:
+      - cli: {run: [node:access:add, "${app-prod.id}", "${gateway.id}"], expect: {exit: 0}}
+    stages:
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", app-prod], as: app-prod, expect: {exit: 1, code: validation.failed, request: none}}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
+      - act:
+          - cli: {run: [node:access:remove, "${app-prod.id}", "${gateway.id}", --force], expect: {exit: 0}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", app-prod], as: app-prod, expect: {exit: 1, code: node_access.required, request: none}}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
+      - act:
+          - cli: {run: [node:access:add, "${app-prod.id}", "${app-dev.id}"], expect: {exit: 0}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", metrics, --converge], as: app-prod, expect: {exit: 1, code: validation.failed, request: none}}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
