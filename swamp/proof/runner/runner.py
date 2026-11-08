@@ -202,6 +202,15 @@ def command_plan(args):
     return 0
 
 
+def command_replay(args):
+    base = Path(args.base_file)
+    before = base.read_text() if base.is_file() else None
+    ids = selection.replay_cases(before, Path(args.file).read_text(),
+                                 Path(args.base_batches).read_text(), Path(args.batches).read_text())
+    print(' '.join(ids))
+    return 0
+
+
 def run_case(case, fleet, spec, root, negative=False, discovery=0):
     """Run one case and write its receipt under `root/<case id>/<time>`. Returns the result."""
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -321,6 +330,9 @@ def main(argv=None):
     plan.add_argument('--json', action='store_true', help='print canonical expanded case definitions; no fleet')
     plan.add_argument('--steps', action='store_true', help='also print the resolved steps')
     plan.add_argument('--lines', action='store_true', help='print one line a batch, `BATCH SETUP CASE...`, for the workflow')
+    replay = commands.add_parser('replay', help='list added or changed fails_on_base cases; no fleet')
+    replay.add_argument('--base-file', required=True)
+    replay.add_argument('--base-batches', required=True)
     case = commands.add_parser('case', help='run one case on the nested fleet')
     case.add_argument('id')
     case.add_argument('--negative', action='store_true')
@@ -333,12 +345,12 @@ def main(argv=None):
     batch.add_argument('--evidence')
     batch.add_argument('--parallel', type=int, help='cases at a time; the cases file sets the default')
     batch.add_argument('--only', help='run only these cases of the batch: their IDs in one argument, separated by spaces')
-    for command in (plan, case, setup, batch):
+    for command in (plan, replay, case, setup, batch):
         command.add_argument('--file', required=True)
         command.add_argument('--batches', default=str(BATCHES))
     args = parser.parse_args(argv)
     try:
-        return {'plan': command_plan, 'case': command_case, 'setup': command_setup, 'batch': command_batch}[args.command](args)
+        return {'plan': command_plan, 'replay': command_replay, 'case': command_case, 'setup': command_setup, 'batch': command_batch}[args.command](args)
     except spec_module.SpecError as error:
         print(f'cases file refused: {error}', file=sys.stderr)
         return 3

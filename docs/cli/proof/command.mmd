@@ -14,15 +14,34 @@ sequenceDiagram
   %%> A mismatch fails before cases and records expected and found commits.
   loop assigned batches, one at a time
     SW->>VM: Restore the head checkout
-    %%> A prior new-case check may have left the checkout at the merge base. Restore the admitted head before planning.
+    %%> A prior flagged-case check may have left the checkout at the merge base. Restore the admitted head before planning.
     SW->>VM: Plan the assigned batch
     %%> runner plan --lines --only-batch restricts execution to the whole admitted batch. An operator run plans the full command.
     SW->>VM: Restore the base snapshot
     SW->>VM: Run batch setup
     SW->>VM: Run batch cases
     %%> The runner schedules cases within the fleet's existing concurrency and isolation rules. Keep every verdict line in the output artifact.
-    SW->>VM: Prove new cases can fail
-    %%> A new case must fail with cause assertion at the merge base. Missing evidence fails.
+    opt CI replay after every head case passed
+      SW->>SW: Check head verdicts
+      SW->>VM: Read runner capabilities
+      %%> Read head runner help. Without replay support, skip selection and replay.
+      SW->>VM: Check out the base
+      SW->>VM: Select replay cases
+      %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.
+      SW->>VM: Remove the base copy
+      SW->>SW: Scope replay case ids
+      %%> Keep only cases admitted to this batch.
+      SW->>VM: Switch to the base
+      SW->>VM: Read nested commit
+      SW->>SW: Check nested commit
+      SW->>VM: Take head case files
+      %%> Copy cases, batches and the spec loader. Keep base runner and step implementations.
+      SW->>VM: Restore base snapshot
+      SW->>VM: Run replay setup
+      SW->>VM: Run replay cases
+      SW->>SW: Join replay verdicts
+      %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
+    end
     VM-->>SW: Batch verdicts
   end
   SW->>VM: Release the slot
