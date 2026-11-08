@@ -40,11 +40,11 @@ final readonly class TaskProvisionIntent
      * Claims a slot in one admission transaction and records the intent as the Operation of `$kind`. A kind that runs the claim as one step
      * of a larger run, such as `tasks.prep`, adds its own intent through `$extend`, which receives the provision intent, the group, its
      * workspace Instance and its slot, and returns the whole input of the Operation; the node of the Operation stays the slot's host.
-     * `$keepFree` slots of the chosen host stay free after the claim, as a report-only proof asks.
+     * Only `proof.command` with persisted authenticated CI eligibility may use the reserve or a CI-only host; every task-work kind leaves both alone.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, int $keepFree = 0): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciReserve = false): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
@@ -54,7 +54,7 @@ final readonly class TaskProvisionIntent
         // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
         $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $keepFree): Operation {
+        return DB::transaction(function () use ($group, $caller, $request, $startCommit, $kind, $extend, $ciReserve): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
@@ -62,7 +62,7 @@ final readonly class TaskProvisionIntent
             $this->assertProvisionable($group);
             $project = $group->project;
             try {
-                $slot = $this->slots->take($group, keepFree: $keepFree);
+                $slot = $this->slots->take($group, proof: $kind === 'proof.command' && $ciReserve);
             } catch (TaskCapacityException $exception) {
                 throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
                     previous: $exception, details: ['reason' => $exception->wait->value]);

@@ -910,3 +910,5 @@ For a web-serving Project, its `checkout` phase also gives Caddy its access to t
 The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
 
 The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
+
+Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services.

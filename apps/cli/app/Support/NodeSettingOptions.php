@@ -112,7 +112,7 @@ final readonly class NodeSettingOptions
     /** @param array<string, mixed> $value */
     private static function validTaskVms(array $value): bool
     {
-        $strings = ['cidr', 'project', 'network', 'pool', 'image_alias', 'memory', 'disk'];
+        $strings = ['cidr', 'project', 'network', 'pool', 'pool_size', 'image_alias', 'memory', 'disk'];
         $integers = ['max_vms', 'cpus'];
         if (! is_string($value['cidr'] ?? null) || ! is_int($value['max_vms'] ?? null)) {
             return false;
@@ -121,6 +121,7 @@ final readonly class NodeSettingOptions
             $valid = match (true) {
                 in_array($key, $strings, true) => is_string($item),
                 in_array($key, $integers, true) => is_int($item),
+                $key === 'ci_only' => is_bool($item),
                 $key === 'zfs_dataset' => $item === null || is_string($item),
                 $key === 'operator_owned' => is_array($item) && array_is_list($item) && array_all($item, fn (mixed $resource): bool => is_string($resource)),
                 default => false,
