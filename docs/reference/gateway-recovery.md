@@ -56,6 +56,8 @@ The database alone is not a recoverable Gateway backup. Keep these inputs togeth
 | Machine configuration or VM snapshot | Keeps service, firewall, DNS, network, ownership, and package state when an update changes them. |
 | Application backups | Application databases, uploads, and source are separate from Gateway state. |
 
+The database also holds agent-reported Node facts, including the retained [`node:metrics`](/cli/node/metrics) snapshot and its original observation time. Restoring only the disposable presence cache cannot recover those snapshots. After a restore, metrics reads use the saved observation until the agent reports again.
+
 A nonempty `APP_KEY` in the environment takes precedence over `ORBIT_HOME/gateway.app-key`. Preserve the effective key with its encrypted data. Do not generate a replacement key during an update or restore. A retained public CA certificate cannot replace its private key.
 
 ## Back up before an update

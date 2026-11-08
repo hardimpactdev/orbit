@@ -27,10 +27,13 @@ final class NodeMetricsData extends Data
         public int $uptimeSeconds,
         public array $pressure,
         public array $disks,
+        public string $observedAt,
+        public ?NodeAgentData $agent,
+        public bool $possiblyOutdated,
     ) {}
 
     /** @param array<string, mixed> $raw */
-    public static function fromRaw(array $raw): self
+    public static function fromRaw(array $raw, string $observedAt, ?NodeAgentData $agent, bool $possiblyOutdated): self
     {
         return new self(
             cores: self::floatList($raw['cores'] ?? null),
@@ -40,6 +43,9 @@ final class NodeMetricsData extends Data
             uptimeSeconds: is_int($raw['uptime_seconds'] ?? null) ? $raw['uptime_seconds'] : 0,
             pressure: self::pressure($raw['pressure'] ?? null),
             disks: self::disks($raw['disks'] ?? null),
+            observedAt: $observedAt,
+            agent: $agent,
+            possiblyOutdated: $possiblyOutdated,
         );
     }
 

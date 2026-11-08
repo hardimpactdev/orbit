@@ -53,13 +53,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
     private static function collectionsDrift(Operation $operation): bool
     {
         $progress = $operation->state['native_progress'] ?? null;
-        foreach (is_array($progress) && is_array($progress['steps'] ?? null) ? $progress['steps'] : [] as $step) {
-            if (is_array($step) && ($step['name'] ?? null) === 'Check the Ansible collections' && ($step['status'] ?? null) === 'failed') {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any(is_array($progress) && is_array($progress['steps'] ?? null) ? $progress['steps'] : [], fn ($step) => is_array($step) && ($step['name'] ?? null) === 'Check the Ansible collections' && ($step['status'] ?? null) === 'failed');
     }
 
     public function input(Operation $operation): array

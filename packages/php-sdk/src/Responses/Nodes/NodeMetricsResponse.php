@@ -25,6 +25,9 @@ final readonly class NodeMetricsResponse
         public array $pressure,
         public array $disks,
         public string $requestId,
+        public string $observedAt,
+        public ?NodeAgentResponse $agent,
+        public bool $possiblyOutdated,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -41,6 +44,9 @@ final readonly class NodeMetricsResponse
             pressure: self::pressure($data['pressure'] ?? null),
             disks: self::disks($data['disks'] ?? null),
             requestId: $requestId,
+            observedAt: is_string($data['observed_at'] ?? null) ? $data['observed_at'] : '',
+            agent: NodeAgentResponse::tryFromGatewayData($data['agent'] ?? null),
+            possiblyOutdated: ($data['possibly_outdated'] ?? null) === true,
         );
     }
 
@@ -50,6 +56,9 @@ final readonly class NodeMetricsResponse
         return [
             'node_id' => $this->nodeId,
             'node_name' => $this->nodeName,
+            'observed_at' => $this->observedAt,
+            'agent' => $this->agent?->toArray(),
+            'possibly_outdated' => $this->possiblyOutdated,
             'cores' => $this->cores,
             'memory' => $this->memory,
             'swap' => $this->swap,

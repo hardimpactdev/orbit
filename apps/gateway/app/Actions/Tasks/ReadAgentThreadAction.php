@@ -42,6 +42,6 @@ final readonly class ReadAgentThreadAction
             'cost_usd' => $session->cost_usd,
         ];
 
-        return [...$this->sanitizer->sanitizeProperties((new AgentThreadEvent($session->id, 'snapshot', $observation))->toArray()), 'archived' => $saved !== null];
+        return [...$this->sanitizer->sanitizeProperties(new AgentThreadEvent($session->id, 'snapshot', $observation)->toArray()), 'archived' => $saved !== null];
     }
 }

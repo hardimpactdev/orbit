@@ -17,6 +17,8 @@ Node enrollment fixtures record the real HTTP 202 admission and a separate termi
 
 The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists.
 
+The `nodes/node-metrics` fixture carries a retained agent snapshot with its original `observed_at`, shared `agent` state, and `possibly_outdated` flag. SDK and CLI tests replay the whole snapshot. Gateway tests cover offline retention, missing snapshots, access refusals, and replacement by later agent reports.
+
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 
 The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.

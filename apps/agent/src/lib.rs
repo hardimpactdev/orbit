@@ -17,6 +17,7 @@ pub mod egress;
 pub mod environment;
 pub mod facts;
 pub mod logs;
+pub mod metrics;
 pub mod packages;
 pub mod realtime;
 #[cfg(test)]

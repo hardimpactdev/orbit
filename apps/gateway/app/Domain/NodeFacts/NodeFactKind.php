@@ -15,6 +15,9 @@ enum NodeFactKind: string
     /** Operating system, architecture and filesystem space. */
     case Host = 'host';
 
+    /** CPU, memory, swap, load, uptime, pressure and data disks, at the observation time. */
+    case Metrics = 'metrics';
+
     /** Systemd units and Docker containers the watch list names or the agent owns, with their state. */
     case Units = 'units';
 
@@ -62,6 +65,32 @@ enum NodeFactKind: string
                 'filesystems.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'filesystems.*.size' => ['required', 'integer', 'min:0'],
                 'filesystems.*.free' => ['required', 'integer', 'min:0'],
+            ],
+            self::Metrics => [
+                'cores' => ['required', 'array', 'list', 'min:1', 'max:4096'],
+                'cores.*' => ['required', 'numeric', 'between:0,1'],
+                'memory' => ['required', 'array:used,total'],
+                'memory.used' => ['required', 'integer', 'min:0', 'lte:data.memory.total'],
+                'memory.total' => ['required', 'integer', 'min:0'],
+                'swap' => ['required', 'array:used,total'],
+                'swap.used' => ['required', 'integer', 'min:0', 'lte:data.swap.total'],
+                'swap.total' => ['required', 'integer', 'min:0'],
+                'load' => ['required', 'array:one,five,fifteen'],
+                'load.one' => ['required', 'numeric', 'min:0'],
+                'load.five' => ['required', 'numeric', 'min:0'],
+                'load.fifteen' => ['required', 'numeric', 'min:0'],
+                'uptime_seconds' => ['required', 'integer', 'min:0'],
+                'pressure' => ['required', 'array:cpu,memory,io'],
+                'pressure.cpu' => ['required', 'array:some_avg10'],
+                'pressure.memory' => ['required', 'array:some_avg10'],
+                'pressure.io' => ['required', 'array:some_avg10'],
+                'pressure.cpu.some_avg10' => ['required', 'numeric', 'between:0,100'],
+                'pressure.memory.some_avg10' => ['required', 'numeric', 'between:0,100'],
+                'pressure.io.some_avg10' => ['required', 'numeric', 'between:0,100'],
+                'disks' => ['present', 'array', 'list', 'max:64'],
+                'disks.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],
+                'disks.*.used' => ['required', 'integer', 'min:0', 'lte:data.disks.*.total'],
+                'disks.*.total' => ['required', 'integer', 'min:0'],
             ],
             self::Units => [
                 'docker' => ['required', 'string', 'in:available,absent'],

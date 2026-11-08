@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Nodes\ShowNodeMetricsAction;
-use App\Data\Nodes\NodeMetricsData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -22,7 +21,7 @@ final class NodeMetricsController extends Controller
             'data' => [
                 'node_id' => $node->id,
                 'node_name' => $node->name,
-                ...NodeMetricsData::fromRaw($action->execute($node))->toArray(),
+                ...$action->execute($node)->toArray(),
             ],
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);

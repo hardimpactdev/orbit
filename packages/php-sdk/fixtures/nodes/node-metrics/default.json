@@ -44,7 +44,13 @@
                     "used": 6442450944,
                     "total": 85899345920
                 }
-            ]
+            ],
+            "observed_at": "2026-11-06T10:00:00Z",
+            "agent": {
+                "state": "online",
+                "since": null
+            },
+            "possibly_outdated": false
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
