@@ -79,6 +79,7 @@ A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fai
 | `expect` | yes | What must be true afterwards. Every step runs, so one verdict lists all failures. |
 | `stages` | no | Replaces `act` and `expect` when a case needs more than one round. A list of `act` and `expect` pairs, run in order. |
 | `variants` | no | A list of variable sets. The case runs once per set, and each run has its own verdict, such as `protocols[both]`. |
+| `fails_on_base` | no | `true` opts a new or changed case into CI replay on the merge base. It must fail there with cause `assertion`. Default `false`. |
 | `fails_today` | no | One line saying why the case fails on the current code. The build removes it. |
 | `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
 | `timeout` | no | Seconds for the case. Default 180. |
@@ -279,7 +280,7 @@ The reviewer checks:
 
 ## Prove a case can fail
 
-A new case must show that it can fail. The `negative` key says how:
+A case can show that its expectations detect a broken effect. The `negative` key says how:
 
 ```yaml
 negative:
@@ -289,7 +290,23 @@ negative:
   must_fail: [gateway-connects]
 ```
 
-The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The proof CI also proves that a new case needs the new code, by running it on the merge base; see the [stage 3 chart](/reference/command-development-pipeline#3-proof). The two checks differ: `negative` breaks the effect, the merge-base run removes the code. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The two checks differ: `negative` breaks the effect, while `fails_on_base` removes the new code. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+
+### Opt into merge-base replay
+
+Set `fails_on_base: true` when a case proves new or fixed behavior that the merge base lacks:
+
+```yaml
+- id: fixed-behavior
+  fails_on_base: true
+  # batch, covers, summary, act and expect follow as usual
+```
+
+CI replays only flagged cases that the runner’s case-level comparison identifies as added or changed in this PR, including changes to their expanded fixtures, vars, settings or batch setup. It also limits replay to the cases admitted to this proof batch. Code or tooling changes that select a whole file do not make its unchanged flagged cases replay. Cases without the flag never replay. Coverage of behavior that main already has, such as refusals or offline handling, normally leaves the flag unset.
+
+CI checks the head runner for replay support first. Older heads without that command skip selection and replay. With no eligible flagged cases, CI skips replay entirely.
+
+Every replayed case must end `failed` with cause `assertion` on the merge base. A passing case, an infrastructure failure or a missing verdict fails the proof with a `CASE@merge-base` verdict. The [stage 3 chart](/reference/command-development-pipeline#3-proof) owns the replay steps and limits. Once the case is merged, later PRs leave it out unless its definition changes again. Keep the flag; no cleanup is needed. `fails_today` is a temporary spec note and does not opt into replay.
 
 ## Where the code is
 
