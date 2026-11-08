@@ -1289,7 +1289,7 @@ Cancel and complete keep approved work by a precondition, never by a push of the
 
 Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
 
-A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. Uncommitted changes and work that no review approved go with the VM.
+A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. When Swamp refuses the cancel's start, the cancel fails and the VM is marked `failed`, so another cancel can reserve it again. Uncommitted changes and work that no review approved go with the VM.
 
 When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 

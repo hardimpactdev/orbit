@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofKeptVms;
@@ -15,7 +16,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** A cancel that released the slot settles the group; anything less keeps it for another cancel. */
-final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationTimeout
+final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout
 {
     public function input(Operation $operation): array
     {
@@ -48,6 +49,12 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** A start that Swamp refused or never took ran nothing: the VM that admission reserved is failed, so another cancel can reserve it again. */
+    public function refused(Operation $operation): void
+    {
+        $this->failed($operation, $operation->error_code);
     }
 
     public function timedOut(Operation $operation): void

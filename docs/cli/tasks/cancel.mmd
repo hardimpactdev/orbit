@@ -34,6 +34,7 @@ sequenceDiagram
   %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
   %%> Result:
   %%> - the run carries only the release; it pushes nothing and never starts a parked VM
+  %%> - a start that Swamp refuses fails the cancel and marks the VM `failed`, so the reservation goes and another cancel reserves it again
   GW->>SW: Start run, full intent<br/>operation-tasks-cancel
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:

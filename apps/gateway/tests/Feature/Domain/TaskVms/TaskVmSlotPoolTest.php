@@ -21,6 +21,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
@@ -793,4 +794,23 @@ it('reserves the VM at cancel admission, so a resume asked for later starts noth
         ->and(app(StartTaskVmResumeAction::class)->execute($slot->id))->toBeNull()
         ->and(app(WakeTaskVmAction::class)->forGroup($group->refresh()))->toBeTrue()
         ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('frees the VM a cancel reserved when its start is refused, so the next cancel reserves it again and runs', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    $refused = Operation::query()->where('kind', 'tasks.cancel')->sole();
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+
+    // Swamp refused the start: the Operation fails before any run exists.
+    $refused->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused', 'lock_key' => null, 'finished_at' => now()]);
+    app(TaskCancelProjection::class)->refused($refused);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('swamp.start_refused')
+        ->and($slot->group_id)->toBe($group->id)->and($group->refresh()->status)->toBe(TaskGroupStatus::Settling);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    $retry = Operation::query()->where('kind', 'tasks.cancel')->whereKeyNot($refused->id)->sole();
+    expect($retry->input['release']['intent']['slot']['name'])->toBe($slot->name)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });
