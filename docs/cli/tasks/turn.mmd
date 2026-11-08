@@ -72,11 +72,12 @@ sequenceDiagram
   %%> - Send the admitted prompt once; native resume reuses an accepted send.
   SW->>N: observe
   %%> What it does:
-  %%> - Flush each complete event into a bounded private transcript file, including before a disconnect or cancellation.
+  %%> - Flush each complete event into a bounded private transcript file, including before a disconnect or EOF.
   Note over SW: terminal
   %%> What it does:
-  %%> - Finalize and redact available transcript entries after observation ends, including failure and cancellation.
+  %%> - Normalize tool activities and redact structured secrets before recording available transcript entries after success, failure, disconnect or EOF.
   %%> - Record usage and nullable cost only from a matching terminal event.
+  %%> - Native cancellation skips finalization and keeps the previous recorded transcript.
   SW->>N: snapshot_after_index
   %%> What it does:
   %%> - Read HEAD into a separate index after the Pi turn.

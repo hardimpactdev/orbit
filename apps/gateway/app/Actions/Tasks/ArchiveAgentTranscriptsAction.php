@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentObservation;
-use App\Infrastructure\Tasks\Pi\PiTranscript;
 use App\Models\AgentThread;
 use Illuminate\Support\Facades\Storage;
 
@@ -14,18 +13,16 @@ final readonly class ArchiveAgentTranscriptsAction
 {
     public const string Directory = 'task-transcripts';
 
-    /** @param list<array<mixed>> $entries Redacted Pi entries recorded by the turn operation. */
+    /** @param list<array<mixed>> $entries Normalized, redacted entries recorded by Swamp. */
     public function record(AgentThread $thread, array $entries): void
     {
-        $transcript = new PiTranscript;
         $normalized = [];
         foreach ($entries as $entry) {
-            foreach ($transcript->entries($entry) as $item) {
-                $normalized[$item['id']] = $item;
+            if (in_array($entry['kind'] ?? null, ['message', 'activity'], true)
+                && is_string($entry['id'] ?? null) && $entry['id'] !== ''
+                && is_string($entry['label'] ?? null) && is_string($entry['text'] ?? null) && is_string($entry['at'] ?? null)) {
+                $normalized[$entry['id']] = ['id' => $entry['id'], 'kind' => $entry['kind'], 'label' => $entry['label'], 'text' => $entry['text'], 'at' => $entry['at']];
             }
-        }
-        foreach ($transcript->settle() as $item) {
-            $normalized[$item['id']] = $item;
         }
         $observation = new AgentObservation($thread->state, entries: array_values($normalized));
         Storage::disk('local')->put(self::path($thread), json_encode($observation->toArray(), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));

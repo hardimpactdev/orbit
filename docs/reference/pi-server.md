@@ -190,7 +190,7 @@ The server sends a snapshot instead when the cursor is missing or malformed, nam
 | `context` | The entries at or before the cursor whose tool calls have no result yet, the same as in `resumed` |
 | `events` | The `entry` and `state` events that a stream resumed from the same cursor sends after `resumed`, in sequence order. A cursor at the newest sequence gives an empty list |
 
-The read answers a full snapshot whenever the stream would start with one. Swamp consumes the turn stream and records bounded transcript evidence in its terminal result. The Gateway's [agent thread read](/reference/tasks#read-a-thread) serves that recorded evidence and never calls Pi. A read does not change the stream or its sequence numbers.
+The read answers a full snapshot whenever the stream would start with one. Swamp consumes the turn stream, normalizes tool activities and redacts structured secrets before recording bounded transcript evidence in its terminal result. Successful file contents and unused tool arguments stay private. The Gateway's [agent thread read](/reference/tasks#read-a-thread) serves that recorded evidence and never calls Pi. A read does not change the stream or its sequence numbers.
 
 Swamp sends `max_bytes` on turn streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state.
 

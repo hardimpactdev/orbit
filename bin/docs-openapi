@@ -1656,21 +1656,21 @@ components['DevelopmentDeployStep'] = development_deploy_step
 components['DevelopmentDeploySteps'] = {'type': 'array', 'items': {'$ref': '#/components/schemas/DevelopmentDeployStep'}}
 DEVELOPMENT_DEPLOY_STEP_SCHEMA = {'$ref': '#/components/schemas/DevelopmentDeployStep'}
 
-# The agent viewer's snapshot event (AgentThreadEvent plus AgentObservation), or a delta after a cursor. A saved transcript holds only the keys it stored.
+# The agent viewer returns one recorded snapshot. Later turns may replace its transcript.
 components['TaskAgentSnapshot'] = {'type': 'object', 'required': ['thread_id', 'kind', 'cursor', 'archived'], 'properties': {
     'thread_id': {'type': 'integer', 'description': 'The agent thread ID.'},
-    'kind': {'type': 'string', 'enum': ['snapshot', 'delta'], 'description': '`snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`.'},
+    'kind': {'type': 'string', 'enum': ['snapshot'], 'description': 'Always snapshot. after_sequence is accepted but does not request a delta.'},
     'state': {'type': ['string', 'null'], 'enum': ['idle', 'working', 'asking_for_input', 'done', 'failed', None]},
     'input_requests': {'type': 'array', 'items': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'kind': {'type': 'string'}, 'details': {}}, 'required': ['id', 'kind', 'details']}},
-    'entries': {'type': 'array', 'description': 'The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`.', 'items': {'type': 'object', 'properties': {
+    'entries': {'type': 'array', 'description': 'The recorded normalized transcript, oldest first. Output updates when a turn ends.', 'items': {'type': 'object', 'properties': {
         'id': {'type': 'string'}, 'kind': {'type': 'string', 'description': '`message` or `activity`.'}, 'label': {'type': 'string', 'description': 'The role of a message, or the tool of an activity.'},
         'text': {'type': 'string'}, 'at': {'type': 'string'},
     }, 'required': ['id', 'kind', 'label', 'text', 'at']}},
     **{k: {'type': ['integer', 'null']} for k in ('tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted')},
     'error': {'type': ['string', 'null']},
     'provider_error': {'type': ['string', 'null'], 'enum': ['overloaded', 'rate_limited', 'server_error', None]},
-    'cursor': {'type': ['string', 'null'], 'description': 'The thread\'s place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started.'},
-    'archived': {'type': 'boolean', 'description': 'True when the snapshot is the transcript Orbit saved before the task VM was deleted.'},
+    'cursor': {'type': 'null', 'description': 'Always null. Reads do not resume a Pi stream.'},
+    'archived': {'type': 'boolean', 'description': 'True when a stored transcript exists. A later turn can replace it.'},
 }}
 
 RESPONSE_OVERRIDES = {
@@ -2009,7 +2009,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
     if route['name'] == 'tasks:agent-stream':
-        responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
+        responses['200'] = {'description': 'One recorded agent snapshot, then normal EOF. The cursor is null. Output updates when a turn ends. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'agent:realtime':
         connection = {'type': 'object', 'properties': {
             'url': {'type': ['string', 'null'], 'description': 'Reverb WebSocket URL.'},

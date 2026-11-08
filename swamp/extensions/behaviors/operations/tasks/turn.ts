@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import { redactText } from "../../_lib/public_output.ts";
+import { transcriptEntries } from "./transcript.ts";
+import { redactText, redactValue } from "../../_lib/public_output.ts";
 
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
@@ -249,19 +250,6 @@ export function redactTurnText(raw: string): string {
     return redactText(raw);
 }
 
-function publicValue(value: unknown): unknown {
-    if (typeof value === "string") return redactTurnText(value);
-    if (Array.isArray(value)) return value.map(publicValue);
-    if (value !== null && typeof value === "object") {
-        return Object.fromEntries(
-            Object.entries(value).map((
-                [key, item],
-            ) => [key, publicValue(item)]),
-        );
-    }
-    return value;
-}
-
 /*
  * The three readers below run on the Swamp worker against files that only
  * official SSH copy or the observe step wrote into the run's private local
@@ -330,16 +318,16 @@ export async function terminal(
             ) {
                 entries.set(
                     value.id,
-                    publicValue(value) as Record<string, unknown>,
+                    value as Record<string, unknown>,
                 );
             }
         }
     }
     // Keep the newest complete entries within the public result budget.
-    const transcript: Record<string, unknown>[] = [];
+    const transcript: ReturnType<typeof transcriptEntries> = [];
     let size = 0;
     let truncated = events.some((item) => item.kind === "truncated");
-    for (const entry of [...entries.values()].reverse()) {
+    for (const entry of transcriptEntries([...entries.values()]).reverse()) {
         size += new TextEncoder().encode(JSON.stringify(entry)).length;
         if (size > 262144) {
             truncated = true;
@@ -350,12 +338,11 @@ export async function terminal(
     if (truncated) {
         transcript.unshift({
             id: "orbit-truncated",
-            timestamp: "",
-            message: {
-                role: "system",
-                content:
-                    "[Transcript truncated: older entries omitted from the recorded turn.]",
-            },
+            at: "",
+            kind: "message",
+            label: "system",
+            text:
+                "[Transcript truncated: older entries omitted from the recorded turn.]",
         });
     }
     return JSON.stringify({
@@ -393,7 +380,7 @@ export async function receipt(args: { path: string }) {
     } catch {
         return invalid;
     }
-    return JSON.stringify({ receipt: publicValue(value), error: null });
+    return JSON.stringify({ receipt: redactValue(value), error: null });
 }
 
 /** File counts from `git diff --numstat -z` and the redacted patch, both bounded. */
@@ -420,7 +407,7 @@ export async function difference(args: { counts: string; patch: string }) {
     const diff = redactTurnText(
         await readPrivate(args.patch, "tasks.difference_invalid"),
     );
-    return JSON.stringify(publicValue({
+    return JSON.stringify(redactValue({
         files: files.slice(0, 500),
         diff: diff.slice(0, 65536),
         files_complete: files.length <= 500,
@@ -685,13 +672,14 @@ export const turnDataMethods = {
     },
     terminal: {
         description:
-            "Read the matching terminal Pi event from the private worker file",
+            "Read available transcript and terminal evidence from the private worker file",
         arguments: z.object({
             path: z.string().startsWith("/"),
             turn: z.string(),
+            partial: z.boolean().optional(),
         }),
         execute: async (
-            args: { path: string; turn: string },
+            args: { path: string; turn: string; partial?: boolean },
             ctx: PublicContext,
         ) => ({
             dataHandles: [

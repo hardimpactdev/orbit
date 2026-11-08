@@ -11,7 +11,24 @@ import {
     round,
     settle,
     terminal,
+    turnDataMethods,
 } from "./turn.ts";
+
+// Exercise the declaration Swamp parses and the resource boundary it persists.
+async function recordedTerminal(input: unknown) {
+    let written: Record<string, unknown> = {};
+    await turnDataMethods.terminal.execute(
+        turnDataMethods.terminal.arguments.parse(input),
+        {
+            async writeResource(spec, name, value) {
+                assertEquals([spec, name], ["publicOutput", "terminal"]);
+                written = value;
+                return {};
+            },
+        },
+    );
+    return JSON.parse(String(written.stdout));
+}
 
 const head = "a".repeat(40), tree = "b".repeat(40);
 export function turnInput(role = "implementer") {
@@ -796,7 +813,7 @@ Deno.test("the recorded stream produces redacted bounded transcript evidence and
                 },
             ].map((event) => JSON.stringify(event)).join("\n"),
         );
-        const recorded = JSON.parse(await terminal({ path, turn }));
+        const recorded = await recordedTerminal({ path, turn });
         assertEquals(recorded.usage, { total: 140, cost: 0.75 });
         assertEquals(
             recorded.transcript.map((entry: { id: string }) => entry.id),
@@ -841,9 +858,11 @@ for (
                     },
                 }) + ending,
             );
-            const evidence = JSON.parse(
-                await terminal({ path, turn: "operation-15", partial: true }),
-            );
+            const evidence = await recordedTerminal({
+                path,
+                turn: "operation-15",
+                partial: true,
+            });
             const result = JSON.parse(
                 finish({
                     input: turnInput(),
@@ -863,3 +882,158 @@ for (
         }
     });
 }
+
+Deno.test("the persisted resource normalizes tools and removes structured secrets before writing", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        const entry = (id: string, message: unknown) => ({
+            id,
+            timestamp: "2026-11-08T10:00:00Z",
+            message,
+        });
+        const entries = [
+            entry("assistant", {
+                role: "assistant",
+                content: [
+                    { type: "text", text: "Checking the file" },
+                    {
+                        type: "toolCall",
+                        id: "read-1",
+                        name: "read",
+                        arguments: {
+                            path: "/app/config.php",
+                            password: "structured-password-value",
+                            cookies: { sid: "private-cookie-value" },
+                            nested: { apiKey: "nested-api-key-value" },
+                            unused: "private-unused-argument",
+                        },
+                    },
+                    {
+                        type: "toolCall",
+                        id: "bash-1",
+                        name: "bash",
+                        arguments: {
+                            command: "echo complete",
+                            credentials: { password: "pw" },
+                        },
+                    },
+                    {
+                        type: "toolCall",
+                        id: "write-1",
+                        name: "write",
+                        arguments: {
+                            path: "/app/out.php",
+                            content: "private-file-write-value",
+                        },
+                    },
+                ],
+            }),
+            entry("read-result", {
+                role: "toolResult",
+                toolCallId: "read-1",
+                toolName: "read",
+                content: [{
+                    type: "text",
+                    text: "raw-file-contents-without-a-credential-pattern",
+                }],
+            }),
+            entry("bash-result", {
+                role: "toolResult",
+                toolCallId: "bash-1",
+                toolName: "bash",
+                content: [{
+                    type: "text",
+                    text:
+                        "complete\nstructured-password-value private-cookie-value nested-api-key-value pw\nCookie: sid=unstructured-cookie-value",
+                }],
+            }),
+            entry("error-call", {
+                role: "assistant",
+                content: [{
+                    type: "toolCall",
+                    id: "edit-1",
+                    name: "edit",
+                    arguments: {
+                        path: "/app/out.php",
+                        password: "error-secret-value",
+                    },
+                }],
+            }),
+            entry("error-result", {
+                role: "toolResult",
+                toolCallId: "edit-1",
+                toolName: "edit",
+                isError: true,
+                content: "failed error-secret-value",
+            }),
+        ];
+        await Deno.writeTextFile(
+            path,
+            [
+                { kind: "snapshot", entries },
+                { kind: "state", turnId: "operation-15", state: "done" },
+            ].map((event) => JSON.stringify(event)).join("\n"),
+        );
+        const recorded = await recordedTerminal({ path, turn: "operation-15" });
+        const persisted = JSON.stringify(recorded);
+        for (
+            const secret of [
+                "structured-password-value",
+                "private-cookie-value",
+                "nested-api-key-value",
+                "private-unused-argument",
+                "private-file-write-value",
+                "raw-file-contents-without-a-credential-pattern",
+                "unstructured-cookie-value",
+                "error-secret-value",
+            ]
+        ) {
+            assertEquals(
+                persisted.includes(secret),
+                false,
+                secret + " reached public persistence",
+            );
+        }
+        assertEquals(recorded.transcript, [
+            {
+                id: "assistant",
+                at: "2026-11-08T10:00:00Z",
+                kind: "message",
+                label: "assistant",
+                text: "Checking the file",
+            },
+            {
+                id: "assistant:0",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "read",
+                text: "Reading config.php",
+            },
+            {
+                id: "assistant:1",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "bash",
+                text:
+                    "complete\n[REDACTED] [REDACTED] [REDACTED] [REDACTED]\nCookie: [REDACTED]\n$ echo complete\nexit code 0",
+            },
+            {
+                id: "assistant:2",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "write",
+                text: "Writing out.php (stopped without a result)",
+            },
+            {
+                id: "error-call:0",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "edit",
+                text: "Editing out.php failed: failed [REDACTED]",
+            },
+        ]);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});

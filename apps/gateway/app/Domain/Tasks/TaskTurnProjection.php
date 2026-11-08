@@ -89,7 +89,7 @@ final readonly class TaskTurnProjection implements DirectOperationChildProjectio
                 $data['error_code'] = $result['error_code'];
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if (! $terminal && $projected->status->terminal()) {
+            if (! $terminal && $projected->status->terminal() && ($data['status'] ?? null) !== 'cancelled') {
                 self::recordTurn($operation, ValidatedData::integer($operation->input['thread_id']), $result);
             }
 

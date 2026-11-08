@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals}.php"
 ---
@@ -1230,7 +1230,7 @@ The strip shows tokens per merged PR with its cost, lead time, yield, first-pass
 
 ## Agent viewer
 
-Every task read answers from recorded Gateway state: `tasks:show`, `tasks:list`, `tasks:agents`, `tasks:agent:show`, insights, and the web board. Reads never contact a task VM, Pi server, or Node. A parked or deleted VM does not change that rule.
+Task state reads answer from recorded Gateway state: `tasks:show`, `tasks:list`, `tasks:agents`, `tasks:agent:show`, insights, and the web board. Reads never contact a task VM, Pi server, or Node. A parked or deleted VM does not change that rule. The Swamp run view may read recorded runs from Swamp, the trusted control plane.
 
 The Agents section lists started threads and their recorded metrics. Any unfinished Operation that holds a thread makes that thread `working`, even if its last completed turn was `done`. A terminal projection records the final state and clears an old observation error.
 
@@ -1238,7 +1238,9 @@ The Agents section lists started threads and their recorded metrics. Any unfinis
 
 `GET /api/v1/task-groups/{group}/agents/{session}` returns one recorded transcript snapshot. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and MCP tool `tasks-agent-show` use it. The SSE endpoint sends the same snapshot and ends. Reconnecting reads the latest recorded snapshot. `after_sequence` is accepted but does not request a live Pi read; `cursor` is null and `kind` is `snapshot`.
 
-Swamp keeps a bounded, redacted transcript on turn finalization, including a disconnect, timeout or cancellation. Missing terminal usage stays unknown. Each child turn records its transcript when it ends, while its parent operation can keep running. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
+Swamp records a bounded transcript on turn finalization after success, failure, disconnect or EOF. It normalizes tool activities and redacts structured secrets before writing public evidence. Successful file reads omit raw contents; unused tool arguments are discarded. Missing terminal usage stays unknown. Native cancellation skips finalization and keeps the previous recorded transcript.
+
+Each child turn records its transcript when it ends, while its parent operation can keep running. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
 
 A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.agent_transcript_unavailable`. A thread of another task returns 404. Neither error contacts the original Node.
 
