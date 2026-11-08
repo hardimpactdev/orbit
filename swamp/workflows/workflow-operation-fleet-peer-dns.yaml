@@ -5,6 +5,8 @@ name: operation-fleet-peer-dns
 description: One shared Ansible member phase selects the Cluster delegate and remaining VPN scope.
 vaults: []
 queueTimeout: 60
+labels:
+  role: swamp
 inputs:
   type: object
   properties:

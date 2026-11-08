@@ -240,6 +240,7 @@ function memberWorkflow() {
         name: "operation-fleet-peer-dns",
         description: "One shared Ansible member phase selects the Cluster delegate and remaining VPN scope.",
         vaults: [], queueTimeout: 60,
+        labels: { role: "swamp" },
         inputs: { type: "object", properties: {
             operation_id: { type: "integer", minimum: 1 }, node_id: { type: "integer", minimum: 1 },
             kind: { type: "string" }, intent: { type: "object" },
