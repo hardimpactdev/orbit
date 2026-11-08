@@ -65,8 +65,11 @@ The 4 KB step output contains every original case ID, verdict and JUnit duration
 
 The current protocol alternates the spike commit and its merge base with main twice each. Each proof creates its own disposable command VM with the same product lifecycle and CI capacity. “Cold” means the first proof of each engine; later proofs are ordered warm samples, not reuse of the venv or a controlled OS-cache state. Every new pytest VM pays installation cost; its second batch reuses the venv. This protocol supersedes the original same-VM ABBA proposal at Nick's request.
 
-CI diagnostics (#3250, spike only): `spike-install` is a separate native SSH
-step, with pinned dependencies and a `spike-install-BATCH` timing verdict. These
+CI diagnostics (#3250, spike only): `--install-only` is a separately timed subprocess phase
+inside the existing batch SSH step, with pinned dependencies and a
+`spike-install-BATCH` timing verdict. The Gateway uses published workflows; a
+branch workflow change cannot add a native step without a release, so the spike
+does not change workflows. These
 two rows are overhead, not additional firewall cases. The case entry prints only
 JSON verdict lines. Cause and bounded failure text travel inside those objects;
 non-verdict pytest output is not exposed by the operation API. The final native

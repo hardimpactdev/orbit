@@ -114,9 +114,13 @@ def main():
     cases = [row for row in metadata() if row['batch'] == args.batch and row['id'] in wanted]
     if not wanted or len(cases) != len(wanted) or len(set(wanted)) != len(wanted):
         parser.error('unknown, duplicate or empty firewall:allow selection')
-    if not python.exists():
+    install = subprocess.run([sys.executable, str(HERE / 'ci_entry.py'), args.batch, '--install-only',
+                              '--evidence', str(args.evidence)], capture_output=True, text=True, timeout=400)
+    timing = json.loads(install.stdout)
+    if install.returncode or timing['verdict'] != 'passed':
         print(output([{'id': case, 'verdict': 'failed', 'secs': 0,
-                       'failed': ['spike install phase did not create pytest environment']} for case in wanted]), flush=True)
+                       'failed': ['spike install phase failed']} for case in wanted]), flush=True)
+        print(json.dumps(timing), flush=True)
         return 1
     began = time.monotonic()
     rows, codes = [], []
@@ -137,6 +141,7 @@ def main():
     metrics = {'spike': 'pytest-testinfra', 'batch': args.batch, 'case_phase_secs': round(time.monotonic() - began, 2), 'returncodes': codes}
     (root / 'measurement.json').write_text(json.dumps({'metrics': metrics, 'cases': rows}, indent=2))
     print(output(rows), flush=True)
+    print(json.dumps(timing), flush=True)
     return int(any(codes) or len(rows) != len(wanted) or any(row['verdict'] != 'passed' for row in rows))
 
 
