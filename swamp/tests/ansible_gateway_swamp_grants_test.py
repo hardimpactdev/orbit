@@ -51,7 +51,7 @@ class GatewaySwampGrantsTest(unittest.TestCase):
                 (folder / 'reload.json').write_text(json.dumps({'success': success}))
                 return subprocess.run([COMMAND, '-i', 'localhost,', '-c', 'local', '-e', 'ansible_become=false',
                                        '-e', 'ansible_python_interpreter=' + sys.executable, str(folder / 'play.yml')],
-                                      capture_output=True, text=True, timeout=60, env=env)
+                                      check=False, capture_output=True, text=True, timeout=60, env=env)
 
             failed = run(False)
             self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
