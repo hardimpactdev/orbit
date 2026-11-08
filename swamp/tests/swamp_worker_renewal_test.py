@@ -24,7 +24,10 @@ root = Path(os.environ['RENEWAL_TEST_DIR'])
 path = root / 'state.json'
 s = json.loads(path.read_text())
 def save():
-    path.write_text(json.dumps(s))
+    # The test thread may inspect state at a barrier; publish a whole snapshot.
+    temporary = path.with_suffix('.new')
+    temporary.write_text(json.dumps(s))
+    temporary.replace(path)
 def event(message):
     with (root / 'events').open('a') as stream:
         stream.write(message + '\n')
