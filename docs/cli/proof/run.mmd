@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM, all in parallel; each run does provision, verify and cancel as children; Gateway projects each run once.
+  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM; each run does provision, verify and cancel as children; Gateway projects each run once.
   %% status: draft
   %% command: proof:run
   %% kind: proof.run
@@ -18,7 +18,7 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review (2026-11-06):
   %%> - the request records the proof Operation (commit, options, no runs yet), queues the admission job and answers 202 at once; it reads no GitHub, takes no lock and starts nothing
   %%> - why: the request used to do all of the admission and hand the runs to Swamp one after another, which took 40 to 66 s, and a release that reloads PHP-FPM (`process_control_timeout` 30 s) ended it in the middle (proof.run 12343). A queue job is drained by the release with the Horizon workers, which it already waits for
-  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `tasks.capacity_unavailable`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
+  %%> - the refusals of the admission (`proof.commit_untrusted`, `proof.path_unmapped`, `proof.github_unavailable`, `proof.execution_disabled`) are now on the proof Operation, with the code and the message, not in the answer of the request; the CLI follows the Operation as before. A request refuses at once only what it can see in the database: `proof.swamp_unavailable`
   %%> - the job runs on the `tasks` queue (three workers), not on `operations`, whose one worker settles every Operation
   GW-->>CLI: 202 Accepted<br/>task ID
   %%> The CLI follows the proof and reads the refusal, the verdicts or the receipt from it.
@@ -38,40 +38,16 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the CLI follows one Gateway record, `proof.run`, because it needs one task ID; each run is an Operation of its own, so each has one Swamp run, one terminal event and one projection
   %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
-  %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers `tasks.capacity_unavailable`, even when a skipped host has free slots
-  %%> - the copies must also be fresh: only a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the proof commit with main is used (stage 2 chart, decided 2026-11-07); a host whose copies miss one is skipped, and the refusal says so
-  %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` fails with the reason
+  %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers even when a skipped host has free slots
+  %%> - the copies must also be fresh: only a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the proof commit with main is used (stage 2 chart, decided 2026-11-07); a host whose copies miss one is skipped, and the waiting reason says so
+  %%> - if one CI run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` waits within its admission budget
   %%> Capacity rule:
-  %%> - task_vms.task_max_vms caps task-work VM claims per host, parked claims and operator proofs included; authenticated CI proofs and base refresh proofs are exempt. Unset or null adds no limit; max_vms still bounds all VMs
-  %%> - each host reserves slot 1 (one Large VM, 3 max_vms units) for authenticated CI command proofs and refresh candidate proofs; operator proofs and task work never take it
-  %%> - the authenticated caller must be an active Node with an active ci-runner role to use the reserve; Orbit records the caller Node and CI eligibility before queueing admission and carries them into each command allocation; no request flag grants eligibility
-  %%> - CI proofs prefer ci_only hosts before shared hosts, taking the shared reserve first and then free task slots. Operator proofs never use ci_only hosts and take only task slots on shared hosts. The report-only flag controls reporting and yielding, never reserve eligibility. A CI proof is never preempted for another proof
-  %%> - when report-only CI has no room, it waits visibly at `Wait for VMs to be released`, retries every 20 s for up to 200 s, and neither releases kept VMs nor cancels another proof
-  %%> - on exhaustion it fails with tasks.capacity_unavailable, the selected commands and no case rows; CI reports not_run_capacity and a receipt, never a passing proof
-  %%> Decided by the top orchestrator, for Nick's review (2026-11-07): a kept VM never blocks a waiting proof. M5 try 10 waited for the VMs of try 9 (kept until 04:35 and 04:37) after their evidence had been read, and A cancelled their groups by hand.
-  %%> - rule: when the admission of a proof is refused for capacity (`tasks.capacity_unavailable`) and an earlier proof still holds kept VMs (`--keep-failed`), the admission releases them first. It cancels the group of each kept run, the cancel every run gets with the trigger `proof-run`, and tries again every 20 s until 200 s after the start of the proof, with the step `Wait for VMs to be released`. With no kept VM left, or after 240 s, it fails as before
-  %%> - a kept VM stays as long as capacity is not short, so a person who is reading it loses it only when a proof needs the room
-  %%> - only a proof that does not yield (no `--report-only`) releases: the report-only job of every pull request meets a full host, and must not destroy the VM somebody is reading
-  %%> - all kept VMs go at once, not oldest first: a release takes about 70 s, and the admission has 300 s before the watch ends a proof that has no runs
-  %%> - not chosen: release by pull request (the proof knows a commit, not its branch, and a later commit may belong to another pull request), and a release before every admission (it would end every keep at the next proof)
-  %%> - the proof that was refused and the proof whose run kept the VM are different proofs; the result of the earlier one still lists the VM, with its time, after it was released
-  %%> - only the kept runs release: a kept run is a `proof.command` that names its proof and records the VM it kept (`proof_operation_id`), as for the expiry of the keep
-  %%> An operator report-only proof may yield to a normal proof; authenticated CI proofs keep their capacity regardless of report-only mode.
-  %%> - rule: the same refusal (`tasks.capacity_unavailable`, a proof that does not yield) also cancels the running non-CI report-only proofs, the way a person cancels one (`operation:cancel`): the proof ends cancelled, and the cancel of each of its runs, found by `proof_operation_id`, ends the run, its group and its VM. The admission tries again every 20 s until 200 s after the start of the proof, as for kept VMs, with the step `Wait for VMs to be released`
-  %%> - only non-CI report-only proofs that have runs are cancelled: one that is still being admitted holds no capacity yet, and if it takes room later the next try cancels it too. A normal proof is never cancelled, and a report-only proof never cancels another one
-  %%> - the cancel loses a report-only result that nobody needed to read: the report-only job is not a required check
-  %%> - while the VMs are on their way out, the proof waits; once they are gone and the room is still short, it fails with the capacity code as before
-  %%> - each try asks again for the cancel of a group that is still there (a report-only proof that ended is looked at for 10 minutes), because the cancel job gives up after its 12 tries; the cancel of a group is keyed, so it never admits a second one. A report-only proof that cannot be cancelled now counts as leaving, and the next try cancels it
-  %%> - a capacity refusal may cancel non-CI report-only proofs, including when task work or another normal proof caused it; the persisted CI eligibility always excludes CI proofs
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06; inferred from the records of the stall of proof.run 12343, with no Gateway log):
-  %%> - what happened: the `proof:run` request ended (activity `activity.interrupted`) while it admitted; it overlapped Gateway release 1737. The groups and the `proof.command` Operations had committed, but the request did not start their Swamp runs or write the run list into `proof.run`. The proof stayed `running` with `runs: []`, because nothing watches a `proof.run`, and it held the admission lock until the lock's 600 s limit
-  %%> - the runs of a proof are the `proof.command` Operations whose input names the proof (`proof_operation_id`); the Gateway reads, settles and cancels them by that key, never from a list in the proof and never by commit, title or kind
-  %%> - the run list is written inside the admission transaction, with the groups, so it commits with them; the transaction first checks that the proof is still open, so a proof that the watchdog ended admits nothing
-  %%> - the admission lock is owned by the proof (`proof.run:ID`), so the proof can free it
-  %%> - two cases, kept apart. (a) The request is gone: no Swamp run was started and nothing is left to start one. (b) A run waits: it has a Swamp run, which has its own budget, and it is never touched by (a)
-  %%> - (a) is detected from the absence of the request, not from the age of a run: a proof with no run 300 s after it started (the job may wait in the queue, the lock wait is 60 s and admission takes about a minute); a proof whose runs have all been quiet for 300 s while some were never handed to Swamp (the job hands them over one after another and each hand-over is answered within 120 s). The reconcile pass then ends the unstarted runs with `proof.admission_interrupted`, cancels their groups, closes the proof and frees the lock the proof owns (a lock that another admission or a teardown holds stays)
-  %%> - (b) does not exist before the run is handed to Swamp: capacity is decided at admission and refused at once with `tasks.capacity_unavailable` (`AllocateTaskVmAction::place`, caught in `TaskProvisionIntent::admit`); no scheduler waits for capacity; `capacity_wait_reason` is set only while a parked VM resumes. The generic 600 s admission limit stays as the backstop for an unstarted run and no run is ended earlier because it is slow
-  %%> - not changed here: PHP-FPM reload (`gateway-rollback`) waits `process_control_timeout` (30 s) for requests in flight, so a request longer than that dies at a release; the release flow does not drain or reject HTTP admissions
+  %%> - an authenticated active ci-runner Node uses the CI pool; other callers use the task pool. Refresh candidate proofs use the CI pool too
+  %%> - one VM holds one place until confirmed deletion; the pools have separate admission and never borrow places from each other
+  %%> - operator proofs join the same FIFO task admission queue as prep, build, turns and review; each command waits without a VM and captures its full intent only when its place is admitted
+  %%> - a full CI pool waits visibly at `Wait for VMs to be released` and retries every 20 seconds within a two-hour total budget; timeout fails clearly with `proof.capacity_timeout`
+  %%> - waiting never preempts another proof or releases a kept VM
+  %%> - CI admission records all groups, VMs and the run list together; an operator proof records its children together and each joins task admission
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and mount<br/>ready copies · the commit
@@ -132,4 +108,4 @@ sequenceDiagram
     GW-->>CLI: status + verdicts
   end
   %%> Admission refusals retain the selected command names in `selected_commands`, without execution input.
-  %%> Report-only CI records `tasks.capacity_unavailable` with no case rows as not run, writes a receipt and skips its assertion check. Other errors and assertion failures stay red. Required checks does not require proof; Nick decides its graduation. Proof does not run again after the merge.
+  %%> The CI proof job is still optional. The CI queue change adds it to Required checks; see the capacity ideal state. A capacity wait now ends only at admission or the clear two-hour timeout.

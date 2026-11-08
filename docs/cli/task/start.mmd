@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed slot identities: a slot is only a place under the host's capacity (`max_vms`), and the VM is named `<host>-tvm-<n>` by its slot number.
+  %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed slot identities: a slot is only a place under the host's capacity (`task_places`), and the VM is named `<host>-tvm-<n>` by its slot number.
   %% status: draft
   %% command: task:start
   %% kind: tasks.provision
@@ -12,16 +12,14 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant HUB as VPN hub<br/>over ssh
   participant VM as Task VM<br/>shark-tvm-3
-  Note over GW: Take a slot<br/>mint an identity · database only
+  Note over GW: Claim a task place<br/>mint an identity · database only
   %%> Started by:
   %%> - `task:start` for a todo group, from proof CI or feature work
   %%> Result:
-  %%> - the lowest free task slot number (2 or above) under the capacity of the host with the most room: `shark-tvm-3`
+  %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
+  %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
   %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
-  %%> - a ci_only host accepts no task work or operator proof, even when it is the only free host; CI proofs prefer ci_only hosts. A host’s own base refresh proves on that host
-  %%> - slot 1 on each shared host is reserved for authenticated CI command proofs and refresh candidate proofs; operator proofs and task provision, prep, build and review never take it, even when idle
-  %%> - one Large VM takes 3 max_vms units; task work gets at most floor(max_vms / 3) minus one VM places, also bounded by task_vms.task_max_vms when set; this extra limit counts VMs, not units, including parked claims. CI and base refresh proofs do not consume the task count. With max_vms=12 and task_max_vms=2, a third task claim refuses with tasks.capacity_unavailable while two Large places remain for proofs
   GW->>SW: Start run, full intent<br/>operation-task-provision
   SW->>VM: Start and converge<br/>one Ansible run
   %%> What it does:

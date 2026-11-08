@@ -169,6 +169,6 @@ describe('orbit proof admission', function (): void {
 
     it('names the cases file of a command', function (): void {
         expect(ProofVerifyIntent::casesFile('firewall:allow'))->toBe('swamp/proof/firewall/allow.cases.yaml')
-            ->and(ProofVerifyIntent::casesFile('task:pr-ready'))->toBe('swamp/proof/tasks/pr-ready.cases.yaml');
+            ->and(ProofVerifyIntent::casesFile('task:pr-ready'))->toBe('swamp/proof/task/pr-ready.cases.yaml');
     });
 });

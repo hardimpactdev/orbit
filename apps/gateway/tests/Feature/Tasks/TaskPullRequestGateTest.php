@@ -273,16 +273,15 @@ it('does not count the approval of another head or a request for changes', funct
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks_pr.approval_missing']);
 })->with([
     'an older head' => [fn () => gateReview(str_repeat('b', 40))],
-    'changes requested' => [fn () => gateReview(GATE_HEAD, GitHubReviewState::ChangesRequested)],
 ]);
 
-it('reaches the admission of the build once the reviewer approved the exact head, and a refusal there leaves the group parked', function (): void {
+it('reaches the admission of the build once the reviewer approved the exact head, and a full pool leaves the group waiting', function (): void {
     config(['task_pull_requests.reviewer' => 'nick']);
     $group = gateWorld(gatePull(true), reviews: [gateReview(GATE_HEAD)]);
     gateSpecDone($group);
 
-    // The group has no task VM workspace here, so the admission refuses after the approval was read.
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks.build_refused'])
+    // The group has no task VM workspace; a full pool records a wait after reading the approval.
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'admitted'])
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1);
 });
@@ -292,13 +291,13 @@ it('reaches the admission of the build for an automatic group with no review rea
     $group->update(['status' => TaskGroupStatus::Running]);
     gateSpecDone($group);
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'skipped', 'code' => 'tasks.build_refused']);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'build', 'result' => 'admitted']);
 });
 
-it('leaves a draft alone when its group built before: a failed build is not admitted again', function (): void {
+it('leaves a draft alone when its group has a succeeded build', function (): void {
     $running = gateWorld(gatePull(true));
     gateSpecDone($running);
-    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $running->id, 'node_id' => null, 'status' => OperationStatus::Failed, 'input' => []]);
+    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $running->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
 
     expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);
 });

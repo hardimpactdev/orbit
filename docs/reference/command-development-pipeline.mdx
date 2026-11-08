@@ -20,15 +20,15 @@ The command development pipeline is the stages every command goes through during
 
 Each flow has its own trigger. The first three run for a task. The others keep a host ready.
 
-- **Task start.** `task:start` runs for every task group. It takes a free slot under the host's `max_vms`, mints a new identity for it, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
+- **Task start.** `task:start` runs for every task group. It takes a free slot in the host's task pool, mints a new identity for it, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
-- **Release.** The end of a group deletes its VM, seed clone and identity volume, removes its hub peer and deletes its Node.
+- **Release.** Publication of the PR, or the end of a group, deletes its VM, seed clone and identity volume, removes its hub peer and deletes its Node.
 - **Refresh (stage 6).** It runs in every release, from the step that follows the Swamp load, and daily. It converges the host's base VM, snapshots it and proves the snapshot with one task start.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 
 ## 1. Prep
 
-**Partly built.** A command has one PR, and prep starts it. The chart, docs page and verification cases (the spec) are the first commit of a draft PR. A merged docs PR does not make a command ready. The spec is approved in the draft, and the PR stays one PR through code, proof and merge. Prep changes no code. Swamp owns the flow and its state and the Gateway only authorizes it: an author agent drafts the spec in a task VM, a separate review agent checks it, and Swamp opens the draft PR as the Orbit App. One of two modes, set per flow, decides what happens next. In manual mode there is an optional spec checkpoint: Nick reviews the chart, docs and cases in the draft before code is written, and may check out a development Instance on the PR branch and review there with an agent. In automatic mode there is no checkpoint. The code and the runnable proof cases then follow in the same PR ([stage 4](#4-pr-and-ci)). Built: [`task:prep`](/cli/task/prep) admits one run for a task group and Swamp runs it as one workflow. Its children provision the task VM, run the author turn, up to three review rounds, and open the draft PR as the Orbit App. Built: [`task:prep-fix`](/cli/task/prep-fix) resumes the parked group, applies the review of the owner as a new commit, checks it, pushes it to the same draft PR and parks the group again. Not built: the automatic mode, and the detection of the owner's review by the gate check.
+**Partly built.** A command has one PR, and prep starts it. The chart, docs page and verification cases (the spec) are the first commit of a draft PR. A merged docs PR does not make a command ready. The spec is approved in the draft, and the PR stays one PR through code, proof and merge. Prep changes no code. Swamp owns the flow and its state and the Gateway only authorizes it: an author agent drafts the spec in a task VM, a separate review agent checks it, and Swamp opens the draft PR as the Orbit App. One of two modes, set per flow, decides what happens next. In manual mode there is an optional spec checkpoint: Nick reviews the chart, docs and cases in the draft before code is written, and may check out a development Instance on the PR branch and review there with an agent. In automatic mode there is no checkpoint. The code and the runnable proof cases then follow in the same PR ([stage 4](#4-pr-and-ci)). Built: [`task:prep`](/cli/task/prep) admits one run for a task group and Swamp runs it as one workflow. Its children provision the task VM, run the author turn, up to three review rounds, and open the draft PR as the Orbit App. Built: [`task:prep-fix`](/cli/task/prep-fix) claims a task place for the group, applies the review of the owner as a new commit, checks it, pushes it to the same draft PR and releases the VM again. Not built: the automatic mode, and the detection of the owner's review by the gate check.
 
 About 74 commands have a chart and a page from earlier docs-only PRs. Their old case tables are deleted. When a command's turn comes, its PR reviews and updates the chart and page, and writes the cases file from them.
 
@@ -41,7 +41,7 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 ## 2. Development environment
 
-**Being rebuilt to the target (Nick, 2026-11-07).** A slot is only a fixed identity, `<node>-tvm-<n>`: a permanent Node with its WireGuard key and hub peer, SSH host key and agent secret, kept by the Gateway. `task:start` claims a free identity and mints the claim's Pi token, copies the host's base VM snapshot and its seed (ZFS clones), writes the identity, the Pi token and the Pi models file (the guard origin and the fixed model key), runs the same converge as the release refresh and starts the task branch, then checks once that it is ready. The base holds everything installed and ready: orbit-agent, the Pi server, the tools, Swamp, a warm checkout of main with its dependencies, and a nested topology of three Incus system containers (a Gateway with Swamp, an `app-dev` Node and an `app-prod` Node) that start with the VM, with a `base` snapshot each for the proof. The end of the group deletes the VM. An agent, or Nick, develops a command here, and the proof cases run here too.
+A task claims one place in the host's task pool and gets a fresh VM and Node identity. The start copies the host's base snapshot and seed, writes the identity and Pi credentials, converges the VM and checks out the task branch. The base holds the agent, Pi, tools, Swamp, a warm checkout of main with its dependencies, and a nested fleet of three Incus containers: Gateway, app-dev and app-prod. Publication releases the VM, workspace, Node, keys and hub peer. A later build, fix or review round claims again from the base at the published task head. [Capacity ideal state](#capacity-ideal-state) defines the separate CI pool and proof queue.
 
 The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so the author's changes reach them at once. A restore of `base` is a reboot of the containers.
 
@@ -95,6 +95,20 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 - Charts: the stage chart above and the per-host run [`task_vm.image_refresh`](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd).
 - Docs: [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot), [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
 - Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
+
+## Capacity: ideal state
+
+Task work and CI proofs use separate fixed pools on every host. Beast and Shark each have two task places and two CI places. Sabre has zero task places and two CI places. A place holds one VM; VM size does not change the place count. The request kind chooses the pool. Only `proof.run` from an authenticated active `ci-runner` Node and base refresh proofs use the CI pool. Other work uses the task pool.
+
+The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.
+
+A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review.
+
+CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
+
+Full pools cause a wait, never a capacity refusal. A two-hour total admission budget ends a wait with a clear timeout. The proof job belongs to `Required checks`: every selected command needs case verdicts, and every case must pass. A PR that selects no command passes without starting a VM. There is no shared reserve, task VM cap layered over resource units, or CI preemption path.
+
+<div className="flow-at" data-chart="reference/pipeline/capacity-model"></div>
 
 ## Change the development pipeline
 

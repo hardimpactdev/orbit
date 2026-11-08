@@ -6,9 +6,9 @@ covers:
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
-  - {bin/{php-build,git-build-watch}}
+  - "{bin/{php-build,git-build-watch}}"
   - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/database/migrations/2027_01_29_000001_drop_upcloud_task_vm_support.php
+  - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools}.php
   - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
 
@@ -365,7 +365,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-Swamp requests review parking through `tasks.park`. A parked row reports unknown power until the provider confirms stopped. A wake invalidates that confirmation. Gateway resource observation refreshes parked power in every group status and never starts or stops a VM.
+Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which each host refreshes to the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.
 
@@ -452,35 +452,13 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
 
-A host with `task_vms.ci_only: true` admits only authenticated CI proofs and its own base refresh proof. It admits no task work or operator proof. CI prefers available CI-only hosts before shared hosts, regardless of their relative free capacity. `max_vms=6` provides up to two Large VMs on a CI-only host. The host’s own refresh proves there through the same pinned-host admission.
+Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision, prep, build, fix turns and review rounds use the task pool. Only a `proof:run` from an authenticated active `ci-runner` Node uses the CI pool; base-refresh proofs use it too. Operator proofs use task places. Neither request flags nor reporting mode grants CI capacity.
 
-Each shared host reserves slot number 1 for authenticated CI command proofs and refresh candidate proofs. An active caller Node with an active `ci-runner` role qualifies for the reserve. Orbit records this server-derived eligibility and the caller Node before queueing proof admission, then carries them into allocation and preemption. Neither request flags nor the command kind grants access. Reporting mode grants none either. Operator proofs and task provision, prep, build and review take only slots numbered 2 or above. CI and refresh proofs take the reserve first, then any free task slot. CI proofs cannot be preempted by another proof.
+The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings. Operator proofs join the shared task admission queue.
 
-The reserve is one Large VM (3 `max_vms` units), not one budget unit; `max_vms=9` provides two task VMs plus the reserve. An occupied reserve counts once, so a running proof does not subtract a second reserve from task capacity. A task VM that already held slot 1 before this rule keeps it until release; drain that VM during rollout.
+When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-`task_vms.task_max_vms` adds a per-host limit on the number of VMs held by task work, including prep, build, review, provision, operator proofs and parked claims. It counts VMs, not `max_vms` units. The count cannot exceed `max_vms`, because every VM takes at least one unit. Unset or null adds no limit. Authenticated CI proofs and base refresh proofs do not consume this task count, but every VM still consumes the host’s resource budget.
-
-With `max_vms=12` and `task_max_vms=2`, task work can hold two Large VMs; CI and refresh proofs can use the remaining two places. The shared reserve and `ci_only` rule still apply. Lowering the task limit releases no claim; new task claims fail with `tasks.capacity_unavailable` until the count falls below it.
-
-Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no Incus host has room, the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
-
-#### Size of a task VM
-
-At the claim, Orbit decides the size of the group's VM once. It takes the union of the `topology` fields of the group's subtasks that are not cancelled, and the Project's place in `task_vms.medium_projects` or `task_vms.large_projects`. The row stores the size in `size`, and it never changes while the VM exists.
-
-| Size | When | VM | Slots |
-| --- | --- | --- | --- |
-| `normal` | No subtask declares a topology and the Project is in neither size list | The host's `cpus`, `memory`, and `disk` | 1 |
-| `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 |
-| `large` | The topology has two test nodes, or no subtask declares a topology and the Project is in `task_vms.large_projects` | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 |
-
-For groups without a declared topology, `large_projects` takes precedence over `medium_projects`: a Project in both lists gets a large VM. These lists do not change the size of a group with a declared topology.
-
-A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. Each size defines how many test nodes it holds, one in a medium VM and two in a large VM, and the group gets the smallest size that holds its topology. The largest size sets the most test nodes a group may declare.
-
-The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host.
-
-A subtask whose topology needs a larger VM than its group got waits before its first turn, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
+Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
 ### Image permissions and verification
 
@@ -602,11 +580,7 @@ A failed phase leaves finished work in place. A rerun skips each phase whose dig
 
 Park, resume and release share one task VM name rule: a slot VM is `<host>-tvm-<slot_number>`, using the host name it had when created; an old-pool VM without a slot number is `tvm-<id>`. Any other name is refused before provider work. Prep corrections, builds and review rounds resume only a parked VM; they use a ready VM directly.
 
-Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner and records an immutable park intent. One native Swamp root stops and observes the admitted VM on its exact Incus host. The result projection records `waiting_for_review` only after stopped power is confirmed.
-
-It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting. Parking has one dispatch path: the native `tasks.park` root replaces its PHP stop executor and the unused internal `task_vm.park` parent and `task_vm.confirm_stopped` child. The same root owns soft-stop, hard-stop and observation; it starts no child Operations.
-
-The row enters `parked` with `stop_confirmed_at` only after the native root confirms settled, stopped power. Admission and cancellation leave a running VM `ready`. A failed stop clears the proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
+New task work never parks a VM for review. Publication deletes it. A stored parked VM from earlier work may still resume or be released; it holds its admitted place until deletion is confirmed.
 
 A requested workspace operation admits `task_vm.resume`. It clears stop proof and starts one native run. On an Incus host the run starts the VM, and a VM that already runs counts as started. Incus's own agent wait follows, bounded to 120 seconds. A `ready` VM that a workspace operation found stopped also gets 209's authorized key, its TCP 22 rule and `sshd` back, through `incus exec` on the host.
 
@@ -1067,7 +1041,7 @@ A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM st
 
 The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. It waits for the nested Gateway only while it builds the fleet.
 
-The proof task start may use the shared CI reserve or any free task slot of the host. It cannot be starved by task work. An existing command proof can hold the reserve, so a full host still refuses the refresh until the next trigger. The refresh VM of the old design and its group in the proof Project are not part of this run.
+The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
 ##### Build the nested fleet in the converge
 
@@ -1131,7 +1105,7 @@ The VM then joins as operator. It makes its own WireGuard key and writes the pub
 
 A new Incus start copies the host's recorded base snapshot and its seed snapshot, which are ZFS clones, starts the copy and writes the identity of the claim. The VM records the `recipe_identity` of the snapshot at allocation. A later refresh cannot change the snapshot a VM was copied from. A host without a base snapshot cannot serve a new claim.
 
-An existing group keeps its VM across recipe changes, failures, parking, and resume.
+An active work turn keeps its VM across recipe changes. Publishing the PR deletes the VM; later work starts from the base and the task branch.
 
 #### Image fallback
 
@@ -1199,7 +1173,7 @@ A task VM workspace is a normal Instance on a normal Node, so generic Instance o
 
 ### Configure task VMs
 
-Choose `max_vms` from measured peak memory, with a separate margin for the host's own services, QEMU overhead and ZFS ARC. A Large VM takes three units and 12 GiB. Count a running base during a refresh; it stops before the candidate proof starts. A machine's CPU count or free disk does not establish its RAM budget. Sabre starts at `max_vms=3`, one Large CI proof VM. Its ceiling is two VMs (`max_vms=6`), and that increase requires a measured smaller VM profile that fits with the host margin.
+Configure each host's pools from measured peak memory, leaving room for the host, QEMU and ZFS ARC. The approved allocation is two task places and two CI places each on Beast and Shark, and zero task places and two CI places on Sabre. A place is one VM, not a resource unit. Pool sizes are explicit Node settings; shipping this model changes no live sizes.
 
 Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment. Per-host configuration lives in the operator-owned [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) on each host Node, not in the environment and not in its roles.
 
@@ -1264,7 +1238,7 @@ The build row records the step and error |
 
 Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address and read instance names from other bridges. This risk is accepted. Transfers over WireGuard may pass through the VPN hub.
 
-Parking keeps the VM's slot and disk, but its private Route does not answer and Doctor skips its Node. Set [preview](#request-a-preview) to keep a VM running during review.
+Publication deletes the VM and its workspace. No VM stays allocated for PR review, including a group with preview intent.
 
 The [Git mirror](#the-mirror) needs repository-sized Gateway storage. A fresh workspace receives the full history of its selected branches, without tags. Fetch, pack, and push operations serialize per Project, with a 300-second lock wait. Operations that would send a credential to a VM require its group to end first.
 
@@ -1284,7 +1258,7 @@ The agent in a task VM has root through sudo, so a token anywhere in the VM, eve
 
 Packs on the standard input and output of the existing SSH commands need no new transport, keep the check that a command reaches only its group's workspace. The Gateway checks what comes back the way a fetch checks a remote: only the approved commit ID names what it pushes, and `index-pack --strict` checks every object.
 
-Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
+Most groups wait for review far longer than they work. Deleting the VM at publication frees its whole place and removes the failed park path. Re-entry reconstructs the workspace from the base and the published task branch. Separate pools stop task work from consuming CI capacity. The sweep catches failed deletion and frees capacity only after confirmed removal.
 
 A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three slots. Measurements on beast put the test Gateway, an `app-dev` Node, and the operator at about 2.7 GiB together. Four test machines filled a large VM's 12 GiB under IO.
 
@@ -1293,8 +1267,6 @@ These alternatives were also rejected:
 | Alternative | Why not |
 | --- | --- |
 | A fallback to the stock image | A VM from it cannot enroll, so the failure would come later and less clearly |
-| A snapshot before each park | ZFS keeps the stopped disk, and a resume continues it. A snapshot adds a copy that nothing restores |
-| A parked VM frees its slot | A resume could then find its host full, and the group's work would wait behind new groups |
 | Placement in host order only | The first host fills before the second takes any VM |
 | A token in the VM for each fetch and push | The agent can read any process in the VM. A read token exposes every private branch, and the write token lets the agent push any commit |
 | WireGuard in cloud-init | It bypasses normal enrollment. The Node record, peer, and roles would come from separate paths |

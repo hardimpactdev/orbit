@@ -10,11 +10,9 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
- * The cancel of the VMs that failed proof runs kept (`proof:run --keep-failed`): at the end of their 60 minutes, and earlier when a proof
- * cannot be placed. Only a `proof.command` that recorded the VM it kept is asked, and the cancel is the one every run gets, with the trigger
+ * The cancel of the VMs that failed proof runs kept (`proof:run --keep-failed`): at the end of their 60 minutes. Only a `proof.command` that recorded the VM it kept is asked, and the cancel is the one every run gets, with the trigger
  * `proof-run`. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofKeptVms
@@ -49,28 +47,6 @@ final readonly class ProofKeptVms
 
             return true;
         });
-    }
-
-    /**
-     * Releases every kept VM that is still there, for a proof that cannot be placed. A keep that is more than a day past its time is not asked.
-     *
-     * @return int how many kept VMs are on their way out
-     */
-    public function releaseAll(): int
-    {
-        $leaving = 0;
-        $ids = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereNotNull('result->kept')
-            ->where('result->kept->keep_until', '>', now()->utc()->subHours(ProofRunWatch::KeptGiveUpHours)->format(ProofRunWatch::Time))->orderBy('id')->pluck('id');
-        foreach ($ids as $id) {
-            try {
-                $leaving += $this->release(ValidatedData::integer($id)) ? 1 : 0;
-            } catch (Throwable $exception) {
-                // One run that cannot be cancelled must not hold the others.
-                report($exception);
-            }
-        }
-
-        return $leaving;
     }
 
     /**

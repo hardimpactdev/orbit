@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\TaskTurnData;
-use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Domain\SourceControl\RemoteBranchHeads;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiModel;
@@ -20,42 +19,56 @@ use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /** Admitted task and session metadata. Swamp owns every execution decision. */
 final readonly class TaskTurnIntent
 {
-    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
+    public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
     {
-        if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
-            return $existing;
-        }
         TaskVmAwake::require($group);
 
-        return DB::transaction(function () use ($group, $data, $caller, $request): Operation {
-            $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
-                return $existing;
-            }
-            $intent = $this->capture($group, $data, function (Task $task) use ($group, $data): string {
-                $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
-                if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
-                    throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
+        return $this->operations->start($group, 'tasks.turn', $data->toArray(), static function (Task $group): void {},
+            $caller, $request, fn (Task $group): array => $this->captureTurn($group, $data));
+    }
+
+    /** The standalone turn may need a new VM and session after publication deleted the old ones.
+     * @return array<string,mixed>
+     */
+    public function captureTurn(Task $group, TaskTurnData $data): array
+    {
+        $group->loadMissing('project');
+        $vm = TaskVm::forGroup($group);
+        if ($vm?->state === TaskVmState::Releasing) {
+            throw new TaskCapacityException(TaskWait::Capacity, 'The previous task VM is still being deleted.');
+        }
+        $provision = null;
+        if ($vm === null) {
+            $provision = TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group)));
+            if ($data->thread !== 'new') {
+                $earlier = AgentThread::query()->where('task_group_id', $group->id)->where('role', $data->threadRole()->value)->find((int) $data->thread);
+                if (! $earlier instanceof AgentThread || $data->model !== null) {
+                    throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must belong to this group and role; a continued thread keeps its model.', 422);
                 }
+                $data = new TaskTurnData($data->subtask, $data->role, $data->prompt, 'new', $earlier->model, $data->check);
+            }
+        }
+        $intent = $this->capture($group, $data, function (Task $task) use ($group, $data): string {
+            $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
+            if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
+                throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
+            }
 
-                return (string) $check->commit_sha;
-            });
-            $reference = ValidatedData::object(ValidatedData::object($intent['execution_secrets'])['pi_token']);
-            $intent['execution_secrets'] = ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), (string) TaskVm::forGroup($group)?->pi_token)];
-
-            $operation = $this->start->execute('tasks.turn', 'task_group', $group->id, ValidatedData::integer($intent['node_id']), $intent, $caller, $request);
-            app(TaskBroadcasts::class)->threadChanged(ValidatedData::integer($intent['thread_id']));
-
-            return $operation;
+            return (string) $check->commit_sha;
         });
+        if ($provision !== null) {
+            $group->update(['status' => TaskGroupStatus::Running, 'settled_at' => null]);
+        }
+        app(TaskBroadcasts::class)->threadChanged(ValidatedData::integer($intent['thread_id']));
+
+        return [...$intent, ...($provision === null ? [] : ['provision' => $provision])];
     }
 
     /**

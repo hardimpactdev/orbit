@@ -16,21 +16,18 @@ use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
-use App\Domain\Proof\ProofReportOnlyProofs;
 use App\Domain\Proof\ProofRunIntent;
-use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStartCommit;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\Tasks\AdmitTaskVm;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -236,7 +233,7 @@ function proofFailureDetail(Operation $proof): ?string
  * One host with room for one large task VM and a base snapshot that a refresh built from the release `$copiesCommit`, and a commit under proof that
  * changes a firewall workflow. Returns the temporary release layout, which the test removes.
  */
-function proofHostWithCopies(object $source, ?string $copiesCommit, int $maxVms = 6): string
+function proofHostWithCopies(object $source, ?string $copiesCommit, int $taskPlaces = 6): string
 {
     $base = sys_get_temp_dir().'/orbit-proof-copies-'.bin2hex(random_bytes(4));
     $commit = 'eeeeeeeeeeee0000000000000000000000000000';
@@ -257,7 +254,7 @@ function proofHostWithCopies(object $source, ?string $copiesCommit, int $maxVms 
         'input' => $copiesCommit === null ? [] : ['commit' => $copiesCommit],
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB')], '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: 2)], '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
     $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
     proofWorld($source);
 
@@ -275,7 +272,7 @@ describe('proof:run admission', function (): void {
         $seconds = microtime(true) - $started;
 
         expect($proof->status)->toBe(OperationStatus::Running)
-            ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => []])
+            ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => []])
             ->and($seconds)->toBeLessThan(1.0)
             ->and(Task::query()->count())->toBe(0)->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
         Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
@@ -428,81 +425,19 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
-    it('keeps nothing when a command cannot start: no group, no run, and the proof fails with the reason', function (): void {
-        config(['proof.execution' => true]);
-        app(TaskExtensionState::class)->enable();
-        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
-        $source = proofSource();
-        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
-        proofWorld($source);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM within the task VM limit and outside the CI/refresh reserve.')
-            ->and(Task::query()->count())->toBe(0)
-            ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
-    });
-
-    it('records a report-only run as such and fails it for capacity like any other run', function (): void {
-        config(['proof.execution' => true]);
-        app(TaskExtensionState::class)->enable();
-        $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-        config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
-        $source = proofSource();
-        $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
-        proofWorld($source);
-
-        $proof = proofAdmitted(reportOnly: true);
-
-        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->input['report_only'])->toBeTrue()
-            ->and($proof->result['selected_commands'])->toBe(['firewall:allow'])
-            ->and($proof->result['cases'])->toBe([])->and(Task::query()->count())->toBe(0);
-    });
-
-    it('admits report-only CI into the reserved slot instead of leaving it free', function (): void {
-        $source = proofSource();
-        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000', maxVms: 3);
-        $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
-        $observed = null;
-        TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
-            $observed = $vm->slot_number;
-            throw new ResourceOperationException('test.slot_observed', 'Stop before preparing execution.', 409);
-        });
-
-        $ci = Node::query()->where('name', 'beast')->sole();
-        $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-        $proof = proofAdmitted(reportOnly: true, caller: $ci);
-
-        Process::run(['rm', '-rf', $base]);
-        expect($observed)->toBe(1)->and($proof->error_code)->toBe('test.slot_observed');
-    });
-
-    it('waits visibly for a busy CI reserve, then reports capacity with the selected commands and no cases', function (): void {
-        $this->freezeTime();
-        $source = proofSource();
-        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000', maxVms: 3);
-        $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
-        $host = Node::query()->where('name', 'beast')->sole();
-        TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-            'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.150']);
-
-        $ci = Node::query()->where('name', 'beast')->sole();
-        $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-        $proof = proofAdmitted(reportOnly: true, caller: $ci);
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
-            ->and($proof->input['runs'])->toBe([])->and(Task::query()->count())->toBe(0);
-        Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id && $job->delay === ProofRunIntent::RetrySeconds);
-        Queue::assertNotPushed(CancelProofGroup::class);
-        $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        Process::run(['rm', '-rf', $base]);
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and($proof->result['selected_commands'])->toBe(['firewall:allow'])->and($proof->result['cases'])->toBe([]);
-    });
+    it('queues an operator proof in task admission without a VM, then times out clearly', function (bool $reportOnly): void {
+        proofWorldWithoutCapacity();
+        $proof = proofAdmitted(reportOnly: $reportOnly);
+        expect($proof->error_code)->toBeNull()->and($proof->status)->toBe(OperationStatus::Running)
+            ->and(TaskVm::query()->count())->toBe(0);
+        $child = ProofRunSettlement::children($proof->id)->sole();
+        expect($child->status)->toBe(OperationStatus::Waiting)->and($child->current_step)->toBe('Wait for a task place');
+        Queue::assertPushed(AdmitTaskVm::class);
+        $child->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+        app(TaskVmAdmission::class)->admit($child->id);
+        expect($child->refresh()->error_code)->toBe('tasks.capacity_timeout')
+            ->and($proof->refresh()->status)->toBe(OperationStatus::Failed);
+    })->with([true, false]);
 
     it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {
         $source = proofSource();
@@ -515,11 +450,12 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         Process::run(['rm', '-rf', $base]);
-        $detail = proofFailureDetail($proof) ?? '';
+        $child = ProofRunSettlement::children($proof->id)->first();
+        $detail = $child?->state['capacity_wait_reason'] ?? $proof->state['capacity_wait_reason'] ?? proofFailureDetail($proof) ?? '';
         expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
             ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped);
         if ($skipped) {
-            expect($proof->error_code)->toBe('tasks.capacity_unavailable');
+            expect(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place');
         }
     })->with([
         'main moved by documents and Gateway PHP only' => ['dddddddddddd0000000000000000000000000000', ['ahead', ['docs/a.md', 'apps/gateway/app/Domain/Proof/ProofRunIntent.php']], false],
@@ -543,35 +479,11 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         Process::run(['rm', '-rf', $base]);
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+        expect($proof->status)->toBe(OperationStatus::Running)->and(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place')
             ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
         Queue::assertNotPushed(CancelProofGroup::class);
     });
 
-    it('tells the caller what a refused proof waits for: the change the copies lack, and whether a refresh of the host is running', function (bool $running): void {
-        $source = proofSource();
-        $copies = 'aaaaaaaaaaaa0000000000000000000000000000';
-        $base = proofHostWithCopies($source, $copies);
-        $source->ranges[$copies] = new ProofCommitRange(GitHubComparisonStatus::Ahead, new ProofChangedFiles(str_repeat('f', 40), [new ProofChangedFile('swamp/ansible/task-vm-role.yml', 'modified')], true));
-        $host = Node::query()->where('name', 'beast')->firstOrFail();
-        $refresh = $running ? Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Running,
-            'input' => [], 'triggered_by' => 'test']) : null;
-
-        $proof = proofAdmitted();
-
-        Process::run(['rm', '-rf', $base]);
-        $detail = proofFailureDetail($proof) ?? '';
-        expect($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and($detail)->toContain('beast: its ready copies come from release aaaaaaaaaaaa and lack a change of swamp/ansible/task-vm-role.yml; ')
-            ->and($detail)->not->toContain('Refresh their task image');
-        if ($refresh !== null) {
-            expect($detail)->toContain("a refresh is running (operation {$refresh->id}), run the proof again when it ends.");
-        } else {
-            expect($detail)->toContain('no refresh is running; a release that changes the playbooks, pins or lock files starts one.');
-        }
-        // A refusal starts no refresh.
-        expect(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe($running ? 2 : 1);
-    })->with(['a refresh is running' => true, 'no refresh is running' => false]);
     it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
@@ -665,136 +577,6 @@ function proofKeptRun(string $command = 'firewall:allow'): array
     return [$run, $group];
 }
 
-describe('a proof that cannot be placed while failed runs keep their VMs', function (): void {
-    it('releases the kept VMs and waits, visibly, for the room instead of failing', function (): void {
-        proofWorldWithoutCapacity();
-        [$kept] = proofKeptRun();
-        [$other] = proofKeptRun('firewall:list');
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
-            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()->and($other->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull()
-            ->and(Operation::query()->where('kind', 'proof.command')->where('input->proof_operation_id', $proof->id)->count())->toBe(0);
-        Queue::assertPushed(CancelProofGroup::class, 2);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id && $job->trigger === 'proof-run');
-        // The first job and one that tries again in a few seconds.
-        Queue::assertPushed(AdmitProofRun::class, 2);
-        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
-    });
-
-    it('waits on while the VMs are on their way out, and asks for no second cancel', function (): void {
-        proofWorldWithoutCapacity();
-        proofKeptRun();
-        $proof = proofAdmitted();
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull();
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(AdmitProofRun::class, 3);
-    });
-
-    it('fails with the capacity code when the kept VMs are gone and the room is still short', function (): void {
-        proofWorldWithoutCapacity();
-        [, $group] = proofKeptRun();
-        $proof = proofAdmitted();
-        $group->update(['status' => TaskGroupStatus::Cancelled]);
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
-    });
-
-    it('stops waiting after the time that the watch of a proof with no runs allows', function (): void {
-        proofWorldWithoutCapacity();
-        proofKeptRun();
-        $proof = proofAdmitted();
-        $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(ProofRunIntent::WaitSeconds + ProofRunIntent::RetrySeconds + 60)->toBeLessThan(ProofRunWatch::AdmissionSeconds);
-    });
-
-    it('fails as before when no VM is kept', function (): void {
-        proofWorldWithoutCapacity();
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($proof->current_step)->toBeNull();
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('does not release a kept VM for a report-only proof, which yields capacity', function (): void {
-        proofWorldWithoutCapacity();
-        [$kept] = proofKeptRun();
-
-        $proof = proofAdmitted(reportOnly: true);
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('leaves a proof that was cancelled while it waited cancelled, and releases nothing for it', function (): void {
-        Queue::fake();
-        proofWorldWithoutCapacity();
-        [$kept] = proofKeptRun();
-        $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
-        $proof->update(['status' => OperationStatus::Cancelled]);
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('does not hold the other kept VMs back when one of them cannot be released', function (): void {
-        proofWorldWithoutCapacity();
-        [$broken] = proofKeptRun();
-        [$fine] = proofKeptRun('firewall:list');
-        $armed = true;
-        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
-            if ($armed && $operation->id === $broken->id) {
-                throw new RuntimeException('The write failed.');
-            }
-        });
-
-        try {
-            $proof = proofAdmitted();
-        } finally {
-            $armed = false;
-        }
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->result['kept']['cancel_requested_at'])->not->toBeNull();
-        Queue::assertPushed(CancelProofGroup::class, 1);
-    });
-
-    it('does not ask for a keep that is more than a day past its time', function (): void {
-        proofWorldWithoutCapacity();
-        [$old] = proofKeptRun();
-        $old->update(['result' => ['kept' => [...$old->result['kept'], 'keep_until' => now()->subDays(2)->utc()->format('Y-m-d\TH:i:s\Z')]]]);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-    it('releases only the runs that kept a VM, never another running group of the same command', function (): void {
-        proofWorldWithoutCapacity();
-        [$kept] = proofKeptRun();
-        [$stranger] = proofKeptRun();
-        // A running run of another proof, with no record of a kept VM: its group is not this rule's.
-        $stranger->update(['result' => ['cases' => []]]);
-
-        proofAdmitted();
-
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id);
-    });
-});
 describe('the intent of a run', function (): void {
     it('carries the head and the merge base, which the proof of a new case switches the checkout to', function (): void {
         $input = proofRunInput([]);
@@ -825,348 +607,28 @@ describe('keep_failed', function (): void {
         $kept = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, keepFailed: true);
         $plain = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
 
-        expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => [], 'keep_failed' => true])
-            ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => []]);
+        expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => [], 'keep_failed' => true])
+            ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => []]);
     });
 });
 
-/**
- * A proof of an earlier commit with one run on its group: the report-only job of a pull request, or a normal proof, while it runs.
- *
- * @return array{0: Operation, 1: Operation, 2: Task}
- */
-function proofRunningElsewhere(bool $reportOnly = true, bool $withRun = true): array
-{
-    $node = Node::query()->firstOrFail();
-    $earlier = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Running,
-        'input' => ['commit' => str_repeat('b', 40), 'report_only' => $reportOnly, 'runs' => []], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
-    $group = Task::query()->create(['title' => 'Proof firewall:allow', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
-    $run = Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id, 'status' => OperationStatus::Running,
-        'input' => ['proof_operation_id' => $withRun ? $earlier->id : 0, 'group_id' => $group->id], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
-
-    return [$earlier, $run, $group];
-}
-
-describe('a proof that cannot be placed while report-only proofs run', function (): void {
-    it('cancels the report-only proofs, with their runs and groups, and waits, visibly, for the room', function (): void {
-        proofWorldWithoutCapacity();
-        [$reportOnly, $run] = proofRunningElsewhere();
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
-            ->and($reportOnly->refresh()->status)->toBe(OperationStatus::Cancelled)->and($reportOnly->cancel_requested_at)->not->toBeNull();
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
-        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
-    });
-
-    it('waits on while their VMs are on their way out, and asks again for the keyed cancel of their group', function (): void {
-        proofWorldWithoutCapacity();
-        proofRunningElsewhere();
-        $proof = proofAdmitted();
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull();
-        // The first cancel, and the same keyed cancel asked again on the second try.
-        Queue::assertPushed(CancelProofGroup::class, 2);
-    });
-
-    it('fails with the capacity code when their groups are gone and the room is still short', function (): void {
-        proofWorldWithoutCapacity();
-        [, , $group] = proofRunningElsewhere();
-        $proof = proofAdmitted();
-        $group->update(['status' => TaskGroupStatus::Cancelled]);
-
-        app(ProofRunIntent::class)->admit($proof->id);
-
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
-    });
-
-    it('does not cancel a report-only proof for another report-only proof, which yields capacity', function (): void {
-        proofWorldWithoutCapacity();
-        [$reportOnly] = proofRunningElsewhere();
-
-        $proof = proofAdmitted(reportOnly: true);
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($reportOnly->refresh()->status)->toBe(OperationStatus::Running);
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('cancels only report-only proofs: a normal proof that runs keeps its VMs', function (): void {
-        proofWorldWithoutCapacity();
-        [$normal] = proofRunningElsewhere(reportOnly: false);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')->and($normal->refresh()->status)->toBe(OperationStatus::Running);
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('leaves a report-only proof that has no runs yet to its admission', function (): void {
-        proofWorldWithoutCapacity();
-        [$admitting] = proofRunningElsewhere(withRun: false);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($admitting->refresh()->status)->toBe(OperationStatus::Running);
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('does not hold the other report-only proofs back when one of them cannot be cancelled', function (): void {
-        proofWorldWithoutCapacity();
-        [$broken] = proofRunningElsewhere();
-        [$fine] = proofRunningElsewhere();
-        Operation::saving(static function (Operation $operation) use ($broken): void {
-            if ($operation->id === $broken->id && $operation->isDirty('status')) {
-                throw new RuntimeException('The write failed.');
-            }
-        });
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($fine->refresh()->status)->toBe(OperationStatus::Cancelled);
-    });
-});
-
-describe('a proof that cannot be placed while a report-only proof is on its way out', function (): void {
-    it('counts a report-only proof that has ended but whose group is still there, and asks for its cancel again', function (): void {
-        proofWorldWithoutCapacity();
-        [$ended, $run] = proofRunningElsewhere();
-        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinute()]);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
-    });
-
-    it('does not look at a report-only proof that ended long ago', function (): void {
-        proofWorldWithoutCapacity();
-        [$ended] = proofRunningElsewhere();
-        $ended->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()->subMinutes(ProofReportOnlyProofs::DrainMinutes + 1)]);
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable');
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('waits and tries again when the only report-only proof cannot be cancelled now', function (): void {
-        proofWorldWithoutCapacity();
-        [$broken] = proofRunningElsewhere();
-        Operation::saving(static function (Operation $operation) use ($broken): void {
-            if ($operation->id === $broken->id && $operation->isDirty('status')) {
-                throw new RuntimeException('The write failed.');
-            }
-        });
-
-        $proof = proofAdmitted();
-
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
-        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
-    });
-});
-
-/** Two shared hosts at twelve budget units, filled to the reserve or the explicit task count. */
-function proofReservedFleet(object $source, ?int $taskMaxVms = null): array
-{
-    $copies = 'dddddddddddd0000000000000000000000000000';
-    $base = proofHostWithCopies($source, $copies, maxVms: 12);
-    $source->ranges[$copies] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
-    $beast = Node::query()->where('name', 'beast')->sole();
-    $shark = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark', 'status' => 'active', 'platform' => 'linux',
-        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.11', 'wireguard_ip' => '10.44.0.11', 'user' => 'orbit']));
-    $build = TaskVmImageBuild::query()->where('host_node_id', $beast->id)->sole()->replicate();
-    $build->host_node_id = $shark->id;
-    $build->save();
-    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $shark->id, 'node_id' => $shark->id,
-        'status' => OperationStatus::Succeeded, 'input' => ['commit' => $copies], 'result' => ['refreshed' => true, 'host_node_id' => $shark->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
-    $settings = app(TaskVmSettings::class);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-        [new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms),
-            new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms)], '/pi', str_repeat('a', 64), ['gpt-6']));
-    foreach ([$beast, $shark] as $index => $host) {
-        foreach (($taskMaxVms === null ? [2, 3, 4] : [2, 3]) as $number) {
-            TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => $number, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-                'group_id' => Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task claim', 'brief' => 'Work', 'status' => TaskGroupStatus::Todo])->id,
-                'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(140 + $index * 4 + $number)]);
-        }
-    }
-    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']));
-    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
-    $operator = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
-    $beast->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-    foreach ([$beast, $shark, $operator] as $caller) {
-        $caller->accessibleNodes()->attach($gateway);
-    }
+it('derives the CI pool only from the authenticated active ci-runner Node', function (string $role, string $status, bool $ci): void {
     Queue::fake();
+    proofWorld(proofSource());
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'runner', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.12', 'public_ssh_host' => '10.44.0.12', 'user' => 'orbit']));
+    $node->roles()->create(['role' => $role, 'status' => $status]);
+    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, reportOnly: true, authenticatedCaller: $node);
+    expect($proof->input)->toMatchArray(['caller_node_id' => $node->id, 'ci_pool' => $ci]);
+})->with([['ci-runner', 'active', true], ['ci-runner', 'failed', false], ['app-dev', 'active', false]]);
 
-    return [$base, $beast, $shark, $operator];
-}
-
-/** Authenticate through the peer IP, then inspect the queued record independently of the request. */
-function proofHttpQueued(Node $caller, bool $reportOnly = false, ?string $key = null): Operation
-{
-    $response = test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->withHeader('Idempotency-Key', $key ?? fake()->uuid())
-        ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'report_only' => $reportOnly]);
-    $response->assertAccepted();
-
-    return Operation::query()->findOrFail($response->json('data.id'));
-}
-
-describe('authenticated proof capacity at the HTTP boundary', function (): void {
-    it('persists CI eligibility before queueing and uses proof capacity after the request ends', function (?int $taskMaxVms): void {
-        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
-        try {
-            $proof = proofHttpQueued($ci, reportOnly: true);
-            Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
-            // Eligibility is a server-authenticated admission snapshot, not the queue worker's identity or a new role lookup.
-            $ci->roles()->where('role', RoleName::CiRunner)->delete();
-            $observed = null;
-            TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
-                $observed = [$vm->host_node_id, $vm->slot_number];
-                throw new ResourceOperationException('test.slot_observed', 'Stop before execution.', 409);
-            });
-            app(ProofRunIntent::class)->admit($proof->id);
-            expect($observed)->toBe([$ci->id, 1])->and($proof->refresh()->error_code)->toBe('test.slot_observed');
-            expect($proof->input)->toMatchArray(['caller_node_id' => $ci->id, 'ci_reserve' => true]);
-        } finally {
-            Process::run(['rm', '-rf', $base]);
-        }
-    })->with(['shared reserve' => null, 'two-task limit' => 2]);
-
-    it('refuses operator and task-node proofs at task capacity regardless of report-only mode', function (string $identity, bool $reportOnly, ?int $taskMaxVms): void {
-        [$base, , $taskNode, $operator] = proofReservedFleet(proofSource(), $taskMaxVms);
-        try {
-            $taskNode->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-            $caller = $identity === 'operator' ? $operator : $taskNode;
-            $this->freezeTime();
-            $proof = proofHttpQueued($caller, $reportOnly);
-            app(ProofRunIntent::class)->admit($proof->id);
-            if ($reportOnly) {
-                expect($proof->refresh()->current_step)->toBe(ProofRunIntent::WaitStep);
-                $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
-                app(ProofRunIntent::class)->admit($proof->id);
-            }
-            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
-            expect($proof->input)->toMatchArray(['caller_node_id' => $caller->id, 'ci_reserve' => false]);
-        } finally {
-            Process::run(['rm', '-rf', $base]);
-        }
-    })->with([['operator', false, null], ['operator', true, null], ['task', false, null], ['task', true, null], ['operator', false, 2], ['task', false, 2]]);
-
-    it('never cancels authenticated CI when an operator proof is refused', function (): void {
-        [$base, $ci, , $operator] = proofReservedFleet(proofSource());
-        try {
-            $protected = proofHttpQueued($ci, reportOnly: true);
-            foreach (app(TaskVmSettings::class)->hosts as $index => $host) {
-                TaskVm::query()->create(['host_node_id' => $host->nodeId, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-                    'name' => 'occupied-reserve-'.$index, 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.'.(155 + $index)]);
-            }
-            [, $run] = proofRunningElsewhere();
-            $run->update(['input' => ['proof_operation_id' => $protected->id, 'group_id' => $run->target_id]]);
-            $proof = proofHttpQueued($operator);
-            app(ProofRunIntent::class)->admit($proof->id);
-            expect($protected->refresh()->status)->toBe(OperationStatus::Running)->and($protected->cancel_requested_at)->toBeNull();
-            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable');
-            Queue::assertNotPushed(CancelProofGroup::class);
-        } finally {
-            Process::run(['rm', '-rf', $base]);
-        }
-    });
-
-    it('binds a CI idempotency key to the authenticated caller', function (): void {
-        [$base, $ci, , $operator] = proofReservedFleet(proofSource());
-        try {
-            $key = fake()->uuid();
-            $proof = proofHttpQueued($ci, key: $key);
-            $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', $key)
-                ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'report_only' => false])->assertConflict();
-            expect($proof->refresh()->input['ci_reserve'])->toBeTrue();
-        } finally {
-            Process::run(['rm', '-rf', $base]);
-        }
-    });
-
-    it('refuses another task start at the task limit even when its caller runs CI', function (?int $taskMaxVms): void {
-        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
-        try {
-            app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
-            {
-                public function resolve(Project $project): string
-                {
-                    return PROOF_SHA;
-                }
-            });
-            $group = Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task', 'brief' => 'Build it', 'status' => TaskGroupStatus::Todo]);
-            $this->withServerVariables(['REMOTE_ADDR' => $ci->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
-                ->postJson('/api/v1/tasks/'.$group->id.'/start')->assertConflict()->assertJsonPath('error.code', 'tasks.capacity_unavailable');
-            expect(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
-        } finally {
-            Process::run(['rm', '-rf', $base]);
-        }
-    })->with(['shared reserve' => null, 'two-task limit' => 2]);
-});
-
-it('does not grant CI eligibility from a name, inactive role, or request flag', function (string $roleState): void {
-    [$base, , , $operator] = proofReservedFleet(proofSource());
-    try {
-        $operator->update(['name' => 'orbit-proof-ci-runner']);
-        $operator->roles()->create(['role' => RoleName::CiRunner, 'status' => $roleState]);
-        $proof = proofHttpQueued($operator);
-        expect($proof->input['ci_reserve'])->toBeFalse();
-        $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
-            ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'ci_reserve' => true, 'caller_node_id' => 9])->assertUnprocessable();
-    } finally {
-        Process::run(['rm', '-rf', $base]);
-    }
-})->with(['provisioning', 'failed']);
-
-it('records CI-only host intent through node:update and rejects non-boolean policy', function (): void {
-    [$base, , $sabre, $operator] = proofReservedFleet(proofSource());
-    try {
-        $operator->accessibleNodes()->attach($sabre);
-        $host = ['cidr' => '10.252.12.0/24', 'max_vms' => 6, 'cpus' => 6, 'memory' => '12GiB', 'ci_only' => true];
-        $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
-            ->patchJson('/api/v1/nodes/'.$sabre->id, ['task_vms' => $host])->assertOk()->assertJsonPath('data.settings.task_vms.ci_only', true);
-        expect($sabre->refresh()->settings['task_vms']['ci_only'])->toBeTrue();
-        $this->withHeader('Idempotency-Key', fake()->uuid())->patchJson('/api/v1/nodes/'.$sabre->id, ['task_vms' => [...$host, 'ci_only' => 'true']])->assertUnprocessable();
-        expect($sabre->refresh()->settings['task_vms']['ci_only'])->toBeTrue();
-    } finally {
-        Process::run(['rm', '-rf', $base]);
-    }
-});
-
-it('places an authenticated CI proof on CI-only capacity before a shared reserve', function (): void {
-    [$base, $ci, , $operator] = proofReservedFleet(proofSource());
-    try {
-        $sabre = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux',
-            'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
-        $build = TaskVmImageBuild::query()->where('host_node_id', $ci->id)->sole()->replicate();
-        $build->host_node_id = $sabre->id;
-        $build->save();
-        Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $sabre->id, 'node_id' => $sabre->id,
-            'status' => OperationStatus::Succeeded, 'input' => ['commit' => 'dddddddddddd0000000000000000000000000000'],
-            'result' => ['refreshed' => true, 'host_node_id' => $sabre->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
-        $settings = app(TaskVmSettings::class);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-            [...$settings->hosts, new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
-        $operatorProof = proofHttpQueued($operator);
-        app(ProofRunIntent::class)->admit($operatorProof->id);
-        expect($operatorProof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe(6);
-        $proof = proofHttpQueued($ci);
-        $observed = null;
-        TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
-            $observed = [$vm->host_node_id, $vm->slot_number];
-            throw new ResourceOperationException('test.slot_observed', 'Stop before execution.', 409);
-        });
-        app(ProofRunIntent::class)->admit($proof->id);
-        expect($observed)->toBe([$sabre->id, 1]);
-    } finally {
-        Process::run(['rm', '-rf', $base]);
-    }
+it('keeps authenticated CI proofs waiting without children until capacity or a clear timeout', function (): void {
+    proofWorldWithoutCapacity();
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $proof = proofAdmitted(caller: $caller);
+    expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
+    $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+    app(ProofRunIntent::class)->admit($proof->id);
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.capacity_timeout');
 });

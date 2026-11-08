@@ -147,7 +147,7 @@ describe('ListFirewallRulesAction', function (): void {
 
 it('lists the complete task host input policy as managed and detects a widened DHCP source port', function (): void {
     $node = list_node('task-host', '10.44.0.10');
-    $node->update(['settings' => ['task_vms' => ['cidr' => '10.252.42.0/24', 'max_vms' => 6, 'network' => 'proofbr0']]]);
+    $node->update(['settings' => ['task_vms' => ['cidr' => '10.252.42.0/24', 'task_places' => 6, 'ci_places' => 2, 'network' => 'proofbr0']]]);
     $catalog = app(NodeFirewallRuleCatalog::class)->taskHostInput($node);
     $shapes = array_map(static fn ($rule): array => $rule->shape->toAgentInput(), $catalog);
     $live = $shapes;

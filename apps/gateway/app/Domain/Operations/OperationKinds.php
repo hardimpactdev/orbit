@@ -40,8 +40,6 @@ final readonly class OperationKinds
 
     public const string TasksTurn = 'tasks.turn';
 
-    public const string TasksPark = 'tasks.park';
-
     public const string TasksPrep = 'tasks.prep';
 
     public const string TasksPrepFix = 'tasks.prep_fix';

@@ -48,7 +48,7 @@ final readonly class TaskCancelIntent
                 return $replay;
             }
             $held = Operation::query()->where('lock_key', OperationStore::lockKey('task_group', $group->id))->value('id');
-            if ($held !== null) {
+            if ($held !== null && $kind !== 'tasks.cancel') {
                 throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
             }
             if (Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)

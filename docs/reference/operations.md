@@ -20,7 +20,7 @@ A long operation, such as an [Instance deploy or rollback](/reference/deployment
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
 
-Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.
+Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. Publication releases the VM; later task work waits for a fresh task place. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.
 
 Production deployments include a `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
@@ -242,7 +242,6 @@ Use the kind and target type to start or find the work of a command.
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
-| `task:park` | `tasks.park` | `task_group` | Gateway |
 | `task:start` | `tasks.provision` | `task_group` | Gateway |
 | `POST tasks/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
 | `POST tasks/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
