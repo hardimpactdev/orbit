@@ -47,7 +47,8 @@ sequenceDiagram
     %%> - one Swamp step runs every case of the batch; the runner reads the fleet once
     %%> - the cases run several at a time (the `parallel` key of the cases file, 4 by default), on the Nodes of the cases file's `spread`
     %%> - cases that change nothing are readers: several may read one Node together; a writer, including a fault or a held lock, is the only case on its Node until it ends
-    %%> - `request: none` and the `operations` comparison read Operations of the command's kind and its Node target only; filters apply before the newest-50 limit, and the newest matching ID detects an added Operation even when the page is full
+    %%> - resolve every CLI call's write kind and target before granting locks; a cross-Node or unresolved target, or a command without a known write scope, runs alone with an unfiltered Operation audit
+    %%> - `request: none` audits the actual CLI call; `operations` compares every CLI step's scope, with filters before the newest-50 limit and newest IDs detecting added Operations
     %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
     %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
     %%> Result:

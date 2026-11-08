@@ -260,6 +260,11 @@ class FleetCliTest(unittest.TestCase):
         self.assertEqual(argv[argv.index('--cacert') + 1], fleet_module.OUTER_CA)
         self.assertEqual(result['json'], {'data': [{'id': 8}]})
 
+    def test_an_unfiltered_operation_audit_sends_no_filter_values(self):
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(out='{"data":[]}')) as call:
+            fleet_module.Fleet({}).operations()
+        self.assertEqual(urlparse(call.call_args.args[0][-1]).query, '')
+
 
 class NodeCliTest(unittest.TestCase):
     """The real Fleet runs the tested CLI on a Node: Nothing installs an `orbit` binary on a nested Node, so a bare `orbit` ended in exit 127."""

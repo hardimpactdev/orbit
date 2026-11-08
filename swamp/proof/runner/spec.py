@@ -46,6 +46,9 @@ CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stag
 DEFAULT_PARALLEL = 4
 GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
+# Only commands with a known write target can use a scoped no-Operation audit. A read such as firewall:list has no
+# Operation kind of its own: audit it without filters so an unexpected write is still seen.
+CLI_OPERATIONS = {'firewall:allow': ('firewall.allow', 'node_firewall'), 'firewall:deny': ('firewall.deny', 'node_firewall')}
 # Steps that name the Node they work on under `on` or `node`.
 NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor', 'fault', 'busy_node', 'service', 'package'}
 # Step keys whose list value means one step per item.
@@ -335,6 +338,21 @@ def case_steps(case):
     return case.setup + [step for stage in case.stages for step in stage.act + stage.expect] + (case.negative['do'] if case.negative else [])
 
 
+def cli_scope(args, nodes=None):
+    """The Operation kind, target type and Node named by this call, or no scope when any part is unknown.
+    Before placement only literal fleet roles and their ID placeholders are known; during an audit the fleet resolves numeric IDs too."""
+    argv = [str(word) for word in args['run']]
+    operation = CLI_OPERATIONS.get(argv[0]) if argv else None
+    selectors = [word.partition('=')[2] if word.startswith('--node=') else (argv[i + 1] if i + 1 < len(argv) else '')
+                 for i, word in enumerate(argv) if word == '--node' or word.startswith('--node=')]
+    if operation is None or len(selectors) != 1 or '--' in argv:
+        return None
+    value = selectors[0]
+    node = next((role for role in NODES if value in (role, '${' + role + '.id}')
+                 or (nodes is not None and value == str(nodes[role]['node_id']))), None)
+    return (*operation, node) if node else None
+
+
 def lock_of(case, target):
     """Hold the whole fleet for shared changes, one Node for a writer, or share a Node with other readers.
     The lock covers setup, every stage and cleanup; a refusal with a mutating setup is still a writer."""
@@ -342,7 +360,9 @@ def lock_of(case, target):
     names = {step.name for step in steps}
     reads_every_node = any(step.name == 'record' and 'node' not in step.args for step in steps)
     other_node = any(step.args.get(key) not in (None, target) for step in steps if step.name in NODE_WORK for key in ('on', 'node'))
-    if case.exclusive or names & GLOBAL_STEPS or reads_every_node or other_node:
+    cli_scopes = [cli_scope(step.args) for step in steps if step.name == 'cli']
+    unscoped_cli = any(scope is None or scope[2] != target for scope in cli_scopes)
+    if case.exclusive or names & GLOBAL_STEPS or reads_every_node or other_node or unscoped_cli:
         return 'all'
     if all(step.name in READ_STEPS or (step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none') for step in steps):
         return 'read'

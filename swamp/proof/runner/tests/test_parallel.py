@@ -43,7 +43,7 @@ def observer(case_id, extra=''):
     covers: [main]
     summary: A case that compares the Node.
 {extra}    act:
-      - cli: {{run: [firewall:allow, "80"], expect: {{exit: 1}}}}
+      - cli: {{run: [firewall:allow, "80", "--node=${{app-dev.id}}"], expect: {{exit: 1}}}}
     expect:
       - unchanged: {{since: act}}
 '''
@@ -55,7 +55,7 @@ def refusal(case_id):
     covers: [main]
     summary: A case that expects no request.
     act:
-      - cli: {{run: [firewall:allow, "80"], expect: {{exit: 1, request: none}}}}
+      - cli: {{run: [firewall:allow, "80", "--node=${{app-dev.id}}"], expect: {{exit: 1, request: none}}}}
     expect: []
 '''
 
@@ -124,6 +124,23 @@ class PlacementTest(unittest.TestCase):
         text = writing('a').replace('    expect:\n', '    expect:\n      - ufw: {on: gateway, rows: []}\n')
         self.assertEqual(load_text(text).cases[0].lock, 'all')
 
+    def test_cli_cross_node_and_unresolved_targets_exclude_every_reader_and_writer(self):
+        for selector in (['--node=${app-prod.id}'], ['--node', '${app-prod.id}'], ['--node=${gateway.src}'], ['--node=unknown'], [],
+                         ['--node=${app-dev.id}', '--node=${app-prod.id}'], ['--', '--node=${app-dev.id}']):
+            for build in (writing, refusal):
+                text = build('cross').replace(', "--node=${app-dev.id}"', ''.join(', ' + json.dumps(word) for word in selector))
+                loaded = load_text(text + refusal('reader') + writing('writer'))
+                cross = loaded.case('cross')
+                self.assertEqual(cross.lock, 'all', (selector, build))
+                for other in loaded.cases[1:]:
+                    other.node = 'app-prod'
+                    self.assertFalse(runner.may_start(cross, [other]))
+                    self.assertFalse(runner.may_start(other, [cross]))
+
+    def test_a_read_command_without_an_operation_scope_runs_exclusively(self):
+        text = refusal('list').replace('firewall:allow, "80",', 'firewall:list,')
+        self.assertEqual(load_text(text).case('list').lock, 'all')
+
     def test_locks(self):
         loaded = load_text(writing('writes') + observer('observes') + refusal('no-request') + writing('asks', '    exclusive: true\n'))
         self.assertEqual({case.id: case.lock for case in loaded.cases}, {'writes': 'node', 'observes': 'node', 'no-request': 'read', 'asks': 'all'})
@@ -141,7 +158,7 @@ class PlacementTest(unittest.TestCase):
     def test_a_refusal_with_mutating_setup_holds_its_node(self):
         for step in ('fault: {on: app-dev, command: ufw, fail_after: {match: insert, count: 1}}', 'busy_node: {on: app-dev}',
                      'listener: {on: app-dev, ports: [port]}', 'ufw_rule: {on: app-dev, action: deny, proto: tcp, port: "80"}',
-                     'cli: {run: [firewall:allow, "80"], expect: {exit: 0}}'):
+                     'cli: {run: [firewall:allow, "80", "--node=${app-dev.id}"], expect: {exit: 0}}'):
             loaded = load_text(refusal('a').replace('    act:', f'    setup:\n      - {step}\n    act:'))
             self.assertEqual(loaded.cases[0].lock, 'node', step)
 
@@ -179,7 +196,8 @@ class PlacementTest(unittest.TestCase):
         spread = {case.node for case in loaded.cases if case.lock != 'all'}
         self.assertEqual(spread, {'app-dev', 'app-prod', 'gateway'})
         self.assertTrue(all(case.node == 'app-dev' for case in loaded.cases if case.lock == 'all'))
-        self.assertEqual(loaded.case('invalid-input[node-zero]').lock, 'read')
+        self.assertEqual(loaded.case('invalid-input[node-zero]').lock, 'all')
+        self.assertEqual(loaded.case('invalid-input[port-zero]').lock, 'read')
         for case_id in ('conflict', 'busy-target', 'interrupted-reorder', 'failure-after-partial-change'):
             self.assertEqual(loaded.case(case_id).lock, 'node', case_id)
 

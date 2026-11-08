@@ -74,9 +74,9 @@ class Fleet:
         return {'rc': completed.returncode, 'json': parsed, 'stdout': completed.stdout, 'stderr': completed.stderr,
                 'secs': round(time.time() - started, 2), 'args': ['orbit', *words]}
 
-    def operations(self, kind, target_type, target_id):
+    def operations(self, kind=None, target_type=None, target_id=None):
         """The operation:list API applies these filters before its newest-50 limit. The CLI has no generic target filters."""
-        query = urlencode({'kind': kind, 'target_type': target_type, 'target_id': target_id})
+        query = urlencode({key: value for key, value in {'kind': kind, 'target_type': target_type, 'target_id': target_id}.items() if value is not None})
         done = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '60', '--cacert', OUTER_CA,
                                f'https://{NESTED_GATEWAY}/api/v1/operations?{query}'],
                               capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL)

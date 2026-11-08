@@ -26,9 +26,10 @@ LINE_LIMIT = 1000
 class Run:
     """The state of one case: bound names, the rules the case made, the baseline of `unchanged` and the evidence."""
 
-    def __init__(self, fleet, spec, evidence, target=None):
+    def __init__(self, fleet, spec, evidence, target=None, case=None):
         self.fleet, self.spec, self.evidence = fleet, spec, Path(evidence)
         self.target = target or spec.target   # the Node that plays the target of the file for this case
+        self.cli_steps = [step for step in spec_module.case_steps(case) if step.name == 'cli'] if case else []
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
@@ -125,7 +126,7 @@ def execute(case, fleet, spec, evidence, negative=False):
     and is proven when each expectation named in `must_fail` fails."""
     started = time.time()
     deadline = started + case.timeout
-    run = Run(fleet, spec, evidence, case.node)
+    run = Run(fleet, spec, evidence, case.node, case)
     failures, verdict, cause = [], 'passed', None
     try:
         if negative and (not case.negative or len(case.stages) > 1):

@@ -194,9 +194,10 @@ class FakeFleet:
             document, text = None, self.human(args, text)
         return {'rc': code, 'json': document, 'stdout': text, 'stderr': '', 'secs': 0.1, 'args': ['orbit', *args] + (['--json'] if form == 'json' else [])}
 
-    def operations(self, kind, target_type, target_id):
+    def operations(self, kind=None, target_type=None, target_id=None):
         self.operation_queries.append((kind, target_type, target_id))
-        rows = [row for row in self.operation_rows if (row['kind'], row['target_type'], row['target_id']) == (kind, target_type, target_id)]
+        rows = [row for row in self.operation_rows if all(value is None or row[key] == value
+                for key, value in zip(('kind', 'target_type', 'target_id'), (kind, target_type, target_id)))]
         document = {'data': sorted(rows, key=lambda row: row['id'], reverse=True)[:50]}
         return {'rc': 0, 'json': document, 'stdout': json.dumps(document), 'stderr': ''}
 
@@ -223,6 +224,8 @@ class FakeFleet:
     def allow(self, args):
         if not any(item.startswith('--node=') for item in args):
             return {'error': {'code': 'firewall.node_id_invalid', 'message': 'Node ID must be a positive integer.', 'request_id': None}}, 1
+        if not any(item.startswith('--from=') for item in args):
+            return {'error': {'code': 'firewall.source_invalid', 'message': 'Source is required.', 'request_id': None}}, 1
         port, source = args[1], next(item[7:] for item in args if item.startswith('--from='))
         name = next((role for role, number in NODE_IDS.items() if f'--node={number}' in args), 'app-dev')
         operation = {'id': self.next_id, 'status': self.allow_status}

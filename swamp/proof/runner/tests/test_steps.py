@@ -22,6 +22,7 @@ class StepTest(unittest.TestCase):
         self.fleet = FakeFleet()
         target = spec.Spec('firewall:allow', 'firewall/allow', 'app-dev', ['gateway', 'app-prod'], ['ufw', 'firewall_records', 'operations', 'listeners'], [])
         self.run = runner.Run(self.fleet, target, self.directory.name)
+        self.run.cli_steps = [spec.Step('cli', {'run': ['firewall:allow', '80', '--node=${app-dev.id}']})]
         self.run.sleep = lambda seconds: None
 
     def blocked_port(self):
@@ -287,12 +288,51 @@ class StepTest(unittest.TestCase):
         created = steps.cli(self.run, {'run': ['firewall:allow', '80', '--node=211', '--from=x'], 'expect': {'exit': 0, 'request': 'none'}})
         self.assertEqual(created, ['cli firewall:allow: created Operation [1], expected no request'])
 
+    def test_cross_node_and_unresolved_cli_targets_cannot_hide_a_created_operation(self):
+        for selector in ('--node=212', '--node=unknown'):
+            with self.subTest(selector=selector):
+                def side_effect(*args, **kwargs):
+                    self.fleet.operation_rows.append(self.operation(1, target_id=212))
+                    return {'rc': 0, 'json': {}, 'stdout': '{}', 'stderr': ''}
+
+                self.fleet.operation_rows = []
+                with patch.object(self.fleet, 'cli', side_effect):
+                    found = steps.cli(self.run, {'run': ['firewall:allow', '80', selector], 'expect': {'exit': 0, 'request': 'none'}})
+                self.assertEqual(found, ['cli firewall:allow: created Operation [1], expected no request'])
+
+    def test_list_side_effect_fails_no_request_and_unchanged_operations(self):
+        self.run.spec.command = 'firewall:list'
+        self.run.cli_steps = [spec.Step('cli', {'run': ['firewall:list', '--node=${app-dev.id}']})]
+        expect = {'since': 'act', 'what': ['operations']}
+        steps.take_baseline(self.run, [spec.Step('unchanged', expect)])
+        cli = self.fleet.cli
+
+        def side_effect(*args, **kwargs):
+            self.fleet.operation_rows.append(self.operation(1))
+            return cli(*args, **kwargs)
+
+        with patch.object(self.fleet, 'cli', side_effect):
+            found = steps.cli(self.run, {'run': ['firewall:list', '--node=211'], 'expect': {'exit': 0, 'request': 'none'}})
+        self.assertEqual(found, ['cli firewall:list: created Operation [1], expected no request'])
+        self.assertEqual(len(steps.unchanged(self.run, expect)), 1)
+
+    def test_baseline_audits_the_actual_step_commands_instead_of_the_file_command(self):
+        self.run.spec.command = 'firewall:list'
+        self.run.cli_steps = [spec.Step('cli', {'run': [command, '80', '--node=${app-dev.id}']})
+                              for command in ('firewall:allow', 'firewall:deny')]
+        expect = {'since': 'act', 'what': ['operations']}
+        steps.take_baseline(self.run, [spec.Step('unchanged', expect)])
+        self.fleet.operation_rows.append(self.operation(1, kind='firewall.deny'))
+        self.assertEqual(len(steps.unchanged(self.run, expect)), 1)
+        self.assertEqual(set(self.fleet.operation_queries), {('firewall.allow', 'node_firewall', 211), ('firewall.deny', 'node_firewall', 211)})
+
     @staticmethod
     def operation(number, kind='firewall.allow', target_type='node_firewall', target_id=211):
         return {'id': number, 'kind': kind, 'target_type': target_type, 'target_id': target_id}
 
     def test_operation_reads_filter_by_the_kind_and_the_placed_node(self):
         self.run.target = 'app-prod'
+        self.run.cli_steps = [spec.Step('cli', {'run': ['firewall:allow', '80', '--node=${app-prod.id}']})]
         self.fleet.operation_rows = [self.operation(1), self.operation(2, target_id=212), self.operation(3, kind='firewall.deny', target_id=212),
                                      self.operation(4, target_type='node', target_id=212)]
         self.assertEqual(steps.operation_ids(self.run), {2})
@@ -330,7 +370,7 @@ class StepTest(unittest.TestCase):
             return cli(*args, **kwargs)
 
         with patch.object(self.fleet, 'cli', another_node):
-            self.assertEqual(steps.cli(self.run, {'run': ['firewall:allow', '80'], 'expect': {'exit': 1, 'request': 'none'}}), [])
+            self.assertEqual(steps.cli(self.run, {'run': ['firewall:allow', '80', '--node=211'], 'expect': {'exit': 1, 'request': 'none'}}), [])
 
     def test_failed_or_malformed_operation_reads_do_not_prove_no_request(self):
         for result in ({'rc': 22, 'json': {'data': []}}, {'rc': 0, 'json': None}, {'rc': 0, 'json': {}},

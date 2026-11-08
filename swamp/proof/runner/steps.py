@@ -39,7 +39,6 @@ LIST_ROWS = {'firewall:list': 'rules'}
 # and `live` is the one object that holds the state of the report.
 RECORD_SECTIONS = ('rules', 'managed', 'unmatched', 'live')
 BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners', 'node_records')
-OPERATION_TARGETS = {'firewall': 'node_firewall'}
 
 
 class Infra(Exception):
@@ -218,20 +217,25 @@ def probe(run, args):
     return [f"probe{' ' + args['id'] if args.get('id') else ''}: {args['from']} to {args['port']}/{args.get('proto', 'tcp')}{' (v6)' if family == 6 else ''} {observed}, expected {args['expect']}"]
 
 
-def operation_ids(run):
-    """Read only the command's Operations on this Node. A failed or malformed read cannot prove no request."""
-    family = run.spec.command.split(':', 1)[0]
-    if family not in OPERATION_TARGETS:
-        raise NotBuilt(f'operations target for {family} is not built')
-    scope = (run.spec.command.replace(':', '.'), OPERATION_TARGETS[family], run.fleet.nodes[run.target]['node_id'])
-    result = run.keep(run.fleet.operations(*scope), 'json')
-    document = result['json']
-    if result['rc'] or not isinstance(document, dict) or not isinstance(document.get('data'), list):
-        raise Infra('operation:list failed or returned no Operations list')
-    rows = document['data']
-    if any(not isinstance(row, dict) or type(row.get('id')) is not int or row['id'] < 1 for row in rows):
-        raise Infra('operation:list returned an invalid Operation ID')
-    return {row['id'] for row in rows}
+def operation_ids(run, cli_args=None):
+    """Audit the calls' actual write scopes. Unknown or cross-Node calls are exclusive and use an unfiltered audit."""
+    calls = [cli_args] if cli_args is not None else [step.args for step in run.cli_steps]
+    scopes = [spec.cli_scope(args, run.fleet.nodes) for args in calls]
+    queries = {(kind, target_type, run.fleet.nodes[node]['node_id']) for kind, target_type, node in scopes} if all(scopes) else set()
+    case_scopes = [spec.cli_scope(step.args) for step in run.cli_steps]
+    if not scopes or any(scope is None or scope[2] != run.target for scope in scopes + case_scopes):
+        queries = {(None, None, None)}
+    ids = set()
+    for query in sorted(queries):
+        result = run.keep(run.fleet.operations(*query), 'json')
+        document = result['json']
+        if result['rc'] or not isinstance(document, dict) or not isinstance(document.get('data'), list):
+            raise Infra('operation:list failed or returned no Operations list')
+        rows = document['data']
+        if any(not isinstance(row, dict) or type(row.get('id')) is not int or row['id'] < 1 for row in rows):
+            raise Infra('operation:list returned an invalid Operation ID')
+        ids.update(row['id'] for row in rows)
+    return ids
 
 
 def skip_reasons(node):
@@ -277,7 +281,7 @@ def cli(run, args):
         raise Infra(f'cli as {caller}: not a Node of the fleet')
     if caller and script is not None:
         raise NotBuilt('cli as with tty is not built')
-    before = max(operation_ids(run), default=0) if 'request' in expect else None
+    before = max(operation_ids(run, args), default=0) if 'request' in expect else None
     failures = []
     for form in forms:
         label = f'cli {argv[0]}' + ('' if len(forms) == 1 and script is None else f' ({"tty" if script is not None else form})')
@@ -292,7 +296,7 @@ def cli(run, args):
         if form == 'json':
             for path, name in (args.get('save') or {}).items():
                 run.names[name] = json_value(result['json'], path)
-    if before is not None and (created := {number for number in operation_ids(run) if number > before}):
+    if before is not None and (created := {number for number in operation_ids(run, args) if number > before}):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
     return failures
 
