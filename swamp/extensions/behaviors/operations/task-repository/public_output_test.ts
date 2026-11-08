@@ -34,7 +34,7 @@ const expected = [
     "[REDACTED] [REDACTED]",
     "MODEL_KEY=[REDACTED] next",
     "head ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccx and [REDACTED]",
-    "red Authorization: [REDACTED]\nAuthorization: [REDACTED]",
+    "red Authorization: [REDACTED]\nProxy-Authorization: [REDACTED]",
     "Bearer [REDACTED] and Bearer [REDACTED]",
     '{"api_key": [REDACTED], "name": "public", \'SECRET\'=[REDACTED]}',
     "DB_PASSWORD=[REDACTED] APP_KEYS: [REDACTED] PATH=/usr/bin",
@@ -197,4 +197,40 @@ Deno.test("plain output after a token stays, and every GitHub token kind is reda
     assertEquals(output.includes("github_pat_"), false);
     assertEquals(output.split("\n").slice(1, 3), ["Done", "vendor"]);
     assertEquals(output.endsWith("next line here"), true);
+});
+
+Deno.test("adversarial 256 KiB text is redacted in linear time", () => {
+    const size = 262144;
+    const inputs = [
+        "x-".repeat(size / 2),
+        "a.b+c".repeat(size / 5) + "://",
+        "token=a ".repeat(size / 8),
+        '{"password":"'.repeat(size / 13),
+        '"a":'.repeat(size / 4),
+        "password=[".repeat(size / 10),
+        "Cookie: ".repeat(size / 8),
+    ];
+    for (const input of inputs) {
+        const started = performance.now();
+        redactText(input);
+        const elapsed = performance.now() - started;
+        assertEquals(
+            elapsed < 250,
+            true,
+            `${input.slice(0, 16)}… took ${elapsed} ms`,
+        );
+    }
+});
+
+Deno.test("session identifiers are secret fields in text", () => {
+    assertEquals(
+        redactText(
+            'session=abc123def sessionid: s-42 PHPSESSID=f00ba5 session_id=x9\n{"sessionId": "q1"}',
+        ),
+        'session=[REDACTED] sessionid: [REDACTED] PHPSESSID=[REDACTED] session_id=[REDACTED]\n{"sessionId": [REDACTED]}',
+    );
+    assertEquals(
+        redactText("The session ended after an hour."),
+        "The session ended after an hour.",
+    );
 });

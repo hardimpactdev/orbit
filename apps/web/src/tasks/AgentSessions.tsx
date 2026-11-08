@@ -248,16 +248,14 @@ function SessionViewer({ session }: { session: AgentThread }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const viewport = useRef<HTMLDivElement>(null);
-    // Each open stream holds a Gateway PHP worker, so a background tab gives its streams back.
-    // A reopened stream resumes after the last cursor, or starts with a snapshot when the
-    // driver cannot resume, so nothing is lost while it is paused.
+    // Each connection reads a recorded Gateway snapshot, including after the Node is deleted.
+    // A background tab pauses these reads.
     const visible = usePageVisible();
     const cursor = useRef<string | null>(null);
     useEffect(() => {
         cursor.current = conversation.cursor;
     }, [conversation.cursor]);
     useEffect(() => {
-        if (session.node_id === null) return;
         if (!visible) {
             setConnection("Paused");
             return;
@@ -267,12 +265,14 @@ function SessionViewer({ session }: { session: AgentThread }) {
         const source = new EventSource(
             `/api/v1/tasks/${session.task_group_id}/agents/${session.id}/stream${after}`,
         );
+        let recorded = false;
         setConnection("Connecting…");
         source.addEventListener("agent", (event: MessageEvent<string>) => {
             try {
                 const data: unknown = JSON.parse(event.data);
                 setConversation((state) => applyAgentEvent(state, data, session.id));
-                setConnection("Live");
+                recorded = true;
+                setConnection("Recorded");
             } catch {
                 setConnection("Unreadable update. Reconnecting…");
             }
@@ -280,12 +280,17 @@ function SessionViewer({ session }: { session: AgentThread }) {
         source.addEventListener("unavailable", () =>
             setConnection("Agent stream unavailable. Reconnecting…"),
         );
-        source.onerror = () =>
+        source.onerror = () => {
+            if (recorded) {
+                setConnection("Recorded");
+                return;
+            }
             setConnection(
                 source.readyState === EventSource.CLOSED
                     ? "Agent stream unavailable. Reload to retry."
                     : "Reconnecting…",
             );
+        };
         return () => source.close();
     }, [session.id, session.node_id, session.task_group_id, visible]);
     // The stream can end or miss a transition. A new state in the polled list wins over it.
@@ -336,8 +341,12 @@ function SessionViewer({ session }: { session: AgentThread }) {
                     {connection !== "Live" && (
                         <p className="text-dim" aria-label="Agent connection">
                             {connection}
+                            {connection === "Recorded"
+                                ? " · Output updates when the turn ends."
+                                : ""}
                         </p>
                     )}
+                    <p className="text-dim">Tool arguments and output are not kept.</p>
                     {conversation.error && (
                         <p role="alert" className="text-red">
                             {conversation.error}

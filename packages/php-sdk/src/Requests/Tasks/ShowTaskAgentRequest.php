@@ -10,8 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
 /**
- * Reads one agent thread. With `afterSequence`, the previous answer's cursor, the Gateway returns a delta with only the
- * entries after it when the thread's Pi server can resume from it.
+ * Reads one recorded agent thread snapshot. `afterSequence` is accepted; the returned cursor is null.
  */
 final class ShowTaskAgentRequest extends GatewayRequest
 {

@@ -38,8 +38,185 @@ export type RedactionOptions = {
     credentialHex?: boolean;
 };
 
-const SECRET_NAME =
-    /TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY|KEYS?/i;
+/*
+ * Secret field names: the Gateway rule of `CommandActivityInputSanitizer`, mirrored here because
+ * Swamp cannot call PHP. A name is secret when one of its snake_case segments is a secret word,
+ * unless it is one of the audited public names. Change both lists together.
+ */
+const SECRET_WORDS = new Set([
+    "key",
+    "keys",
+    "token",
+    "tokens",
+    "secret",
+    "secrets",
+    "password",
+    "passwords",
+    "passwd",
+    "passphrase",
+    "credential",
+    "credentials",
+    "bearer",
+    "pem",
+    "apikey",
+    "appkey",
+    "authtoken",
+    "accesstoken",
+    "privatekey",
+    "authorization",
+    "cookie",
+    "cookies",
+    "session",
+    "sessionid",
+    "phpsessid",
+]);
+const NON_SECRET_KEYS = new Set([
+    "public_key",
+    "wireguard_public_key",
+    "ssh_public_key",
+    "public_pem",
+    "host_key_fingerprint",
+    "runtime_key",
+    "env_key",
+    "idempotency_key",
+    "token_expires_at",
+]);
+/** Secret-named fields whose numeric values are usage counts, such as `tokens` or `token_count`. */
+const NUMERIC_METRIC_SUFFIXES = new Set(["tokens", "count"]);
+/** Headers whose whole line is a credential, scheme included. */
+const CREDENTIAL_HEADERS = new Set([
+    "authorization",
+    "proxy_authorization",
+    "cookie",
+    "set_cookie",
+]);
+
+const segments = (name: string): string[] =>
+    name.replace(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/g, "_")
+        .replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase()
+        .split("_");
+
+/** The Gateway field rule: a structured field with this name holds a secret. */
+export function secretField(name: string): boolean {
+    const parts = segments(name);
+    return !NON_SECRET_KEYS.has(parts.join("_")) &&
+        parts.some((part) => SECRET_WORDS.has(part));
+}
+
+/** In text a bare `key` is prose, so it needs a prefix, as in the Gateway text rule. */
+function secretName(name: string): boolean {
+    const parts = segments(name);
+    return secretField(name) &&
+        !(parts.length === 1 && (parts[0] === "key" || parts[0] === "keys"));
+}
+
+/**
+ * A field name with its optional, possibly escaped, quotes and its separator. A name never
+ * starts inside a word or right after a backslash, but may follow an escape such as `\n`.
+ */
+const FIELD =
+    /(?<!\\|(?<!\\)[A-Za-z0-9_.-])(\\*["'])?([A-Za-z_][A-Za-z0-9_.-]{0,255})(\1)?([ \t]*(?:=>?|:(?!\/\/))[ \t]*)/g;
+
+/** The index after the quote that closes a string opened by `quote` after `escapes` backslashes. */
+function stringEnd(
+    text: string,
+    from: number,
+    escapes: number,
+    quote: string,
+): number {
+    for (let i = from; i < text.length; i++) {
+        if (text[i] === "\n") return i; // an unclosed string ends with its line
+        if (text[i] !== quote) continue;
+        let before = 0;
+        while (text[i - 1 - before] === "\\") before++;
+        if (escapes === 0 ? before % 2 === 0 : before === escapes) return i + 1;
+    }
+    return text.length;
+}
+
+/** The index after a JSON-like object or array; an unbalanced one runs to the end. */
+function bracketEnd(text: string, from: number): number {
+    let depth = 0;
+    for (let i = from; i < text.length; i++) {
+        const char = text[i];
+        if (char === '"' || char === "'") {
+            let before = 0;
+            while (text[i - 1 - before] === "\\") before++;
+            if (before % 2 === 0) i = stringEnd(text, i + 1, 0, char) - 1;
+        } else if (char === "{" || char === "[") depth++;
+        else if ((char === "}" || char === "]") && --depth === 0) return i + 1;
+    }
+    return text.length;
+}
+
+/** The index after the value that starts at `from` under a secret field. */
+function valueEnd(
+    text: string,
+    from: number,
+    header: boolean,
+    opener: string | undefined,
+): number {
+    const quoted = /^(\\*)(["'])/.exec(text.slice(from, from + 256));
+    let end: number;
+    if (quoted) {
+        return stringEnd(
+            text,
+            from + quoted[0].length,
+            quoted[1].length,
+            quoted[2],
+        );
+    } else if (header) {
+        const line = text.indexOf("\n", from);
+        end = line < 0 ? text.length : line;
+    } else if (text[from] === "{" || text[from] === "[") {
+        return bracketEnd(text, from);
+    } else {
+        // A credential scheme belongs to its value, as in `token: Bearer abc`.
+        const scheme = /^(?:Bearer|Basic|Digest|Token|Bot)[ \t]+/i.exec(
+            text.slice(from, from + 16),
+        );
+        const start = from + (scheme ? scheme[0].length : 0);
+        end = start +
+            /^[^\s,;&}\])"\\]*/.exec(text.slice(start))![0].length;
+    }
+    // A field that a quote opened, as in `-H "Cookie: a=b"`, ends at the matching quote.
+    if (!opener) return end;
+    const close = stringEnd(text, from, opener.length - 1, opener.at(-1)!);
+    return close <= end && text[close - 1] === opener.at(-1)
+        ? close - opener.length
+        : end;
+}
+
+/**
+ * Redact the value of every secret-named field in JSON-like and key/value text: objects and
+ * arrays, `key: value`, `key=value`, HTTP header lines and quoted or escaped strings, however
+ * nested. The scan continues inside every public value, so a nested secret field is found too.
+ */
+function replaceFields(text: string): string {
+    let out = "", copied = 0;
+    FIELD.lastIndex = 0;
+    for (let match; (match = FIELD.exec(text));) {
+        const [whole, opener, name, closer] = match;
+        const from = match.index + whole.length;
+        if (!secretName(name)) {
+            FIELD.lastIndex = from;
+            continue;
+        }
+        const header = !closer && whole.trimEnd().endsWith(":") &&
+            CREDENTIAL_HEADERS.has(segments(name).join("_"));
+        const end = valueEnd(text, from, header, closer ? undefined : opener);
+        const value = text.slice(from, end);
+        const kept = value === "" || /^(?:true|false|null)$/.test(value) ||
+            (/^-?\d+(?:\.\d+)?$/.test(value) &&
+                NUMERIC_METRIC_SUFFIXES.has(segments(name).at(-1)!));
+        if (!kept) {
+            out += text.slice(copied, from) + REDACTED;
+            copied = end;
+        }
+        FIELD.lastIndex = Math.max(end, from + 1);
+    }
+    return out + text.slice(copied);
+}
 
 /** Known values of at least eight characters, longest first, without duplicates. */
 function knownValues(values: readonly string[] = []): string[] {
@@ -58,7 +235,7 @@ function replaceValues(text: string, values: string[]): string {
     );
 }
 
-/** The credential-shaped text rule of `public_output.py`. */
+/** Credential shapes first, then the values of secret-named fields. */
 function replacePatterns(raw: string, credentialHex: boolean): string {
     let text = credentialHex
         ? raw.replace(
@@ -78,13 +255,11 @@ function replacePatterns(raw: string, credentialHex: boolean): string {
         const close = tail.indexOf("-----");
         text = close < 0 ? tail : tail.slice(close + 5);
     }
+    // A scheme starts only where no scheme character precedes it, so each run of
+    // scheme characters is scanned once, not once per word boundary inside it.
     text = text.replace(
-        /(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi,
+        /((?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi,
         "$1[REDACTED]@",
-    );
-    text = text.replace(
-        /(?:Proxy-)?Authorization\s*:[^\r\n]*/gi,
-        "Authorization: [REDACTED]",
     );
     text = text.replace(/\bBearer\s+[A-Za-z0-9._+/=-]+/gi, "Bearer [REDACTED]");
     // The installation token has dots and dashes after `ghs_`, and a console error box wraps it over padded lines; a continuation is a piece with the box margin on both sides, so plain output after a token stays.
@@ -92,13 +267,11 @@ function replacePatterns(raw: string, credentialHex: boolean): string {
         /(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_.-]{16,}(?:[ \t]{2,}\r?\n[ \t]{2,}[A-Za-z0-9_.-]+(?=[\"']?[ \t]{2,}(?:\r?\n|$))){0,6}|github_pat_[A-Za-z0-9_]{20,})/g,
         REDACTED,
     );
-    return text.replace(
-        /(["']?)([A-Za-z][A-Za-z0-9_-]{0,255})\1(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}&{\[\]]+)/g,
-        (match, quote: string, name: string, separator: string) =>
-            SECRET_NAME.test(name)
-                ? quote + name + quote + separator + REDACTED
-                : match,
+    text = text.replace(
+        /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g,
+        REDACTED,
     );
+    return replaceFields(text);
 }
 
 /** Known values first, then the credential patterns. */

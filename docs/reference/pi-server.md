@@ -8,7 +8,7 @@ covers:
 
 # Pi server
 
-The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a [task VM](/reference/compute-drivers#task-vms). The Gateway's `pi` driver creates sessions, starts turns, and reads transcripts through it. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`. To build, run, and check it, see [Bun and Rust projects](/reference/bun-and-rust-projects#pi-server).
+The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a [task VM](/reference/compute-drivers#task-vms). Swamp creates sessions, starts turns and records transcript snapshots through it. Gateway task reads use those recorded snapshots and never contact Pi. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`. To build, run, and check it, see [Bun and Rust projects](/reference/bun-and-rust-projects#pi-server).
 
 Orbit runs Pi only on task VMs. The Gateway installs and starts it there; see [Run Pi on a task VM](#run-pi-on-a-task-vm). No host Node runs Pi for task agents.
 
@@ -190,15 +190,15 @@ The server sends a snapshot instead when the cursor is missing or malformed, nam
 | `context` | The entries at or before the cursor whose tool calls have no result yet, the same as in `resumed` |
 | `events` | The `entry` and `state` events that a stream resumed from the same cursor sends after `resumed`, in sequence order. A cursor at the newest sequence gives an empty list |
 
-The read answers a full snapshot whenever the stream would start with one. The Gateway's [agent thread read](/reference/tasks#read-a-thread) uses the delta, so each poll carries only the events after the last one. A read does not change the stream or its sequence numbers.
+The read answers a full snapshot whenever the stream would start with one. Swamp consumes the turn stream, normalizes tool activities and redacts structured secrets before recording bounded transcript evidence in its terminal result. Successful file contents and unused tool arguments stay private. The Gateway's [agent thread read](/reference/tasks#read-a-thread) serves that recorded evidence and never calls Pi. A read does not change the stream or its sequence numbers.
 
-The Gateway sends `max_bytes` on transcript reads and streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state.
+Swamp sends `max_bytes` on turn streams. It must be an integer of at least 4096; an invalid value returns HTTP 422 `validation.failed`. The server uses this byte budget for snapshots. It keeps the newest complete entries that fit and prepends a `system` message with an explicit truncation marker when it omits history. If a delta exceeds the budget, the read returns a bounded snapshot instead. The cursor still names the current state.
 
-This budget comes from the Gateway, which also bounds each read response and each NDJSON stream line before decoding. An oversized partial line fails before its newline arrives. The stream may carry any number of lines within the connection deadline; the server has no second size setting.
+The turn operation bounds each NDJSON stream line and its retained transcript evidence. An oversized partial line fails before its newline arrives. The stream may carry any number of lines within the connection deadline; the server has no second size setting.
 
-`GET /sessions/{id}?view=state` returns a `state` object with session ID, run, sequence, state, error, provider error, turn ID, and usage. It does not build or send transcript entries. Observation polling uses this read, so transcript growth does not interrupt state or token observation.
+`GET /sessions/{id}?view=state` returns a `state` object with session ID, run, sequence, state, error, provider error, turn ID, and usage. It does not build or send transcript entries. This Pi API remains available to operation clients. Gateway task reads use recorded state.
 
-State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. The Gateway accepts their snapshot metadata without using transcript entries or retrying, and still enforces the transfer budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers.
+State-only reads and bounded snapshots require a Pi binary built with these handlers. Older binaries ignore `view=state` and `max_bytes`. Task reads never call those binaries. Swamp enforces the turn stream budget. Their oversized sessions remain unreadable until the Pi binary is updated. The recipe pin `e5933d4c8696` predates these handlers.
 
 An agent gets the new binary only on a newly prepared task VM. A group keeps one VM for its whole life; only a new group claiming a VM gets a new one. Follow [Roll out a new binary](#roll-out-a-new-binary) for the artifact pin and its scope.
 

@@ -8,6 +8,8 @@ description: "Show one task as a detail tree, followed by its brief and a table 
 orbit task:show [task] [--json]
 ```
 
+Token totals use the thread observations already recorded by task operations. Showing a task does not contact its agent sessions. A slow or unavailable session does not delay the task detail.
+
 The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 The tree shows **VM power** when the task's `vm_power` is not `null`. JSON includes `vm_power` when power is known: `running`, `stopped`, or `destroyed`; it omits the field when the API reports `null`. [VM power](/reference/compute-drivers#vm-power) describes how those values map to the task VM's state, separately from task status.

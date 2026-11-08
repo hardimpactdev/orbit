@@ -92,7 +92,7 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
             }
             $turn = TaskPrepResults::turn($native['turn'] ?? null);
             if ($turn !== null) {
-                TaskTurnProjection::recordThread($operation->target_id, ValidatedData::integer(ValidatedData::object($intent['turn'])['thread_id']), $turn);
+                TaskTurnProjection::recordTurn($operation, ValidatedData::integer(ValidatedData::object($intent['turn'])['thread_id']), $turn);
             }
             $result = $status === 'succeeded'
                 ? ['branch' => 'task-'.$operation->target_id, 'head' => ValidatedData::string(ValidatedData::object($intent['approval'])['head'])]

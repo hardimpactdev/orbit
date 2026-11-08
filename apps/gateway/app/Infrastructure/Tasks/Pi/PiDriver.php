@@ -8,20 +8,15 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriver;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentInputRequest;
-use App\Domain\Tasks\AgentObservation;
-use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
-use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
-use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\TaskVm;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -35,7 +30,6 @@ final readonly class PiDriver implements AgentDriver
 {
     public function __construct(
         private PiClient $client,
-        private PiConnection $connection,
     ) {}
 
     public function key(): string
@@ -102,123 +96,6 @@ final readonly class PiDriver implements AgentDriver
         // Pi sessions are files on the Node and are outside thread archive cleanup.
     }
 
-    public function observe(AgentThread $thread): AgentObservation
-    {
-        $node = $this->node($thread);
-        $state = $this->client->state($node, $thread->external_id);
-        if (data_get($state, 'session.id') !== $thread->external_id) {
-            throw new AgentDriverException('Agent observation identity does not match.');
-        }
-
-        return $this->observation($this->redactObject($state, $node), []);
-    }
-
-    /**
-     * Reads the thread for a viewer. A cursor from the server's current run gets a delta: the entries the stream would
-     * send after it, merged by ID, with the current state. Any other cursor gets a snapshot, as on the stream.
-     */
-    public function read(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): AgentObservation
-    {
-        $node = $this->node($thread);
-        $payload = $this->client->read($node, $thread->external_id, $this->resumeFrom($cursor), $timeoutSeconds);
-        if (data_get($payload, 'session.id') !== $thread->external_id) {
-            throw new AgentDriverException('Agent observation identity does not match.');
-        }
-
-        return $payload['kind'] === 'delta'
-            ? $this->deltaObservation($payload, $node)
-            : $this->snapshotObservation($payload, new PiTranscript, $node);
-    }
-
-    /**
-     * Relays one Pi server stream. A cursor is `{run}.{sequence}`. A cursor from the server's
-     * current run resumes after it, so a reconnect gets only what it missed. Any other cursor,
-     * including one from before a server restart, gets a fresh snapshot.
-     */
-    public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
-    {
-        $node = $this->node($thread);
-        $transcript = new PiTranscript;
-        $started = false;
-
-        foreach ($this->client->stream($node, $thread->external_id, $this->resumeFrom($cursor)) as $event) {
-            $kind = $event['kind'];
-            $next = $this->cursor($event);
-            if ($kind === 'heartbeat') {
-                yield new AgentThreadEvent($thread->id, 'heartbeat');
-            } elseif ($kind === 'snapshot') {
-                if (data_get($event, 'session.id') !== $thread->external_id) {
-                    continue;
-                }
-                $started = true;
-                $transcript = new PiTranscript;
-                yield new AgentThreadEvent($thread->id, 'snapshot', $this->snapshotObservation($event, $transcript, $node)->toArray(), $next);
-            } elseif ($kind === 'resumed') {
-                if (data_get($event, 'session.id') !== $thread->external_id) {
-                    continue;
-                }
-                $started = true;
-                $transcript = new PiTranscript;
-                foreach (is_array($event['context'] ?? null) ? $event['context'] : [] as $entry) {
-                    if (is_array($entry)) {
-                        $transcript->remember($entry);
-                    }
-                }
-                yield new AgentThreadEvent($thread->id, 'resumed');
-            } elseif ($started && $kind === 'entry' && is_array($event['entry'] ?? null)) {
-                yield from $this->entryEvents($thread, $this->redactEntries($transcript->entries($event['entry']), $node), $next);
-            } elseif ($started && $kind === 'state') {
-                $state = $this->observation($event, [])->toArray();
-                unset($state['entries']);
-                if ($this->settled($state['state'])) {
-                    yield from $this->entryEvents($thread, $this->redactEntries($transcript->settle(), $node), null);
-                }
-                yield new AgentThreadEvent($thread->id, 'state', $this->redactObject($state, $node), $next);
-            }
-        }
-    }
-
-    /**
-     * One Pi event can become several entries. Only the last carries the cursor, so a viewer that
-     * disconnects between them resumes before the event and receives all of them again.
-     *
-     * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $entries
-     * @return iterable<AgentThreadEvent>
-     */
-    private function entryEvents(AgentThread $thread, array $entries, ?string $cursor): iterable
-    {
-        foreach ($entries as $index => $entry) {
-            yield new AgentThreadEvent($thread->id, 'entry', ['entry' => $entry], $index === array_key_last($entries) ? $cursor : null);
-        }
-    }
-
-    /** A settled turn has no running tool calls left. */
-    private function settled(mixed $state): bool
-    {
-        return in_array(AgentThreadState::tryFrom(is_string($state) ? $state : ''), [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true);
-    }
-
-    /** @return array{run: string, sequence: int}|null */
-    private function resumeFrom(?string $cursor): ?array
-    {
-        if ($cursor === null || preg_match('/^([A-Za-z0-9_-]{1,64})\.(\d{1,15})$/', $cursor, $match) !== 1) {
-            return null;
-        }
-
-        return ['run' => $match[1], 'sequence' => (int) $match[2]];
-    }
-
-    /** @param array<string, mixed> $event */
-    private function cursor(array $event): ?string
-    {
-        $run = $event['run'] ?? null;
-        $sequence = $event['sequence'] ?? null;
-
-        return is_string($run) && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $run) === 1 && is_int($sequence) && $sequence >= 0
-            ? $run.'.'.$sequence
-            : null;
-    }
-
     private function deliver(Node $node, string $sessionId, string $message, ?string $key = null): void
     {
         $key ??= (string) Str::uuid();
@@ -233,159 +110,6 @@ final readonly class PiDriver implements AgentDriver
                 throw $exception;
             }
         }
-    }
-
-    /** @param array<string, mixed> $snapshot */
-    private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node $node): AgentObservation
-    {
-        // A tool result replaces its running call in place, so entries are keyed by ID.
-        $entries = [];
-        foreach (is_array($snapshot['entries'] ?? null) ? $snapshot['entries'] : [] as $entry) {
-            if (is_array($entry)) {
-                foreach ($transcript->entries($entry) as $normalized) {
-                    $entries[$normalized['id']] = $normalized;
-                }
-            }
-        }
-        if ($this->settled($snapshot['state'] ?? null)) {
-            foreach ($transcript->settle() as $normalized) {
-                $entries[$normalized['id']] = $normalized;
-            }
-        }
-
-        return $this->observation($this->redactObject($snapshot, $node), $this->redactEntries(array_values($entries), $node));
-    }
-
-    /**
-     * Folds a delta as {@see events()} folds a resumed stream: the context names the open tool calls, each entry event adds
-     * its entries, and a settled state stops the calls that never got a result. A later entry replaces one with its ID.
-     *
-     * @param  array<string, mixed>  $delta
-     */
-    private function deltaObservation(array $delta, Node $node): AgentObservation
-    {
-        $transcript = new PiTranscript;
-        foreach (is_array($delta['context'] ?? null) ? $delta['context'] : [] as $entry) {
-            if (is_array($entry)) {
-                $transcript->remember($entry);
-            }
-        }
-        $entries = [];
-        foreach (is_array($delta['events'] ?? null) ? $delta['events'] : [] as $event) {
-            if (! is_array($event)) {
-                continue;
-            }
-            $normalized = match (true) {
-                ($event['kind'] ?? null) === 'entry' && is_array($event['entry'] ?? null) => $transcript->entries($event['entry']),
-                ($event['kind'] ?? null) === 'state' && $this->settled($event['state'] ?? null) => $transcript->settle(),
-                default => [],
-            };
-            foreach ($normalized as $entry) {
-                $entries[$entry['id']] = $entry;
-            }
-        }
-
-        return $this->observation($this->redactObject($delta, $node), $this->redactEntries(array_values($entries), $node), delta: true);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data  A snapshot, delta, or state event.
-     * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $entries
-     */
-    private function observation(array $data, array $entries, bool $delta = false): AgentObservation
-    {
-        $state = AgentThreadState::tryFrom(is_string($data['state'] ?? null) ? $data['state'] : '');
-        $error = is_string($data['error'] ?? null) && $data['error'] !== '' ? $data['error'] : null;
-        $turnId = $data['turnId'] ?? null;
-        $input = $this->usageInt($data, 'input');
-        $cacheWrite = $this->usageInt($data, 'cacheWrite');
-
-        return new AgentObservation(
-            state: $state,
-            entries: $entries,
-            tokens: $this->usageInt($data, 'total'),
-            inputTokens: $input !== null && $cacheWrite !== null ? $input + $cacheWrite : null,
-            cachedInputTokens: $this->usageInt($data, 'cacheRead'),
-            outputTokens: $this->usageInt($data, 'output'),
-            modelCalls: $this->usageInt($data, 'calls'),
-            peakContextTokens: $this->usageInt($data, 'peakContext'),
-            costUsd: is_int(data_get($data, 'usage.cost')) || is_float(data_get($data, 'usage.cost')) ? (float) data_get($data, 'usage.cost') : null,
-            error: $state === AgentThreadState::Failed ? ($error ?? 'Agent turn failed.') : ($state === AgentThreadState::Working ? $error : null),
-            cursor: $this->cursor($data),
-            turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,
-            providerError: in_array($state, [AgentThreadState::Working, AgentThreadState::Failed], true) && in_array($data['providerError'] ?? null, ['overloaded', 'rate_limited', 'server_error'], true) ? $data['providerError'] : null,
-            delta: $delta,
-        );
-    }
-
-    /**
-     * Pi reports each usage field as an integer. A missing or non-integer field is unknown,
-     * and a missing cache write leaves uncached input unknown rather than treating it as zero.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function usageInt(array $data, string $key): ?int
-    {
-        $value = data_get($data, 'usage.'.$key);
-
-        return is_int($value) ? $value : null;
-    }
-
-    /** @param array<array-key, mixed> $data
-     * @return array<array-key, mixed>
-     */
-    private function redact(array $data, Node $node): array
-    {
-        $tokens = $this->connection->secrets($node);
-        array_walk_recursive($data, static function (mixed &$value) use ($tokens): void {
-            if (is_string($value)) {
-                $value = str_replace($tokens, '[REDACTED]', $value);
-            }
-        });
-
-        return new CommandActivityInputSanitizer()->sanitizeProperties($data);
-    }
-
-    /** @param array<array-key, mixed> $data
-     * @return array<string, mixed>
-     */
-    private function redactObject(array $data, Node $node): array
-    {
-        return ValidatedData::object($this->redact($data, $node));
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $entries
-     * @return list<array{id: string, kind: string, label: string, text: string, at: string}>
-     */
-    private function redactEntries(array $entries, Node $node): array
-    {
-        $redacted = $this->redact($entries, $node);
-        $result = [];
-        foreach ($redacted as $entry) {
-            if (! is_array($entry)) {
-                continue;
-            }
-            $entry = ValidatedData::object($entry);
-            if (
-                ! is_string($entry['id'] ?? null)
-                || ! is_string($entry['kind'] ?? null)
-                || ! is_string($entry['label'] ?? null)
-                || ! is_string($entry['text'] ?? null)
-                || ! is_string($entry['at'] ?? null)
-            ) {
-                continue;
-            }
-            $result[] = [
-                'id' => $entry['id'],
-                'kind' => $entry['kind'],
-                'label' => $entry['label'],
-                'text' => $entry['text'],
-                'at' => $entry['at'],
-            ];
-        }
-
-        return $result;
     }
 
     private function node(AgentThread $thread): Node

@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import { redactText } from "../../_lib/public_output.ts";
+import { transcriptEntries } from "./transcript.ts";
+import { redactText, redactValue } from "../../_lib/public_output.ts";
 
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
@@ -24,18 +25,20 @@ export const Input = z.object({
 });
 export type TurnInput = z.infer<typeof Input>;
 const Usage = z.object({
-    input: z.number().nonnegative().default(0),
-    output: z.number().nonnegative().default(0),
-    cacheRead: z.number().nonnegative().default(0),
-    cacheWrite: z.number().nonnegative().default(0),
-    total: z.number().nonnegative().default(0),
-    calls: z.number().nonnegative().default(0),
-    peakContext: z.number().nonnegative().default(0),
+    input: z.number().nonnegative().optional(),
+    output: z.number().nonnegative().optional(),
+    cacheRead: z.number().nonnegative().optional(),
+    cacheWrite: z.number().nonnegative().optional(),
+    total: z.number().nonnegative().optional(),
+    calls: z.number().nonnegative().optional(),
+    peakContext: z.number().nonnegative().optional(),
+    cost: z.number().nonnegative().nullable().optional(),
 });
 const State = z.object({
     state: z.enum(["idle", "working", "done", "failed"]),
     turnId: z.string().nullable(),
-    usage: Usage,
+    usage: Usage.optional(),
+    transcript: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 /** The outcomes each role may end its turn with. */
 const OUTCOMES = {
@@ -197,11 +200,13 @@ export function finish(raw: unknown) {
         ? { receipt: null, error: null }
         : checkReceipt(file.receipt, args.input);
     const failed = args.failure || terminal?.state !== "done";
-    const usage = terminal?.usage ?? Usage.parse({});
+    const usage = terminal?.usage;
     const result = {
         receipt: failed ? null : checked.receipt,
         receipt_error: checked.error,
         thread: args.input.thread_id,
+        subtask: args.input.subtask,
+        ...(terminal?.transcript ? { transcript: terminal.transcript } : {}),
         state: failed ? "failed" : "done",
         error: failed ? "Pi did not complete the task turn." : null,
         ...(failed
@@ -211,43 +216,38 @@ export function finish(raw: unknown) {
         after: Snapshot.nullable().parse(read(args.after)),
         after_reset: Snapshot.nullable().parse(read(args.restored)),
         difference: read(args.difference),
-        metrics: {
-            tokens: usage.total,
-            input_tokens: usage.input + usage.cacheWrite,
-            cached_input_tokens: usage.cacheRead,
-            output_tokens: usage.output,
-            model_calls: usage.calls,
-            peak_context_tokens: usage.peakContext,
-        },
+        ...(usage
+            ? {
+                metrics: {
+                    ...(usage.total !== undefined
+                        ? { tokens: usage.total, cost_usd: usage.cost ?? null }
+                        : {}),
+                    ...(usage.input !== undefined &&
+                            usage.cacheWrite !== undefined
+                        ? { input_tokens: usage.input + usage.cacheWrite }
+                        : {}),
+                    ...(usage.cacheRead !== undefined
+                        ? { cached_input_tokens: usage.cacheRead }
+                        : {}),
+                    ...(usage.output !== undefined
+                        ? { output_tokens: usage.output }
+                        : {}),
+                    ...(usage.calls !== undefined
+                        ? { model_calls: usage.calls }
+                        : {}),
+                    ...(usage.peakContext !== undefined
+                        ? { peak_context_tokens: usage.peakContext }
+                        : {}),
+                },
+            }
+            : {}),
     };
     return { result_json: JSON.stringify(result), successful: !failed };
 }
-const USAGE_KEYS = [
-    "input",
-    "output",
-    "cacheRead",
-    "cacheWrite",
-    "total",
-    "calls",
-    "peakContext",
-] as const;
 
 /** The repository redaction rule, plus the task VM's 32-byte hex Pi and router credentials. */
 export function redactTurnText(raw: string): string {
     return redactText(raw);
-}
-
-function publicValue(value: unknown): unknown {
-    if (typeof value === "string") return redactTurnText(value);
-    if (Array.isArray(value)) return value.map(publicValue);
-    if (value !== null && typeof value === "object") {
-        return Object.fromEntries(
-            Object.entries(value).map((
-                [key, item],
-            ) => [key, publicValue(item)]),
-        );
-    }
-    return value;
 }
 
 /*
@@ -271,30 +271,86 @@ function parsePrivate(raw: string, code: string): unknown {
     }
 }
 
-/** The matching terminal Pi event: its state and seven finite nonnegative usage counts. */
-export async function terminal(args: { path: string; turn: string }) {
-    const event = parsePrivate(
-        await readPrivate(args.path, "tasks.pi_completion_unconfirmed"),
-        "tasks.pi_event_invalid",
-    ) as Record<string, unknown> | null;
-    if (
-        event === null || typeof event !== "object" ||
-        event.turnId !== args.turn ||
-        (event.state !== "done" && event.state !== "failed")
-    ) throw new Error("tasks.pi_completion_unconfirmed");
-    const raw = event.usage ?? {};
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+/** Retain available transcript evidence even when the stream ends without a terminal event. */
+export async function terminal(
+    args: { path: string; turn: string; partial?: boolean },
+) {
+    const raw = await readPrivate(args.path, "tasks.pi_completion_unconfirmed");
+    const events: Record<string, unknown>[] = [];
+    for (const line of raw.trim().split("\n")) {
+        try {
+            const value = parsePrivate(line, "tasks.pi_event_invalid");
+            if (
+                value !== null && typeof value === "object" &&
+                !Array.isArray(value)
+            ) {
+                events.push(value as Record<string, unknown>);
+            } else if (!args.partial) {
+                throw new Error("tasks.pi_event_invalid");
+            }
+        } catch {
+            if (!args.partial) throw new Error("tasks.pi_event_invalid");
+        }
+    }
+    const event = events.at(-1);
+    const complete = event?.turnId === args.turn &&
+        (event.state === "done" || event.state === "failed");
+    if (!complete && !args.partial) {
+        throw new Error("tasks.pi_completion_unconfirmed");
+    }
+    const parsed = Usage.optional().safeParse(
+        complete ? event?.usage : undefined,
+    );
+    if (!parsed.success && !args.partial) {
         throw new Error("tasks.pi_usage_invalid");
     }
-    const usage: Record<string, number> = {};
-    for (const key of USAGE_KEYS) {
-        const value = (raw as Record<string, unknown>)[key] ?? 0;
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-            throw new Error("tasks.pi_usage_invalid");
+    const entries = new Map<string, Record<string, unknown>>();
+    for (const item of events) {
+        const values = item.kind === "snapshot" && Array.isArray(item.entries)
+            ? item.entries
+            : item.kind === "entry"
+            ? [item.entry]
+            : [];
+        for (const value of values) {
+            if (
+                value && typeof value === "object" &&
+                typeof value.id === "string"
+            ) {
+                entries.set(
+                    value.id,
+                    value as Record<string, unknown>,
+                );
+            }
         }
-        usage[key] = value;
     }
-    return JSON.stringify({ state: event.state, turnId: args.turn, usage });
+    // Keep the newest complete entries within the public result budget.
+    const transcript: ReturnType<typeof transcriptEntries> = [];
+    let size = 0;
+    let truncated = events.some((item) => item.kind === "truncated");
+    for (const entry of transcriptEntries([...entries.values()]).reverse()) {
+        size += new TextEncoder().encode(JSON.stringify(entry)).length;
+        if (size > 262144) {
+            truncated = true;
+            break;
+        }
+        transcript.unshift(entry);
+    }
+    if (truncated) {
+        transcript.unshift({
+            id: "orbit-truncated",
+            at: "",
+            kind: "message",
+            label: "system",
+            text:
+                "[Transcript truncated: older entries omitted from the recorded turn.]",
+        });
+    }
+    return JSON.stringify({
+        state: complete && parsed.success ? event?.state : "failed",
+        turnId: args.turn,
+        ...(parsed.success && parsed.data ? { usage: parsed.data } : {}),
+        ...(!args.partial || transcript.length > 0 ? { transcript } : {}),
+    });
 }
 
 /**
@@ -324,7 +380,7 @@ export async function receipt(args: { path: string }) {
     } catch {
         return invalid;
     }
-    return JSON.stringify({ receipt: publicValue(value), error: null });
+    return JSON.stringify({ receipt: redactValue(value), error: null });
 }
 
 /** File counts from `git diff --numstat -z` and the redacted patch, both bounded. */
@@ -351,7 +407,7 @@ export async function difference(args: { counts: string; patch: string }) {
     const diff = redactTurnText(
         await readPrivate(args.patch, "tasks.difference_invalid"),
     );
-    return JSON.stringify(publicValue({
+    return JSON.stringify(redactValue({
         files: files.slice(0, 500),
         diff: diff.slice(0, 65536),
         files_complete: files.length <= 500,
@@ -616,13 +672,14 @@ export const turnDataMethods = {
     },
     terminal: {
         description:
-            "Read the matching terminal Pi event from the private worker file",
+            "Read available transcript and terminal evidence from the private worker file",
         arguments: z.object({
             path: z.string().startsWith("/"),
             turn: z.string(),
+            partial: z.boolean().optional(),
         }),
         execute: async (
-            args: { path: string; turn: string },
+            args: { path: string; turn: string; partial?: boolean },
             ctx: PublicContext,
         ) => ({
             dataHandles: [

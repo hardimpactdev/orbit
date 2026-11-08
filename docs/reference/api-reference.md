@@ -11,6 +11,8 @@ Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule
 
 `database:server:update` is PATCH `/api/v1/database-servers/{database_server}`. It requires JSON `{"require_password":true}`; the generated schema fixes this field to true. The operation receipt keeps kind `database_server.close`. See [Database servers](/reference/database-servers#close-an-adopted-server).
 
+Task agent JSON and SSE reads return recorded Gateway snapshots. `kind` is `snapshot`, `cursor` is null, and `after_sequence` never requests Pi deltas. `archived` means a saved snapshot exists; a later turn can replace it. Output updates when each turn ends, including children of a running parent. See [Read a thread](/reference/tasks#read-a-thread).
+
 The task page reads Swamp history through `GET /api/v1/tasks/{task}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
@@ -90,7 +92,7 @@ The `task:turn`, `task:check` and `task:publish` descriptions name the refusal `
 
 The `task:pr-ready` and `task:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `task:dependency-merge`; the MCP tools `task-pr-ready` and `task-pr-merge` are the callers.
 
-The `task:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
+The `task:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's recorded snapshot and not a data class.
 
 The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind, such as `ufw`, and the `subject` that `checkout` and `packages` facts need; a new kind changes that list in the same change. It also writes the `agent:watch` response, including `applications`, a map whose empty form is `{}`.
 

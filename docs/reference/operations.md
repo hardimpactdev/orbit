@@ -125,7 +125,7 @@ A run can beat its expiry. For example, Swamp's start reply arrives after the 60
 
 The shared reader projects a native kind from its declared end-check step. A kind whose action runs as one of several guarded steps names the others as `alternatives`, and the step that ran is the end check; see [Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step).
 
-A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because no terminal projection runs for a timed-out Operation unless its run beat the expiry. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
+A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because the normal terminal projection runs for a timed-out Operation only when its run beat the expiry. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
 
 `task_vm.slot_release`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` release and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 

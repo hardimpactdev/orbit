@@ -217,22 +217,22 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'empty egress' => ['task-egress/empty', new ListTaskEgressRequest(1), TaskEgressResponse::class],
         'agent show' => ['task-agent-show/default', new ShowTaskAgentRequest(1, 3), TaskAgentSnapshotResponse::class],
         'archived agent show' => ['task-agent-show/archived', new ShowTaskAgentRequest(1, 4), TaskAgentSnapshotResponse::class],
-        'agent delta' => ['task-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
+        'agent snapshot after cursor' => ['task-agent-show/after-sequence', new ShowTaskAgentRequest(1, 3, 'run-1.7'), TaskAgentSnapshotResponse::class],
         'pending agent show' => ['task-agent-show/pending', new ShowTaskAgentRequest(1, 5), TaskAgentSnapshotResponse::class],
     ]);
 
-    it('keeps the transcript, cursor, and source of live and archived agent snapshots', function (): void {
+    it('keeps recorded transcripts and null cursors for running and ended threads', function (): void {
         $snapshot = task_fixture_send('task-agent-show/default', new ShowTaskAgentRequest(1, 3));
 
         expect($snapshot)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
             ->and($snapshot->threadId)->toBe(3)
             ->and($snapshot->state)->toBe('working')
-            ->and($snapshot->cursor)->toBe('run-1.7')
-            ->and($snapshot->archived)->toBeFalse()
+            ->and($snapshot->cursor)->toBeNull()
+            ->and($snapshot->archived)->toBeTrue()
             ->and(array_column($snapshot->entries, 'kind'))->toBe(['message', 'activity'])
-            ->and($snapshot->entries[1]['text'])->toBe("Tests: 12 passed\n\n$ composer check\nexit code 0")
+            ->and($snapshot->entries[1]['text'])->toBe('bash · succeeded · 1200 ms')
             ->and($snapshot->tokens)->toBe(48_200)
-            ->and($snapshot->toArray())->toMatchArray(['thread_id' => 3, 'kind' => 'snapshot', 'cursor' => 'run-1.7', 'archived' => false, 'request_id' => task_request_id()]);
+            ->and($snapshot->toArray())->toMatchArray(['thread_id' => 3, 'kind' => 'snapshot', 'cursor' => null, 'archived' => true, 'request_id' => task_request_id()]);
 
         $archived = task_fixture_send('task-agent-show/archived', new ShowTaskAgentRequest(1, 4));
 
@@ -244,12 +244,12 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($archived->modelCalls)->toBeNull()
             ->and($archived->entries[0]['text'])->toBe('Approved.');
 
-        $delta = task_fixture_send('task-agent-show/delta', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
+        $afterSequence = task_fixture_send('task-agent-show/after-sequence', new ShowTaskAgentRequest(1, 3, 'run-1.7'));
         $pending = task_fixture_send('task-agent-show/pending', new ShowTaskAgentRequest(1, 5));
 
-        expect($delta)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
-            ->and($delta->kind)->toBe('delta')->and($delta->cursor)->toBe('run-1.9')
-            ->and(array_column($delta->entries, 'id'))->toBe(['e3'])
+        expect($afterSequence)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
+            ->and($afterSequence->kind)->toBe('snapshot')->and($afterSequence->cursor)->toBeNull()
+            ->and(array_column($afterSequence->entries, 'id'))->toBe(['e1', 'call-1', 'e3'])
             ->and($pending)->toBeInstanceOf(TaskAgentSnapshotResponse::class)
             ->and($pending->kind)->toBe('snapshot')->and($pending->state)->toBeNull()
             ->and($pending->entries)->toBe([])->and($pending->cursor)->toBeNull();

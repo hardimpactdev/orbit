@@ -183,10 +183,10 @@ describe('tasks contract', function (): void {
         run_task_contract('task-egress/empty', 'task:egress', ['task' => '1'], 0);
     });
 
-    it('renders a live and an archived agent thread snapshot', function (): void {
+    it('renders recorded agent snapshots and the absence of a recorded transcript', function (): void {
         run_task_contract('tasks/task-agent-show/default', 'task:agent:show', ['task' => '1', 'session' => '3'], 0);
         run_task_contract('tasks/task-agent-show/archived', 'task:agent:show', ['task' => '1', 'session' => '4'], 0);
-        run_task_contract('tasks/task-agent-show/delta', 'task:agent:show', ['task' => '1', 'session' => '3', '--after-sequence' => 'run-1.7'], 0);
+        run_task_contract('tasks/task-agent-show/after-sequence', 'task:agent:show', ['task' => '1', 'session' => '3', '--after-sequence' => 'run-1.7'], 0);
         run_task_contract('tasks/task-agent-show/pending', 'task:agent:show', ['task' => '1', 'session' => '5'], 0);
     });
 
