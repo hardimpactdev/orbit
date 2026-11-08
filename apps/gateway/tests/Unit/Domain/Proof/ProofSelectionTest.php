@@ -214,6 +214,54 @@ it('carries the merge base of the commit into the selection, for the proof of a 
     expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
 });
 
+it('selects both Node detail proofs for an owning path changed on its own', function (string $path): void {
+    $root = dirname(base_path(), 2);
+    if (! is_file($root.'/swamp/proof/selection.txt')) {
+        $this->markTestSkipped('Needs the repository checkout.');
+    }
+    $files = array_map(static fn (string $file): string => substr($file, strlen($root) + 1),
+        glob($root.'/swamp/proof/*/*.cases.yaml'));
+    $selected = ProofSelection::select((string) file_get_contents($root.'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ProofSelection::casesFiles($files));
+
+    expect($selected->files())->toBe([
+        'swamp/proof/node/show.cases.yaml',
+        'swamp/proof/node/show-recorded.cases.yaml',
+    ])->and($selected->uncovered)->toBe([])
+        ->and($selected->everythingBecause)->toBeNull()
+        ->and($selected->nothingToProve())->toBeFalse();
+})->with([
+    'show command' => 'apps/cli/app/Commands/Nodes/ShowNodeCommand.php',
+    'shared Node command' => 'apps/cli/app/Commands/Nodes/NodeCommand.php',
+    'shared Node renderer' => 'apps/cli/app/Commands/Nodes/NodeOutput.php',
+    'list rendering' => 'apps/cli/app/Commands/Nodes/ListNodesCommand.php',
+    'role rendering' => 'apps/cli/app/Commands/Nodes/ListNodeRolesCommand.php',
+    'metrics rendering' => 'apps/cli/app/Commands/Nodes/ShowNodeMetricsCommand.php',
+    'show action' => 'apps/gateway/app/Actions/Nodes/ShowNodeAction.php',
+    'list action' => 'apps/gateway/app/Actions/Nodes/ListNodesAction.php',
+    'role action' => 'apps/gateway/app/Actions/Nodes/ListNodeRolesAction.php',
+    'Node projection' => 'apps/gateway/app/Data/Nodes/NodeData.php',
+    'role projection' => 'apps/gateway/app/Data/Nodes/NodeRoleAssignmentData.php',
+    'agent projection' => 'apps/gateway/app/Data/Nodes/NodeAgentData.php',
+    'Node model' => 'apps/gateway/app/Models/Node.php',
+    'role model' => 'apps/gateway/app/Models/NodeRole.php',
+    'access model' => 'apps/gateway/app/Models/NodeAccess.php',
+    'Cluster name' => 'apps/gateway/app/Models/Cluster.php',
+    'Node controller' => 'apps/gateway/app/Http/Controllers/Api/NodesController.php',
+    'role controller' => 'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
+    'agent liveness' => 'apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php',
+    'agent eligibility' => 'apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php',
+    'recorded agent view' => 'apps/gateway/app/Infrastructure/AgentView/CacheAgentStateView.php',
+    'agent view contract' => 'apps/gateway/app/Domain/AgentView/AgentStateView.php',
+    'SDK detail request' => 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
+    'SDK list request' => 'packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php',
+    'SDK role request' => 'packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php',
+    'SDK detail projection' => 'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
+    'SDK role projection' => 'packages/php-sdk/src/Responses/Nodes/NodeRoleAssignmentResponse.php',
+    'approved cases alone' => 'swamp/proof/node/show.cases.yaml',
+    'supplemental cases alone' => 'swamp/proof/node/show-recorded.cases.yaml',
+]);
+
 const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
 
 /** The family directories whose every file implements the firewall commands; the router LAN ingress files are the exception. */

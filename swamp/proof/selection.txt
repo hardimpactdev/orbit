@@ -49,6 +49,36 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# Recorded Node detail: both the approved cases and the supplemental recorded-state cases prove these shared reads.
+# Keep both files selected even when only one cases file or one projection changes.
+apps/cli/app/Commands/Nodes/ShowNodeCommand.php             node:show node:show-recorded
+apps/cli/app/Commands/Nodes/NodeCommand.php                 node:show node:show-recorded
+apps/cli/app/Commands/Nodes/NodeOutput.php                  node:show node:show-recorded
+apps/cli/app/Commands/Nodes/ListNodesCommand.php            node:show node:show-recorded
+apps/cli/app/Commands/Nodes/ListNodeRolesCommand.php        node:show node:show-recorded
+apps/cli/app/Commands/Nodes/ShowNodeMetricsCommand.php      node:show node:show-recorded
+apps/gateway/app/Actions/Nodes/ShowNodeAction.php           node:show node:show-recorded
+apps/gateway/app/Actions/Nodes/ListNodesAction.php          node:show node:show-recorded
+apps/gateway/app/Actions/Nodes/ListNodeRolesAction.php      node:show node:show-recorded
+apps/gateway/app/Data/Nodes/**                             node:show node:show-recorded
+apps/gateway/app/Models/Node.php                           node:show node:show-recorded
+apps/gateway/app/Models/NodeRole.php                       node:show node:show-recorded
+apps/gateway/app/Models/NodeAccess.php                     node:show node:show-recorded
+apps/gateway/app/Models/Cluster.php                        node:show node:show-recorded
+apps/gateway/app/Http/Controllers/Api/NodesController.php   node:show node:show-recorded
+apps/gateway/app/Http/Controllers/Api/NodeRolesController.php  node:show node:show-recorded
+apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php     node:show node:show-recorded
+apps/gateway/app/Domain/NodeFacts/NodeAgentState.php        node:show node:show-recorded
+apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php   node:show node:show-recorded
+apps/gateway/app/Domain/AgentView/**                       node:show node:show-recorded
+apps/gateway/app/Infrastructure/AgentView/**               node:show node:show-recorded
+packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php    node:show node:show-recorded
+packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php   node:show node:show-recorded
+packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php  node:show node:show-recorded
+packages/php-sdk/src/Responses/Nodes/**                    node:show node:show-recorded
+swamp/proof/node/show.cases.yaml                           node:show node:show-recorded
+swamp/proof/node/show-recorded.cases.yaml                  node:show node:show-recorded
+
 # Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
 # any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
 # commands use (schedules, logs, project definitions) stays out. The table of run budgets (data) and two checks that no request path calls select nothing; the rules that read the table select every case.

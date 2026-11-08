@@ -287,6 +287,24 @@ describe('node:show', function (): void {
         'option-like' => '--help',
     ]);
 
+    it('refuses an omitted Node without interactive input before any request', function (array $arguments): void {
+        $mockClient = MockClient::global();
+
+        expect(Artisan::call('node:show', $arguments))->toBe(1);
+        $output = Artisan::output();
+        expect($output)->toContain('node.id_invalid', 'Node ID must be a positive integer.');
+        if ($arguments['--json'] ?? false) {
+            $error = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            expect($error['error']['code'])->toBe('node.id_invalid')
+                ->and($error['error']['request_id'])->toBeNull();
+        }
+        $mockClient->assertNothingSent();
+    })->with([
+        'piped input' => [[]],
+        'explicit noninteractive' => [['--no-interaction' => true]],
+        'machine input' => [['--json' => true]],
+    ]);
+
     it('fails clearly when no gateway profile is active', function (): void {
         new Filesystem()->deleteDirectory($this->orbitHome);
         $mockClient = MockClient::global();
