@@ -63,7 +63,19 @@ final readonly class ProofCaseSelection
             $used = ['fixtures' => [], 'vars' => []];
             $fixtures = $spec['fixtures'] ?? [];
             $variables = $spec['vars'] ?? [];
-            $walk = static function (mixed $value, array $context, array $overrides, array $visiting = []) use (&$walk, &$used, $fixtures, $variables, $invalid): void {
+            $resolve = static function (mixed $value, array $context) use (&$resolve): mixed {
+                if (is_string($value)) {
+                    if (preg_match('/\A\$\{([^}]+)\}\z/D', $value, $match) === 1 && array_key_exists($match[1], $context)) {
+                        return $context[$match[1]];
+                    }
+
+                    return preg_replace_callback('/\$\{([^}]+)\}/', static fn (array $match): string => (string) ($context[$match[1]] ?? $match[0]), $value);
+                }
+
+                return is_array($value) ? array_map(static fn (mixed $item): mixed => $resolve($item, $context), $value) : $value;
+            };
+            $walk = static function (mixed $value, array $context, array $overrides, array $visiting = []) use (&$walk, &$used, $fixtures, $variables, $invalid, $resolve): void {
+                $value = $resolve($value, $context);
                 if (is_string($value) && str_starts_with($value, '@')) {
                     $name = substr($value, 1);
                     if (! array_key_exists($name, $overrides) && array_key_exists($name, $variables)) {

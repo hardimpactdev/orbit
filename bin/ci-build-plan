@@ -80,7 +80,20 @@ def case_ids(before, after, code_changed=False, before_batches=None, after_batch
         used = {'fixtures': set(), 'vars': set()}
         fixtures, variables = spec.get('fixtures') or {}, spec.get('vars') or {}
 
+        def resolve(value, context):
+            if isinstance(value, str):
+                whole = re.fullmatch(r'\$\{([^}]+)\}', value)
+                if whole and whole[1] in context:
+                    return context[whole[1]]
+                return re.sub(r'\$\{([^}]+)\}', lambda m: str(context.get(m[1], m[0])), value)
+            if isinstance(value, list):
+                return [resolve(item, context) for item in value]
+            if isinstance(value, dict):
+                return {key: resolve(item, context) for key, item in value.items()}
+            return value
+
         def walk(value, context, visiting=()):
+            value = resolve(value, context)
             if isinstance(value, str):
                 if value.startswith('@'):
                     name = value[1:]
