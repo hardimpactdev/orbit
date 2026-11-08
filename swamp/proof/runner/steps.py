@@ -476,7 +476,7 @@ def unchanged_providers(step_args, file_baseline):
 
 def snapshot(run, provider):
     """The state of one provider as a value that compares equal when nothing changed, with the port of each entry for `except`."""
-    node = run.spec.target
+    node = run.target
     if provider == 'ufw':
         return [(row['to'], row['action'], row['from'], row['comment']) for row in ufw_rows(run, node)[1]]
     if provider == 'firewall_records':

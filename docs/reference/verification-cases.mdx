@@ -34,8 +34,12 @@ One file per command, because the reviewer reads the whole contract of a command
 | `chart` | The chart under `docs/cli`, such as `firewall/allow`. |
 | `target` | The Node the command acts on. |
 | `sources` | The Nodes that probe the target. |
+| `spread` | The Nodes that cases take in turn, such as `[app-dev, app-prod, gateway]`. Without it every case acts on `target`. See [Several cases at a time](#several-cases-at-a-time). |
+| `parallel` | How many cases `runner batch` runs at a time, from 1 to 16. The default is 4. |
 | `baseline` | The state that `unchanged` compares: the runner records it at the start of `act`. |
 | `batch` (on each case) | The name of a batch in `swamp/proof/batches.yaml`, which defines every batch, its start state and the run order. |
+| `node` (on a case) | The Node that plays the target for this case. It beats `spread`. |
+| `exclusive` (on a case) | `true` makes the case run alone. |
 | `vars` | Named lists that a command line splices with `"@name"`. |
 | `fixtures` | Named lists of steps that cases reuse. |
 | `uncovered` | Chart paths, options or codes that have no case yet, each with a reason. |
@@ -197,7 +201,7 @@ A batch is a group of cases that run one after another after one restore. Every 
 
 - The run starts on the task's `base` snapshot. The first batch needs no restore.
 - A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).
-- Inside a batch, cases run one after another and undo nothing. Each uses its own resources, so it does not see the others.
+- Inside a batch, cases undo nothing. Each uses its own resources, so it does not see the others. The workflow runs them one after another with `runner case`; `runner batch BATCH` runs them [several at a time](#several-cases-at-a-time).
 - A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
 - A case that does not pass triggers a restore of `base` and the batch setup before the next case.
 - A restore that fails or is not healthy within 45 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
@@ -209,6 +213,19 @@ A batch costs a restore, so keep few. `firewall:allow` needs two:
 | --- | --- | --- |
 | `fresh-fleet` | The healthy fleet. Only Orbit's own rules and the `proof-network` allowance exist. | 13 |
 | `dual-stack` | As above, and every Node has an IPv6 address on the proof bridge. | 1 |
+
+## Several cases at a time
+
+The nested fleet has three Nodes, and the Gateway lets one firewall write run on a Node at a time. Cases that share one Node therefore queue, so the runner puts them on different Nodes.
+
+- **Placement.** A case acts on the Node of its `node` key. A case without one takes the next Node of `spread`, in file order. A case placed on a Node other than `target` plays the same story there: the two Nodes trade roles in every step, so `on: app-dev`, `to: app-dev` and `${app-dev.id}` name the placed Node, and the source Nodes are the other two. Each case still keeps its own ports and rules.
+- **Locks.** The runner finds out what a case needs of the fleet from its steps:
+  - A case runs **alone** (`plan` prints `alone`) when it uses `fault`, `busy_node`, `node_down`, `agent_report`, `node_access_remove` or `ipv6_addresses`, expects `request: none`, compares `operations` with `unchanged`, or sets `exclusive: true`. These change or compare what every case shares: the Operation list, a Node's agent, a held lock. Such a case stays on `target`, takes no turn of `spread` and runs after the others.
+  - Any other case is the **only case on its Node** while it runs (`alone on its Node`): `unchanged` compares the whole table and listeners of its Node, `doctor` waits on its Node, and writes on one Node queue anyway.
+- **Parallel.** `runner batch BATCH --file F` reads the fleet once, starts as many cases as `--parallel` (or `parallel` in the file) allows, never two on one Node, and prints a verdict line as each case ends. At most three cases run at once, one per Node, whatever the limit. The exit status is the worst verdict: 1 when a case failed, else 2 when one was unrun, else 0.
+- **Shared facts.** The cases of a batch read the Node IDs of the nested Gateway once. `runner case` and `runner batch` keep them in `facts-BATCH.json` in the evidence directory for 15 minutes, and `runner setup BATCH` deletes the file, because a setup changes the fleet.
+
+A case that is placed on a Node must not name that Node inside a longer text, such as an expected line of output: only a value that is a Node name, and the `${node.id}`, `${node.src}` and `${node.src6}` placeholders, trade places.
 
 ## The run
 
