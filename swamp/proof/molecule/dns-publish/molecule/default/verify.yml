@@ -151,7 +151,7 @@
       register: pid_files
     - name: Read the processes of the lock
       ansible.builtin.command:
-        argv: [pgrep, -f, "flock --exclusive --timeout 45 /run/lock/orbit-dnsmasq.lock"]
+        argv: [pgrep, -f, "flock --exclusive --timeout [0-9]+ /run/lock/orbit-dnsmasq.lock"]
       register: holders
       changed_when: false
       failed_when: holders.rc not in [0, 1]
@@ -171,3 +171,61 @@
       register: apparmor
       changed_when: false
       failed_when: apparmor.rc not in [1, 2]
+
+    # The last publication committed: nothing of an unfinished one stays, and the last good set is the installed set.
+    - name: Read the snapshot, the reload marker and the last good set
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+      loop:
+        - /var/lib/orbit/dnsmasq/snapshot
+        - /var/lib/orbit/dnsmasq/reload.pending
+        - /etc/dnsmasq.d/orbit.conf
+        - /var/lib/orbit/dnsmasq/previous/orbit.conf
+        - /var/lib/orbit/dnsmasq/orbit.hosts
+        - /var/lib/orbit/dnsmasq/previous/orbit.hosts
+        - /var/lib/orbit/dnsmasq/orbit.servers
+        - /var/lib/orbit/dnsmasq/previous/orbit.servers
+      register: committed
+    - name: A commit leaves no snapshot and no marker, and the last good set equals the installed one
+      ansible.builtin.assert:
+        that:
+          - not committed.results[0].stat.exists
+          - not committed.results[1].stat.exists
+          - committed.results[2].stat.checksum == committed.results[3].stat.checksum
+          - committed.results[4].stat.checksum == committed.results[5].stat.checksum
+          - committed.results[6].stat.checksum == committed.results[7].stat.checksum
+        quiet: true
+
+    # The vpn Node resolves through its own dnsmasq: the drop-in of prepare.yml sends every name to 127.0.0.55.
+    - name: Flush the caches of the Node's resolver
+      ansible.builtin.command:
+        argv: [resolvectl, flush-caches]
+      changed_when: false
+    - name: Ask the Node's normal resolver for a private name and for a public name
+      ansible.builtin.command:
+        argv: [getent, ahostsv4, "{{ item }}"]
+      register: resolver_answers
+      loop: [gateway.orbit, x.test, example.com]
+      changed_when: false
+    - name: The Node resolves through dnsmasq
+      ansible.builtin.assert:
+        that:
+          - "'10.99.99.2' in resolver_answers.results[0].stdout"
+          - "'10.99.99.9' in resolver_answers.results[1].stdout"
+          - resolver_answers.results[2].rc == 0
+        fail_msg: "{{ resolver_answers.results | map(attribute='stdout') | list }}"
+        quiet: true
+    - name: Ask the Node's normal resolver for the AAAA of an exact name
+      ansible.builtin.command:
+        argv: [resolvectl, query, --type=AAAA, gateway.orbit]
+      register: resolver_aaaa
+      changed_when: false
+      failed_when: false
+    - name: An exact name has no AAAA answer through the resolver either
+      ansible.builtin.assert:
+        that:
+          - resolver_aaaa.rc != 0
+          - "'does not have any RR' in resolver_aaaa.stderr"
+        fail_msg: "{{ resolver_aaaa.stdout }} {{ resolver_aaaa.stderr }}"
+        quiet: true

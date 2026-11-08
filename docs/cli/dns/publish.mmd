@@ -33,7 +33,8 @@ sequenceDiagram
   %%> How:
   %%> - one Ansible phase reads, changes and checks the Node in one run
   %%> - a Swamp worker reaches the Node over SSH
-  %%> - the phase holds the Node's dnsmasq lock from the first read to the last write
+  %%> - the phase holds the Node's dnsmasq lock from the first read to the end of any recovery
+  %%> - the lock holder outlives the step timeout plus the cutover, so a killed phase never lets a second one in early
   alt revision is newer than installed
     %% path: newer-revision
     Note over N: Validate the files<br/>dnsmasq --test
@@ -41,9 +42,14 @@ sequenceDiagram
     %%> - checks the new files in a temporary folder before anything is replaced
     %%> On failure:
     %%> - nothing is installed and the phase fails with `dns.config_invalid`
+    Note over N: Snapshot the Node
+    %%> What it does:
+    %%> - before the first change, saves the files, the unit states and who holds the listen addresses under `snapshot/`
+    %%> - a snapshot that exists is reused, never overwritten, until a publication commits
+    %%> - writes `reload.pending`: a reload is owed until the commit
     Note over N: Install changed files
     %%> What it does:
-    %%> - saves the installed files as the last good set, then replaces only the files whose content changed, each in one rename
+    %%> - replaces only the files whose content changed, each in one rename
     alt orbit.conf is unchanged
       %% path: reload
       Note over N: Reload dnsmasq<br/>SIGHUP
@@ -55,16 +61,25 @@ sequenceDiagram
       Note over N: Restart dnsmasq
       %%> When:
       %%> - a TLD is added, changed or removed; dnsmasq reads `orbit.conf` only at start
-      %%> - also when an earlier restart failed after the file was installed
+      %%> - also when an earlier restart failed, or dnsmasq is down: the copy it started with is deleted before and written after
+      %%> - the old listener stops and dnsmasq restarts in one detached command, so the address is without an owner for one restart only
     end
     Note over N: Check the answers<br/>dig on the VPN address
     %%> What it does:
     %%> - asks the running dnsmasq for the reserved names and one name per TLD
     %%> - for each exact Route: the A answer, AAAA gives NODATA, and a child name is forwarded
     %%> - fails the phase when an answer differs from the render
+    Note over N: Check the Node resolver<br/>127.0.0.55, getent
+    %%> What it does:
+    %%> - asks the Node's own address 127.0.0.55, where its systemd-resolved sends every name
+    %%> - asks the Node's normal resolver for a private name, a public name and the AAAA of an exact name (NODATA)
     Note over N: Record the revision
     %%> What it does:
     %%> - writes `orbit.revision` last, so a failed run leaves the old revision and a rerun repairs it
+    Note over N: Commit
+    %%> What it does:
+    %%> - the new files become the last good set and the files of the old listener go to `previous/legacy/`
+    %%> - removes `reload.pending`, then the snapshot; a commit that was interrupted is finished by the next publication
   else same or older revision
     %% path: superseded
     Note over N: Skipped — superseded<br/>dns.revision_superseded
@@ -79,19 +94,24 @@ sequenceDiagram
     %%> - the installed revision and whether dnsmasq reloaded, restarted or stayed
   else validation or check fails
     %% path: failed
-    Note over N: Restore last good files
+    Note over N: Restore the snapshot
     %%> What it does:
-    %%> - runs only when the check failed after the install; puts the last good files back and reloads or restarts dnsmasq
+    %%> - runs only when the Node was changed; puts every saved file and unit state back, from the first snapshot of the unfinished work
+    %%> - restarts dnsmasq on the restored files and starts the old listener again
     %%> - a `dns.config_invalid` refusal installed nothing, so there is nothing to restore
+    Note over N: Check the recovery<br/>dig UDP and TCP
+    %%> What it does:
+    %%> - asks the restored resolvers on the VPN address and on 127.0.0.55, over UDP and TCP
+    %%> - the result says `recovered: true`; when a task or an answer fails it says `recovered: false` and `dns.rollback_failed`
     N--xSW: exit ≠ 0
     %%> When:
     %%> - dnsmasq refuses the files (`dns.config_invalid`), SSH fails, or an answer differs from the render (`dns.check_failed`)
     %%> On the Node:
-    %%> - the phase restores the last good files and reloads or restarts dnsmasq; a rerun renders and writes the whole state again
+    %%> - the phase restores the snapshot; a failed recovery keeps the snapshot, and the next run starts from it
   end
   Note over SW: Report the result
   %%> What it does:
-  %%> - prints the phase's `result.json` (`{revision, dnsmasq}`, or `{error_code}`), also after a failed phase
+  %%> - prints the phase's `result.json` (`{revision, dnsmasq}`, or `{error_code, recovered}`), also after a failed phase
   %%> - this is the terminal step the Gateway reads
   Note over SW: Remove the run folder
   %%> What it does:

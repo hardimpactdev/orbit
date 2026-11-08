@@ -51,7 +51,7 @@ Checked with dnsmasq 2.92 on scratch ports. Nothing live was touched.
 | Add or remove an exact Route | `SIGHUP` re-reads both files | No restart. The answer, NODATA and the child forward all change on SIGHUP alone. |
 | Add, change or remove a TLD | A new `orbit.conf` and a restart | A regression: every name stops during the restart. A TLD changes rarely. |
 | TTL of 30 seconds, which the 31-second Route grace wait relies on | `local-ttl=30` in `orbit.conf` | Same |
-| Uplink resolvers, bind address, the `ubuntu-fan` snippet | The phase reads the uplink resolvers, binds with `listen-address` and `bind-dynamic`, and moves the snippet away | Same, as [Private DNS](/reference/private-dns#upstream-resolvers) describes |
+| Uplink resolvers, bind address, the `ubuntu-fan` snippet, the Node's own resolver, `domain-needed`, `bogus-priv`, `local=/orbit/`, `vpn.orbit` | The phase reads the uplink resolvers, binds with `listen-address` and `bind-dynamic`, also on `127.0.0.55` where the vpn Node's own resolver points, and moves the snippet away. `orbit.conf` keeps the three options of the old backend, and the Gateway renders `vpn.orbit` | Same, as [Private DNS](/reference/private-dns#upstream-resolvers) describes |
 | Peers send only Orbit names to private DNS | The Gateway renders the routing domains and `fleet.peer_dns` applies them | Unchanged |
 | **Answers per caller** | dnsmasq cannot. `localise-queries` keys on the receiving interface, and every WireGuard query arrives on `orbit`. | **Lost on the vpn Node** |
 
@@ -75,14 +75,14 @@ The render is a function of rows. A change stores the row state that decides inc
 
 ### One phase
 
-`swamp/ansible/dns-publish.yml` renders `orbit.conf`, `orbit.hosts` and `orbit.servers` from the data with Jinja templates. It runs under the existing `/run/lock/orbit-dnsmasq.lock` for the whole read, compare and install:
+`swamp/ansible/dns-publish.yml` renders `orbit.conf`, `orbit.hosts` and `orbit.servers` from the data with Jinja templates. It runs under the existing `/run/lock/orbit-dnsmasq.lock` for the whole publication and its recovery:
 
 1. Skip when the revision is not newer than `orbit.revision`. This is a successful skip with the code `dns.revision_superseded`.
 2. Validate the files in a temporary folder with `dnsmasq --test` on a temporary `orbit.conf` that names the temporary hosts and servers files. A refusal fails the phase with `dns.config_invalid`, and nothing is installed.
-3. Save the installed files as the last good set. On the first run the installed set is the Node's current dnsmasq files, including the files of the old listener setup. Then install the files whose content changed, each in one rename.
-4. Reload with SIGHUP when `orbit.conf` equals `orbit.conf.loaded`, the copy dnsmasq last started with. Otherwise restart, then copy it to `orbit.conf.loaded`. A restart that failed on an earlier run is repaired by the next newer revision.
-5. Check with `dig`: each reserved name, one name per TLD, and for each exact Route its A answer, AAAA NODATA and a child name that is forwarded. When the check fails, restore the last good files, reload or restart dnsmasq to match them, and fail the phase with `dns.check_failed`.
-6. Write `orbit.revision`.
+3. Take a snapshot before the first change: the files, the unit states of dnsmasq and the old listener, and who holds the listen addresses. Reuse an existing snapshot, never overwrite it. Write `reload.pending`. Then install the files whose content changed, each in one rename.
+4. Reload with SIGHUP when `orbit.conf` equals `orbit.conf.loaded`, the copy dnsmasq last started with, and restart otherwise. Delete the copy before a restart and write it after.
+5. Check with `dig` on the VPN address and on `127.0.0.55`, then through the Node's normal resolver: reserved names, one name per TLD, each exact Route (A, AAAA NODATA, a forwarded child), a public name.
+6. Write `orbit.revision`, then commit: the new files become the last good set, `reload.pending` and the snapshot go. A failed check restores the snapshot and checks the restored resolvers.
 
 A Molecule scenario tests the phase and its templates. Publications to one Node run one at a time. Each takes a few seconds, and an older one skips at step 1.
 
@@ -105,7 +105,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 1. Molecule tests the phase and its templates on a scratch Node: every row of the table above, the reload and restart choice, the superseded skip, and the restore of the last good files.
 2. A rehearsal on a task VM fleet runs the whole flow, from a Route change to the answers.
 3. On the live vpn Node, a comparison script queries every private name, for A and AAAA, against the listener and a second dnsmasq with the rendered files on a spare port. It prints each difference name by name. The only differences allowed are the AAAA fix and nested TLDs.
-4. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches. The listener code is already gone, so the rollback is the last good set the phase saved before its first install.
+4. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches. The listener code is already gone, so a rollback after the cutover restores the last committed rendered files; a failed cutover restores the old listener from the snapshot.
 5. The restart gap of a TLD change is measured with a query loop, and the number goes into this ADR.
 
 ## Rejected alternatives
@@ -121,9 +121,15 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - AAAA for an exact Route gives NODATA. It no longer leaks a public IPv6 address.
 - A TLD change restarts dnsmasq, so every name stops for the length of the restart. The measured gap goes into this section after the rehearsal.
 - Parallel publications are safe because each one writes a whole state and the newest revision wins. A failed run leaves its rows in the database, and the next publication renders them.
-- Parallel publications are safe, but a restore keeps the revision it took at admission, and a publication admitted after it takes a newer one. The Node then skips the restore as superseded. After the Gateway projects a failed `cluster.router_set` or `instance.transfer` into the rows, it queues one fresh `dns.publish` (`PublishPrivateDns`), so the newest render always holds the rolled-back rows.
-- A phase that is killed during a restart (the 300-second timeout of its Swamp step, a worker crash) cannot leave the old listener stopped and dnsmasq not started: the stop and the restart are one detached command on the Node. The phase deletes `orbit.conf.loaded` before it restarts and writes it after, so a run that dies in between is repaired by the next publication, which finds no loaded copy and restarts. DNS can be down until that publication.
-- The rollback is the last good set that the phase saved before its first install. The cutover keeps the old listener's files in `previous/legacy/` but deletes its release in `/var/lib/orbit/private-dns`, so a rollback after a successful cutover restores rendered files only and cannot restart the old listener. A cutover that fails still puts the listener back, because the release goes only after the check passes. This is intended: the listener code is deleted.
+- A restore keeps the revision it took at admission, and a later publication takes a newer one, so the Node skips the restore. After a failed `cluster.router_set`, `cluster.router_unset` or `instance.transfer` is stored, the Gateway queues one fresh `dns.publish` (`PublishPrivateDns`).
+- The first snapshot is the state to go back to until a publication commits. A killed first cutover followed by a failed retry restores the original old listener setup, not the candidate.
+- A failed recovery keeps the snapshot and says `dns.rollback_failed` with `recovered: false`. The next run starts from the snapshot. The recovery checks that the restored resolvers answer over UDP and TCP, not what they answer.
+- The stop of the old listener and the restart of dnsmasq are one detached command. A phase that is killed meanwhile (the 300-second step timeout, a worker crash) leaves a running dnsmasq, and the next publication finds no `orbit.conf.loaded` and restarts.
+- The lock holder expires after 420 seconds: the step timeout, the 90-second cutover budget and a margin. The next publication waits 150 seconds, longer than a killed phase's holder has left. DNS can be down until a killed run's successor ends.
+- `reload.pending` makes the retry of a killed record publication reload dnsmasq although the files match.
+- The vpn Node's own resolver points at `127.0.0.55`, which the new dnsmasq also serves. The end check asks it and the Node's normal resolver, so a Node that resolves nothing fails the phase.
+- The rollback is the last committed set. The cutover keeps the old listener's files in `previous/legacy/` and deletes its release in `/var/lib/orbit/private-dns`, so a rollback after a successful cutover cannot restart the old listener. A failed cutover still can. This is intended: the listener code is deleted.
+- The handover gap of the first cutover is measured by the Molecule dig loop (bound 3,000 ms). The measured number goes into this section after the rehearsal on Ubuntu.
 
 ## Affects
 

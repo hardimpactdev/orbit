@@ -2,7 +2,7 @@
 # One question to the running dnsmasq, and what it must answer: a status, the addresses it must give, and the addresses it must not.
 - name: "Ask {{ query.name }} {{ query.type }}"
   ansible.builtin.command:
-    argv: [dig, "@{{ query.server | default(dns_address) }}", -p, "{{ dns_port | default(53) }}", +noall, +comments, +answer, +tries=1, +time=3, "{{ query.name }}", "{{ query.type }}"]
+    argv: [dig, "@{{ query.server | default(dns_address) }}", -p, "{{ dns_port | default(53) }}", +noall, +comments, +answer, +tries=1, +time=3, "{{ '+tcp' if query.tcp | default(false) else '+notcp' }}", "{{ query.name }}", "{{ query.type }}"]
   register: dig_answer
   changed_when: false
   failed_when: false

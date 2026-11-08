@@ -36,3 +36,4 @@ scenario:
     - prepare
     - converge
     - verify
+    - cleanup

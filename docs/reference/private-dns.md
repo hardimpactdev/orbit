@@ -119,33 +119,40 @@ A publication admitted after that holds a newer revision still, and the Node the
 
 ### The phase
 
-The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run. It first prepares the change:
+The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run and any recovery. The holder expires after 420 seconds, longer than the 300-second timeout of the Swamp step plus the 90-second cutover budget. The next publication waits up to 150 seconds. The numbers are in `swamp/ansible/vars/dns.yml`, and a test keeps them consistent.
+
+The phase first prepares the change:
 
 1. It skips a revision that is not newer than `orbit.revision`, and succeeds with `dns.revision_superseded`.
 2. It renders the files in a temporary folder and runs `dnsmasq --test` on them. A refusal fails with `dns.config_invalid` and installs nothing.
-3. It saves the installed files as the last good set and installs the files whose content changed, each in one rename.
+3. It takes a snapshot of the files, the unit states and the holders of the listen addresses, unless one exists. It writes `reload.pending`, then installs the files whose content changed, each in one rename.
 
 Then it applies the change. It compares `orbit.conf` with `orbit.conf.loaded`, the copy dnsmasq last started with:
 
-- An equal file gets SIGHUP.
+- An equal file gets SIGHUP. A `reload.pending` from a run that was killed after the install also gets one.
 - A changed file, a missing copy or a dnsmasq that is not running gets a restart.
 - For a restart, the phase deletes the copy first. Then one detached command stops the old listener and restarts dnsmasq.
 - The phase writes the copy again after the restart succeeded. A failed run deletes it, so the next publication restarts dnsmasq.
 
 Last it checks the result:
 
-1. It asks the running dnsmasq for the reserved names and one name per TLD.
+1. It asks the running dnsmasq on the VPN address for the reserved names and one name per TLD.
 2. For each exact Route it asks for the A answer, for NODATA on AAAA, and for a forwarded child name.
-3. A mismatch restores the last good files and fails with `dns.check_failed`.
-4. It writes `orbit.revision`.
+3. It asks the Node's own address `127.0.0.55`, then the Node's normal resolver: a private name, a public name, and the AAAA of an exact name.
+4. A mismatch restores the snapshot and fails with `dns.check_failed`.
+5. It writes `orbit.revision`, then commits: the new files become the last good set, and `reload.pending` and the snapshot go.
 
-An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart.
+The recovery after a failure that changed the Node puts the snapshot back and starts the old listener units that ran. It asks the restored resolvers over UDP and TCP, on the VPN address and on `127.0.0.55`. The result then says `recovered: true`. When a task or an answer fails, it says `recovered: false` with `dns.rollback_failed` and the cause, and the snapshot stays. The check shows that the restored resolvers answer, not what they answer.
 
-The first publication on a Node that still runs the old listener moves the listener's files to `previous/legacy/` and deletes `/var/lib/orbit/private-dns`, the listener release. A rollback after that restores the last good rendered files. It cannot restart the old listener, because its code is gone.
+An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart. The measured handover gap of the first cutover goes here after the rehearsal on Ubuntu.
+
+The first publication on a Node that still runs the old listener moves the listener's files to `previous/legacy/` and deletes `/var/lib/orbit/private-dns`, the listener release. A rollback after a successful cutover restores the last good rendered files. It cannot restart the old listener, because its code is gone. A cutover that fails still restores the old listener from its snapshot.
 
 ### Upstream resolvers
 
 dnsmasq sets `no-resolv` and forwards only to the IPv4 resolvers that the `vpn` Node itself uses on its uplink. The phase reads them from `/run/systemd/resolve/resolv.conf`. When that file lists none, it reads the DHCP lease of the default-route interface. It skips loopback addresses and the `orbit` interface, so forwarding never returns to VPN DNS. When it finds no resolver, it uses `1.1.1.1` and `8.8.8.8`.
+
+The vpn Node's own resolver keeps `127.0.0.55`: its `systemd-resolved` drop-in sends every name there, so `orbit.conf` listens on that address too. The file also keeps `domain-needed`, `bogus-priv` and `local=/orbit/` from the old backend, and the Gateway renders `vpn.orbit`.
 
 The phase also moves the stock `/etc/dnsmasq.d/ubuntu-fan` snippet to `/var/lib/orbit/dnsmasq/disabled`, because it would add listen addresses beside `bind-dynamic`.
 
