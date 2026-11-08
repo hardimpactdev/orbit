@@ -15,7 +15,7 @@ The `database-server-update` fixtures replay [`database:server:update --require-
 
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
-The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists.
+The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and detail fixtures record `cluster_name` alongside `cluster_id`, and `roles` contains assignment objects with `id`, `role`, `status`, `failed_step` and `error_code`. The SDK and CLI replay those objects without replacing them with role names.
 
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 

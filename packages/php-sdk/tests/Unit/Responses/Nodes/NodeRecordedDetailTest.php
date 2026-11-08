@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
+
+it('preserves the named Cluster and complete assignment lifecycle in node detail and JSON', function (): void {
+    $roles = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $roles[] = [
+            'id' => $index + 1, 'role' => ['app-dev', 'app-prod', 'database', 'vpn'][$index], 'status' => $status,
+            'failed_step' => $status === 'failed' ? 'converge:database' : null,
+            'error_code' => $status === 'failed' ? 'node.role_failed' : null,
+        ];
+    }
+    $node = NodeResponse::fromGatewayData([
+        'id' => 9, 'name' => 'retained', 'cluster_id' => 7, 'cluster_name' => 'development',
+        'roles' => $roles, 'status' => 'failed', 'failed_step' => 'converge:apps', 'error_code' => 'node.enrollment_failed',
+    ], 'recorded-request');
+
+    expect($node->clusterName)->toBe('development')->and($node->clusterId)->toBe(7)
+        ->and($node->roles)->toHaveCount(4)->and($node->roles[2])->toBeInstanceOf(NodeRoleAssignmentResponse::class)
+        ->and($node->roles[2]->requestId)->toBe('recorded-request')
+        ->and($node->toArray()['roles'])->toBe($roles)
+        ->and($node->toArray()['cluster_name'])->toBe('development')
+        ->and($node->toArray()['failed_step'])->toBe('converge:apps')
+        ->and($node->toArray()['error_code'])->toBe('node.enrollment_failed');
+});
+
+it('does not silently erase a malformed assignment list', function (mixed $roles): void {
+    expect(fn (): NodeResponse => NodeResponse::fromGatewayData(['roles' => $roles], 'recorded-request'))
+        ->toThrow(GatewayApiException::class);
+})->with([
+    'null container' => [null],
+    'scalar container' => ['app-dev'],
+    'non-list container' => [['role' => 'app-dev']],
+    'retired string assignment' => [['app-dev']],
+    'null assignment' => [[null]],
+    'non-object assignment' => [[[1, 2]]],
+    'missing identity' => [[['role' => 'app-dev', 'status' => 'active']]],
+    'invalid identity' => [[['id' => 0, 'role' => 'app-dev', 'status' => 'active']]],
+    'invalid role' => [[['id' => 1, 'role' => '../secret', 'status' => 'active']]],
+    'invalid status' => [[['id' => 1, 'role' => 'app-dev', 'status' => 'done']]],
+    'invalid failure' => [[['id' => 1, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => ['secret']]]],
+]);
+
+it('preserves absent Cluster and role detail without inventing values', function (): void {
+    $node = NodeResponse::fromGatewayData(['id' => 9, 'name' => 'sparse'], 'recorded-request');
+
+    expect($node->clusterName)->toBeNull()->and($node->roles)->toBe([])
+        ->and($node->toArray()['cluster_name'])->toBeNull()
+        ->and($node->toArray()['roles'])->toBe([]);
+});

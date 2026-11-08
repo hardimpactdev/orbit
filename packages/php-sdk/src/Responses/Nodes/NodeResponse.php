@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Nodes;
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
 final readonly class NodeResponse
 {
-    /** @param list<string> $roles */
+    /** @param list<NodeRoleAssignmentResponse> $roles */
     public function __construct(
         public int $id,
         public string $name,
@@ -35,6 +36,7 @@ final readonly class NodeResponse
         public ?NodeSettings $settings = null,
         public ?NodeUpdatingResponse $updating = null,
         public ?NodeAgentResponse $agent = null,
+        public ?string $clusterName = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -47,6 +49,7 @@ final readonly class NodeResponse
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
+            clusterName: is_string($data['cluster_name'] ?? null) ? $data['cluster_name'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             platform: is_string($data['platform'] ?? null) ? $data['platform'] : null,
@@ -71,7 +74,7 @@ final readonly class NodeResponse
                 : null,
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            roles: self::stringList($data['roles'] ?? []),
+            roles: self::assignments(array_key_exists('roles', $data) ? $data['roles'] : [], $requestId),
             requestId: $requestId,
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
             settings: self::settings($data['settings'] ?? null),
@@ -88,6 +91,7 @@ final readonly class NodeResponse
         $data = [
             'id' => $this->id,
             'cluster_id' => $this->clusterId,
+            'cluster_name' => $this->clusterName,
             'name' => $this->name,
             'status' => $this->status,
             'platform' => $this->platform,
@@ -104,7 +108,7 @@ final readonly class NodeResponse
             'ssh_host_fingerprint' => $this->sshHostFingerprint,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
-            'roles' => $this->roles,
+            'roles' => array_map(static fn (NodeRoleAssignmentResponse $role): array => $role->toArray(), $this->roles),
             'settings' => $this->settings?->toArray(),
             'updating' => $this->updating?->toArray(),
             'agent' => $this->agent?->toArray(),
@@ -137,25 +141,31 @@ final readonly class NodeResponse
         return NodeSettings::fromGatewayData($settings);
     }
 
-    /**
-     * @return list<string>
-     */
-    private static function stringList(mixed $value): array
+    /** @return list<NodeRoleAssignmentResponse> */
+    private static function assignments(mixed $value, string $requestId): array
     {
-        if (! is_array($value)) {
-            return [];
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new GatewayApiException('Gateway response contains invalid node role assignments.', requestId: $requestId);
         }
 
         $result = [];
 
         foreach ($value as $item) {
-            if (! is_string($item)) {
-                continue;
+            if (! self::stringKeyedMap($item)) {
+                throw new GatewayApiException('Gateway response contains an invalid node role assignment.', requestId: $requestId);
             }
 
-            $result[] = $item;
+            $result[] = NodeRoleAssignmentResponse::fromGatewayData($item, $requestId);
         }
 
         return $result;
+    }
+
+    /** @phpstan-assert-if-true array<string, mixed> $value */
+    private static function stringKeyedMap(mixed $value): bool
+    {
+        return is_array($value)
+            && ! array_is_list($value)
+            && array_all(array_keys($value), static fn (int|string $key): bool => is_string($key));
     }
 }

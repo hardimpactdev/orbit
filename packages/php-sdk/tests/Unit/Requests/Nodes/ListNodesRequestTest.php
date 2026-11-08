@@ -84,6 +84,7 @@ function list_nodes_gateway_data(): array
         [
             'id' => 4,
             'cluster_id' => 3,
+            'cluster_name' => 'development',
             'name' => 'app-dev',
             'status' => 'active',
             'platform' => 'ubuntu',
@@ -100,7 +101,7 @@ function list_nodes_gateway_data(): array
             'ssh_host_fingerprint' => 'SHA256:app-dev',
             'failed_step' => null,
             'error_code' => null,
-            'roles' => ['app-dev'],
+            'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
             'settings' => null,
             'updating' => [
                 'kind' => 'gateway_release',
@@ -112,6 +113,7 @@ function list_nodes_gateway_data(): array
         [
             'id' => 7,
             'cluster_id' => null,
+            'cluster_name' => null,
             'name' => 'app-prod',
             'status' => 'failed',
             'platform' => null,
@@ -128,7 +130,7 @@ function list_nodes_gateway_data(): array
             'ssh_host_fingerprint' => null,
             'failed_step' => 'wireguard-server-validate',
             'error_code' => 'vpn.server_config_invalid',
-            'roles' => ['app-prod'],
+            'roles' => [['id' => 1, 'role' => 'app-prod', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
             'settings' => null,
             'updating' => null,
             'agent' => null,

@@ -23,7 +23,15 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": null,
                 "error_code": null,
-                "roles": ["gateway"],
+                "roles": [
+                    {
+                        "id": 1,
+                        "role": "gateway",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ],
                 "settings": null,
                 "updating": {
                     "kind": "gateway_release",
@@ -50,7 +58,22 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": null,
                 "error_code": null,
-                "roles": ["app-dev", "database"],
+                "roles": [
+                    {
+                        "id": 2,
+                        "role": "app-dev",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    },
+                    {
+                        "id": 3,
+                        "role": "database",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ],
                 "settings": null,
                 "updating": null
             },
@@ -73,7 +96,15 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": "install_runtime",
                 "error_code": "node.provisioning_failed",
-                "roles": ["app-prod"],
+                "roles": [
+                    {
+                        "id": 4,
+                        "role": "app-prod",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ],
                 "settings": null,
                 "updating": null
             },

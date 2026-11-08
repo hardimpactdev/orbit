@@ -74,7 +74,7 @@ describe('node:list', function (): void {
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
         expect(preg_replace('/[ \t]+/', ' ', $output))
-            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
+            ->toContain('│ 2 │ app-dev │ active │ — │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
         expect($output)->toContain('Request ID: '.request_id());
     });
 
@@ -120,7 +120,7 @@ describe('node:list', function (): void {
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
         expect(preg_replace('/[ \t]+/', ' ', $output))
-            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
+            ->toContain('│ 2 │ app-dev │ active │ — │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
     });
 
     it('reports when no nodes are registered', function (): void {
@@ -223,9 +223,9 @@ describe('node:show', function (): void {
         expect($status)->toBe(0);
         foreach ([
             'Node: app-dev', 'Status active', 'Roles app-dev', 'SSH orbit@94.237.40.75:22',
-            'Cluster 3', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
+            'Cluster development', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
             'WireGuard endpoint override 10.0.0.2:51820', 'DNS server override 10.0.0.2',
-            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Projects path —',
+            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps folder —',
             'Access to app-dev (#3), app-prod (#5)', 'Accessible by maintainer (#4)',
             'Request ID: '.request_id(),
         ] as $field) {
@@ -274,6 +274,7 @@ describe('node:show', function (): void {
         $this
             ->artisan('node:show', ['node' => $nodeId])
             ->expectsOutputToContain('Node ID must be a positive integer.')
+            ->expectsOutputToContain('Code: node.id_invalid')
             ->assertExitCode(1);
 
         expect($mockClient->getLastPendingRequest())->toBeNull();
@@ -281,6 +282,9 @@ describe('node:show', function (): void {
         'non-numeric' => 'app-dev',
         'zero' => '0',
         'negative' => '-1',
+        'fractional' => '1.5',
+        'overflow' => '99999999999999999999999999999999',
+        'option-like' => '--help',
     ]);
 
     it('fails clearly when no gateway profile is active', function (): void {
@@ -343,6 +347,7 @@ function list_node_payload(): array
     return [
         'id' => 2,
         'cluster_id' => 3,
+        'cluster_name' => 'development',
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => 'linux',
@@ -359,9 +364,10 @@ function list_node_payload(): array
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
         'failed_step' => null,
         'error_code' => null,
-        'roles' => ['app-dev'],
+        'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
     ];
 }
 
@@ -420,6 +426,7 @@ function show_node_expected_json_payload(): array
     return [
         'id' => 2,
         'cluster_id' => 3,
+        'cluster_name' => 'development',
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => 'linux',
@@ -436,9 +443,10 @@ function show_node_expected_json_payload(): array
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
         'failed_step' => null,
         'error_code' => null,
-        'roles' => ['app-dev'],
+        'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
         'request_id' => request_id(),
         'access' => [
             'can_access' => [

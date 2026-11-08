@@ -54,7 +54,9 @@ class Fleet:
         """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call is the `orbit` installed on that
         Node, run as its managed user: the Gateway sees that Node as the caller."""
         started = time.time()
-        words = [*args, '--json'] if form == 'json' else list(args)
+        words = list(args)
+        if form == 'json':
+            words.insert(words.index('--') if '--' in words else len(words), '--json')
         if node:
             self.prepare_node_cli(node)
             completed = self.incus_exec(node, [*NODE_ORBIT, *words], timeout)

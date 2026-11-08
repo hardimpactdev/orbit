@@ -49,7 +49,7 @@ final class ListNodesCommand extends NodeCommand
                 $node->name,
                 $node->status,
                 $node->agent?->stateLabel(),
-                $node->roles === [] ? null : implode(', ', $node->roles),
+                NodeOutput::roles($node->roles),
                 $node->platform ?? null,
                 NodeOutput::tld($node->tld),
                 $node->user,

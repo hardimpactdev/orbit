@@ -278,7 +278,7 @@ function NodeOverview({ fleet, node }: { fleet: Fleet; node: Node }) {
                     properties={[
                         { name: "Name", value: node.name },
                         { name: "Status", value: node.status, warn: !nodeHealthy(node) },
-                        { name: "Roles", value: node.roles },
+                        { name: "Roles", value: node.roles.map((assignment) => assignment.role) },
                         { name: "Platform", value: node.platform },
                         { name: "Architecture", value: node.architecture },
                         { name: "TLD", value: node.tld },

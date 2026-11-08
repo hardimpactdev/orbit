@@ -25,7 +25,7 @@ STEPS = {
     'fault': (('setup', 'act'), set(), {'on', 'command', 'fail_after', 'clear'}),
     'busy_node': (('setup',), {'on'}, {'command', 'seconds'}),
     'ipv6_addresses': (('setup',), {'nodes'}, set()),
-    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect', 'as'}),
+    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect', 'as', 'save'}),
     'probe': (SECTIONS, {'from', 'to', 'port', 'expect'}, {'id', 'proto', 'family'}),
     'ufw': (('expect',), {'on', 'rows'}, {'family', 'absent'}),
     'record': (('expect',), {'list'}, {'node', 'where', 'count', 'min', 'order', 'args', 'section'}),
@@ -35,12 +35,14 @@ STEPS = {
     'agent_report': (('setup',), {'node'}, set()),
     'node_down': (('setup',), {'node'}, set()),
     'node_access_remove': (('setup',), {'consumer', 'serving'}, set()),
+    'node_fixture': (('setup',), {'kind', 'as'}, {'consumer', 'serving'}),
+    'recorded_request': (('act',), {'node', 'caller', 'expect'}, {'agent', 'age'}),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'negative', 'timeout', 'node', 'exclusive'}
 DEFAULT_PARALLEL = 4
 # Steps that change something every case shares (a Node's `ufw`, the Gateway lock, a Node's agent, the addresses): the case runs alone.
-GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses'}
+GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 # Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
 # Steps that name the Node they work on under `on` or `node`.
 NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor'}
@@ -241,6 +243,10 @@ def bound_names(steps, extra):
     """Names the listener steps bind, plus the names the case brings."""
     names = set(extra)
     for step in steps:
+        if step.name == 'node_fixture':
+            names.update(f"{step.args['as']}.{part}" for part in ('id', 'name', 'cluster_name', 'tld'))
+        if step.name == 'cli':
+            names.update((step.args.get('save') or {}).values())
         if step.name == 'listener':
             names.update(step.args.get('ports') or [])
             if step.args.get('block'):

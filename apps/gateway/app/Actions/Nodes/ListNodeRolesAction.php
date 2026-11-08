@@ -20,8 +20,7 @@ final readonly class ListNodeRolesAction
         ));
 
         return $node
-            ->roles()
-            ->get()
+            ->roles
             ->sort(static function (NodeRole $first, NodeRole $second) use ($order): int {
                 $roleOrder = $order[$first->role->value] <=> $order[$second->role->value];
 

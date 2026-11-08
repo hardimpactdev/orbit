@@ -25,7 +25,13 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": [
-                    "app-dev"
+                    {
+                        "id": 1,
+                        "role": "app-dev",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
                 ],
                 "settings": null,
                 "updating": null,
@@ -33,7 +39,8 @@
                 "agent": {
                     "state": "online",
                     "since": null
-                }
+                },
+                "cluster_name": "development"
             },
             {
                 "id": 1,
@@ -55,7 +62,13 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": [
-                    "gateway"
+                    {
+                        "id": 2,
+                        "role": "gateway",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
                 ],
                 "settings": null,
                 "updating": null,

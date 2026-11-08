@@ -205,7 +205,7 @@ export function createDemoGateway() {
             ? [wireguardMembers(id)]
             : [publicSshRecovery, wireguardMembers(id)];
 
-        if (nodeById(id)?.roles?.includes("gateway")) {
+        if (nodeById(id)?.roles?.some((assignment) => assignment.role === "gateway")) {
             rows.push(gatewayHttps);
         }
 
@@ -1191,7 +1191,13 @@ export function createDemoGateway() {
                         ...template,
                         id: Math.max(...nodes.map((node) => node.id)) + 1,
                         name: String(body.name),
-                        roles,
+                        roles: roles.map((role, index) => ({
+                            id: index + 1,
+                            role,
+                            status: "active",
+                            failed_step: null,
+                            error_code: null,
+                        })),
                         tld: typeof body.tld === "string" ? body.tld : null,
                         status: "provisioning",
                     };

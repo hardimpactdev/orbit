@@ -20,6 +20,8 @@ A Node's `updating` field is set only while a Gateway release runs on the Gatewa
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
 
+Node list and detail responses retain every role assignment, with its ID, role, lifecycle status, failed step and error code. They use the same assignment shape as `node:role:list`, not a list of role names. Human output adds non-active statuses and any retained failure detail to each role name. `node:show` also includes the recorded Cluster name; these reads do not contact the Node.
+
 ## Commands
 
 | Command | Result |

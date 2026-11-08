@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Data\Nodes;
 
+use App\Actions\Nodes\ListNodeRolesAction;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\Nodes\NodeUpdates;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Support\ValidatedData;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -18,7 +19,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class NodeData extends Data
 {
-    /** @param list<string> $roles */
+    /** @param list<NodeRoleAssignmentData> $roles */
     public function __construct(
         public int $id,
         public ?int $clusterId,
@@ -43,6 +44,7 @@ final class NodeData extends Data
         public ?NodeUpdatingData $updating = null,
         public bool $swampWorkerSelected = false,
         public ?NodeAgentData $agent = null,
+        public ?string $clusterName = null,
     ) {}
 
     /**
@@ -88,27 +90,15 @@ final class NodeData extends Data
             updating: $updating,
             swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
             agent: app(NodeAgentLiveness::class)->for($node),
+            clusterName: $node->cluster?->name,
         );
     }
 
-    /** @return list<string> */
+    /** @return list<NodeRoleAssignmentData> */
     private static function roles(Node $node): array
     {
-
-        $roleOrder = array_flip(array_map(
-            static fn (RoleName $role): string => $role->value,
-            RoleName::cases(),
-        ));
-        $roles = [];
-        foreach ($node->roles as $nodeRole) {
-            $roles[] = $nodeRole->role;
-        }
-        usort(
-            $roles,
-            static fn (RoleName $left, RoleName $right): int => $roleOrder[$left->value]
-                <=> $roleOrder[$right->value],
-        );
-
-        return array_map(static fn (RoleName $role): string => $role->value, $roles);
+        return array_values(app(ListNodeRolesAction::class)->execute($node)
+            ->map(static fn (NodeRole $role): NodeRoleAssignmentData => NodeRoleAssignmentData::fromModel($role))
+            ->all());
     }
 }

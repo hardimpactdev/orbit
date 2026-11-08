@@ -18,7 +18,7 @@ final readonly class ListNodesAction
     public function handle(Node $consumer): Collection
     {
         return Node::query()
-            ->with('roles')
+            ->with('roles', 'cluster')
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereIn('id', $this->access->accessibleNodeIds($consumer)),

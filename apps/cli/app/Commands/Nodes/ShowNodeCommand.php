@@ -12,6 +12,8 @@ use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
 final class ShowNodeCommand extends NodeCommand
 {
+    private const string INVALID_ID = 'node.id_invalid';
+
     #[\Override]
     protected $signature = 'node:show
         {node : Numeric node ID}
@@ -30,9 +32,13 @@ final class ShowNodeCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+        $nodeId = $this->positiveId('node', 'Node', self::INVALID_ID);
 
         if ($nodeId === null) {
+            if ($this->option('json') !== true) {
+                $this->writeHumanMessage('Code: '.self::INVALID_ID);
+            }
+
             return self::FAILURE;
         }
 
@@ -53,9 +59,9 @@ final class ShowNodeCommand extends NodeCommand
             'ID' => $node->id,
             'Status' => $node->status,
             'Agent' => $node->agent?->label(),
-            'Roles' => $node->roles,
+            'Roles' => NodeOutput::roles($node->roles),
             'SSH' => NodeOutput::sshEndpoint($node),
-            'Cluster' => $node->clusterId,
+            'Cluster' => $node->clusterName,
             'WireGuard' => $node->wireguardIp,
             'LAN' => $node->lanIp,
             'WireGuard public key' => $node->wireguardPublicKey,
@@ -63,7 +69,7 @@ final class ShowNodeCommand extends NodeCommand
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),
             'Platform' => $platform,
-            'Projects path' => $node->settings?->apps?->path,
+            'Apps folder' => $node->settings?->apps?->path,
             'Access to' => NodeOutput::accessList($node->access->canAccess ?? []),
             'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),
         ];

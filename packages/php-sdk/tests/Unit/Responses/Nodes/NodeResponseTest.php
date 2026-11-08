@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 it('preserves the original positional constructor contract', function (): void {
@@ -16,7 +17,7 @@ it('preserves the original positional constructor contract', function (): void {
         22,
         'nckrtl',
         '10.44.0.3',
-        ['app-dev'],
+        [new NodeRoleAssignmentResponse(1, 'app-dev', 'active', null, null, '0198e15c-bf97-7c23-8f1f-61b8fe67a844')],
         '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     );
 
@@ -33,8 +34,8 @@ it('preserves the original positional constructor contract', function (): void {
         ->toHaveKey('ssh_user')
         ->and($response->publicSshPort)
         ->toBe(22)
-        ->and($response->roles)
-        ->toBe(['app-dev'])
+        ->and($response->roles[0]->role)
+        ->toBe('app-dev')
         ->and($response->requestId)
         ->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844')
         ->and($response->platform)
@@ -64,7 +65,7 @@ it('preserves the original named constructor contract', function (): void {
         publicSshPort: 22,
         user: 'orbit',
         wireguardIp: '10.44.0.4',
-        roles: ['app-prod'],
+        roles: [new NodeRoleAssignmentResponse(1, 'app-prod', 'active', null, null, '0198e15d-16c4-7855-8eb2-182b53ad28ba')],
         requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
     );
 
@@ -188,9 +189,10 @@ it('keeps real access in node collections while stripping nested request ids', f
             publicSshPort: 22,
             user: 'orbit',
             wireguardIp: '10.44.0.3',
-            roles: ['app-dev'],
+            roles: [new NodeRoleAssignmentResponse(1, 'app-dev', 'active', null, null, '0198e15c-bf97-7c23-8f1f-61b8fe67a844')],
             requestId: '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
             clusterId: 3,
+            clusterName: 'development',
             lanIp: '10.0.0.3',
             access: new NodeAccessResponse(
                 canAccess: [new NodeAccessNodeResponse(id: 3, name: 'gateway')],
@@ -239,6 +241,7 @@ function node_response_gateway_data(array $overrides = []): array
     return array_replace([
         'id' => 4,
         'cluster_id' => 3,
+        'cluster_name' => 'development',
         'name' => 'app-dev',
         'status' => 'active',
         'public_ssh_host' => '94.237.40.75',
@@ -246,7 +249,7 @@ function node_response_gateway_data(array $overrides = []): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
-        'roles' => ['app-dev'],
+        'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
     ], $overrides);
 }
 
@@ -256,6 +259,7 @@ function node_response_public_data(): array
     return [
         'id' => 4,
         'cluster_id' => 3,
+        'cluster_name' => 'development',
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => null,
@@ -272,7 +276,7 @@ function node_response_public_data(): array
         'ssh_host_fingerprint' => null,
         'failed_step' => null,
         'error_code' => null,
-        'roles' => ['app-dev'],
+        'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
         'settings' => null,
         'updating' => null,
         'agent' => null,
