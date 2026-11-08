@@ -68,14 +68,14 @@ final class SwampRoleUnits
         return "[Unit]\nDescription=Renew Orbit swamp worker connections sequentially\n"
             ."After=orbit-swamp-serve.service\nStartLimitIntervalSec=0\n\n"
             ."[Service]\nType=oneshot\n"
-            ."ExecStart=/usr/bin/timeout 10500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user={$user} -e orbit_node_id={$nodeId}\n"
-            ."TimeoutStartSec=3h\nRestart=on-failure\nRestartSec=5min\nUMask=0077\n";
+            ."ExecStart=/usr/bin/timeout 5370 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user={$user} -e orbit_node_id={$nodeId}\n"
+            ."TimeoutStartSec=90min\nRestart=on-failure\nRestartSec=5min\nUMask=0077\n";
     }
 
     private static function renewalTimer(): string
     {
         return "[Unit]\nDescription=Schedule Orbit swamp worker connection renewal\n\n"
-            ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=1h\nAccuracySec=1s\n\n"
+            ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=5min\nAccuracySec=1s\n\n"
             ."[Install]\nWantedBy=timers.target\n";
     }
 

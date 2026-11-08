@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Domain\Operations\OperationBudgetTable;
 
@@ -28,10 +29,12 @@ it('keeps workers persistent and limits repeated startup failures', function ():
         ->not->toContain('--max-dispatches')->not->toContain('--idle-timeout')->not->toContain('RuntimeMaxSec=');
 });
 
-it('renders one renewal service and one timer for the pair', function (): void {
+it('renders one renewal service and one timer for three permanent workers', function (): void {
     $units = SwampRoleUnits::for('orbit', 209);
 
     expect($units['renewal_service'])->toContain('/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user=orbit -e orbit_node_id=209')
-        ->toContain("TimeoutStartSec=3h\nRestart=on-failure\nRestartSec=5min\n")
-        ->and($units['renewal_timer'])->toContain("OnActiveSec=1min\nOnUnitInactiveSec=1h\n");
+        ->toContain("TimeoutStartSec=90min\nRestart=on-failure\nRestartSec=5min\n")
+        ->and($units['renewal_timer'])->toContain("OnActiveSec=1min\nOnUnitInactiveSec=5min\n");
+
+    expect(NodeRoleRuntimeInput::SwampWorkers)->toBe(['a', 'b', 'c']);
 });
