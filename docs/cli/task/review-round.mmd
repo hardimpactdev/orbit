@@ -35,6 +35,12 @@ sequenceDiagram
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the credentials, never their values
   %%> - two steps of the run call the Gateway: the comment and the push mint their tokens when they start, with the run id of this run
+  opt the previous VM was released
+    SW->>VM: Claim a task place<br/>operation-task-provision
+    %%> What it does:
+    %%> - waits for a task place, up to two hours, then creates a fresh VM from the base at the published task head
+    %%> - records a fresh identity, workspace and Pi session; no review holds a VM
+  end
   opt the VM is parked
     SW->>VM: Resume the VM<br/>operation-task-vm-resume
     %%> What it does:

@@ -29,6 +29,8 @@ A Node's `updating` field is set only while a Gateway release runs on the Gatewa
 
 A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
+Removing task-host settings or changing the bridge or CIDR withdraws the owned DHCP/DNS input rules before saving the patch. Other task-host settings remain record-only. See [Node settings](/reference/node-settings).
+
 ## Commands
 
 | Command | Result |
@@ -54,7 +56,7 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
-Set `task_vms.task_max_vms` through `node:update --task-vms` to cap task-work VM claims on a host. Parked claims count; authenticated CI and base refresh proofs are exempt. See [Task VM fields](/reference/node-settings#task-vm-fields) for the count and resource limits.
+Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-vms`. Each live VM holds one place in its pool until deletion. See [Task VM fields](/reference/node-settings#task-vm-fields).
 
 ## Recorded role assignments
 
@@ -90,7 +92,7 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 
 `node:update` is a partial patch: it changes only the fields you name. The name, the platform, and the task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
-Set `task_vms.ci_only` through `node:update --task-vms=JSON` to admit only authenticated CI proofs and the host’s own refresh proof. CI prefers these hosts. The [host settings reference](/reference/node-settings#task-vm-fields) lists capacity units and validation.
+A host with zero task places and positive CI places serves CI proofs and proofs of its refreshed base. Full pools wait for capacity.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.
 

@@ -15,13 +15,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
+import selection
 import spec as spec_module
 import steps
 
 BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
-STEP_OUTPUT_LIMIT = 4096   # Swamp cuts the output of a step here
-CUT_LINE_BYTES = 40        # room kept for the line that counts what was cut
 
 
 class Run:
@@ -185,6 +184,9 @@ def plan_lines(spec):
 
 def command_plan(args):
     spec = spec_module.load(args.file, args.batches)
+    if args.json:
+        print(json.dumps(selection.definitions(Path(args.file).read_text(), Path(args.batches).read_text())[0], sort_keys=True))
+        return 0
     if args.lines:
         print('\n'.join(plan_lines(spec)))
         return 0
@@ -252,29 +254,9 @@ def schedule(cases, limit, work):
                 yield running.pop(future), future.result()
 
 
-def compact(result):
-    """A failed or unrun result cut down to two short failure messages, for a report that would not fit."""
-    failed = [message[:100] for message in result.get('failed', [])[:2]]
-    return {**result, **({'failed': failed} if failed else {})}
-
-
-def fit(results, limit=STEP_OUTPUT_LIMIT):
-    """The verdict lines that fit in the output of one Swamp step, which cuts at 4096 bytes. The cases that did not pass come first, so a cut
-    never hides one. When the lines do not fit, those cases keep two short messages each; the lines still left out are counted in a last
-    line, and the workflow reports their cases as having printed no verdict."""
-    ordered = sorted(results, key=lambda result: result['verdict'] == 'passed')
-    lines = [verdict_line(result) for result in ordered]
-    if sum(len(line.encode()) + 1 for line in lines) > limit:
-        lines = [verdict_line(compact(result)) if result['verdict'] != 'passed' else line for result, line in zip(ordered, lines)]
-    kept, size = [], 0
-    for index, line in enumerate(lines):
-        cost = len(line.encode()) + 1
-        if size + cost + (0 if index == len(lines) - 1 else CUT_LINE_BYTES) > limit:
-            kept.append(json.dumps({'cut': len(lines) - index}))
-            break
-        kept.append(line)
-        size += cost
-    return kept
+def verdict_lines(results):
+    """Keep every verdict. Swamp stores full outputs as data artifacts; history tails are not reports."""
+    return [verdict_line(result) for result in sorted(results, key=lambda result: result['verdict'] == 'passed')]
 
 
 def command_batch(args):
@@ -296,7 +278,7 @@ def command_batch(args):
     try:
         fleet = fleet_module.from_environment()
     except fleet_module.FleetError as error:
-        print('\n'.join(fit([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
+        print('\n'.join(verdict_lines([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
         return 1
     discovery = round(time.time() - discovered, 2)
 
@@ -307,7 +289,7 @@ def command_batch(args):
             return {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [f'{type(error).__name__}: {error}']}
 
     results = [result for _, result in schedule(cases, limit, work)]
-    print('\n'.join(fit(results)), flush=True)
+    print('\n'.join(verdict_lines(results)), flush=True)
     verdicts = {result['verdict'] for result in results}
     return 1 if 'failed' in verdicts else 2 if 'unrun' in verdicts else 0
 
@@ -336,6 +318,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='runner')
     commands = parser.add_subparsers(dest='command', required=True)
     plan = commands.add_parser('plan', help='print the ordered batches and cases; no fleet')
+    plan.add_argument('--json', action='store_true', help='print canonical expanded case definitions; no fleet')
     plan.add_argument('--steps', action='store_true', help='also print the resolved steps')
     plan.add_argument('--lines', action='store_true', help='print one line a batch, `BATCH SETUP CASE...`, for the workflow')
     case = commands.add_parser('case', help='run one case on the nested fleet')

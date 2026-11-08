@@ -1,0 +1,77 @@
+id: 7fd1d6a7-48e9-477d-a6c4-0d09b9a9d2bd
+name: task-host-firewall-remove
+description: Withdraw the owned task host INPUT rules and prove their absence with one Ansible phase.
+vaults:
+- orbit-control-inputs
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: phase
+  labels: {role: swamp}
+  steps:
+  - name: Write the intent
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input-task-host-retire-" + string(inputs.node_id) }}
+      methodName: write
+      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+  - name: Run the host phase
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Write the intent, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-host-retire-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
+        ignoreExitCode: true
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" -e "run_dir=$ORBIT_RUN" "$ORBIT_ANSIBLE/task-host-firewall-remove.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          # The failed task and its stderr go to stderr; every task banner carries its start time, so a run shows where its time went.
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
+  - name: Check the host phase
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Run the host phase, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: 'steps["Run the host phase"].outputs.exitCode == 0'
+      severity: high
+      message: '${{ steps["Run the host phase"].outputs.exitCode == 124 ? "Run the host phase timed out after 120s" : "Ansible exited with " + string(steps["Run the host phase"].outputs.exitCode) + ": " + (size(steps["Run the host phase"].outputs.stderr) > 3500 ? steps["Run the host phase"].outputs.stderr.substring(size(steps["Run the host phase"].outputs.stderr) - 3500) : steps["Run the host phase"].outputs.stderr) }}'
+- name: cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: phase, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  steps:
+  - name: Remove the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-host-retire-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

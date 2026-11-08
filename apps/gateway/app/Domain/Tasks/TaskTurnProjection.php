@@ -8,14 +8,19 @@ use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
+use App\Domain\Operations\DirectOperationWorkflowInput;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\AgentThread;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records the native result and the board's existing thread observation. */
-final readonly class TaskTurnProjection implements DirectOperationChildProjection, DirectOperationProjection
+final readonly class TaskTurnProjection implements DirectOperationChildProjection, DirectOperationProjection, DirectOperationStartRefusal, DirectOperationWorkflowInput
 {
     public function acceptsParent(Operation $parent): bool
     {
@@ -53,6 +58,24 @@ final readonly class TaskTurnProjection implements DirectOperationChildProjectio
             'execution_secrets' => $operation->input['execution_secrets']];
     }
 
+    public function workflowInput(Operation $operation): array
+    {
+        $input = $this->input($operation);
+        $reference = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
+        $token = TaskVm::forGroup(Task::topLevel()->findOrFail($operation->target_id))?->pi_token;
+        if (! is_string($token) || strlen($token) < 32) {
+            throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
+        }
+        $input['execution_secrets'] = ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $token)];
+
+        return $input;
+    }
+
+    public function refused(Operation $operation): void
+    {
+        TaskVmReentry::refused($operation);
+    }
+
     /**
      * Records what a finished turn reports on the thread it ran on: its token metrics and its final state.
      *
@@ -82,6 +105,9 @@ final readonly class TaskTurnProjection implements DirectOperationChildProjectio
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
             $native = ValidatedData::object($data['result'] ?? []);
+            if (! $terminal) {
+                TaskVmReentry::record($operation, $native);
+            }
             $result = isset($native['turn'])
                 ? ValidatedData::object(json_decode(ValidatedData::string($native['turn']), true, flags: JSON_THROW_ON_ERROR))
                 : [];

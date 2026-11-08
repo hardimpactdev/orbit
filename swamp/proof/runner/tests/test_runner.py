@@ -163,6 +163,16 @@ class CommandTest(unittest.TestCase):
         self.assertIn('  new-restricted-allow', out)
         self.assertIn('  protocols[udp]', out)
 
+    def test_json_plan_exposes_the_expanded_definition_without_diagnostic_locations(self):
+        code, out, _ = self.call(['plan', '--json', '--file', str(CASES)])
+        self.assertEqual(code, 0)
+        definitions = json.loads(out)
+        self.assertIn('new-restricted-allow', definitions)
+        case = definitions['new-restricted-allow']['case']
+        self.assertEqual(case['id'], 'new-restricted-allow')
+        self.assertNotIn('where', case['stages'][0]['act'][0])
+        self.assertIn('args', case['stages'][0]['act'][0])
+
     def test_plan_with_steps_prints_the_resolved_steps(self):
         _, out, _ = self.call(['plan', '--file', str(CASES), '--steps'])
         self.assertIn('listener {"family": 4, "on": "app-dev", "ports": ["port", "control"], "proto": ["tcp"]}', out)
@@ -185,6 +195,15 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(json.loads(out)['verdict'], 'passed')
         self.assertEqual(len(out.strip().splitlines()), 1)
         self.assertIn('evidence', err)
+
+    def test_line_plan_uses_the_original_arguments_and_preserves_whole_batches(self):
+        loaded = runner.spec_module.load(CASES, runner.BATCHES)
+        code, out, err = self.call(['plan', '--lines', '--file', str(CASES)])
+        self.assertEqual(code, 0, err)
+        batches = {line.split()[0]: set(line.split()[2:]) for line in out.strip().splitlines()}
+        self.assertEqual(set(batches), {case.batch for case in loaded.cases})
+        for batch, cases in batches.items():
+            self.assertEqual(cases, {case.id for case in loaded.cases if case.batch == batch})
 
     def test_an_unknown_case_is_refused(self):
         code, _, err = self.call(['case', 'nope', '--file', str(CASES)])

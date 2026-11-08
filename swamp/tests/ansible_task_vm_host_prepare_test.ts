@@ -16,7 +16,12 @@ const play = plays.find((p) => p.name === "Prepare the task VM host")!;
 const privateRanges =
   (play.vars as Record<string, unknown>).prepare_private_ranges;
 
-function fixture(native = false, existing = false) {
+function fixture(
+  native = false,
+  existing = false,
+  network = "orbittask0",
+  cidr = "10.252.10.0/24",
+) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/disks`);
@@ -51,12 +56,21 @@ function fixture(native = false, existing = false) {
   Deno.chmodSync(`${folder}/bin/zfs`, 0o755);
   // Package, kernel-module and firewall modules need Linux/root. Exercise their guards here; the real pool, ACL, bridge,
   // profile, restrictions, ARC files and idempotence run through the shipped Ansible tasks against the isolated boundary.
-  const tasks = structuredClone(nativeTasks).map((task) => {
+  const tasks = structuredClone(nativeTasks).map((task, index) => {
+    // Render the actual module arguments through Ansible. Keep loops/guards and test the resulting input policy below.
+    if ("community.general.ufw" in task) {
+      task.vars = { fixture_firewall_rule: task["community.general.ufw"] };
+      delete task["community.general.ufw"];
+      task["ansible.builtin.copy"] = {
+        dest: `${folder}/firewall-${index}-{{ item | default('rule') }}.json`,
+        content: "{{ fixture_firewall_rule | to_json }}",
+        mode: "0600",
+      };
+    }
     for (
       const module of [
         "ansible.builtin.apt",
         "community.general.modprobe",
-        "community.general.ufw",
       ]
     ) {
       if (module in task) {
@@ -86,8 +100,8 @@ function fixture(native = false, existing = false) {
   const host = {
     project: "orbit-tasks",
     pool: "orbit-tasks",
-    network: "orbittask0",
-    cidr: "10.252.10.0/24",
+    network,
+    cidr,
     pool_size: "640GiB",
     zfs_dataset: native ? "data/orbit-tasks" : null,
     image: "ubuntu-26.04-vm",
@@ -125,9 +139,59 @@ function fixture(native = false, existing = false) {
     },
     state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
     calls: () => Deno.readTextFileSync(`${folder}/calls`),
+    firewall: () =>
+      Array.from(Deno.readDirSync(folder))
+        .filter((file) => file.name.startsWith("firewall-"))
+        .map((file) =>
+          JSON.parse(Deno.readTextFileSync(`${folder}/${file.name}`))
+        ),
     cleanup: () => Deno.removeSync(folder, { recursive: true }),
   };
 }
+
+Deno.test({
+  name:
+    "a deny-input host admits bridge DHCP and DNS without exposing other host services",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(false, false, "proofbr0", "10.252.42.0/24");
+    try {
+      const result = f.run();
+      assert(result.ok, result.output);
+      // Assert every INPUT rule, including unrestricted rules that a packet matcher could overlook.
+      const input = f.firewall().filter((rule) => !rule.route)
+        .sort((a, b) => (a.comment ?? "").localeCompare(b.comment ?? ""));
+      assertEquals(input, [
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "udp",
+          from_port: "68",
+          to_port: "67",
+          comment: "orbit:task-vms-dhcp",
+        },
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "tcp",
+          to_ip: "10.252.42.1",
+          to_port: "53",
+          comment: "orbit:task-vms-dns-tcp",
+        },
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "udp",
+          to_ip: "10.252.42.1",
+          to_port: "53",
+          comment: "orbit:task-vms-dns-udp",
+        },
+      ]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
 
 Deno.test({
   name:

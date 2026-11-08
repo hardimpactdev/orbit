@@ -419,7 +419,14 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
-          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --swamp-base --github-output "$GITHUB_OUTPUT"
+          python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
+      - name: Publish runner case selection
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proof-selection-${{ github.event.pull_request.head.sha || github.sha }}
+          path: proof-selection.json
+          retention-days: 7
+          if-no-files-found: error
 
   proof:
     name: Proof harness
@@ -443,9 +450,9 @@ jobs:
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
           "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest
 
-  # Optional proof is outside required.needs. Nick decides graduation after coverage and admission are reliable.
+  # A selected proof is part of the single Required checks result.
   proof-run:
-    name: Proof request and report (optional)
+    name: CI proof
     outputs:
       outcome: ${{ steps.report.outputs.outcome }}
     needs: changes
@@ -461,7 +468,7 @@ jobs:
     # move the job to such a runner.
     runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
     # The VM wait plus the 30 minute run budget.
-    timeout-minutes: 45
+    timeout-minutes: 195
     # A new push cancels the proof run of the previous push on the same PR. A cancelled step cancels its Orbit run.
     concurrency:
       group: proof-run-${{ github.event.pull_request.number }}
@@ -478,8 +485,6 @@ jobs:
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
-          # The authenticated CI runner uses the per-host reserve; report-only controls reporting, not capacity (docs/cli/proof/run.mmd).
-          PROOF_REPORT_ONLY: '1'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
         run: python3 -I bin/ci-proof-run
       - name: Store the proof report receipt
@@ -489,22 +494,6 @@ jobs:
           name: proof-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/proof-receipt.json
           if-no-files-found: warn
-
-  proof-assertions:
-    name: Proof assertions (optional)
-    needs: proof-run
-    # Capacity is a successful report of no execution, never a passing assertion check.
-    if: >-
-      always() && needs.proof-run.result != 'skipped'
-      && needs.proof-run.outputs.outcome != 'not_run_capacity'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 1
-    steps:
-      - name: Require a successful proof verdict
-        env:
-          OUTCOME: ${{ needs.proof-run.outputs.outcome }}
-          REPORT_RESULT: ${{ needs.proof-run.result }}
-        run: test "$REPORT_RESULT" = success && test "$OUTCOME" = passed
 
   swamp:
     name: Swamp
@@ -530,23 +519,45 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, proof-run, gateway-release, changes]
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      statuses: read
     steps:
       - name: Require builds and static checks
         env:
           NEEDS: ${{ toJSON(needs) }}
+          PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
+          FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROOF_RUN_URL_PREFIX: ${{ github.server_url }}/${{ github.repository }}/actions/runs/
         run: |
           python3 - <<'PYTHON'
-          import json, os, sys
+          import json, os, subprocess, sys
           needs = json.loads(os.environ['NEEDS'])
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
+          selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
           selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')
+          if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+              pages = json.loads(subprocess.check_output([
+                  'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+                  f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
+              ], timeout=65))
+              status = next((status for page in pages for status in page
+                             if status['context'] == 'Orbit outside proof'
+                             and status.get('creator', {}).get('login') == 'github-actions[bot]'
+                             and (status.get('target_url') or '').startswith(os.environ['PROOF_RUN_URL_PREFIX'])), None)
+              if status is None or status['state'] != 'success':
+                  sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
+              needs['proof-run']['result'] = 'success'
           failed = {job: needs[job]['result'] for job, touched in selected.items()
                     if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
           if failed:

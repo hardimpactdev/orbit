@@ -27,7 +27,7 @@ sequenceDiagram
     %%> - the first run sets `raw.dnsmasq`, which runs the setup of the bridge again and restarts its dnsmasq: running VMs lose DNS for about a second, and Incus runs that dnsmasq without its AppArmor profile
     SW->>H: Start the base VM<br/>incus start
     %%> What it does:
-    %%> - a new host has no base VM yet: it is made here, once, from the stock Ubuntu VM image and an empty seed volume, and the converge that follows builds everything else
+    %%> - a host without a promoted base gets one here, from the stock Ubuntu VM image and an empty seed volume: a new host, or one whose earlier base never passed its first boot; the converge that follows builds everything else
     SW->>VM: Converge<br/>the same converge as a task start
     %%> What it does:
     %%> - outer VM: packages, tools, Swamp, orbit-agent, the Pi server, sshd and UFW at the release's pins; each part runs only when its digest changed

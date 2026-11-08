@@ -89,15 +89,15 @@ it('sends task VM host settings and their removal without changing apps', functi
         ]),
     ]);
     $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host), '--json' => true])->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toBe(['task_vms' => $host]);
+    expect($mockClient->getLastRequest()?->body()->all())->toEqual(['task_vms' => $host]);
 })->with([
-    'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base']],
-    'CI-only loop pool' => [['cidr' => '10.252.10.0/24', 'max_vms' => 3, 'ci_only' => true, 'pool_size' => '512GiB']],
-    'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
-    'CI-only host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 6, 'ci_only' => true]],
-    'task-limited host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'task_max_vms' => 2]],
-    'proof-only task limit' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'task_max_vms' => 0]],
-    'shared host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'ci_only' => false]],
+    'configured host' => [['cidr' => '10.251.77.0/24', 'task_places' => 4, 'ci_places' => 2, 'image_alias' => 'custom-base']],
+    'CI-only loop pool' => [['cidr' => '10.252.10.0/24', 'task_places' => 0, 'ci_places' => 2, 'pool_size' => '512GiB']],
+    'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'task_places' => 4, 'ci_places' => 2, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
+    'CI-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 6, 'ci_places' => 2]],
+    'task-limited host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
+    'proof-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
+    'shared host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
     'removed host' => [null],
 ]);
 

@@ -31,6 +31,7 @@ sequenceDiagram
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
   Note over GW: Admit the release<br/>stop work · VM reserved
   %%> What it does:
+  %%> - cancellation takes precedence over the group's capacity wait or running task; cancel that task before acquiring its group lock for cleanup
   %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
   %%> Result:
   %%> - the run carries only the release; it pushes nothing and never starts a parked VM

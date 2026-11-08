@@ -114,10 +114,10 @@ it('lets the last matching line win', function (): void {
         ->and(proofSelect(['swamp/proof/runner/runner.py'])['because'])->toBe('wildcard');
 });
 
-it('selects every case when the selection list changed, and the change cannot narrow it', function (): void {
+it('treats a changed selection list like any other path: only a command or case change selects a proof', function (): void {
     $selected = proofSelect(['swamp/proof/selection.txt', 'docs/a.md'], list: PROOF_LIST."\nswamp/proof/selection.txt   skip\n");
 
-    expect($selected['because'])->toBe('selection_list_changed')->and($selected['files'])->toBe(PROOF_CASES_FILES);
+    expect($selected['nothing'])->toBeTrue();
 });
 
 it('selects every case when GitHub lists an incomplete file list', function (): void {
@@ -274,10 +274,10 @@ it('selects the firewall commands for every tracked file of the firewall directo
     expect($unselected)->toBe([]);
 });
 
-it('runs every case for the code that every command runs through', function (string $path): void {
+it('selects no proof for the code that every command runs through', function (string $path): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
 
-    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::None);
 })->with([
     'the start action' => ['apps/gateway/app/Actions/Operations/StartOperationAction.php'],
     'the operation store' => ['apps/gateway/app/Domain/Operations/OperationStore.php'],
@@ -305,18 +305,18 @@ it('keeps documentation and the unit tests of the proof tooling out of the share
     'a firewall extension test' => ['swamp/extensions/behaviors/operations/firewall/firewall_test.ts'],
 ]);
 
-it('runs every case when a shared file changes', function (): void {
+it('runs no proof when only a shared file changes', function (): void {
     firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationStore.php'], list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
 
-    expect($selected['because'])->not->toBeNull()->and($selected['files'])->toBe(PROOF_CASES_FILES);
+    expect($selected['nothing'])->toBeTrue();
 });
 
-it('names only tracked files in the lines that select every case', function (): void {
+it('names only tracked files in the shared-code lines', function (): void {
     firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $root = dirname(base_path(), 2);
     $tracked = array_flip(array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files'))));
-    preg_match_all('~^(\S+)\s+\*$~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
+    preg_match_all('~^(\S+)\s+none: shared code~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
     $named = array_values(array_filter($lines[1], static fn (string $glob): bool => ! str_contains($glob, '*') && ! str_contains($glob, '?')));
 
     expect($named)->not->toBeEmpty();
@@ -324,7 +324,7 @@ it('names only tracked files in the lines that select every case', function (): 
     expect($missing)->toBe([]);
 });
 
-it('selects every case for every tracked file of the shared directories', function (): void {
+it('selects no proof for every tracked file of the shared directories', function (): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $root = dirname(base_path(), 2);
     $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
@@ -338,7 +338,7 @@ it('selects every case for every tracked file of the shared directories', functi
         && array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
 
     expect($files)->not->toBeEmpty();
-    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::None));
     expect($unselected)->toBe([]);
 });
 
@@ -396,6 +396,6 @@ it('keeps the budget table out of the shared code but not the rules that read it
     expect($list->match($path)?->kind)->toBe($kind);
 })->with([
     'the budget table' => ['apps/gateway/app/Domain/Operations/OperationBudgetTable.php', ProofRuleKind::None],
-    'the budget rules' => ['apps/gateway/app/Domain/Operations/OperationRunBudgets.php', ProofRuleKind::Everything],
-    'the kinds' => ['apps/gateway/app/Domain/Operations/OperationKinds.php', ProofRuleKind::Everything],
+    'the budget rules' => ['apps/gateway/app/Domain/Operations/OperationRunBudgets.php', ProofRuleKind::None],
+    'the kinds' => ['apps/gateway/app/Domain/Operations/OperationKinds.php', ProofRuleKind::None],
 ]);

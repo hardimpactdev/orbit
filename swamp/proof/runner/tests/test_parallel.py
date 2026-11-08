@@ -203,7 +203,7 @@ class BaselineFollowsThePlacementTest(unittest.TestCase):
         self.assertEqual(self.run_observer('app-prod', 'gateway')['verdict'], 'passed')
 
 
-class FitTest(unittest.TestCase):
+class VerdictLinesTest(unittest.TestCase):
     @staticmethod
     def passed(number):
         return {'id': f'case-{number:03}', 'verdict': 'passed', 'secs': 1.5}
@@ -213,33 +213,26 @@ class FitTest(unittest.TestCase):
         return {'id': f'bad-{number:03}', 'verdict': 'failed', 'cause': 'assertion', 'secs': 2, 'failed': ['expect[%d] ' % number + 'x' * size] * 4}
 
     def test_lines_that_fit_stay_whole_and_the_ones_that_did_not_pass_come_first(self):
-        kept = runner.fit([self.passed(1), self.failed(1, 20), self.passed(2)])
+        kept = runner.verdict_lines([self.passed(1), self.failed(1, 20), self.passed(2)])
         self.assertEqual([json.loads(line)['id'] for line in kept], ['bad-001', 'case-001', 'case-002'])
         self.assertEqual(len(json.loads(kept[0])['failed']), 4)
 
-    def test_failures_that_do_not_fit_keep_two_short_messages_before_any_line_is_cut(self):
-        results = [self.failed(number) for number in range(5)] + [self.passed(number) for number in range(40)]
-        kept = runner.fit(results)
-        self.assertLessEqual(len('\n'.join(kept).encode()), runner.STEP_OUTPUT_LIMIT)
+    def test_full_reports_keep_all_case_verdicts_beyond_the_history_tail(self):
+        results = [self.failed(number) for number in range(5)] + [self.passed(number) for number in range(120)]
+        kept = runner.verdict_lines(results)
+        self.assertGreater(len('\n'.join(kept).encode()), 4096)
         documents = [json.loads(line) for line in kept]
-        self.assertEqual([item['id'] for item in documents[:5]], [f'bad-{number:03}' for number in range(5)])
-        self.assertTrue(all(len(item['failed']) == 2 and all(len(message) <= 100 for message in item['failed']) for item in documents[:5]))
-
-    def test_what_does_not_fit_is_counted_and_the_output_stays_under_the_cut_of_a_step(self):
-        results = [self.passed(number) for number in range(120)]
-        kept = runner.fit(results)
-        self.assertLessEqual(len('\n'.join(kept).encode()), runner.STEP_OUTPUT_LIMIT)
-        counted = json.loads(kept[-1])['cut']
-        self.assertEqual(counted + len(kept) - 1, 120)
+        self.assertEqual(len(documents), len(results))
+        self.assertEqual({item['id'] for item in documents}, {item['id'] for item in results})
 
     def test_the_last_line_needs_no_room_for_the_count(self):
         result = {'id': 'x' * 3900, 'verdict': 'passed', 'secs': 1}
-        self.assertEqual(len(runner.fit([result])), 1)
+        self.assertEqual(len(runner.verdict_lines([result])), 1)
 
     def test_the_whole_allow_batch_of_passed_cases_fits(self):
         loaded = spec.load(PROOF / 'firewall' / 'allow.cases.yaml', BATCHES)
         results = [{'id': case.id, 'verdict': 'passed', 'secs': 12.3} for case in loaded.cases if case.batch == 'fresh-fleet']
-        self.assertEqual(len(runner.fit(results)), len(results))
+        self.assertEqual(len(runner.verdict_lines(results)), len(results))
 
 
 class SchedulerTest(unittest.TestCase):

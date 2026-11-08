@@ -12,7 +12,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskVmAwake;
 use App\Domain\TaskVms\TaskVmHost;
@@ -76,35 +75,30 @@ function awakeProviderWorld(TaskVmState $state): array
     return [$group, $vm];
 }
 
-it('admits park and resume for a slot VM, including its original host name after a rename', function (TaskVmState $state): void {
+it('admits resume for a slot VM, including its original host name after a rename', function (TaskVmState $state): void {
     [$group, $vm] = awakeProviderWorld($state);
     Node::withoutEvents(fn () => Node::query()->findOrFail($vm->host_node_id)->update(['name' => 'renamed-host']));
 
-    $park = app(TaskParkIntent::class)->capture($group);
     $resume = app(TaskVmResumeIntent::class)->capture($vm);
 
-    expect($park['task_vm_id'])->toBe($vm->id)
-        ->and($park['provider_input']['vm']['name'])->toBe('shark-tvm-2')
-        ->and($resume['task_vm_id'])->toBe($vm->id)
+    expect($resume['task_vm_id'])->toBe($vm->id)
         ->and($resume['provider_input']['vm']['name'])->toBe('shark-tvm-2')
         ->and($resume['mode'])->toBe($state === TaskVmState::Parked ? 'resume' : 'converge');
 })->with([TaskVmState::Parked, TaskVmState::Ready]);
 
-it('admits park and resume for an old-pool VM without a slot number', function (): void {
+it('admits resume for an old-pool VM without a slot number', function (): void {
     [$group, $vm] = awakeProviderWorld(TaskVmState::Parked);
     $vm->update(['slot_number' => null, 'name' => 'tvm-'.$vm->id]);
 
-    expect(app(TaskParkIntent::class)->capture($group)['provider_input']['name'])->toBe($vm->name)
-        ->and(app(TaskVmResumeIntent::class)->capture($vm)['provider_input']['name'])->toBe($vm->name);
+    expect(app(TaskVmResumeIntent::class)->capture($vm)['provider_input']['name'])->toBe($vm->name);
 });
 
-it('refuses park and resume with 409 for any name outside the task VM allow-list', function (?int $slot, string $name): void {
+it('refuses resume with 409 for any name outside the task VM allow-list', function (?int $slot, string $name): void {
     [$group, $vm] = awakeProviderWorld(TaskVmState::Parked);
     $vm->update(['slot_number' => $slot, 'name' => $name]);
     $refused = fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('task_vm.provider_identity_invalid')
         ->and($exception->status)->toBe(409);
 
-    expect(fn () => app(TaskParkIntent::class)->capture($group))->toThrow($refused);
     expect(fn () => app(TaskVmResumeIntent::class)->capture($vm))->toThrow($refused);
 })->with([
     'base VM' => [2, 'shark-base'],
@@ -162,7 +156,7 @@ it('admits the resume of a parked VM under a keyed request without the key of th
     $vm->update(['pi_token' => str_repeat('p', 64)]);
     $host = Node::query()->findOrFail($vm->host_node_id);
     $host->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
-    Node::withoutEvents(fn () => $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]]));
+    Node::withoutEvents(fn () => $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]]));
     config([
         'task_vms.enabled' => true, 'task_vms.dev_cluster_id' => 1,
         'task_vms.pi.artifact_path' => '/srv/pi.tar', 'task_vms.pi.artifact_sha256' => str_repeat('a', 64),

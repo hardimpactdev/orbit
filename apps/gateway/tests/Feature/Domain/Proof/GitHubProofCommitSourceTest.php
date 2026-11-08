@@ -191,3 +191,40 @@ it('sends every request to the configured repository with a read token and no bo
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'GET' && str_starts_with($request->url(), 'https://api.github.com/repos/hardimpactdev/orbit/'));
 });
+
+it('reads only an intact runner artifact for the exact CI head and comparison', function (string $failure): void {
+    $source = githubSource();
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($key, $pem);
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'proof', 'proof', 'hardimpactdev', 'organization', 'https://github.com/apps/proof', $pem));
+    $base = str_repeat('a', 40);
+    $result = ['version' => 1, 'base' => $failure === 'base' ? 'stale' : $base, 'head' => SOURCE_SHA, 'files' => []];
+    $path = sys_get_temp_dir().'/proof-artifact-'.bin2hex(random_bytes(8)).'.zip';
+    try {
+        $zip = new PharData($path, 0, null, Phar::ZIP);
+        $zip['proof-selection.json'] = json_encode($result, JSON_THROW_ON_ERROR);
+        unset($zip);
+        $archive = file_get_contents($path);
+    } finally {
+        unlink($path);
+    }
+    Http::fake(fn (Request $request) => match (true) {
+        str_ends_with($request->url(), '/installation') => Http::response(['id' => 7]),
+        str_ends_with($request->url(), '/access_tokens') => Http::response(['token' => 'actions-token', 'permissions' => ['actions' => 'read']], 201),
+        str_contains($request->url(), '/actions/artifacts?') => Http::response(['artifacts' => $failure === 'missing' ? [] : [[
+            'id' => 99, 'name' => 'proof-selection-'.SOURCE_SHA, 'expired' => $failure === 'expired',
+            'digest' => 'sha256:'.($failure === 'digest' ? str_repeat('0', 64) : hash('sha256', $archive)),
+            'workflow_run' => ['id' => 77, 'head_sha' => SOURCE_SHA],
+        ]]]),
+        str_ends_with($request->url(), '/actions/runs/77') => Http::response([
+            'path' => $failure === 'workflow' ? '.github/workflows/other.yml' : '.github/workflows/ci.yml',
+            'head_sha' => $failure === 'head' ? 'stale' : SOURCE_SHA, 'event' => 'pull_request',
+            'repository' => ['full_name' => 'hardimpactdev/orbit'],
+        ]),
+        str_ends_with($request->url(), '/actions/artifacts/99/zip') => Http::response('', 302, ['Location' => 'https://test.blob.core.windows.net/artifact']),
+        $request->url() === 'https://test.blob.core.windows.net/artifact' => Http::response($archive),
+        default => Http::response('', 500),
+    });
+    expect($source->caseSelection($base, SOURCE_SHA))->toBe($failure === 'none' ? $result : null);
+    Http::assertSent(static fn (Request $request): bool => ! str_contains($request->url(), 'blob.core.windows.net') || ! $request->hasHeader('Authorization'));
+})->with(['none', 'base', 'head', 'digest', 'workflow', 'expired', 'missing']);

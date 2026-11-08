@@ -14,6 +14,8 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -67,7 +69,7 @@ it('refuses the wrong level for VM and child actions', function (string $method,
     $id = $level === 'parent' ? $this->parent->id : $this->child->id;
     $this->withHeader('Idempotency-Key', 'level.test')->json($method, '/api/v1/tasks/'.$id.$suffix)->assertConflict()->assertJsonPath('error.code', 'task.level_invalid');
 })->with([
-    ['POST', '/start', 'child'], ['POST', '/park', 'child'], ['POST', '/publish', 'child'], ['POST', '/complete', 'child'],
+    ['POST', '/start', 'child'], ['POST', '/publish', 'child'], ['POST', '/complete', 'child'],
     ['POST', '/check', 'parent'], ['POST', '/turn', 'parent'], ['POST', '/check/cancel', 'parent'], ['DELETE', '', 'parent'], ['GET', '/agents', 'child'],
 ]);
 
@@ -108,7 +110,7 @@ it('removes the old endpoint and command namespaces', function (): void {
     expect(collect(app('router')->getRoutes())->filter(fn ($route): bool => str_starts_with($route->getName() ?? '', 'tasks:')))->toBeEmpty();
 });
 
-it('keeps start capacity refusal and leaves todo admission unchanged', function (): void {
+it('records a full task pool as waiting and leaves todo admission unchanged', function (): void {
     app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
     {
         public function resolve(Project $project): string
@@ -116,11 +118,13 @@ it('keeps start capacity refusal and leaves todo admission unchanged', function 
             return str_repeat('a', 40);
         }
     });
+    SwampNodeFixture::ensure();
+    Queue::fake();
     $this->parent->update(['status' => TaskGroupStatus::Todo]);
     $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
-        ->assertConflict()->assertJsonPath('error.code', 'tasks.capacity_unavailable');
+        ->assertAccepted()->assertJsonPath('data.status', 'waiting');
     expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and(Operation::query()->count())->toBe(0);
+        ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(1);
 });
 
 it('filters children by status and rejects fields from the other create level', function (): void {

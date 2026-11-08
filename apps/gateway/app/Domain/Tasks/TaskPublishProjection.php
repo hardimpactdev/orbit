@@ -52,6 +52,9 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
                 ]);
             }
 
+            if (! $terminal && isset($result['pull_request_url'])) {
+                TaskVmReentry::release($projected);
+            }
             app(TaskMaintenanceContinuation::class)->apply($projected);
 
             return $projected;

@@ -21,7 +21,7 @@ sequenceDiagram
   Note over GW: Admit the corrections<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
-  %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation
+  %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its published task branch, an open pull request, and no running operation
   %%> What it does:
   %%> - captures, in one transaction, the task VM identity, its resume only when parked, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
   %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
@@ -34,6 +34,12 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
+  opt the previous VM was released
+    SW->>VM: Claim a task place<br/>operation-task-provision
+    %%> What it does:
+    %%> - waits for a task place, up to two hours, then creates a fresh VM from the base at the published task head
+    %%> - records a fresh identity, workspace and Pi session; no review holds a VM
+  end
   opt the VM is parked
     SW->>VM: Resume the VM<br/>operation-task-vm-resume
     %%> What it does:
@@ -68,10 +74,9 @@ sequenceDiagram
       %%> - pushes the commit to `task-42` without force, so the same draft pull request gets the corrections as a new commit
       %%> - a branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`, and nothing is overwritten
       SW-->>GW: Native terminal result<br/>commit · rounds
-      Note over GW: Record the corrections<br/>VM ready · park again
+      Note over GW: Record the corrections<br/>VM released · wait for review
       %%> Result:
-      %%> - the task VM is recorded as ready, and the Gateway admits `task:park` for the group, which stops the VM again while the spec waits for review
-      %%> - a park that the Gateway refuses is kept in the result as `park_refused`
+      %%> - successful publication deletes the VM, its workspace, identity, keys and peer; the group waits for review without a place
       %%> - a failed resume leaves the VM recorded as parked, so the run can be admitted again
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved

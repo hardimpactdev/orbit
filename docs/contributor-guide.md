@@ -80,7 +80,7 @@ The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configura
 
 `bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) that command pages place to `docs/flows-data.js`, and `docs/flow.js` draws each one where its page places it. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
 
-Run `bin/build-api` after API changes. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
+Run `bin/build-api` after API changes. Root `composer check` builds OpenAPI, then the MCP catalogue, then the documentation before its read-only docs-impact gate. A reused checkout therefore checks fresh ignored outputs on its first handoff. A failed generator stops the check. A direct docs-impact run still rejects outputs that are stale. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
 
 ### Parallel command families
 

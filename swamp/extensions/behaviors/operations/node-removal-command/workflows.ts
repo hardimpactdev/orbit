@@ -425,6 +425,12 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
             `${linux} ? [{"ssh":inputs.intent.ssh,"input":inputs.intent.public_ssh}] : []`,
             ex('["timeout","60"] + self.action.input.argv'),
         )],
+        [child(
+            "Withdraw task host input",
+            "task-host-firewall-remove",
+            `${linux} ? [{"ssh":inputs.intent.ssh,"comments":inputs.intent.task_host_input_comments}] : []`,
+            ex("self.publication"),
+        )],
         ...resources(items),
         [
             child(

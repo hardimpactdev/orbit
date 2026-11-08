@@ -10,7 +10,6 @@ The child exposes `steps.<call>.outputs.result`: `{task_vm_id,provider,action,ru
 
 `task_vm.resume` then checks the admitted Pi executable digest and probes the local Pi capabilities endpoint over official SSH. Its bearer stays in the existing guest file `/home/orbit/.pi/agent/orbit-token`. The root prints its own public terminal JSON at `resume/result`; the shared subscriber projects Ready only from that complete result.
 
-`tasks.park` retains the existing idle external group, published PR and workspace eligibility rules. Its terminal JSON is at `park/result`. Confirmed stopped power records Parked and WaitingForReview. Failure clears stop confirmation without claiming Parked.
 
 Core native workflows, guards, dependencies, resume and vaults provide the control flow. Official SSH provides the remote execution and existing pins. No family Gateway step client, transport, listener, lock or retry supervisor is used.
 
@@ -31,3 +30,5 @@ The image executor retains its existing boot, cleanup and progress behavior. Thi
 ## Start and release
 
 A task start (`tasks.provision`) copies the base snapshot of the host and writes the identity of the slot; the release (`task_vm.slot_release`) deletes the VM, its seed clone and its identity volume. Both run as Ansible phases of `swamp/ansible/task-vm-host.yml`. Power changes of a parked VM run in `task-vm-provider-power`. There is no provision, enrollment or destroy workflow.
+
+Publication releases the task VM. Later build, fix and review work claims a fresh task place from the base at the task head; full pools wait for up to two hours.
