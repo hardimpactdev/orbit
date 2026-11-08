@@ -34,6 +34,12 @@
       when: dns_address ~ '/32' not in lo_addresses.stdout
       changed_when: true
 
+    - name: Add the address that a blocker holds in the controller-death scenario
+      ansible.builtin.command:
+        argv: [ip, addr, add, "10.99.99.77/32", dev, lo]
+      when: "'10.99.99.77/32' not in lo_addresses.stdout"
+      changed_when: true
+
     - name: Make the folders of the old listener
       ansible.builtin.file:
         path: "{{ item }}"
@@ -51,6 +57,8 @@
         - {dest: /etc/dnsmasq.d/orbit-vpn.conf, content: "# Managed by Orbit.\nlisten-address=127.0.0.55\nbind-interfaces\nno-resolv\nserver=1.1.1.1\n"}
         - {dest: /etc/dnsmasq.d/orbit-records.conf, content: "# Managed by Orbit.\nhost-record=gateway.orbit,{{ dns_address }}\n"}
         - {dest: /etc/dnsmasq.d/ubuntu-fan, content: "# The stock snippet of ubuntu-fan.\nbind-interfaces\n"}
+        - dest: /var/lib/orbit/proof-legacy/blocker.conf
+          content: "listen-address=10.99.99.77\nbind-interfaces\nno-resolv\nno-hosts\n"
         - dest: /var/lib/orbit/proof-legacy/listener.conf
           content: "listen-address={{ dns_address }}\nbind-interfaces\nno-resolv\nno-hosts\nhost-record=gateway.orbit,10.99.99.2\naddress=/.test/10.99.99.9\n"
         - dest: /etc/systemd/system/orbit-private-dns.socket

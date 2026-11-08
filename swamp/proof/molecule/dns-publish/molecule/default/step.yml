@@ -43,7 +43,7 @@
       ansible.builtin.copy:
         content: >-
           {{ {'node': {'host': '127.0.0.1', 'user': 'orbit', 'port': 22, 'identity_file': '/nonexistent', 'host_keys': [placeholder_key]},
-          'dns': {'revision': step.revision, 'listen': [dns_address], 'tlds': step.tlds, 'records': step.records}} | to_json }}
+          'dns': {'revision': step.revision, 'listen': [dns_address] + (step.listen_extra | default([])), 'tlds': step.tlds, 'records': step.records}} | to_json }}
         dest: "{{ folder.path }}/intent.json"
         mode: "0600"
     - name: Clear the result of the step before
@@ -67,7 +67,9 @@
       when: step.measure_gap | default(false)
     - name: Run the phase
       ansible.builtin.command:
-        argv: [timeout, "300", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+        argv: >-
+          {{ ['timeout', '300', 'ansible-playbook', '-i', folder.path ~ '/inventory.yml', '--tags', 'publish']
+          + (['-e', scaled_lock] if step.lock_scaled | default(false) else []) + [ansible_dir ~ '/dns-publish.yml'] }}
         chdir: "{{ ansible_dir }}"
       environment:
         ORBIT_RUN: "{{ folder.path }}"
@@ -201,6 +203,18 @@
         fail_msg: "{{ step.name }}: orbit.conf.loaded exists={{ loaded_copy.stat.exists }}, expected {{ step.loaded }}"
         quiet: true
       when: step.loaded is defined
+    - name: Read the outcome of the detached cutover
+      ansible.builtin.command:
+        argv: [cat, "{{ state_dir }}/cutover.state"]
+      register: cutover_state
+      changed_when: false
+      when: step.cutover_state is defined
+    - name: The detached cutover ended as the step expects
+      ansible.builtin.assert:
+        that: cutover_state.stdout is match('^' ~ step.cutover_state)
+        fail_msg: "{{ step.name }}: cutover.state is [{{ cutover_state.stdout }}], expected [{{ step.cutover_state }}]"
+        quiet: true
+      when: step.cutover_state is defined
     - name: Read the snapshot
       ansible.builtin.stat:
         path: "{{ state_dir }}/snapshot/manifest.json"

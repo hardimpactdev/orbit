@@ -15,6 +15,9 @@
     state_dir: /var/lib/orbit/dnsmasq
     files: ["{{ conf_file }}", "{{ state_dir }}/orbit.hosts", "{{ state_dir }}/orbit.servers", "{{ state_dir }}/orbit.revision"]
     # Only used to pin a key in known_hosts: the host of the phase is this machine, over a local connection.
+    # Real times of the lock (swamp/ansible/vars/dns.yml) are minutes; the proof scales them so that a dead holder really expires: the holder
+    # lives 60 s, and the next publication waits up to 90 s for it.
+    scaled_lock: '{"dns_lock_hold": 60, "dns_lock_wait": 90, "dns_lock_job_timeout": 200}'
     placeholder_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA"
   tasks:
     - name: Make the run folder of the phase

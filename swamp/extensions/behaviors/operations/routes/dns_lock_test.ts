@@ -75,3 +75,15 @@ Deno.test("the playbook takes its lock, cutover and wait times from the variable
         ]
     ) assert(playbook.includes(use), `the playbook does not use ${use}`);
 });
+
+Deno.test("the cutover runs as a generated script that recovers by itself, not as an inline restart", async () => {
+    const playbook = await Deno.readTextFile(`${ROOT}/ansible/dns-publish.yml`);
+    // The restart of dnsmasq and the stop of the old listener live in dns-cutover.sh.j2, so a dead controller cannot leave both listeners down.
+    assert(playbook.includes("dns-cutover.sh.j2"));
+    assert(playbook.includes("dns-restore.sh.j2"));
+    assertEquals(/systemctl[^\n]*restart dnsmasq/.test(playbook), false);
+    const cutover = await Deno.readTextFile(`${ROOT}/ansible/templates/dns-cutover.sh.j2`);
+    assert(cutover.includes("recover dnsmasq_start_failed"));
+    assert(cutover.includes("recover dnsmasq_not_listening"));
+});
+

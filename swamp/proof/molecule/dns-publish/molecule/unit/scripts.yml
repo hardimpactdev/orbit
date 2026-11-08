@@ -1,0 +1,56 @@
+---
+# The two shell scripts that the phase generates (templates/dns-cutover.sh.j2 and dns-restore.sh.j2) run for real here, in a temporary folder, with
+# stand-ins for systemctl, dig and ss that log every call. This proves the control flow that the controller cannot: the detached cutover
+# restores the old listener by itself, and says so in its state file, when dnsmasq does not come up. `sh -n` proves the syntax.
+- name: Make the sandbox of the scripts
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: orbit-dns-scripts-
+  register: sandbox
+
+- name: Make the folder of the stand-ins
+  ansible.builtin.file:
+    path: "{{ sandbox.path }}/bin"
+    state: directory
+    mode: "0755"
+
+- name: Write the stand-ins
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ sandbox.path }}/bin/{{ item.name }}"
+    mode: "0755"
+  loop:
+    - name: systemctl
+      content: |
+        #!/bin/sh
+        echo "systemctl $*" >> "$LOG"
+        case "$1 $2" in
+          "restart dnsmasq") if [ -e "$T/fail-restart" ] && [ -e "$T/etc/orbit.conf" ]; then exit 1; fi ;;
+          "show --property=MainPID") echo 4242 ;;
+        esac
+        exit 0
+    - name: dig
+      content: |
+        #!/bin/sh
+        echo "dig $*" >> "$LOG"
+        [ -e "$T/dig-fails" ] && exit 9
+        echo ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1"
+    - name: ss
+      content: |
+        #!/bin/sh
+        echo "ss $*" >> "$LOG"
+        echo "udp UNCONN 0 0 $4 0.0.0.0:* users:((\"dnsmasq\",pid=${HELD_PID:-4242},fd=5))"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Run each case of the scripts
+  ansible.builtin.include_tasks: script_case.yml
+  loop: "{{ script_cases }}"
+  loop_control:
+    loop_var: sc
+    label: "{{ sc.name }}"
+
+- name: Remove the sandbox
+  ansible.builtin.file:
+    path: "{{ sandbox.path }}"
+    state: absent

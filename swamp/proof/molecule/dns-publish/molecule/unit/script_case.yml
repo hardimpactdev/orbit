@@ -1,0 +1,95 @@
+---
+# One case of scripts.yml: a Node with the candidate orbit.conf installed and the old listener setup in the snapshot.
+- name: "Make the Node of the case: {{ sc.name }}"
+  ansible.builtin.shell: |
+    set -e
+    t="{{ sandbox.path }}/{{ sc.id }}"
+    rm -rf "$t"
+    mkdir -p "$t/etc" "$t/dns" "$t/snap/files"
+    echo candidate > "$t/etc/orbit.conf"
+    echo legacy > "$t/snap/files/saved-vpn"
+    {% if sc.fail_restart | default(false) %}touch "$t/fail-restart"{% endif %}
+
+    {% if sc.dig_fails | default(false) %}touch "$t/dig-fails"{% endif %}
+
+  changed_when: false
+
+- name: Render the scripts of the case
+  ansible.builtin.set_fact:
+    case_cutover: "{{ lookup('ansible.builtin.template', templates ~ '/dns-cutover.sh.j2') }}"
+    case_restore: "{{ lookup('ansible.builtin.template', templates ~ '/dns-restore.sh.j2') }}"
+  vars:
+    t: "{{ sandbox.path }}/{{ sc.id }}"
+    dns: {listen: [10.99.99.1]}
+    dns_port: 53
+    dns_snapshot: "{{ t }}/snap"
+    dns_dir: "{{ t }}/dns"
+    dns_conf_file: "{{ t }}/etc/orbit.conf"
+    dns_loaded_file: "{{ t }}/dns/orbit.conf.loaded"
+    dns_cutover_state: "{{ t }}/dns/cutover.state"
+    dns_restore_script: "{{ t }}/snap/restore.sh"
+    dns_held_wait: 1
+    dns_restore_deadline: 2
+    restore_probe: gateway.orbit
+    cutover_units: "{{ sc.units }}"
+    restore_snap:
+      revision: "1"
+      files:
+        - {path: "{{ t }}/etc/orbit-vpn.conf", saved: saved-vpn, present: true, legacy: true, binder: false}
+        - {path: "{{ t }}/etc/orbit.conf", saved: null, present: false, legacy: false, binder: false}
+      units:
+        - {name: dnsmasq, active: true, enabled: true}
+        - {name: orbit-private-dns.socket, active: true, enabled: true}
+        - {name: orbit-private-dns.service, active: true, enabled: false}
+
+- name: Write the scripts
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ sandbox.path }}/{{ sc.id }}/{{ item.dest }}"
+    mode: "0700"
+  loop:
+    - {dest: cutover.sh, content: "{{ case_cutover }}"}
+    - {dest: snap/restore.sh, content: "{{ case_restore }}"}
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: The scripts are valid shell
+  ansible.builtin.command:
+    argv: [sh, -n, "{{ sandbox.path }}/{{ sc.id }}/{{ item }}"]
+  loop: [cutover.sh, snap/restore.sh]
+  changed_when: false
+
+- name: Run the cutover
+  ansible.builtin.command:
+    argv: [sh, "{{ sandbox.path }}/{{ sc.id }}/cutover.sh"]
+  environment:
+    PATH: "{{ sandbox.path }}/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+    T: "{{ sandbox.path }}/{{ sc.id }}"
+    LOG: "{{ sandbox.path }}/{{ sc.id }}/log"
+    HELD_PID: "{{ sc.held_pid | default('4242') }}"
+  register: case_run
+  failed_when: false
+  changed_when: false
+
+- name: Read what the case left
+  ansible.builtin.shell: |
+    t="{{ sandbox.path }}/{{ sc.id }}"
+    echo "STATE=$(cat "$t/dns/cutover.state")"
+    echo "CANDIDATE=$([ -e "$t/etc/orbit.conf" ] && cat "$t/etc/orbit.conf" || echo gone)"
+    echo "LEGACY=$([ -e "$t/etc/orbit-vpn.conf" ] && cat "$t/etc/orbit-vpn.conf" || echo gone)"
+    grep '^systemctl' "$t/log" | sed 's#^systemctl ##'
+  register: case_left
+  changed_when: false
+
+- name: The case ended as expected
+  vars:
+    left: "{{ case_left.stdout_lines }}"
+  ansible.builtin.assert:
+    that:
+      - (case_run.rc == 0) == (sc.expect.rc == 0)
+      - left[0] == 'STATE=' ~ sc.expect.state
+      - left[1] == 'CANDIDATE=' ~ sc.expect.candidate
+      - left[2] == 'LEGACY=' ~ sc.expect.legacy
+      - left[3:] == sc.expect.systemctl
+    fail_msg: "{{ sc.name }}: rc {{ case_run.rc }}, left {{ left | to_json }}, expected {{ sc.expect | to_json }}"
+    quiet: true

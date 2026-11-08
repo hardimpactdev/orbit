@@ -34,7 +34,8 @@ sequenceDiagram
   %%> - one Ansible phase reads, changes and checks the Node in one run
   %%> - a Swamp worker reaches the Node over SSH
   %%> - the phase holds the Node's dnsmasq lock from the first read to the end of any recovery
-  %%> - the lock holder outlives the step timeout plus the cutover, so a killed phase never lets a second one in early
+  %%> - the lock holder outlives the step timeout plus the cutover, so a killed phase never lets a second one in early; a dead holder expires, it does not release
+  %%> - a cutover script that an earlier phase left running is waited for before the Node is read
   alt revision is newer than installed
     %% path: newer-revision
     Note over N: Validate the files<br/>dnsmasq --test
@@ -62,7 +63,8 @@ sequenceDiagram
       %%> When:
       %%> - a TLD is added, changed or removed; dnsmasq reads `orbit.conf` only at start
       %%> - also when an earlier restart failed, or dnsmasq is down: the copy it started with is deleted before and written after
-      %%> - the old listener stops and dnsmasq restarts in one detached command, so the address is without an owner for one restart only
+      %%> - the old listener stops and dnsmasq restarts in one script, detached on the Node, so the address is without an owner for one restart only
+      %%> - the script checks that dnsmasq holds every listen address; if not it restores the snapshot itself, so a dead controller cannot leave both listeners down
     end
     Note over N: Check the answers<br/>dig on the VPN address
     %%> What it does:
@@ -98,6 +100,7 @@ sequenceDiagram
     %%> What it does:
     %%> - runs only when the Node was changed; puts every saved file and unit state back, from the first snapshot of the unfinished work
     %%> - restarts dnsmasq on the restored files and starts the old listener again
+    %%> - one script, `snapshot/restore.sh`, does it; the detached cutover runs it too when dnsmasq does not come up
     %%> - a `dns.config_invalid` refusal installed nothing, so there is nothing to restore
     Note over N: Check the recovery<br/>dig UDP and TCP
     %%> What it does:

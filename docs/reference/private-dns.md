@@ -119,7 +119,7 @@ A publication admitted after that holds a newer revision still, and the Node the
 
 ### The phase
 
-The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run and any recovery. The holder expires after 420 seconds, longer than the 300-second timeout of the Swamp step plus the 90-second cutover budget. The next publication waits up to 150 seconds. The numbers are in `swamp/ansible/vars/dns.yml`, and a test keeps them consistent.
+The `dns-publish` phase holds `/run/lock/orbit-dnsmasq.lock` for its whole run and any recovery. The holder expires after 420 seconds, longer than the 300-second timeout of the Swamp step plus the 90-second cutover budget. The next publication waits up to 150 seconds. A dead controller does not release the lock, so an early crash can make the next publication fail on the lock until the holder expires. The Node's DNS does not wait for it. The numbers are in `swamp/ansible/vars/dns.yml`, and a test keeps them consistent.
 
 The phase first prepares the change:
 
@@ -132,7 +132,9 @@ Then it applies the change. It compares `orbit.conf` with `orbit.conf.loaded`, t
 
 - An equal file gets SIGHUP. A `reload.pending` from a run that was killed after the install also gets one.
 - A changed file, a missing copy or a dnsmasq that is not running gets a restart.
-- For a restart, the phase deletes the copy first. Then one detached command stops the old listener and restarts dnsmasq.
+- For a restart, the phase deletes the copy first. Then a script, detached on the Node, stops the old listener and restarts dnsmasq.
+- The script checks that dnsmasq holds every listen address. If not, it restores the snapshot itself and writes `recovered` to `cutover.state`, even when the controller is dead.
+- The next publication waits for a script that is still running before it reads the Node.
 - The phase writes the copy again after the restart succeeded. A failed run deletes it, so the next publication restarts dnsmasq.
 
 Last it checks the result:

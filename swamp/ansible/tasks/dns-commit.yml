@@ -2,7 +2,7 @@
 # The commit of a private DNS publication, and the finish of one whose clean-up was interrupted after the revision was written.
 # Input: dns_commit_snap, the manifest of the snapshot. The installed files are the committed ones.
 #   - the new files become the last good set (previous/), the files of the old listener setup go to previous/legacy/;
-#   - the reload marker goes, then the snapshot (last, so an interruption in between leaves a snapshot that the next run finishes);
+#   - the reload marker and the outcome of the cutover go, then the snapshot (last, so an interruption in between leaves a snapshot that the next run finishes);
 #   - the reads that the rest of the play uses are made again.
 - name: Make the folders of the last good set
   ansible.builtin.file:
@@ -29,6 +29,10 @@
 - name: Forget that a reload is owed
   ansible.builtin.file:
     path: "{{ dns_reload_marker }}"
+    state: absent
+- name: Forget the outcome of the cutover
+  ansible.builtin.file:
+    path: "{{ dns_cutover_state }}"
     state: absent
 - name: Remove the snapshot
   ansible.builtin.file:

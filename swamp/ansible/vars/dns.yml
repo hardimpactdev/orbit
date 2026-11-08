@@ -26,11 +26,20 @@ dns_line_conf: >-
 
 # The times of one publication, in seconds, in one place. The Swamp step that runs the phase stops it after dns_phase_timeout
 # (swamp/workflows/workflow-dns-publish.yaml), and a test keeps the two equal. The lock holder outlives a killed play, so it must outlive the step
-# timeout and the cutover with a margin; the next publication waits for a live or a dead holder for dns_lock_wait, which is longer than the
-# time a holder of a play that was stopped by the step timeout has left.
+# timeout and the cutover with a margin. A dead holder does not release the lock: it expires after dns_lock_hold. The next publication waits
+# dns_lock_wait for a live or a dead holder, which covers a play stopped by the step timeout (dns_lock_hold - dns_phase_timeout left at most). A play
+# that crashed earlier leaves up to dns_lock_hold seconds, so the next publication can give up with a lock timeout; the owner retries after the expiry.
+# The Node's DNS does not wait for the lock: the detached cutover restores the old listener by itself (templates/dns-cutover.sh.j2).
 dns_phase_timeout: 300
 dns_cutover_budget: 90
 dns_lock_margin: 30
 dns_lock_hold: "{{ (dns_phase_timeout | int) + (dns_cutover_budget | int) + (dns_lock_margin | int) }}"
 dns_lock_wait: "{{ (dns_lock_hold | int) - (dns_phase_timeout | int) + (dns_lock_margin | int) }}"
 dns_lock_job_timeout: "{{ (dns_lock_wait | int) + (dns_lock_hold | int) + (dns_lock_margin | int) }}"
+
+# The recovery script of the snapshot and the detached cutover (templates/dns-restore.sh.j2, dns-cutover.sh.j2): how long the restored
+# resolvers get to answer, and how long dnsmasq gets to hold the listen addresses after its restart, in seconds. Both run inside
+# dns_cutover_budget: a restart and a stop take about ten seconds, the held wait up to dns_held_wait for each of three addresses on a failure,
+# and the restore up to dns_restore_deadline plus the last attempts.
+dns_held_wait: 10
+dns_restore_deadline: 30

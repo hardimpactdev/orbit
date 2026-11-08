@@ -437,6 +437,68 @@
             - {name: dnsmasq, active: false, enabled: false}
           holders: []
 
+    # The scripts of the cutover and the recovery, run with stand-ins (scripts.yml).
+    script_units: &script_units [orbit-private-dns.socket, orbit-private-dns.service]
+    script_stop: &script_stop "stop -- orbit-private-dns.socket orbit-private-dns.service"
+    script_held: &script_held "show --property=MainPID --value dnsmasq"
+    script_recovery: &script_recovery
+      - daemon-reload
+      - enable dnsmasq
+      - restart dnsmasq
+      - enable -- orbit-private-dns.socket
+      - start -- orbit-private-dns.socket
+      - start -- orbit-private-dns.service
+    script_cases:
+      - id: ok
+        name: dnsmasq starts and holds every address
+        units: *script_units
+        expect:
+          rc: 0
+          state: ok
+          candidate: candidate
+          legacy: gone
+          systemctl: [*script_stop, restart dnsmasq, *script_held, *script_held]
+      - id: no-listener
+        name: no old listener unit runs, so none is stopped
+        units: []
+        expect:
+          rc: 0
+          state: ok
+          candidate: candidate
+          legacy: gone
+          systemctl: [restart dnsmasq, *script_held, *script_held]
+      - id: restart-fails
+        name: dnsmasq does not start, and the script restores the old listener by itself
+        units: *script_units
+        fail_restart: true
+        expect:
+          rc: 1
+          state: recovered dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
+      - id: not-listening
+        name: dnsmasq starts but another process holds the address
+        units: *script_units
+        held_pid: "999"
+        expect:
+          rc: 1
+          state: recovered dnsmasq_not_listening
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq', script_held] + script_recovery }}"
+      - id: restore-fails
+        name: the restored resolvers do not answer, and the state says failed
+        units: *script_units
+        fail_restart: true
+        dig_fails: true
+        expect:
+          rc: 1
+          state: failed dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
+
   tasks:
     - name: Render the files
       ansible.builtin.set_fact:
@@ -738,3 +800,6 @@
         quiet: true
       loop: "{{ snapshot_cases }}"
       loop_control: {loop_var: c, label: "{{ c.name }}"}
+
+    - name: Run the cutover and recovery scripts with stand-ins
+      ansible.builtin.include_tasks: scripts.yml

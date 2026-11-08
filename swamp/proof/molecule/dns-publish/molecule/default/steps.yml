@@ -25,7 +25,8 @@ rec_new: &rec_new {name: new.example.org, address: 10.99.99.11, pair: true}
 answers_base: &answers_base
   - {name: gateway.orbit, type: A, data: [10.99.99.2]}
   - {name: gateway.orbit, type: AAAA, nodata: true}
-  - {name: x.gateway.orbit, type: A, not_data: [10.99.99.2], any_status: true}
+  # Below an exact .orbit name nothing is forwarded: the child is NXDOMAIN at once (local=/orbit/, no forward rule).
+  - {name: x.gateway.orbit, type: A, status: NXDOMAIN}
   - {name: x.test, type: A, data: [10.99.99.9]}
   - {name: x.test, type: AAAA, nodata: true}
   - {name: foo.test, type: A, data: [10.99.99.7]}
@@ -82,26 +83,34 @@ steps:
     legacy_present: *legacy_files
     queries: *old_listener_answers
 
-  # A cutover that is killed in the middle: the playbook dies while the detached command stops the old listener and restarts dnsmasq. The
-  # snapshot and the candidate stay, no revision is recorded.
-  - name: a killed first cutover leaves its snapshot and no revision
+  # The controller dies in the middle of the first cutover and dnsmasq cannot start (a blocker holds a second listen address that the file
+  # names). Nobody runs the rescue of the play: the detached cutover script restores the old listener itself and says so in cutover.state.
+  # The snapshot and the marker stay for the next publication, and so does the lock holder of the dead play (kill.yml asserts that).
+  - name: a killed controller and a dnsmasq that cannot start leave the old listener answering
     revision: "1762540000000001"
     tlds: [*tld_test]
     records: [*rec_gateway, *rec_x, *rec_app]
+    listen_extra: ["10.99.99.77"]
     kill_in_cutover: true
     succeeds: false
     result: {}
-    listener: stopped
+    cutover_state: "recovered dnsmasq_"
+    listener: running
     loaded: absent
     snapshot: present
     marker: present
+    gone: *candidate_files
+    legacy_present: *legacy_files
+    queries: *old_listener_answers
 
-  # The retry fails too. It reuses the snapshot of the killed run, so it restores the ORIGINAL old listener setup (files and unit states),
-  # not the candidate that the killed run installed and that this run saved again would have been.
+  # The next publication fails its check too. It waits for the dead holder to expire (a dead holder does not release; the proof scales the
+  # lock to 60 s), reuses the snapshot of the killed run, and so restores the ORIGINAL old listener setup (files and unit states), not the
+  # candidate that the killed run had installed.
   - name: a failed retry of the killed cutover restores the original old listener setup
     revision: "1762540000000001"
     tlds: [*tld_test]
     records: [*rec_gateway, *rec_x, *rec_app]
+    lock_scaled: true
     leak: true
     succeeds: false
     result: {error_code: dns.check_failed, recovered: true}
