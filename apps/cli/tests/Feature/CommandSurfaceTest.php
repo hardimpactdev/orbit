@@ -1029,7 +1029,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ]],
         'vault:status' => [[], ['json' => false]],
         'vault:sync' => [[], ['idempotency-key' => null, 'json' => false]],
-        'vault:teardown' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
+        'vault:destroy' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
     ];
     $globalOptions = [
         'help',
@@ -1545,6 +1545,16 @@ it('does not register removed Instance path proxy commands', function (string $o
 
 it('keeps trusted automatic starts on API and MCP while CLI deploys remain manual', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKey('instance:deploy:automatic');
+});
+
+it('removes retired teardown commands and vocabulary exceptions', function (): void {
+    $commands = $this->app->make(Kernel::class)->all();
+
+    expect(array_keys($commands))->not->toContain('ai-router:teardown', 'vault:teardown')
+        ->and(CommandVocabulary::allowsCommand('ai-router:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('vault:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('ai-router:teardown'))->toBeFalse()
+        ->and(CommandVocabulary::allowsCommand('vault:teardown'))->toBeFalse();
 });
 
 it('registers only the new automatic release family', function (): void {

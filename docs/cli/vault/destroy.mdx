@@ -1,11 +1,11 @@
 ---
-title: "orbit vault:teardown"
-sidebarTitle: "vault:teardown"
-description: "Permanently delete every Orbit item in the collection, then delete the stored account, organization, and collection."
+title: "orbit vault:destroy"
+sidebarTitle: "vault:destroy"
+description: "Destroy the Orbit Vault account and its published items."
 ---
 
 ```bash
-orbit vault:teardown [--keep-items] [--yes] [--idempotency-key=KEY] [--json]
+orbit vault:destroy [--keep-items] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
@@ -13,10 +13,10 @@ Use `--idempotency-key=KEY` to retry the same Operation admission after a lost r
 | Option | Required | Meaning |
 | --- | --- | --- |
 | `--keep-items` | no | Leave the published items in Vaultwarden. |
-| `--yes` | in noninteractive and JSON modes | Confirm the teardown without a prompt. |
+| `--yes` | in noninteractive and JSON modes | Confirm the destruction without a prompt. |
 
 In a terminal the command asks a default-No question. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing.
 
 ## How it works
 
-<div className="flow-at" data-chart="vault/teardown"></div>
+<div className="flow-at" data-chart="vault/destroy"></div>

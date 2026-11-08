@@ -1233,7 +1233,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 
 Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()`, and `key()`. The [ai-router extension](/reference/ai-router) binds it. `origin()` is the [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node, such as `http://10.44.0.3:8318`, and `key()` is the one fixed placeholder key that every task VM holds. The Gateway keeps the key as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes the origin and the key into the Pi models file of the VM, inside the claim. No start and no release calls the model router, and no per-VM key exists.
 
-The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:teardown` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
+The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:destroy` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
