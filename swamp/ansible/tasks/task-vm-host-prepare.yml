@@ -199,6 +199,25 @@
     argv: [incus, image, copy, images:ubuntu/26.04/cloud, "local:", --vm, --alias, "{{ host.image }}", --target-project, "{{ host.project }}"]
   changed_when: true
 
+- name: Allow task VM DHCP requests to the host
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ host.network }}"
+    proto: udp
+    from_port: '68'
+    to_port: '67'
+    comment: orbit:task-vms-dhcp
+
+- name: Allow task VM DNS to the bridge address
+  community.general.ufw:
+    rule: allow
+    interface_in: "{{ host.network }}"
+    proto: "{{ item }}"
+    to_ip: "{{ prepare_bridge.split('/')[0] }}"
+    to_port: '53'
+    comment: "orbit:task-vms-dns-{{ item }}"
+  loop: [udp, tcp]
+
 - name: Allow forwarded task VM traffic
   community.general.ufw:
     rule: allow

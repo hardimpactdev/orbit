@@ -75,6 +75,8 @@ Use this checklist when core adds a place for extensions to contribute:
 - Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
 - Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
 
+The core firewall catalog derives DHCP/DNS rules from task-host settings. They use no extension plug-in point. The base refresh applies them, and settings removal or reachable Node removal withdraws them through the same Ansible phase.
+
 The `ci-runner` role is a core Node role. Its host boundary uses the existing role baseline and firewall catalog. It introduces no extension contribution or plug-in point.
 
 

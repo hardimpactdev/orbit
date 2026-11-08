@@ -1,0 +1,25 @@
+---
+- name: Pin and address the retiring task host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: retiring_task_host
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Withdraw task host input rules
+  hosts: retiring_task_host
+  become: true
+  gather_facts: false
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    owned_input_comments: "{{ intent.comments | map('regex_escape') | join('|') }}"
+  tasks:
+    - name: Withdraw only the owned input rules and prove their absence
+      ansible.builtin.import_tasks: tasks/task-host-firewall-remove.yml

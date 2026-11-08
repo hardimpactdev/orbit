@@ -1,6 +1,6 @@
 id: "b100f60c-b164-4036-8881-17e603ba3901"
 name: "operation-node-update"
-description: "Create a Node's apps folder with official cfgmgmt from 209 and prove its owner and mode."
+description: "Withdraw retired task-host input rules and prepare a changed apps folder before saving Node settings."
 vaults: []
 queueTimeout: 30
 inputs:
@@ -17,8 +17,22 @@ jobs:
 - name: settings
   labels: {role: swamp}
   steps:
+  - name: Withdraw task host input
+    labels: {role: swamp}
+    guard: '${{ size(inputs.intent.task_host_input_comments) == 0 }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-host-firewall-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ {"ssh":inputs.intent.ssh,"comments":inputs.intent.task_host_input_comments} }}'
+        execution_secrets: {}
     # Missing parts are created; the folder gets the managed user and group, mode 0755.
   - name: 'Create the apps folder'
+    guard: '${{ inputs.intent.storage.root == null }}'
+    dependsOn: [{step: Withdraw task host input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     labels: {role: swamp}
     writes: true
     task:
@@ -32,6 +46,7 @@ jobs:
       inputs: {}
     # The folder's type, owner, group and mode in one stat.
   - name: 'Check owner and mode'
+    guard: '${{ inputs.intent.storage.root == null }}'
     labels: {role: swamp}
     dependsOn: [{step: 'Create the apps folder', condition: {type: succeeded}}]
     task:

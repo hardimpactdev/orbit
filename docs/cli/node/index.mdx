@@ -29,6 +29,8 @@ A Node's `updating` field is set only while a Gateway release runs on the Gatewa
 
 A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
+Removing task-host settings or changing the bridge or CIDR withdraws the owned DHCP/DNS input rules before saving the patch. Other task-host settings remain record-only. See [Node settings](/reference/node-settings).
+
 ## Commands
 
 | Command | Result |

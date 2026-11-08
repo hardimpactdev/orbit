@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, task_vms is record-only, apps.path is Node work, one node:update. docs/reference/node-settings.md.
+  %% Target design: ADR 0244 task, task-host input withdrawal and apps.path are Node work, one node:update. docs/reference/node-settings.md.
   %% status: reviewed
   %% command: node:update
   %% kind: node.update
@@ -18,7 +18,7 @@ sequenceDiagram
   %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]`
   %%> Input:
   %%> - the Node, and at least one setting to change
-  %%> - `--apps-path` is the change that needs Node work; the other settings are records
+  %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
   %%> - an empty value unsets a setting: `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
   %%> - whether the apps folder changes and needs Node work, so a run starts
-  alt apps folder changes
+  alt apps folder changes or task host is removed or its bridge changes
     GW->>SW: Start run, full intent<br/>operation-node-update
     %%> Inputs:
     %%> - the new apps folder, and the managed user and group that must own it
@@ -45,9 +45,15 @@ sequenceDiagram
     %%> - the task ID, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
+    opt existing task host removed or bridge / CIDR changed
+      SW->>N: Withdraw task host input<br/>shared Ansible phase
+      %%> What it does:
+      %%> - removes only rules with the three catalog-owned task-host input comments, including duplicates and IPv6 rows
+      %%> - reads the firewall again and asserts none remain; failure keeps the stored settings
+    end
     SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
     %%> What it does:
-    %%> - creates the folder and any missing folders above it
+    %%> - only when an apps-folder change needs preparation: creates the folder and any missing folders above it
     %%> - gives it the managed user and group and mode `0755`
     %%> Not included:
     %%> - existing Instances don't move; new development Instances use the new folder
@@ -83,7 +89,7 @@ sequenceDiagram
   else only records change
     Note over GW: Save the records
     %%> What it does:
-    %%> - saves the name, platform and task VM host settings at once; no task and no run, and no Node is contacted
+    %%> - saves the name, platform or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
     %%> Skipped:
     %%> - when every value equals the stored one, nothing is written and the result reports `Skipped — already set (node.unchanged)`
     %%> - the skip reason is part of the successful result in human and machine output, not an error

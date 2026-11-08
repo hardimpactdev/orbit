@@ -16,12 +16,17 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or [`node:update`](/cli/node/update). The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
+A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Adding task-host settings or changing capacity is stored at once. Removing an existing task host or changing its bridge or CIDR records an Operation that withdraws its owned DHCP/DNS input rules before saving the settings. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 
-The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
+The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target, any resolved apps folder with the managed user and group, and the catalog comments of any task-host input rules to withdraw. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 
 The steps are:
 
+`Withdraw task host input` runs when a task host is removed or its bridge changes. The shared Ansible phase deletes rows with the admitted catalog comments and checks that none remain. Reachable Node removal uses the same phase.
+
+When no apps folder needs preparation, the withdrawal step is the terminal check. Its successful result lets Orbit save the settings even though the folder check is skipped.
+
+The apps-folder steps run only when the patch needs folder preparation:
 - `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
 - `Check owner and mode` reads the folder with one `stat`. It is the end check.
 - The Gateway reads its output from Swamp's run data.
@@ -29,13 +34,13 @@ The steps are:
 - Any other output fails the task with `node.settings_root_failed`.
 - The Gateway stores the settings only after that check passed.
 
-The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in any of these steps reports `node.settings_root_failed`; the failure detail holds the reason.
+The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. An apps-folder failure reports `node.settings_root_failed`; the failure detail holds the reason. A firewall withdrawal failure keeps the old settings, so its owned rules remain visible for retry.
 
 Gateway admission resolves the root and checks it: path grammar, protected paths, managed checkouts, and the managed home `/home/<user>` that Orbit creates. It refuses `/`, `/home`, any home folder itself (`/root` or a folder directly under `/home`), `/etc` and `/usr`. It performs no account lookup or filesystem action.
 
-An action on an apps root requires Linux. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
+Execution requires Linux for apps preparation and for firewall withdrawal. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
 
-State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
+State-only patches, such as task-host capacity changes, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
 ## Set the apps root
 
@@ -163,7 +168,7 @@ The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
-| `node.settings_platform_unsupported` | An apps-root action requires a Linux Node. |
+| `node.settings_platform_unsupported` | Apps preparation and firewall withdrawal require a Linux Node. |
 | `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member or is not an object or null. An unknown top-level member or an empty body returns `validation.failed`. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |
