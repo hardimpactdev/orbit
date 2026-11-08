@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.08.2
+version: 2026.11.08.3
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
@@ -73,6 +73,8 @@ additionalFiles:
   - ansible/swamp-worker-renewal.yml
   - ansible/tasks/swamp-worker-renew-slot.yml
   - ansible/tasks/swamp-worker-renew-verify.yml
+  - ansible/tasks/swamp-worker-retire-overlap.yml
+  - ansible/tasks/swamp-worker-overlap-credentials.yml
   - ansible/tasks/swamp-worker-renewal.yml
   - ansible/tasks/swamp-start-cache.yml
   - ansible/requirements.txt

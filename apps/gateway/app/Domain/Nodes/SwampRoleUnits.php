@@ -75,7 +75,7 @@ final class SwampRoleUnits
     private static function renewalTimer(): string
     {
         return "[Unit]\nDescription=Schedule Orbit swamp worker connection renewal\n\n"
-            ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=1h\nAccuracySec=1s\n\n"
+            ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=5min\nAccuracySec=1s\n\n"
             ."[Install]\nWantedBy=timers.target\n";
     }
 

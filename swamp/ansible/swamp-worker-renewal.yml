@@ -4,10 +4,14 @@
   connection: local
   gather_facts: false
   vars:
+    renewal_credential_owner: root
+    renewal_credential_group: "{{ orbit_user }}"
+    renewal_credentials_dir: /etc/orbit/swamp-role-worker/c
     renewal_swamp_binary: /usr/local/bin/swamp
     renewal_accepting: [idle, busy]
     renewal_name: "{{ renewal_names[renewal_slot] }}"
     renewal_peer_name: "{{ renewal_names[renewal_peer] }}"
+    renewal_overlap_name: "swamp-role-{{ orbit_node_id }}-c"
   tasks:
     - name: Find the worker account home
       ansible.builtin.getent:
@@ -70,9 +74,22 @@
           Worker renewal stopped: cannot resolve both unit names from enrollment journals.
           The eight-hour session cap can still abort active dispatches.
           No worker was drained; retry in five minutes
-    - name: Renew a before touching b
-      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
-      vars: {renewal_slot: a, renewal_peer: b}
-    - name: Renew b only after a accepts work
-      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
-      vars: {renewal_slot: b, renewal_peer: a}
+    - name: Name the role-owned overlap enrollment
+      ansible.builtin.set_fact:
+        renewal_names: "{{ renewal_names | combine({'c': renewal_overlap_name}) }}"
+        renewal_completed: false
+    - name: Finish retiring overlap from a previously completed round first
+      ansible.builtin.import_tasks: tasks/swamp-worker-retire-overlap.yml
+      vars: {renewal_retire_if_ready: true}
+    - name: Renew at most one base worker with replacement capacity
+      ansible.builtin.include_tasks: tasks/swamp-worker-renew-slot.yml
+      loop:
+        - {slot: a, peer: b}
+        - {slot: b, peer: a}
+      loop_control: {loop_var: renewal_pair, label: "{{ renewal_pair.slot }}"}
+      vars:
+        renewal_slot: "{{ renewal_pair.slot }}"
+        renewal_peer: "{{ renewal_pair.peer }}"
+      when: not renewal_completed
+    - name: Retire any overlap left by a completed renewal
+      ansible.builtin.import_tasks: tasks/swamp-worker-retire-overlap.yml

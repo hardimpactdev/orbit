@@ -33,5 +33,5 @@ it('renders one renewal service and one timer for the pair', function (): void {
 
     expect($units['renewal_service'])->toContain('/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user=orbit -e orbit_node_id=209')
         ->toContain("TimeoutStartSec=3h\nRestart=on-failure\nRestartSec=5min\n")
-        ->and($units['renewal_timer'])->toContain("OnActiveSec=1min\nOnUnitInactiveSec=1h\n");
+        ->and($units['renewal_timer'])->toContain("OnActiveSec=1min\nOnUnitInactiveSec=5min\n");
 });
