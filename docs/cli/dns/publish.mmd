@@ -104,7 +104,7 @@ sequenceDiagram
     %%> - a `dns.config_invalid` refusal installed nothing, so there is nothing to restore
     Note over N: Check the recovery<br/>dig UDP and TCP
     %%> What it does:
-    %%> - asks the restored resolvers on the VPN address and on 127.0.0.55, over UDP and TCP
+    %%> - asks the restored resolvers on the first listen address (the VPN address) and on 127.0.0.55, over UDP and TCP; further listen addresses were not served by the old setup
     %%> - the result says `recovered: true`; when a task or an answer fails it says `recovered: false` and `dns.rollback_failed`
     N--xSW: exit ≠ 0
     %%> When:

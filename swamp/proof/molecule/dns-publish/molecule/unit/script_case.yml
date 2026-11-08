@@ -20,7 +20,7 @@
     case_restore: "{{ lookup('ansible.builtin.template', templates ~ '/dns-restore.sh.j2') }}"
   vars:
     t: "{{ sandbox.path }}/{{ sc.id }}"
-    dns: {listen: [10.99.99.1]}
+    dns: {listen: "{{ sc.listen | default(['10.99.99.1']) }}"}
     dns_port: 53
     dns_snapshot: "{{ t }}/snap"
     dns_dir: "{{ t }}/dns"

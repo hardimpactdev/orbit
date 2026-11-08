@@ -149,7 +149,7 @@ Last it checks the result:
 5. A mismatch restores the snapshot and fails with `dns.check_failed`.
 6. It writes `orbit.revision`, then commits: the new files become the last good set, and `reload.pending` and the snapshot go.
 
-The recovery after a failure that changed the Node puts the snapshot back and starts the old listener units that ran. It asks the restored resolvers over UDP and TCP, on the VPN address and on `127.0.0.55`. The result then says `recovered: true`. When a task or an answer fails, it says `recovered: false` with `dns.rollback_failed` and the cause, and the snapshot stays. The check shows that the restored resolvers answer, not what they answer.
+The recovery after a failure that changed the Node puts the snapshot back and starts the old listener units that ran. It asks the restored resolvers over UDP and TCP, on the first listen address (the VPN address) and on `127.0.0.55`. A further listen address was not served by the old setup, so it is only reported. The result then says `recovered: true`. When a task or an answer fails, it says `recovered: false` with `dns.rollback_failed` and the cause, and the snapshot stays. The check shows that the restored resolvers answer, not what they answer.
 
 An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart. On Ubuntu 26.04, five dnsmasq restarts under a query every 66 ms on average lost no query, and the first cutover from a fake old listener lost none of 685 queries.
 

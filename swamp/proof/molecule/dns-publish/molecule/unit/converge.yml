@@ -487,6 +487,17 @@
           candidate: gone
           legacy: legacy
           systemctl: "{{ [script_stop, 'restart dnsmasq', script_held] + script_recovery }}"
+      - id: blocker-refuses
+        name: a further listen address answers REFUSED from a foreign dnsmasq, and the old setup is still recovered
+        units: *script_units
+        listen: ["10.99.99.1", "10.99.99.77"]
+        fail_restart: true
+        expect:
+          rc: 1
+          state: recovered dnsmasq_start_failed
+          candidate: gone
+          legacy: legacy
+          systemctl: "{{ [script_stop, 'restart dnsmasq'] + script_recovery }}"
       - id: restore-fails
         name: the restored resolvers do not answer, and the state says failed
         units: *script_units
