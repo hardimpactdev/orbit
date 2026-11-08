@@ -25,6 +25,12 @@ def test_duplicate_junit_is_failure(tmp_path):
     assert project(xml, ['x'])[0]['verdict'] == 'failed'
 
 
+def test_nonzero_session_exit_cannot_project_all_passed(tmp_path):
+    xml = tmp_path / 'cases.xml'
+    xml.write_text('<testsuite><testcase name="firewall:allow[x]"/></testsuite>')
+    assert project(xml, ['x'], 3)[0]['verdict'] == 'failed'
+
+
 def test_normal_ci_runner_dispatches_only_canonical_firewall_file():
     script = '''import sys
 from pathlib import Path

@@ -27,7 +27,7 @@ def metadata():
                     yield {word.arg: ast.literal_eval(word.value) for word in decorator.keywords}
 
 
-def project(xml, wanted):
+def project(xml, wanted, returncode=0):
     """Missing, duplicate, skipped and setup/teardown errors all fail closed."""
     found = {}
     for case in ET.parse(xml).iter('testcase'):
@@ -41,8 +41,13 @@ def project(xml, wanted):
         if errors:
             row['failed'] = [error.get('message', error.tag) for error in errors]
         found[case_id] = row
-    return [found.get(case_id, {'id': case_id, 'verdict': 'failed', 'secs': 0,
+    rows = [found.get(case_id, {'id': case_id, 'verdict': 'failed', 'secs': 0,
                                 'failed': ['missing pytest result']}) for case_id in wanted]
+    # CI deliberately accepts any process exit and projects verdict lines. A
+    # session/collection/plugin error must therefore also fail a verdict line.
+    if returncode and rows and all(row['verdict'] == 'passed' for row in rows):
+        rows[0].update(verdict='failed', failed=[f'pytest session exited {returncode} despite passing testcase results'])
+    return rows
 
 
 def output(rows, summaries, metrics):
@@ -104,7 +109,7 @@ def main():
         codes.append(done.returncode)
         summaries.extend(line.strip('= ') for line in done.stdout.splitlines()
                          if re.match(r'^=+ .*\b(?:passed|failed|error|errors)\b.* =+$', line))
-        rows.extend(project(xml, ids) if xml.exists() else
+        rows.extend(project(xml, ids, done.returncode) if xml.exists() else
                     [{'id': case_id, 'verdict': 'failed', 'secs': 0, 'failed': ['pytest produced no JUnit']} for case_id in ids])
     metrics = {'spike': 'pytest-testinfra', 'batch': args.batch, 'install_secs': round(install_seconds, 2),
                'case_phase_secs': round(time.monotonic() - began, 2), 'returncodes': codes}
