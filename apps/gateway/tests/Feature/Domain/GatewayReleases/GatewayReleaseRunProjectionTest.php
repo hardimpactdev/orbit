@@ -13,14 +13,14 @@ use Illuminate\Support\Facades\Queue;
 uses(LazilyRefreshDatabase::class);
 
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
-function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = ''): GatewayRelease
+function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = []): GatewayRelease
 {
     $sha = str_repeat('ab', 20);
     $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
         'force' => false, 'phases' => [], 'duration_ms' => 0]);
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
         'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6)],
-        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f']]);
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'native_progress' => ['steps' => $steps]]]);
     $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
     new GatewayReleaseRunProjection()->apply($operation, ['run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => $status,
         'started_at' => '2026-11-04T16:00:00.000Z', 'finished_at' => '2026-11-04T16:01:00.000Z', 'result' => $result,
@@ -82,4 +82,19 @@ it('queues no task image refresh itself: the run\'s own step admits it', functio
     Queue::fake();
     endReleaseRun('succeeded');
     Queue::assertNotPushed(RefreshTaskVmImages::class);
+});
+
+it('warns on a verified release when the Swamp Node\'s Ansible collections differ from the release\'s, with the converge that installs them', function (): void {
+    $steps = [['name' => 'checkout', 'job' => 'load', 'status' => 'succeeded'], ['name' => 'Check the Ansible collections', 'job' => 'load', 'status' => 'failed'],
+        ['name' => 'load', 'job' => 'load', 'status' => 'succeeded']];
+    $record = endReleaseRun('succeeded', steps: $steps);
+
+    expect($record->outcome)->toBe('verified')
+        ->and($record->phases['swamp'])->toBe(['warning' => 'swamp.collections_drift', 'fix' => 'orbit node:role:add 209 swamp --converge']);
+});
+
+it('records no collections warning when the check passed', function (): void {
+    $record = endReleaseRun('succeeded', steps: [['name' => 'Check the Ansible collections', 'job' => 'load', 'status' => 'succeeded']]);
+
+    expect($record->phases)->not->toHaveKey('swamp');
 });
