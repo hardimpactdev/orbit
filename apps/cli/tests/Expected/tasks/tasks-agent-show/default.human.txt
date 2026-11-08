@@ -13,9 +13,9 @@ Loading agent thread...
 │
 ├  Kind             snapshot
 │
-├  Source           live
+├  Source           saved transcript
 │
-├  Cursor           run-1.7
+├  Cursor           —
 │
 ├  Tokens           48,200
 │

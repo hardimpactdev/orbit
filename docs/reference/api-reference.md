@@ -92,7 +92,7 @@ The `tasks:turn`, `tasks:check` and `tasks:publish` descriptions name the refusa
 
 The `tasks:pr-ready` and `tasks:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `tasks:dependency-merge`; the MCP tools `tasks-pr-ready` and `tasks-pr-merge` are the callers.
 
-The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
+The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's recorded snapshot and not a data class.
 
 The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind, such as `ufw`, and the `subject` that `checkout` and `packages` facts need; a new kind changes that list in the same change. It also writes the `agent:watch` response, including `applications`, a map whose empty form is `{}`.
 

@@ -36,8 +36,8 @@
             "provider_error": null,
             "thread_id": 3,
             "kind": "snapshot",
-            "cursor": "run-1.7",
-            "archived": false
+            "cursor": null,
+            "archived": true
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

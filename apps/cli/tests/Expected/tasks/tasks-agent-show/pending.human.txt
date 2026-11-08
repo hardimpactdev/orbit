@@ -13,7 +13,7 @@ Loading agent thread...
 │
 ├  Kind             snapshot
 │
-├  Source           live
+├  Source           no recorded transcript
 │
 ├  Cursor           —
 │
