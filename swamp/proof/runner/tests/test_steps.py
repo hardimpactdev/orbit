@@ -287,6 +287,58 @@ class StepTest(unittest.TestCase):
         created = steps.cli(self.run, {'run': ['firewall:allow', '80', '--node=211', '--from=x'], 'expect': {'exit': 0, 'request': 'none'}})
         self.assertEqual(created, ['cli firewall:allow: created Operation [1], expected no request'])
 
+    @staticmethod
+    def operation(number, kind='firewall.allow', target_type='node_firewall', target_id=211):
+        return {'id': number, 'kind': kind, 'target_type': target_type, 'target_id': target_id}
+
+    def test_operation_reads_filter_by_the_kind_and_the_placed_node(self):
+        self.run.target = 'app-prod'
+        self.fleet.operation_rows = [self.operation(1), self.operation(2, target_id=212), self.operation(3, kind='firewall.deny', target_id=212),
+                                     self.operation(4, target_type='node', target_id=212)]
+        self.assertEqual(steps.operation_ids(self.run), {2})
+        self.assertEqual(self.fleet.operation_queries, [('firewall.allow', 'node_firewall', 212)])
+
+    def test_other_nodes_and_kinds_do_not_change_the_operations_baseline(self):
+        self.fleet.operation_rows = [self.operation(number) for number in range(1, 51)]
+        expect = {'since': 'act', 'what': ['operations']}
+        steps.take_baseline(self.run, [spec.Step('unchanged', expect)])
+        self.fleet.operation_rows += [self.operation(number, target_id=212) for number in range(51, 111)]
+        self.fleet.operation_rows += [self.operation(111, kind='firewall.deny'), self.operation(112, target_type='node')]
+        self.assertEqual(steps.unchanged(self.run, expect), [])
+        self.fleet.operation_rows.append(self.operation(113))
+        self.assertEqual(len(steps.unchanged(self.run, expect)), 1)
+
+    def test_a_created_operation_cannot_hide_behind_fifty_newer_unrelated_rows(self):
+        self.fleet.operation_rows = [self.operation(number) for number in range(1, 51)]
+        self.fleet.next_id = 51
+        cli = self.fleet.cli
+
+        def create_and_obscure(*args, **kwargs):
+            result = cli(*args, **kwargs)
+            self.fleet.operation_rows += [self.operation(number, target_id=212) for number in range(52, 112)]
+            return result
+
+        with patch.object(self.fleet, 'cli', create_and_obscure):
+            found = steps.cli(self.run, {'run': ['firewall:allow', '80', '--node=211', '--from=x'], 'expect': {'exit': 0, 'request': 'none'}})
+        self.assertEqual(found, ['cli firewall:allow: created Operation [51], expected no request'])
+
+    def test_no_request_ignores_concurrent_operations_on_other_nodes(self):
+        cli = self.fleet.cli
+
+        def another_node(*args, **kwargs):
+            self.fleet.operation_rows.append(self.operation(1, target_id=212))
+            return cli(*args, **kwargs)
+
+        with patch.object(self.fleet, 'cli', another_node):
+            self.assertEqual(steps.cli(self.run, {'run': ['firewall:allow', '80'], 'expect': {'exit': 1, 'request': 'none'}}), [])
+
+    def test_failed_or_malformed_operation_reads_do_not_prove_no_request(self):
+        for result in ({'rc': 22, 'json': {'data': []}}, {'rc': 0, 'json': None}, {'rc': 0, 'json': {}},
+                       {'rc': 0, 'json': {'data': [{'id': '1'}]}}, {'rc': 0, 'json': {'data': [{'id': 0}]}}):
+            with self.subTest(result=result), patch.object(self.fleet, 'operations', return_value={**result, 'stdout': '', 'stderr': ''}):
+                with self.assertRaises(steps.Infra):
+                    steps.cli(self.run, {'run': ['firewall:allow', '80'], 'expect': {'exit': 1, 'request': 'none'}})
+
     def test_cli_skipped_reads_the_reason_from_the_json_document(self):
         args = {'run': ['firewall:allow', '80', '--node=211', '--from=x'], 'expect': {'exit': 0, 'status': 'succeeded', 'skipped': 'firewall.rule_exists'}}
         self.assertEqual(steps.cli(self.run, args), ['cli firewall:allow: not skipped with firewall.rule_exists'])
@@ -543,7 +595,7 @@ class StepTest(unittest.TestCase):
         steps.take_baseline(self.run, [spec.Step('unchanged', {'since': 'act', 'what': ['firewall_records', 'listeners', 'operations']})])
         self.fleet.records.append({'port': '5', 'status': 'active'})
         self.fleet.listeners['app-dev'].add(('tcp', 4, 5000))
-        self.fleet.next_id = 3
+        self.fleet.operation_rows.append({'id': 3, 'kind': 'firewall.allow', 'target_type': 'node_firewall', 'target_id': 211})
         found = steps.unchanged(self.run, {'since': 'act', 'what': ['firewall_records', 'listeners', 'operations']})
         self.assertEqual(len(found), 3)
 

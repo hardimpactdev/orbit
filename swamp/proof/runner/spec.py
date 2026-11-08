@@ -44,11 +44,10 @@ STEPS = {
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive'}
 DEFAULT_PARALLEL = 4
-# Steps that change something every case shares (a Node's `ufw`, the Gateway lock, a Node's agent, the addresses): the case runs alone.
-GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
-# Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
+GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
+READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
 # Steps that name the Node they work on under `on` or `node`.
-NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor', 'service', 'package'}
+NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor', 'fault', 'busy_node', 'service', 'package'}
 # Step keys whose list value means one step per item.
 EXPAND = {'probe': ('from', 'proto', 'port', 'family'), 'ufw_rule': ('proto', 'family')}
 
@@ -82,7 +81,7 @@ class Case:
     timeout: int
     fails_today: str | None = None
     node: str | None = None   # the Node that plays the target of the file; set by `load`
-    lock: str = 'node'        # `all` runs alone, `node` is the only case on its Node (see `lock_of`)
+    lock: str = 'node'        # `all` holds the fleet, `node` writes its Node, `read` shares its Node with readers
     exclusive: bool = False   # the case asked to run alone
     fails_on_base: bool = False
 
@@ -337,17 +336,16 @@ def case_steps(case):
 
 
 def lock_of(case, target):
-    """What the case needs of the fleet while it runs. `all`: it alone (it changes or compares what every case shares: the Operation
-    list, the records of every Node, a fault, a stalled lock, the addresses, a Node other than its own). `node`: it alone on its Node (it
-    compares or waits on the whole state of that Node, and the firewall write lock of the Gateway lets one write run on a Node at a time)."""
+    """Hold the whole fleet for shared changes, one Node for a writer, or share a Node with other readers.
+    The lock covers setup, every stage and cleanup; a refusal with a mutating setup is still a writer."""
     steps = case_steps(case)
     names = {step.name for step in steps}
-    compares_operations = any(step.name == 'unchanged' and 'operations' in (step.args.get('what') or []) for step in steps)
-    no_request = any(step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none' for step in steps)
     reads_every_node = any(step.name == 'record' and 'node' not in step.args for step in steps)
     other_node = any(step.args.get(key) not in (None, target) for step in steps if step.name in NODE_WORK for key in ('on', 'node'))
-    if case.exclusive or names & GLOBAL_STEPS or compares_operations or no_request or reads_every_node or other_node:
+    if case.exclusive or names & GLOBAL_STEPS or reads_every_node or other_node:
         return 'all'
+    if all(step.name in READ_STEPS or (step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none') for step in steps):
+        return 'read'
     return 'node'
 
 

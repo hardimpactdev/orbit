@@ -39,6 +39,7 @@ LIST_ROWS = {'firewall:list': 'rules'}
 # and `live` is the one object that holds the state of the report.
 RECORD_SECTIONS = ('rules', 'managed', 'unmatched', 'live')
 BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners', 'node_records')
+OPERATION_TARGETS = {'firewall': 'node_firewall'}
 
 
 class Infra(Exception):
@@ -218,7 +219,19 @@ def probe(run, args):
 
 
 def operation_ids(run):
-    return {item.get('id') for item in (run.cli(['operation:list'])['json'] or {}).get('operations', [])}
+    """Read only the command's Operations on this Node. A failed or malformed read cannot prove no request."""
+    family = run.spec.command.split(':', 1)[0]
+    if family not in OPERATION_TARGETS:
+        raise NotBuilt(f'operations target for {family} is not built')
+    scope = (run.spec.command.replace(':', '.'), OPERATION_TARGETS[family], run.fleet.nodes[run.target]['node_id'])
+    result = run.keep(run.fleet.operations(*scope), 'json')
+    document = result['json']
+    if result['rc'] or not isinstance(document, dict) or not isinstance(document.get('data'), list):
+        raise Infra('operation:list failed or returned no Operations list')
+    rows = document['data']
+    if any(not isinstance(row, dict) or type(row.get('id')) is not int or row['id'] < 1 for row in rows):
+        raise Infra('operation:list returned an invalid Operation ID')
+    return {row['id'] for row in rows}
 
 
 def skip_reasons(node):
@@ -264,7 +277,7 @@ def cli(run, args):
         raise Infra(f'cli as {caller}: not a Node of the fleet')
     if caller and script is not None:
         raise NotBuilt('cli as with tty is not built')
-    before = operation_ids(run) if 'request' in expect else None
+    before = max(operation_ids(run), default=0) if 'request' in expect else None
     failures = []
     for form in forms:
         label = f'cli {argv[0]}' + ('' if len(forms) == 1 and script is None else f' ({"tty" if script is not None else form})')
@@ -279,7 +292,7 @@ def cli(run, args):
         if form == 'json':
             for path, name in (args.get('save') or {}).items():
                 run.names[name] = json_value(result['json'], path)
-    if before is not None and (created := operation_ids(run) - before):
+    if before is not None and (created := {number for number in operation_ids(run) if number > before}):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
     return failures
 
@@ -639,8 +652,8 @@ def snapshot(run, provider):
         return [line.split()[-2] for line in run.fleet.sh(node, 'ss -Htlun').stdout.splitlines() if len(line.split()) > 3]
     if provider == 'node_records':
         return [json.dumps(recorded_guest(run, {'mode': 'snapshot'}), sort_keys=True)]
-    result = run.cli(['operation:list'])
-    return [str(item.get('id')) for item in (result['json'] or {}).get('operations', [])]
+    # Operations are append-only. The newest matching ID detects additions even when older rows leave the 50-row page.
+    return [str(max(operation_ids(run), default=0))]
 
 
 def without_port(provider, entries, port):

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # The prompt driver and the ufw shim loop by nature, so they live with the guest programs, outside the Swamp-shape
@@ -72,6 +73,18 @@ class Fleet:
             parsed = None
         return {'rc': completed.returncode, 'json': parsed, 'stdout': completed.stdout, 'stderr': completed.stderr,
                 'secs': round(time.time() - started, 2), 'args': ['orbit', *words]}
+
+    def operations(self, kind, target_type, target_id):
+        """The operation:list API applies these filters before its newest-50 limit. The CLI has no generic target filters."""
+        query = urlencode({'kind': kind, 'target_type': target_type, 'target_id': target_id})
+        done = subprocess.run(['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '60', '--cacert', OUTER_CA,
+                               f'https://{NESTED_GATEWAY}/api/v1/operations?{query}'],
+                              capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL)
+        try:
+            parsed = json.loads(done.stdout)
+        except ValueError:
+            parsed = None
+        return {'rc': done.returncode, 'json': parsed, 'stdout': done.stdout, 'stderr': done.stderr}
 
     def incus_exec(self, node, argv, timeout=60):
         """A program on a Node as its managed user, with the home of that user."""

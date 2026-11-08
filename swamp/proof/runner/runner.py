@@ -195,7 +195,8 @@ def command_plan(args):
         print(f"batch {batch['batch']}: {batch['summary']}")
         for case_id in batch['cases']:
             case = spec.case(case_id)
-            print(f'  {case_id}  on {case.node}, {"alone" if case.lock == "all" else "alone on its Node"}  covers {case.covers}')
+            lock = {'all': 'alone', 'node': 'alone on its Node', 'read': 'reads its Node'}[case.lock]
+            print(f'  {case_id}  on {case.node}, {lock}  covers {case.covers}')
             if args.steps:
                 for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]:
                     print(f'    {step.where.split(" ", 2)[-1]} {step.name} {json.dumps(step.args, sort_keys=True)}')
@@ -239,17 +240,17 @@ def command_case(args):
 
 
 def may_start(case, active):
-    """A case that runs alone waits for the others to end and holds the fleet; any other case needs a Node no running case works on."""
+    """Several readers may share a Node. A writer holds its Node, and a global case holds the fleet."""
     if any(other.lock == 'all' for other in active):
         return False
     if case.lock == 'all':
         return not active
-    return all(other.node != case.node for other in active)
+    return all(other.node != case.node or (other.lock == case.lock == 'read') for other in active)
 
 
 def schedule(cases, limit, work):
     """Run `work(case)` for the cases, at most `limit` at a time, and yield `(case, result)` as each ends. The cases that share the fleet
-    with others go first, in file order; the ones that run alone follow. A case waits for a free Node, and the next that can start goes on."""
+    with others go first, in file order; the ones that run alone follow. A case waits for its Node lock, and the next that can start goes on."""
     waiting = [case for case in cases if case.lock != 'all'] + [case for case in cases if case.lock == 'all']
     running = {}
     with concurrent.futures.ThreadPoolExecutor(limit) as pool:

@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -247,6 +248,17 @@ class FleetCliTest(unittest.TestCase):
             found.cli(['firewall:list'])
         self.assertEqual(run.call_args_list[0].args[0][:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
         self.assertEqual(run.call_args.kwargs['env']['COLUMNS'], '240')
+
+    def test_operation_list_filters_on_the_api_with_the_pinned_nested_ca(self):
+        with patch.object(fleet_module.subprocess, 'run', return_value=completed(out='{"data":[{"id":8}]}')) as call:
+            result = fleet_module.Fleet({}).operations('firewall.allow', 'node_firewall', 211)
+        argv = call.call_args.args[0]
+        url = urlparse(argv[-1])
+        self.assertEqual((url.scheme, url.netloc, url.path), ('https', '10.45.0.1', '/api/v1/operations'))
+        self.assertEqual(parse_qs(url.query), {'kind': ['firewall.allow'], 'target_type': ['node_firewall'], 'target_id': ['211']})
+        self.assertIn('--fail-with-body', argv)
+        self.assertEqual(argv[argv.index('--cacert') + 1], fleet_module.OUTER_CA)
+        self.assertEqual(result['json'], {'data': [{'id': 8}]})
 
 
 class NodeCliTest(unittest.TestCase):
