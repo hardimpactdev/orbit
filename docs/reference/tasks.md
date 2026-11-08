@@ -413,7 +413,7 @@ In manual mode it acts when the latest review of the reviewer approves the exact
 
 In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
 
-The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the task VM identity, its resume only when parked, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its only generated deliverable is that the runner plan of the cases file passes. The handoff check runs the configured Project check once, before the deliverables, and a failure blocks handoff. The intent also holds the task VM identity, its resume only when parked, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
 
 The native `operation-task-build` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the sync directly:
 
@@ -1007,7 +1007,7 @@ On Node 209 the run makes a bare clone of the default branch, fetches the task b
 
 ## Project check
 
-A `tasks.check` operation runs the Project's configured check once, before the subtask's deliverables. Command builds add the runner plan as a command deliverable; they do not repeat the configured Project check as another command deliverable. Without a configured command, the build adds a Project-check review deliverable. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
+A `tasks.check` operation runs the Project's configured check once, before the subtask's deliverables. Command builds add only the runner plan as a generated command deliverable; they add no Project-check deliverable, even without a configured check command. A failed Project check blocks handoff. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
 
 ### Check output
 

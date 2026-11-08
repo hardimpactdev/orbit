@@ -171,7 +171,7 @@ sequenceDiagram
     %%> What it does:
     %%> - the gate check (reads only, every minute) sees the approval on the head of the draft PR of a prep group whose spec is done
     %%> - the Gateway records the approval, appends the implementation subtask, moves the group to `running` and admits one run, `tasks.build` (`docs/cli/task/build.mmd`)
-    %%> - the subtask has a fixed brief that names the approved chart, page and cases and the approved head; its runner-plan command deliverable must pass; handoff runs the configured Project check once, before the deliverables; a Project without a check command also gets a Project-check review deliverable
+    %%> - the subtask has a fixed brief that names the approved chart, page and cases and the approved head; its runner-plan command deliverable must pass, and no Project-check deliverable is generated; handoff runs the configured Project check once, before the deliverables, and a failure blocks handoff
     %%> Never:
     %%> - acts on a group that has started its build (it has a build subtask), or on a head other than the approved one; a push after the approval needs a new approval
     %%> Decided by the orchestrator, for Nick's review:
