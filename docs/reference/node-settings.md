@@ -98,7 +98,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | --- | --- | --- | --- |
 | `cidr` | Yes | | Private IPv4 bridge network from `/16` to `/28`, not a host address; it must not overlap the VPN subnet or another host's bridge |
 | `max_vms` | Yes | | Slot capacity, integer from 1 to 64; VM sizes consume one, two, or three slots |
-| `task_max_vms` | No | `null` | Task-work VM count, integer from 0 to 64; parked VMs and operator proofs count. Null adds no limit. Authenticated CI and base refresh proofs are exempt |
+| `task_max_vms` | No | `null` | Task-work VM count from 0 to `max_vms`. Parked VMs and operator proofs count; authenticated CI and base refresh proofs are exempt. Null adds no limit |
 | `ci_only` | No | `false` | Boolean. Only authenticated CI proofs and this host’s own base refresh proof may use this host; CI prefers it over shared hosts |
 | `project` | No | `orbit-tasks` | Incus project name |
 | `network` | No | `orbittask0` | Bridge name: `orbittask` followed by 1 to 6 lowercase letters or digits |

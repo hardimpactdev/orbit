@@ -23,6 +23,8 @@ final readonly class TaskVmHost
     /** The alias of the base image of the Incus project. */
     public const string BaseImage = 'orbit-task-base';
 
+    public const string TaskMaxVmsMessage = 'task_max_vms must be null or an integer from 0 to max_vms.';
+
     /** @param  list<string>  $operatorOwned  `<project>/<name>` or `<project>/*` */
     public function __construct(
         public int $nodeId,
@@ -66,7 +68,7 @@ final readonly class TaskVmHost
             'network' => $name('/\Aorbittask[a-z0-9]{1,6}\z/D'),
             'cidr' => ['required', TaskVmConfig::bridgeRule("{$key}.cidr", $vpnSubnet)],
             'max_vms' => $int(1, 64),
-            'task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64'],
+            'task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64', 'lte:max_vms'],
             'cpus' => $int(1, 64),
             'memory' => $size,
             'disk' => $size,
@@ -84,7 +86,7 @@ final readonly class TaskVmHost
             'network' => "{$key}.network is invalid.",
             'cidr.required' => "{$key}.cidr must be an IPv4 network, for example 10.251.77.0/24.",
             'max_vms' => "{$key}.max_vms must be an integer from 1 to 64.",
-            'task_max_vms' => "{$key}.task_max_vms must be null or an integer from 0 to 64.",
+            'task_max_vms' => $key.'.'.self::TaskMaxVmsMessage,
             'cpus' => "{$key}.cpus must be an integer from 1 to 64.",
             'memory' => "{$key}.memory is invalid.",
             'disk' => "{$key}.disk is invalid.",

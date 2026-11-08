@@ -6,6 +6,7 @@ namespace App\Http\Requests\Nodes;
 
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
 use Illuminate\Foundation\Http\FormRequest;
@@ -35,7 +36,7 @@ final class UpdateNodeRequest extends FormRequest
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
             'task_vms' => ['sometimes', 'nullable', 'array:cidr,max_vms,project,network,pool,pool_size,image_alias,zfs_dataset,cpus,memory,disk,operator_owned,slots,ci_only,task_max_vms'],
-            'task_vms.task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64'],
+            'task_vms.task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64', 'lte:task_vms.max_vms'],
             'task_vms.ci_only' => ['sometimes', 'boolean:strict'],
             'task_vms.cidr' => ['required_with:task_vms', 'string'],
             'task_vms.max_vms' => ['required_with:task_vms', 'integer:strict', 'between:1,64'],
@@ -55,6 +56,12 @@ final class UpdateNodeRequest extends FormRequest
             'task_vms.slots.project_id' => ['required_with:task_vms.slots', 'integer:strict', 'min:1'],
             'task_vms.slots.size' => ['required_with:task_vms.slots', 'string', 'in:normal,medium,large'],
         ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return ['task_vms.task_max_vms' => 'task_vms.'.TaskVmHost::TaskMaxVmsMessage];
     }
 
     /** @return array<string, mixed> */

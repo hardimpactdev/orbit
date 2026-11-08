@@ -7,8 +7,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Http\Requests\Nodes\UpdateNodeRequest;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Validator;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -66,14 +68,14 @@ it('stores and clears a task VM count limit through node update', function (?int
     $settings = $node->refresh()->settings['task_vms'];
     expect($settings['task_max_vms'])->toBe($limit);
     expect(TaskVmHost::fromConfig([...$settings, 'node_id' => $node->id], 0, Ipv4Subnet::from('10.44.0.0/24'), [])->taskMaxVms)->toBe($limit);
-})->with([0, 2, 64, null]);
+})->with([0, 2, 12, null]);
 
 it('rejects invalid task VM count limits', function (mixed $limit): void {
     expect(fn () => NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => $limit], Ipv4Subnet::from('10.44.0.0/24')))
         ->toThrow(TaskVmException::class, 'task_max_vms');
-})->with([-1, 65, '2', 2.5, true]);
+})->with([-1, 13, 64, 65, '2', 2.5, true]);
 
-it('returns 422 for a string task limit and preserves the stored host settings', function (): void {
+it('returns 422 for an invalid task limit and preserves the stored host settings', function (mixed $limit): void {
     $value = ['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => 2];
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'task-host', 'status' => 'active', 'platform' => 'linux',
@@ -81,7 +83,18 @@ it('returns 422 for a string task limit and preserves the stored host settings',
     ]));
     $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
-        ->patchJson("/api/v1/nodes/{$node->id}", ['task_vms' => [...$value, 'task_max_vms' => '2']])->assertUnprocessable()
-        ->assertJsonPath('error.code', 'node.settings_invalid');
+        ->patchJson("/api/v1/nodes/{$node->id}", ['task_vms' => [...$value, 'task_max_vms' => $limit]])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.settings_invalid')
+        ->assertJsonPath('error.message', 'The task VM config is invalid: task_vms.task_max_vms must be null or an integer from 0 to max_vms.');
     expect($node->refresh()->settings['task_vms'])->toBe($value);
+})->with(['string count' => ['2'], 'above host capacity' => [64]]);
+
+it('uses the same upper bound and message in the node update request validator', function (): void {
+    $request = new UpdateNodeRequest;
+    $validator = Validator::make(['task_vms' => ['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => 64]],
+        $request->rules(), $request->messages());
+
+    expect($validator->errors()->get('task_vms.task_max_vms'))->toBe([
+        'task_vms.task_max_vms must be null or an integer from 0 to max_vms.',
+    ]);
 });
