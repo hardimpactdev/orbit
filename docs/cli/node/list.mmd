@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Target design: recorded-state reads and the Node family rules in the node:list prep brief. The request uses Gateway records and agent facts only; no Node or external-system contact.
+  %% status: draft
+  %% command: node:list
+  %% kind: node.list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: node:list
+  %%> Command:
+  %%> - `orbit node:list`
+  %%> - syntax: `orbit node:list [options]`
+  Note over GW: Check collection access<br/>NodeAccessAuthorizer
+  %%> Requirements:
+  %%> - the [shared NodeAccessAuthorizer collection rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php#L65-L91)
+  alt caller refused
+    %% path: access-refused
+    GW--xCLI: Access required<br/>node_access.required
+    %%> Result:
+    %%> - exit 1; no records change
+  else caller admitted
+    %% path: authorized
+    Note over GW: Read visible Nodes<br/>name, then ID
+    %%> What it does:
+    %%> - selects only the caller's visible records under the shared authority rule
+    %%> - starts no Operation or Swamp run
+    alt no Nodes
+      %% path: empty
+      GW-->>CLI: No nodes.
+      %%> Result:
+      %%> - exit 0; the Node list is empty
+    else Nodes recorded
+      %% path: recorded
+      Note over GW: Project recorded state<br/>shared Node and role projection
+      %%> What it does:
+      %%> - includes every assigned role with its recorded state and failure fields
+      %%> - uses the same role projection as node:show and node:role:list
+      %%> - includes the Cluster's name alongside its ID
+      opt missing agent data
+        %% path: agent-missing
+        Note over GW: Keep missing data visible<br/>not seen or no agent
+        %%> Result:
+        %%> - an agent that has never reported is not_seen; a Node with no observing agent has agent null
+      end
+      opt stale Node heartbeats
+        %% path: agent-offline
+        Note over GW: Keep offline Nodes<br/>last recorded values
+        %%> Result:
+        %%> - with a healthy Gateway view and stale Node heartbeats, the agent is offline; since is the last seen time
+        %%> - no refresh or reachability check runs
+      end
+      opt missing or stale view
+        %% path: agent-unknown
+        Note over GW: Mark agent state unknown
+        %%> Result:
+        %%> - unknown is not offline; the remaining recorded fields stay visible
+      end
+      GW-->>CLI: Nodes
+      %%> Result:
+      %%> - exit 0, including when agent data is missing, stale or unknown
+    end
+  end

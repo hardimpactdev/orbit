@@ -1,27 +1,72 @@
 ---
 title: "orbit node:list"
 sidebarTitle: "node:list"
-description: "List the Nodes you can reach with their status, agent, roles, and addresses."
+description: "List visible Nodes from recorded Gateway state."
 ---
 
 ```bash
 orbit node:list [--json]
 ```
 
+The command takes no Node ID or selector. It lists visible Nodes, sorted by name and then ID.
+
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the Nodes as JSON. |
+| [`--json`](/reference/cli-ux#input-and-output-modes) | off | Print the Node list as JSON. |
 
-The list shows what Orbit has recorded for each Node. It does not contact the Nodes, so it works while a Node is unreachable. A caller sees the Nodes it has an access grant to; the Gateway Node, and any Node with a grant to it, sees every Node. Nodes are sorted by name, then ID.
+## Output
+
+The human table uses [shared list formatting](/reference/cli-ux#results) and shows:
 
 | Column | Meaning |
 | --- | --- |
-| `ID`, `NAME` | The Node's ID and its unique name. |
-| `STATUS` | The Node's recorded status. A Node whose add or removal failed keeps `failed_step` and `error_code` in JSON. |
-| `AGENT` | The Node agent's liveness: `online`, `offline`, `not seen`, or `unknown`. [`node:show`](/cli/node/show) also shows since when an agent is offline. A Node without an agent shows `—`. |
-| `ROLES` | The Node's active roles, comma-separated. |
-| `PLATFORM`, `TLD`, `USER` | The Node's platform, its development TLD with a leading dot, and its managed user. |
-| `CLUSTER` | The name of the Cluster the Node belongs to. |
-| `WIREGUARD`, `LAN` | The Node's WireGuard and LAN addresses. |
+| ID | Numeric Node ID. |
+| Name | Unique Node name. |
+| Status | Recorded Node lifecycle status. |
+| Agent | Recorded agent liveness. |
+| Roles | Role assignments. |
+| Platform | Recorded host platform. |
+| TLD | Node domain suffix. |
+| User | Managed OS user. |
+| Cluster | Cluster name. |
+| WireGuard | Recorded WireGuard address. |
+| LAN | Recorded LAN address. |
 
-A missing value shows `—`. In JSON the Cluster has its `cluster_id` and its name, and each Node carries its `agent` state. An empty list says `No nodes.`.
+JSON returns `nodes` and `request_id`. Each Node keeps its IDs, recorded addresses, agent state, `roles` names and Node-level `failed_step` and `error_code`. It also includes `cluster_name` alongside `cluster_id`, and `assignments`.
+
+The shared role projection used by `node:list`, `node:show` and `node:role:list` includes every assigned role in any status (`active`, `provisioning`, `failed`, `removing`), with identical `role`, `status`, `failed_step` and `error_code` values. Each assignment also has its `id`; absent failure fields are null. Human output may compact an assignment as `gateway (active)` or `app-dev (failed)`.
+
+An empty result succeeds with `No nodes.`; JSON has an empty `nodes` array. A Node without a Cluster has a null `cluster_name` and `cluster_id`.
+
+### Missing and stale agent data
+
+Agent liveness comes from recorded heartbeats, not from a request-time probe. See [Node agent liveness](/reference/node-agent#liveness) for the shared rules.
+
+- A Node whose agent has never reported shows `not seen` (`not_seen` in JSON).
+- A Node with stale heartbeats shows `offline`, with its last seen time in `agent.since`.
+- If the Gateway's agent view is missing or stale, liveness is `unknown`, not `offline`.
+- A Node with no observing agent has a null `agent` in JSON.
+
+All these Nodes remain in the result with their available recorded fields. Missing or stale facts neither fail the list nor trigger a refresh.
+
+## Large fleets
+
+The list uses one Gateway query per page of Nodes and no per-Node work beyond the shared projection. Listing 200 Nodes completes in under 1 second. This is a query and projection requirement, not an extra CLI paging option.
+
+## Example
+
+```bash
+orbit node:list
+```
+
+## How it works
+
+The [Node family](/cli/node/index) uses the shared [`NodeAccessAuthorizer` collection rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php#L65-L91). The Gateway reads only stored Node records and agent facts. It does not contact a Node, Grafana or another external system during the request. It starts no Operation and changes no records. Running it again reads the current recorded state; there is no change to replay or skip.
+
+<div className="flow-at" data-chart="node/list"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node_access.required` | The caller does not satisfy the collection-access rule. No records change. |
