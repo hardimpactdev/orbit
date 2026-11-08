@@ -139,13 +139,14 @@ Last it checks the result:
 
 1. It asks the running dnsmasq on the VPN address for the reserved names and one name per TLD.
 2. For each exact Route it asks for the A answer, for NODATA on AAAA, and for a forwarded child name.
-3. It asks the Node's own address `127.0.0.55`, then the Node's normal resolver: a private name and the AAAA of an exact name. A public name only logs a warning, so an upstream outage does not roll back a publication.
-4. A mismatch restores the snapshot and fails with `dns.check_failed`.
-5. It writes `orbit.revision`, then commits: the new files become the last good set, and `reload.pending` and the snapshot go.
+3. It asks `127.0.0.55`, then the Node's normal resolver for a private name and the AAAA of an exact name.
+4. A public name only logs a warning, so an upstream outage does not roll back a publication.
+5. A mismatch restores the snapshot and fails with `dns.check_failed`.
+6. It writes `orbit.revision`, then commits: the new files become the last good set, and `reload.pending` and the snapshot go.
 
 The recovery after a failure that changed the Node puts the snapshot back and starts the old listener units that ran. It asks the restored resolvers over UDP and TCP, on the VPN address and on `127.0.0.55`. The result then says `recovered: true`. When a task or an answer fails, it says `recovered: false` with `dns.rollback_failed` and the cause, and the snapshot stays. The check shows that the restored resolvers answer, not what they answer.
 
-An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart. The measured handover gap of the first cutover goes here after the rehearsal on Ubuntu.
+An exact Route change reloads and drops no query. A TLD change restarts dnsmasq, and every name stops for the length of the restart. On Ubuntu 26.04, five dnsmasq restarts under a query every 66 ms on average lost no query, and the first cutover from a fake old listener lost none of 685 queries.
 
 The first publication on a Node that still runs the old listener moves the listener's files to `previous/legacy/` and deletes `/var/lib/orbit/private-dns`, the listener release. A rollback after a successful cutover restores the last good rendered files. It cannot restart the old listener, because its code is gone. A cutover that fails still restores the old listener from its snapshot.
 

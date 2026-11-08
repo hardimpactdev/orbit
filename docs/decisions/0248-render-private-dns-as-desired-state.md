@@ -106,7 +106,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 2. A rehearsal on a task VM fleet runs the whole flow, from a Route change to the answers.
 3. On the live vpn Node, a comparison script queries every private name, for A and AAAA, against the listener and a second dnsmasq with the rendered files on a spare port. It prints each difference name by name. The only differences allowed are the AAAA fix and nested TLDs.
 4. The cutover moves dnsmasq to the VPN DNS address, stops the listener, and asserts the answers, while someone watches. The listener code is already gone, so a rollback after the cutover restores the last committed rendered files; a failed cutover restores the old listener from the snapshot.
-5. The restart gap of a TLD change is measured with a query loop, and the number goes into this ADR.
+5. The restart gap of a TLD change and the handover gap of the first cutover are measured with a query loop. Both numbers are in Consequences.
 
 ## Rejected alternatives
 
@@ -119,7 +119,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - The listener, the catalog, the requesters and the three-way merge are gone. The vpn Node runs stock dnsmasq with three files.
 - A WireGuard member gets the Router's WireGuard address, and beast, sabre and shark reach beast through the WireGuard hub instead of the LAN.
 - AAAA for an exact Route gives NODATA. It no longer leaks a public IPv6 address.
-- A TLD change restarts dnsmasq, so every name stops for the length of the restart. The measured gap goes into this section after the rehearsal.
+- A TLD change restarts dnsmasq, so every name stops for the length of the restart. Measured on Ubuntu 26.04 with a query every 66 ms on average: five restarts, 213 queries, none failed. The gap is shorter than the query spacing.
 - Parallel publications are safe because each one writes a whole state and the newest revision wins. A failed run leaves its rows in the database, and the next publication renders them.
 - A restore keeps the revision it took at admission, and a publication admitted after it takes a newer one, so the Node skips the restore. After a failed `cluster.router_set`, `cluster.router_unset` or `instance.transfer` is stored, the Gateway queues one fresh `dns.publish` (`PublishPrivateDns`).
 - The first snapshot is the state to go back to until a publication commits. A killed first cutover followed by a failed retry restores the original old listener setup, not the candidate.
@@ -129,7 +129,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - `reload.pending` makes the retry of a killed record publication reload dnsmasq although the files match.
 - The vpn Node's own resolver points at `127.0.0.55`, which the new dnsmasq also serves. The end check asks it and the Node's normal resolver, so a Node that resolves nothing fails the phase.
 - The rollback is the last committed set. The cutover keeps the old listener's files in `previous/legacy/` and deletes its release in `/var/lib/orbit/private-dns`, so a rollback after a successful cutover cannot restart the old listener. A failed cutover still can. This is intended: the listener code is deleted.
-- The handover gap of the first cutover is measured by the Molecule dig loop (bound 3,000 ms). The measured number goes into this section after the rehearsal on Ubuntu.
+- The handover gap of the first cutover is measured by the Molecule dig loop (bound 3,000 ms). On Ubuntu 26.04, with a fake old listener that answers, 685 queries every ~50 ms during the cutover all got an answer. The real listener holds its sockets until it exits, which is at most 5 seconds, so a query that arrives meanwhile is still answered by it. The live gap is checked again at the cutover.
 
 ## Affects
 
