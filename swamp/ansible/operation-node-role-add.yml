@@ -96,6 +96,11 @@
       when: rt.swamp is not none
       ansible.builtin.import_tasks: tasks/swamp-start-cache.yml
       vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: false }
+    # The workers of a Swamp Node run Ansible with the collections of their release (tasks/ansible-collections.yml).
+    - name: Install the Ansible collections of this release
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: tasks/ansible-collections.yml
+      vars: { collections_root: /opt/orbit/ansible/collections, collections_galaxy: /opt/orbit/ansible/venv/bin/ansible-galaxy }
     - name: Write runtime units
       ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", mode: "0644" }
       loop: "{{ rt.units }}"

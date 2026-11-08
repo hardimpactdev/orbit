@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: swamp-load-git-checkout (Nick 2026-11-01), release-waits-for-swamp, single-swamp-node. docs/reference/gateway-recovery.md#load-swamp.
   %% Tightened: flow-tighten 2026-11-02, Nick approved Gateway grant rendering; official file actions run after checkout and before reload.
-  %% Orchestrator 2026-11-08: the load installs the release's Ansible collections when requirements.yml changed (209's pins were stale; ansible.posix missed).
+  %% Orchestrator 2026-11-08: the load installs the release's Ansible collections in a directory keyed by requirements.yml (209's pins were stale; ansible.posix missed).
   %% status: draft
   %% command: gateway:release:deploy · Load Swamp
   %% kind: gateway.swamp_load
@@ -43,14 +43,20 @@ sequenceDiagram
   %%> - writes the Gateway-rendered `orbit-gateway.yaml` and `orbit-serve.yaml` under `swamp/grants/`
   %%> - uses the admitted SSH target with owner `orbit`, group `orbit` and mode `0640`
   %%> - the two fixed file behaviors run in parallel; a failed write stops the load
-  SW->>N: collections<br/>ansible-galaxy · when changed
+  SW->>N: collections<br/>ansible-collections.yml · local
   %%> Runs beside the grants: both start after the checkout.
   %%> What it does:
-  %%> - compares the commit's `swamp/ansible/requirements.yml` with the swamp role's pin `/opt/orbit/ansible/requirements.yml`; equal files end the step
-  %%> - otherwise installs the pinned collections into `/opt/orbit/ansible/collections` with `ansible-galaxy collection install --upgrade`, then copies the file to the pin
+  %%> - the collections phase, a localhost Ansible play of the commit: the key is the SHA-256 of `swamp/ansible/requirements.yml`, and the commit's `ansible.cfg` names `/opt/orbit/ansible/collections/<key>` first
+  %%> - a key whose directory has its done marker ends the step after one stat, as on every release that changes no collection
+  %%> - otherwise it installs into `<key>.partial`, verifies the files against their manifests (`ansible-galaxy collection verify --offline`), writes the done marker last and renames the directory to the key; about 19 s for the 30 MB of today's pins
+  %%> - it keeps the current and the previous key, so plays of the previous release keep theirs, and removes older keys
   %%> Why:
-  %%> - the workers run Ansible from those collections, and only `node:role:add` installed them, so a collection a release added never reached them
-  %%> - a failed install keeps the old pin and stops the load, so the next release tries again  alt Load succeeds
+  %%> - a play reads its `ansible.cfg` once, at its start, so it keeps the directory it started with while a later release installs another
+  %%> - an interrupted install leaves only `<key>.partial`, which the next run removes, so a half directory is never used
+  %%> - a failed install stops the load; the old release stays live and the next release tries again
+  %%> Rollout:
+  %%> - the first release with this step runs the served workflow of the release before it, so the second release installs the first key; until then plays find no keyed directory and read the legacy `/opt/orbit/ansible/collections`, the second path `ansible.cfg` names
+  alt Load succeeds
     N->>SW: load<br/>swamp serve reload, access reload
     %%> What it does:
     %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions

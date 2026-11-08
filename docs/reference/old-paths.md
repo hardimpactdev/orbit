@@ -12,6 +12,7 @@ Check this page before you build on something. Each row is code that still runs,
 
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
+| The second `collections_path` entry `/opt/orbit/ansible/collections` in `swamp/ansible/ansible.cfg`, and the unkeyed `ansible_collections` there | The keyed directory `/opt/orbit/ansible/collections/<sha256 of requirements.yml>` that the collections phase installs | When every Swamp Node has a keyed directory: after the second release with the collections phase |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | The project names in `TaskVmHostLeftovers::RetiredProjects` (`orbit-baselines`, `orbit-measure-nr`) and `ImageProjects` (`orbit-proto`) | Nothing: the refresh's `host-clean` phase removes them from every host | When no task VM host has them |

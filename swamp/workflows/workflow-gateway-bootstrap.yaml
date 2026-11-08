@@ -109,7 +109,8 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/ansible-galaxy, collection, install, -r, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/requirements.yml', -p, /opt/orbit/ansible/collections]
+        # The collections phase of every Swamp Node: a directory keyed by requirements.yml, complete before a play uses it.
+        argv: [timeout, '900', env, 'ANSIBLE_CONFIG=/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/ansible.cfg', /opt/orbit/ansible/venv/bin/ansible-playbook, -i, 'localhost,', -c, local, '/home/${{ inputs.intent.ssh.user }}/orbit/swamp/ansible/ansible-collections.yml']
         timeoutSec: 905
 # The pinned Swamp release, by checksum, at a path of its own, then the link the services will run.
 - name: swamp

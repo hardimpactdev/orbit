@@ -1,0 +1,57 @@
+---
+# The Ansible collections of this release, in a directory of their own named by the SHA-256 of requirements.yml
+# (docs/cli/gateway/swamp-load.mmd). A play finds its collections through ansible.cfg, which names that directory, so a play keeps the
+# directory it started with while a later release installs another. The install goes into `<key>.partial`, is verified against its
+# manifests, gets its done marker last, and only then takes the key's name: a directory under the key is always complete, and an
+# interrupted install is removed and done again. The current and the previous directory stay; older ones go.
+- name: Name the collections of this release
+  ansible.builtin.set_fact:
+    collections_key: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) | hash('sha256') }}"
+    collections_cfg: "{{ lookup('ansible.builtin.ini', 'collections_path', section='defaults', file=playbook_dir ~ '/ansible.cfg') }}"
+- name: Require ansible.cfg to name the directory of this requirements.yml
+  ansible.builtin.assert:
+    that: collections_cfg.split(':')[0] == collections_root ~ '/' ~ collections_key
+    fail_msg: "ansible.cfg names {{ collections_cfg.split(':')[0] }}, but requirements.yml needs {{ collections_root }}/{{ collections_key }}"
+    quiet: true
+- name: Read the done marker of this release's collections
+  ansible.builtin.stat: { path: "{{ collections_root }}/{{ collections_key }}/.orbit-complete" }
+  register: collections_done
+- name: Install the collections when they are not complete
+  when: not collections_done.stat.exists
+  vars:
+    partial: "{{ collections_root }}/{{ collections_key }}.partial"
+    pin: "{{ collections_root }}/{{ collections_key }}.requirements.yml"
+  block:
+    - name: Remove an interrupted install and a directory without its marker
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: ["{{ partial }}", "{{ collections_root }}/{{ collections_key }}"]
+    - name: Write the requirements of this release
+      ansible.builtin.copy:
+        dest: "{{ pin }}"
+        content: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/requirements.yml', rstrip=False) }}"
+        mode: "0644"
+    - name: Install the collections
+      ansible.builtin.command: { argv: ["{{ collections_galaxy }}", collection, install, -r, "{{ pin }}", -p, "{{ partial }}"] }
+      changed_when: true
+    - name: Verify the collections against their manifests
+      ansible.builtin.command: { argv: ["{{ collections_galaxy }}", collection, verify, --offline, -r, "{{ pin }}", -p, "{{ partial }}"] }
+      changed_when: false
+    - name: Mark the collections complete
+      ansible.builtin.copy: { dest: "{{ partial }}/.orbit-complete", content: "{{ collections_key }}\n", mode: "0644" }
+    - name: Give the collections the key's name
+      ansible.builtin.command: { argv: [mv, "{{ partial }}", "{{ collections_root }}/{{ collections_key }}"] }
+      changed_when: true
+- name: Find the keyed directories
+  ansible.builtin.find:
+    paths: "{{ collections_root }}"
+    file_type: directory
+    patterns: "^[0-9a-f]{64}$"
+    use_regex: true
+  register: collections_keyed
+# The newest other directory is the previous release's: its running plays keep it.
+- name: Remove the keyed directories before the previous one
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: >-
+    {{ (collections_keyed.files | rejectattr('path', 'equalto', collections_root ~ '/' ~ collections_key)
+        | sort(attribute='mtime', reverse=true))[1:] }}
+  loop_control: { label: "{{ item.path }}" }

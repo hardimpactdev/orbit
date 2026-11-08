@@ -1,0 +1,13 @@
+---
+# Installs the collections of this release on the Swamp Node, its keyed directory complete before any play uses it
+# (tasks/ansible-collections.yml). The release's Swamp load, the swamp role and the Gateway bootstrap run it.
+- name: Ansible collections of this release
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    collections_root: /opt/orbit/ansible/collections
+    collections_galaxy: /opt/orbit/ansible/venv/bin/ansible-galaxy
+  tasks:
+    - name: Install the collections of this release
+      ansible.builtin.import_tasks: tasks/ansible-collections.yml

@@ -167,7 +167,7 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 
 1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
 2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
-3. beside them, it installs the Ansible collections of a changed `swamp/ansible/requirements.yml` and copies the file to the swamp role's pin `/opt/orbit/ansible/requirements.yml`;
+3. beside them, the collections phase (`swamp/ansible/ansible-collections.yml`) makes sure the directory `/opt/orbit/ansible/collections/<key>` is complete, where the key is the SHA-256 of the commit's `swamp/ansible/requirements.yml`;
 4. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
 5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
 6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
@@ -178,7 +178,9 @@ Required checks invoke the Gateway renderer without deployment credentials and v
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
 
-The collections step compares the commit's file with the pin, and an equal file ends it. A failed install stops the load and keeps the old pin, so the next release tries again.
+The commit's `ansible.cfg` names that directory, so every play uses the collections of its own release and keeps them while a later release installs others. A complete key ends the step after one stat. A new key is installed into `<key>.partial`, verified offline against its manifests, marked done, and only then renamed to the key; a real install takes about 19 seconds. The current and the previous key stay, older keys go. A failed install stops the load, and the next release tries again. The `swamp` role and the Gateway bootstrap run the same phase.
+
+The first release that ships this step runs the served load workflow of the release before it, so it installs nothing; the second release installs the key. Until then, plays read the legacy `/opt/orbit/ansible/collections`, which `ansible.cfg` names second.
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 

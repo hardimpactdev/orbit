@@ -13,7 +13,6 @@ const Output = z.object({
     path: Path,
     assets: z.string().startsWith("/"),
     requirements: z.string(),
-    collections: z.string(),
 });
 type Context = {
     extensionFile(path: string): string;
@@ -23,7 +22,7 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.03.1",
+    version: "2026.11.08.1",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
     },
@@ -56,14 +55,10 @@ export const behavior = {
                 const requirements = await Deno.readTextFile(
                     ctx.extensionFile("ansible/requirements.txt"),
                 );
-                const collections = await Deno.readTextFile(
-                    ctx.extensionFile("ansible/requirements.yml"),
-                );
                 const value = Output.parse({
                     path: args.path,
                     assets,
                     requirements,
-                    collections,
                 });
                 await ctx.writeResource("input", "input", value);
                 return value;

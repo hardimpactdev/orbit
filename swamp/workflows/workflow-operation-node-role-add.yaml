@@ -222,22 +222,6 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /opt/orbit/ansible/requirements.txt, content: '${{
           steps["Write the intent"].outputs.requirements }}', owner: root, group: root, mode: '0644', ensure: present}
       inputs: {}
-  - name: Write collection pins
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    dependsOn:
-    - step: Write Ansible pin
-      condition: {type: succeeded}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "ansible-pins-requirements-yml-"+string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /opt/orbit/ansible/requirements.yml, content: '${{
-          steps["Write the intent"].outputs.collections }}', owner: root, group: root, mode: '0644', ensure: present}
-      inputs: {}
   - name: Install Ansible
     labels: {role: swamp}
     writes: true
@@ -261,32 +245,7 @@ jobs:
         argv: [timeout, '900', /opt/orbit/ansible/venv/bin/pip, install, --disable-pip-version-check, -r, /opt/orbit/ansible/requirements.txt]
         timeoutSec: 905
     dependsOn:
-    - step: Write collection pins
-      condition: {type: succeeded}
-  - name: Install collections
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ansible-bootstrap-3-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "ansible-bootstrap-3-" + string(inputs.node_id) }}
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
-            inputs.intent.ssh.identity_file }}'}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/ansible-galaxy, collection, install, -r, /opt/orbit/ansible/requirements.yml, -p, /opt/orbit/ansible/collections]
-        timeoutSec: 905
-    dependsOn:
-    - step: Install Ansible
+    - step: Write Ansible pin
       condition: {type: succeeded}
   dependsOn:
   - job: phase_1
