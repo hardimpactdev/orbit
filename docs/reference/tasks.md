@@ -1121,7 +1121,7 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A parked VM resumes before review; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 

@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - the group used fewer than 3 rounds, and the merge check of the PR is green on the head
   %%> - the task VM of the group is parked or running, and its Pi credential is there
   %%> What it does:
-  %%> - captures, in one transaction, the resume of the VM and the reviewer turn in a new thread, with the repository and PR number of the comment
+  %%> - captures, in one transaction, the VM identity and the reviewer turn in a new thread, with the repository and PR number of the comment; captures resume only when the VM is parked
   %%> - in rounds 1 and 2 it also captures the fix: the author turn, the local check and the push. Round 3 captures no fix, so findings in round 3 end the run
   %%> - creates the check row of the fix as `running` and puts its id in the intent; the check has no hosted CI, so it needs no CI token
   %%> - the row belongs to the current open subtask of the group, as `tasks:check` does today; the base, the deliverables and the empty setup come from that subtask
@@ -35,9 +35,11 @@ sequenceDiagram
   %%> Inputs:
   %%> - the whole intent above and the vault key names of the credentials, never their values
   %%> - two steps of the run call the Gateway: the comment and the push mint their tokens when they start, with the run id of this run
-  SW->>VM: Resume the VM<br/>operation-task-vm-resume
-  %%> What it does:
-  %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi sessions are as the park left them
+  opt the VM is parked
+    SW->>VM: Resume the VM<br/>operation-task-vm-resume
+    %%> What it does:
+    %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi sessions are as the park left them
+  end
   SW->>VM: Review the head<br/>operation-task-turn
   %%> What it does:
   %%> - a new reviewer thread, with the role `reviewer`: an agent that took no part in the spec, the code or an earlier round
