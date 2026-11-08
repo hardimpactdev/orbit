@@ -382,6 +382,8 @@ jobs:
             ~/.cargo/git
             apps/agent/target
           key: agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}
+          restore-keys: |
+            agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-
       - run: cargo check --locked --all-targets
         if: steps.scope.outputs.selected == 'true'
       - name: Test the agent and composed extension crates
