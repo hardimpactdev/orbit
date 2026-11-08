@@ -32,7 +32,7 @@ final class NodeConvergeResult
             'elapsed_seconds' => ['required', 'numeric', 'min:0', 'max:86400'],
             'cleanup_complete' => ['required', 'boolean'],
             'failed_phase' => ['sometimes', Rule::in(self::Phases)],
-            'error_code' => ['sometimes', Rule::in(['node.converge_failed', 'node.converge_cleanup_failed'])],
+            'error_code' => ['sometimes', Rule::in(['operation.native_failed'])],
             'tools' => ['present', 'array', 'list', 'max:10000'],
             'tools.*' => ['required', 'array:id,status,installed_version'],
             'tools.*.id' => ['required', 'integer', 'min:1', 'distinct:strict'],
@@ -69,14 +69,12 @@ final class NodeConvergeResult
             || ($failure === null && (isset($raw['error_code']) || $raw['cleanup_complete'] !== true))
             || ($failure !== null && ! isset($raw['error_code']))
             || $raw['changed'] !== array_sum(array_column($rows, 'changed'))
-            || abs((float) $elapsed - array_sum(array_column($rows, 'elapsed_seconds'))) > 0.001
-            || (($raw['error_code'] ?? null) === 'node.converge_cleanup_failed' && ($failure !== 'check' || $raw['cleanup_complete'] !== false))) {
+            || abs((float) $elapsed - array_sum(array_column($rows, 'elapsed_seconds'))) > 0.001) {
             self::invalid();
         }
         foreach (is_array($raw['tools'] ?? null) ? $raw['tools'] : [] as $tool) {
             $observation = ValidatedData::object($tool);
             if (! is_int($observation['id']) || $rows[4]['status'] === 'skipped'
-                || ($observation['status'] === 'failed' && $rows[4]['status'] !== 'failed')
                 || ($observation['status'] === 'installed' && ($observation['installed_version'] === null || $observation['installed_version'] === ''))) {
                 self::invalid();
             }

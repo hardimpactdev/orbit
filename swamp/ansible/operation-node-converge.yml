@@ -40,8 +40,12 @@
           - ansible_facts.distribution_version == recipe.ubuntu.release
           - ansible_facts.architecture == 'x86_64'
           - intent.agent.url is string
-          - intent.agent.sha256 is string
-          - secrets.agent_verifier | length > 0
+          - intent.agent.sha256 is match('^[0-9a-f]{64}$')
+          - secrets.agent_verifier is match('^[0-9a-f]{64}$')
+          - intent.cli.skip_reason == None
+          - intent.cli.plan_error == None
+          - intent.cli.release.url is string
+          - intent.cli.release.sha256 is match('^[0-9a-f]{64}$')
         quiet: true
       tags: [input]
     - name: Reconcile the base
@@ -51,7 +55,7 @@
       ansible.builtin.include_tasks:
         file: tasks/node-converge-software.yml
         apply: { tags: [software] }
-      when: intent.selected_roles | length > 0
+      when: intent.selected_roles | length > 0 or intent.tools | length > 0
       tags: [software]
     - name: Reconcile selected recorded roles
       ansible.builtin.include_tasks:
@@ -79,11 +83,6 @@
       become: false
       changed_when: false
       tags: [tools]
-    - name: Fail Tools only after every admitted Tool has been attempted
-      ansible.builtin.assert:
-        that: tool_results | selectattr('status', 'equalto', 'failed') | list | length == 0
-        quiet: true
-      tags: [tools]
     - name: Reconcile the network hub before the target
       ansible.builtin.include_tasks:
         file: tasks/node-converge-network.yml
@@ -98,6 +97,41 @@
       ansible.builtin.assert:
         that: [agent_check.stat.checksum | default('') == intent.agent.sha256]
         quiet: true
+      tags: [check]
+    - name: Check the agent service without changing it
+      ansible.builtin.command: { argv: [systemctl, is-active, orbit-agent.service] }
+      changed_when: false
+      tags: [check]
+    - name: Check the recorded CLI artifact
+      tags: [check]
+      block:
+        - name: Read the selected CLI checksum
+          ansible.builtin.stat: { path: /usr/local/bin/orbit, follow: true, checksum_algorithm: sha256 }
+          register: cli_check
+        - name: Require the selected CLI pin
+          ansible.builtin.assert:
+            that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
+            quiet: true
+    - name: Check the selected software without writes
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-software-check.yml
+        apply: { tags: [check] }
+      when: intent.selected_roles | length > 0 or intent.tools | length > 0
+      tags: [check]
+    - name: Check the recorded peer tunnel without writes
+      when: intent.network != None and intent.network.mode == 'peer'
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-handshake.yml
+        apply: { tags: [check] }
+      vars: { peer_key: "{{ intent.network.apply.peer.server_public_key }}" }
+      tags: [check]
+    - name: Check the recorded hub handshakes without writes
+      when: intent.network != None and intent.network.mode == 'hub'
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-handshake.yml
+        apply: { tags: [check] }
+      loop: "{{ intent.network.hub.peer_keys if intent.network != None and intent.network.mode == 'hub' else [] }}"
+      loop_control: { loop_var: peer_key }
       tags: [check]
     - name: Check the selected role runtime
       ansible.builtin.include_tasks:

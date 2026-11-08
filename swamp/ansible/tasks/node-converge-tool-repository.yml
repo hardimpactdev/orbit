@@ -1,20 +1,41 @@
 ---
-- name: Read the recorded repository signing key
-  ansible.builtin.get_url:
-    url: "{{ tool.repository.signing_key.url }}"
-    dest: "/usr/share/keyrings/orbit-{{ tool.repository.name }}.asc"
-    owner: root
-    group: root
-    mode: "0644"
-- name: Inspect the signing-key fingerprint
+# Keep the existing Tool repository layout, and never publish an unverified key to APT.
+- name: Inspect the recorded repository keyring
   ansible.builtin.command:
-    argv: [gpg, --batch, --show-keys, --with-colons, "/usr/share/keyrings/orbit-{{ tool.repository.name }}.asc"]
+    argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
   register: repository_key
   changed_when: false
-- name: Require the recorded repository key
-  ansible.builtin.assert:
-    that: tool.repository.signing_key.fingerprint in (repository_key.stdout | regex_findall('(?m)^fpr:::::::::([A-F0-9]+):'))
-    quiet: true
+  failed_when: false
+- name: Repair a missing or different repository signing key
+  vars:
+    primary_pattern: '(?m)^pub:[^\n]*\nfpr:::::::::([A-F0-9]+):'
+  when: repository_key.rc != 0 or (repository_key.stdout | regex_findall(primary_pattern)) != [tool.repository.signing_key.fingerprint]
+  block:
+    - name: Read the admitted signing-key candidate
+      ansible.builtin.uri:
+        url: "{{ tool.repository.signing_key.url }}"
+        return_content: true
+        timeout: 30
+      register: repository_download
+    - name: Inspect the candidate primary signing keys before any trusted write
+      ansible.builtin.command:
+        argv: [gpg, --batch, --show-keys, --with-colons]
+        stdin: "{{ repository_download.content }}"
+      register: repository_candidate
+      changed_when: false
+    - name: Require exactly the recorded primary key
+      ansible.builtin.assert:
+        that: (repository_candidate.stdout | regex_findall(primary_pattern)) == [tool.repository.signing_key.fingerprint]
+        quiet: true
+    - name: Create the Tool keyring folder
+      ansible.builtin.file: { path: /etc/apt/keyrings, state: directory, owner: root, group: root, mode: "0755" }
+    - name: Publish only the verified repository key
+      ansible.builtin.command:
+        argv: [gpg, --batch, --yes, --dearmor, --output, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
+        stdin: "{{ repository_download.content }}"
+      changed_when: true
+- name: Reconcile keyring access
+  ansible.builtin.file: { path: "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg", owner: root, group: root, mode: "0644" }
 - name: Reconcile the recorded repository definition
   ansible.builtin.copy:
     dest: "/etc/apt/sources.list.d/orbit-{{ tool.repository.name }}.sources"
@@ -23,7 +44,8 @@
       URIs: {{ tool.repository.uris | join(' ') }}
       Suites: {{ tool.repository.suites | join(' ') }}
       Components: {{ tool.repository.components | join(' ') }}
-      Signed-By: /usr/share/keyrings/orbit-{{ tool.repository.name }}.asc
+      Architectures: {{ tool.repository.architectures | default(['amd64']) | join(' ') }}
+      Signed-By: /etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg
     owner: root
     group: root
     mode: "0644"

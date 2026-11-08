@@ -53,16 +53,16 @@ for (const content of ["{", JSON.stringify({ stats: {}, plays: [{}] }), JSON.str
     });
 }
 
-Deno.test("a partial Tool failure retains both receipts and stops later phases", async () => {
+Deno.test("an isolated Tool failure retains both receipts without failing the phase or skipping network and check", async () => {
     const folder = await Deno.makeTempDir();
     try {
-        await reports(folder, "tools");
+        await reports(folder);
         const tools = [{ id: 1, status: "failed", installed_version: null }, { id: 2, status: "installed", installed_version: "2.3.4" }];
         await Deno.writeTextFile(`${folder}/tools-result.json`, JSON.stringify(tools));
         const result = await convergeResult(folder);
         assertEquals(result.tools, tools);
-        assertEquals(result.failed_phase, "tools");
-        assertEquals(result.phases[5].status, "skipped");
+        assertEquals(result.failed_phase, undefined);
+        assertEquals(result.phases.map((phase) => phase.status), phases.map(() => "succeeded"));
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -104,6 +104,57 @@ for (const failure of [undefined, "roles"] as const) {
         await assertRejects(() => Deno.stat(folder), Deno.errors.NotFound);
     });
 }
+
+for (const installed_version of [null, "", "2.3.4 private-text", "2.3.4\nprivate-text"]) {
+    Deno.test(`an invalid installed Tool version cannot become terminal success (${JSON.stringify(installed_version)})`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            await reports(folder);
+            await Deno.writeTextFile(`${folder}/tools-result.json`, JSON.stringify([{ id: 1, status: "installed", installed_version }]));
+            const result = await convergeResult(folder);
+            assertEquals(result.failed_phase, "tools");
+            assertEquals(result.tools, []);
+            assertEquals(result.phases.slice(5).map((phase) => phase.status), ["skipped", "skipped"]);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
+
+for (const failure of [undefined, "roles"] as const) {
+    Deno.test(`cleanup failure is explicit and preserves ${failure ?? "the completed check as the first failure"}`, async () => {
+        const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+        await Deno.mkdir(folder, { mode: 0o700 });
+        await reports(folder, failure);
+        const remove = Deno.remove;
+        Deno.remove = () => Promise.reject(new Deno.errors.PermissionDenied("fixture cleanup refusal"));
+        try {
+            const output = await extension.methods.convergeResult.execute({ folder }, {
+                extensionFile() { throw new Error("Cleanup needs no assets"); },
+                writeResource() { return Promise.resolve(); },
+            });
+            const result = JSON.parse(output.stdout);
+            assertEquals(result.outcome, "failed");
+            assertEquals(result.cleanup_complete, false);
+            assertEquals(result.failed_phase, failure ?? "check");
+            assertEquals(result.error_code, "operation.native_failed");
+        } finally {
+            Deno.remove = remove;
+            await remove(folder, { recursive: true });
+        }
+    });
+}
+
+Deno.test("failure before input preparation still publishes a failed terminal and accepts an absent private folder", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    const output = await extension.methods.convergeResult.execute({ folder }, {
+        extensionFile() { throw new Error("Cleanup needs no assets"); },
+        writeResource() { return Promise.resolve(); },
+    });
+    const result = JSON.parse(output.stdout);
+    assertEquals(result.outcome, "failed");
+    assertEquals(result.failed_phase, "input");
+    assertEquals(result.cleanup_complete, true);
+    assertEquals(result.phases.map((phase: { status: string }) => phase.status), ["failed", ...Array(6).fill("skipped")]);
+});
 
 const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [] } };
 const aptFacts = { version: { rc: 0, stdout: "apt 3.1.16 (amd64)" }, query: { rc: 0, stdout: "tree\tinstall ok installed\t2.2.1-1\n" } };

@@ -22,7 +22,8 @@ final readonly class StartNodeConvergeAction
     /** @param list<string>|null $roles */
     public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null): Operation
     {
-        if (! $this->eligibility->allows($node)) {
+        $verifier = $node->agent_secret_hash;
+        if (! $this->eligibility->allows($node) || ! is_string($verifier) || preg_match('/\A[0-9a-f]{64}\z/D', $verifier) !== 1) {
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node can converge.', 422);
         }
         $selected = NodeConvergeScope::roles($node, $base, $roles);

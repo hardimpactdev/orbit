@@ -55,7 +55,7 @@ export const behavior = {
                 }
                 if (cleanupFailed && !result.failed_phase) {
                     result = { ...result, phases: result.phases.map((phase) => phase.name === 'check' ? { ...phase, status: 'failed' as const } : phase),
-                        failed_phase: "check" as const, error_code: "node.converge_cleanup_failed" };
+                        failed_phase: "check" as const, error_code: "operation.native_failed" };
                 }
                 result = { ...result, cleanup_complete: !cleanupFailed };
                 const value = { stdout: JSON.stringify({ outcome: result.failed_phase ? "failed" : "succeeded", ...result }) };

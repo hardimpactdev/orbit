@@ -41,7 +41,6 @@
     that: [intent.cli.plan_error == None]
     quiet: true
 - name: Reconcile the recorded CLI release
-  when: intent.cli.skip_reason == None
   block:
     - name: Install the pinned CLI
       ansible.builtin.get_url:
@@ -52,7 +51,13 @@
         group: root
         mode: "0755"
     - name: Select the pinned CLI release
-      ansible.builtin.file: { src: "/usr/local/bin/orbit-{{ intent.cli.release.version }}", dest: /usr/local/bin/orbit, state: link, owner: root, group: root, force: true }
+      ansible.builtin.file:
+        src: "/usr/local/bin/orbit-{{ intent.cli.release.version }}"
+        dest: /usr/local/bin/orbit
+        state: link
+        owner: root
+        group: root
+        force: true
     - name: Create the CLI profile folder
       ansible.builtin.file: { path: /root/.orbit, state: directory, owner: root, mode: "0700" }
     - name: Reconcile the recorded CLI profile

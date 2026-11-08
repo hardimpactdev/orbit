@@ -4,8 +4,8 @@ export const phases = ["input", "agent", "software", "roles", "tools", "network"
 export const Result = z.object({
     phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
     changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative(), cleanup_complete: z.boolean(),
-    tools: z.array(z.object({ id: z.number().int().positive(), status: z.enum(["installed", "failed"]), installed_version: z.string().max(255).nullable() }).strict()).max(10000),
-    failed_phase: z.enum(phases).optional(), error_code: z.enum(["node.converge_failed", "node.converge_cleanup_failed"]).optional(),
+    tools: z.array(z.object({ id: z.number().int().positive(), status: z.enum(["installed", "failed"]), installed_version: z.string().min(1).max(255).regex(/^[^\x00-\x20\x7f]+$/).nullable() }).strict().refine((tool) => tool.status === "failed" || tool.installed_version !== null)).max(10000),
+    failed_phase: z.enum(phases).optional(), error_code: z.literal("operation.native_failed").optional(),
 }).strict();
 export const ReportInput = z.object({ folder: z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/) }).strict();
 const Stats = z.object({ changed: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), unreachable: z.number().int().nonnegative() });
@@ -33,7 +33,7 @@ export async function convergeResult(folder: string) {
                     ? "succeeded" : "failed";
                 if (name === "tools") {
                     tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
-                    if (new Set(tools.map((tool) => tool.id)).size !== tools.length || tools.some((tool) => tool.status === "failed")) status = "failed";
+                    if (new Set(tools.map((tool) => tool.id)).size !== tools.length) status = "failed";
                 }
             } catch {
                 // A missing, truncated or malformed callback is a phase failure, never a claimed no-op.
@@ -45,5 +45,5 @@ export async function convergeResult(folder: string) {
     }
     return Result.parse({ phases: summaries, changed: summaries.reduce((sum, phase) => sum + phase.changed, 0),
         elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, cleanup_complete: false,
-        ...(failed ? { failed_phase: failed, error_code: "node.converge_failed" } : {}) });
+        ...(failed ? { failed_phase: failed, error_code: "operation.native_failed" } : {}) });
 }

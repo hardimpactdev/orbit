@@ -16,11 +16,13 @@
       ansible.builtin.include_tasks: node-converge-tool-repository.yml
     - name: Read the Tool manager version
       ansible.builtin.command: { argv: "{{ tool_argv.version }}" }
+      become: true
       become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
       changed_when: false
       register: tool_version
     - name: Read installed Tool state
       ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
+      become: true
       become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
       register: tool_query
       changed_when: false
@@ -42,23 +44,28 @@
           changed_when: false
         - name: Read the manager candidate
           ansible.builtin.command: { argv: "{{ tool_argv.candidate }}" }
+          become: true
           become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
           changed_when: false
           register: tool_candidate
         - name: Validate and pin the candidate before any package write
           ansible.builtin.command:
             argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", candidate]
-            stdin: "{{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version, 'query': tool_query, 'candidate': tool_candidate} | to_json }}"
+            stdin: >-
+              {{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version,
+              'query': tool_query, 'candidate': tool_candidate} | to_json }}
           delegate_to: localhost
           become: false
           changed_when: false
           register: tool_write
         - name: Apply the validated Tool candidate
           ansible.builtin.command: { argv: "{{ (tool_write.stdout | from_json).write }}" }
+          become: true
           become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
           changed_when: true
     - name: Read the resulting Tool state
       ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
+      become: true
       become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
       register: tool_after
       changed_when: false

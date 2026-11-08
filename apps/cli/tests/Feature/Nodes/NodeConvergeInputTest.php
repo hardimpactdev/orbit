@@ -24,3 +24,14 @@ it('refuses invalid converge inputs without contacting the Gateway', function (a
     'empty' => [['node' => '1', '--roles' => ''], 'validation.failed'],
     'unknown' => [['node' => '1', '--roles' => 'not-a-role'], 'validation.failed'],
 ]);
+
+it('keeps the invalid-ID code in human output without contacting the Gateway', function (): void {
+    $mock = MockClient::global([]);
+    try {
+        $this->artisan('node:converge', ['node' => '0'])
+            ->expectsOutputToContain('node.id_invalid')->assertExitCode(1);
+        $mock->assertNothingSent();
+    } finally {
+        MockClient::destroyGlobal();
+    }
+});

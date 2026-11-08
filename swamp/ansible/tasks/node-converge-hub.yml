@@ -29,7 +29,11 @@
     cmd: |
       set -euo pipefail
       before=$(wg showconf orbit | sha256sum)
-      wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; printf '\nListenPort = %s\n' {{ hub_plan.port | quote }}; for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done)
+      wg syncconf orbit <(
+        printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key
+        printf '\nListenPort = %s\n' {{ hub_plan.port | quote }}
+        for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
+      )
       [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed
   register: hub_sync
   changed_when: hub_sync.stdout is search('changed')

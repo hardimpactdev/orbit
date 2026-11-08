@@ -28,15 +28,25 @@
     - name: Repair the peer interface address
       ansible.builtin.include_tasks: node-converge-address.yml
       vars: { tunnel_address: "{{ intent.network.apply.peer.address }}" }
-    - name: Apply recorded split DNS after managed file changes
-      when: peer_files is changed
-      block:
-        - name: Select the recorded DNS server
-          ansible.builtin.command: { argv: [resolvectl, dns, orbit, "{{ intent.network.apply.peer.dns_server }}"] }
-          changed_when: true
-        - name: Select the recorded DNS domains
-          ansible.builtin.command: { argv: "{{ ['resolvectl', 'domain', 'orbit'] + intent.network.apply.peer.domains | map('regex_replace', '^', '~') | list }}" }
-          changed_when: true
+    - name: Read live split DNS servers
+      ansible.builtin.command: { argv: [resolvectl, dns, orbit] }
+      register: peer_dns
+      changed_when: false
+    - name: Select the recorded DNS server
+      when: peer_dns.stdout.split(':', 1)[-1] | trim != intent.network.apply.peer.dns_server
+      ansible.builtin.command: { argv: [resolvectl, dns, orbit, "{{ intent.network.apply.peer.dns_server }}"] }
+      changed_when: true
+    - name: Read live split DNS domains
+      ansible.builtin.command: { argv: [resolvectl, domain, orbit] }
+      register: peer_domains
+      changed_when: false
+    - name: Select the recorded DNS domains
+      when: >-
+        peer_domains.stdout.split(':', 1)[-1].split() | sort !=
+        intent.network.apply.peer.domains | map('regex_replace', '^', '~') | sort
+      ansible.builtin.command:
+        argv: "{{ ['resolvectl', 'domain', 'orbit'] + intent.network.apply.peer.domains | map('regex_replace', '^', '~') | list }}"
+      changed_when: true
     - name: Trust the recorded WireGuard subnet
       ansible.builtin.command: { argv: "{{ intent.network.apply.trust_argv }}" }
       register: peer_trust

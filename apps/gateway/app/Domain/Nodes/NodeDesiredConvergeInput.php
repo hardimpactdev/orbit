@@ -72,7 +72,7 @@ final readonly class NodeDesiredConvergeInput
         return ['intent' => ['node_id' => $node->id, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'roles' => $plans, 'selected_roles' => $roles,
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-            'cli' => app(CliConvergePlan::class)->input($node), 'recipe' => $recipe->json,
+            'cli' => app(CliConvergePlan::class)->nodeInput($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             'tools' => $tools, 'network' => $network], 'execution_secrets' => $copies];
     }

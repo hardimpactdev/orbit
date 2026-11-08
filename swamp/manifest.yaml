@@ -15,6 +15,10 @@ additionalFiles:
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-converge-software.yml
+  - ansible/tasks/node-converge-software-plan.yml
+  - ansible/tasks/node-converge-software-check.yml
+  - ansible/tasks/javascript-version.yml
+  - ansible/tasks/node-converge-browser.yml
   - ansible/tasks/node-converge-role.yml
   - ansible/tasks/node-converge-role-check.yml
   - ansible/tasks/node-converge-tool.yml

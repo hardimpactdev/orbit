@@ -22,8 +22,9 @@ function converge_receipt(?string $failure = null, array $tools = []): array
         $phases[] = ['name' => $name, 'status' => $failed ? 'skipped' : ($name === $failure ? 'failed' : 'succeeded'), 'changed' => 0, 'elapsed_seconds' => $failed ? 0 : 1];
         $failed = $failed || $name === $failure;
     }
+
     return ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => $tools, 'cleanup_complete' => true]
-        + ($failure === null ? [] : ['failed_phase' => $failure, 'error_code' => 'node.converge_failed']);
+        + ($failure === null ? [] : ['failed_phase' => $failure, 'error_code' => 'operation.native_failed']);
 }
 
 it('accepts bounded ordered phase evidence and strips unknown top-level output', function (): void {
@@ -35,22 +36,52 @@ it('fails closed on malformed, inconsistent or secret-bearing nested terminal ev
     expect(fn () => NodeConvergeResult::parse($change(converge_receipt())))->toThrow(ResourceOperationException::class, 'terminal result is invalid');
 })->with([
     'absent' => [fn () => null],
-    'out of order' => [function (array $v): array { $v['phases'][0]['name'] = 'agent'; return $v; }],
-    'missing phase' => [function (array $v): array { array_pop($v['phases']); return $v; }],
-    'negative count' => [function (array $v): array { $v['phases'][0]['changed'] = -1; return $v; }],
-    'string count' => [function (array $v): array { $v['phases'][0]['changed'] = '0'; return $v; }],
+    'out of order' => [function (array $v): array {
+        $v['phases'][0]['name'] = 'agent';
+
+        return $v;
+    }],
+    'missing phase' => [function (array $v): array {
+        array_pop($v['phases']);
+
+        return $v;
+    }],
+    'negative count' => [function (array $v): array {
+        $v['phases'][0]['changed'] = -1;
+
+        return $v;
+    }],
+    'string count' => [function (array $v): array {
+        $v['phases'][0]['changed'] = '0';
+
+        return $v;
+    }],
     'string duration' => [fn (array $v): array => [...$v, 'elapsed_seconds' => '7']],
     'count mismatch' => [fn (array $v): array => [...$v, 'changed' => 1]],
     'elapsed mismatch' => [fn (array $v): array => [...$v, 'elapsed_seconds' => 1]],
     'unconfirmed cleanup' => [fn (array $v): array => [...$v, 'cleanup_complete' => false]],
     'coerced cleanup' => [fn (array $v): array => [...$v, 'cleanup_complete' => 1]],
-    'unbounded nested output' => [function (array $v): array { $v['phases'][0]['stdout'] = 'private-canary'; return $v; }],
-    'success after failed phase' => [function (): array { $v = converge_receipt('roles'); $v['phases'][4]['status'] = 'succeeded'; return $v; }],
-    'changed skipped phase' => [function (): array { $v = converge_receipt('roles'); $v['phases'][4]['changed'] = 1; $v['changed'] = 1; return $v; }],
+    'unbounded nested output' => [function (array $v): array {
+        $v['phases'][0]['stdout'] = 'private-canary';
+
+        return $v;
+    }],
+    'success after failed phase' => [function (): array {
+        $v = converge_receipt('roles');
+        $v['phases'][4]['status'] = 'succeeded';
+
+        return $v;
+    }],
+    'changed skipped phase' => [function (): array {
+        $v = converge_receipt('roles');
+        $v['phases'][4]['changed'] = 1;
+        $v['changed'] = 1;
+
+        return $v;
+    }],
     'wrong failed phase' => [fn (): array => [...converge_receipt('roles'), 'failed_phase' => 'agent']],
     'unbounded code' => [fn (): array => [...converge_receipt('roles'), 'error_code' => 'private-canary']],
     'false cleanup code' => [fn (): array => [...converge_receipt('roles'), 'error_code' => 'node.converge_cleanup_failed']],
-    'failed Tool with success' => [fn (): array => converge_receipt(null, [['id' => 1, 'status' => 'failed', 'installed_version' => null]])],
     'null installed version' => [fn (): array => converge_receipt(null, [['id' => 1, 'status' => 'installed', 'installed_version' => null]])],
     'empty installed version' => [fn (): array => converge_receipt(null, [['id' => 1, 'status' => 'installed', 'installed_version' => '']])],
     'duplicate Tool' => [fn (): array => converge_receipt(null, array_fill(0, 2, ['id' => 1, 'status' => 'installed', 'installed_version' => '1.2.3']))],
@@ -65,12 +96,12 @@ beforeEach(function (): void {
     $this->native = ['run_id' => 'run-id', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()];
 });
 
-it('projects each admitted Tool independently while failing the parent and leaving assignments alone', function (): void {
+it('projects each admitted Tool independently without failing the parent or changing assignments', function (): void {
     $role = $this->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $before = $role->refresh()->getAttributes();
-    $result = converge_receipt('tools', [['id' => $this->tools[0]->id, 'status' => 'failed', 'installed_version' => null], ['id' => $this->tools[1]->id, 'status' => 'installed', 'installed_version' => '2.3.4']]);
+    $result = converge_receipt(null, [['id' => $this->tools[0]->id, 'status' => 'failed', 'installed_version' => null], ['id' => $this->tools[1]->id, 'status' => 'installed', 'installed_version' => '2.3.4']]);
     $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => $result]);
-    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('node.converge_failed')
+    expect($operation->status)->toBe(OperationStatus::Succeeded)->and($operation->error_code)->toBeNull()
         ->and($operation->lock_key)->toBeNull()->and($operation->result)->toBe($result)
         ->and($this->tools[0]->refresh()->status->value)->toBe('failed')->and($this->tools[0]->installed_version)->toBe('1.0.0')
         ->and($this->tools[1]->refresh()->status->value)->toBe('installed')->and($this->tools[1]->installed_version)->toBe('2.3.4')
@@ -81,8 +112,11 @@ it('projects each admitted Tool independently while failing the parent and leavi
 
 it('does not project unadmitted or incomplete Tool receipts', function (string $case): void {
     $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
-    if ($case === 'unadmitted') $observations[0]['id'] = 999999;
-    else array_pop($observations);
+    if ($case === 'unadmitted') {
+        $observations[0]['id'] = 999999;
+    } else {
+        array_pop($observations);
+    }
     $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => converge_receipt(null, $observations)]);
     expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('operation.result_invalid')
         ->and($this->tools[0]->refresh()->installed_version)->toBe('1.0.0')->and($this->tools[1]->refresh()->installed_version)->toBe('1.0.0');

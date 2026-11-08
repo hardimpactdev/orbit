@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\NodeConvergeScope;
 use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\RoleName;
@@ -11,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Models\Node;
 use App\Models\Operation;
@@ -30,12 +34,15 @@ beforeEach(function (): void {
     $socket = Mockery::mock(WebSocketClient::class);
     $socket->shouldReceive('connect', 'close')->andReturnNull();
     $socket->shouldReceive('isConnected')->andReturnTrue();
-    $socket->shouldReceive('send')->andReturnUsing(function (array $frame): void { $this->frames[] = $frame; });
+    $socket->shouldReceive('send')->andReturnUsing(function (array $frame): void {
+        $this->frames[] = $frame;
+    });
     $socket->shouldReceive('receive')->andReturnUsing(function (): array {
         $frame = end($this->frames);
         if ($frame['type'] === 'vault.put') {
             return [['type' => 'vault.put', 'id' => $frame['id'], 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
         }
+
         return [['type' => 'event', 'id' => $frame['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-node-converge', 'runId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']]];
     });
     app()->instance(WebSocketClient::class, $socket);
@@ -49,6 +56,7 @@ beforeEach(function (): void {
     $this->node = Node::withoutEvents(function (): Node {
         $node = Node::query()->create(['name' => 'target', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7', 'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned']);
         $node->forceFill(['ssh_host_fingerprint' => 'SHA256:pinned', 'agent_secret_hash' => hash('sha256', 'private-test-agent-secret')])->save();
+
         return $node;
     });
     $this->control->accessibleNodes()->attach($this->node);
@@ -81,6 +89,31 @@ it('captures base from recorded state, redacts its verifier and dispatches copie
     Process::assertNothingRan();
 });
 
+it('captures the base CLI for an individually admitted Node outside the fleet rollout', function (bool $gateway): void {
+    if ($gateway) {
+        $this->node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    }
+    $manifest = tmpfile();
+    try {
+        fwrite($manifest, json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
+            'assets' => [['platform' => 'linux-x86_64', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('c', 64)]]], JSON_THROW_ON_ERROR));
+        $release = new StaticCliRelease(stream_get_meta_data($manifest)['uri']);
+        app()->instance(ReleaseHistory::class, $release);
+        app()->instance(CliReleaseCatalog::class, $release);
+        config(['app.version' => str_repeat('c', 40)]);
+        expect(app(CliConvergePlan::class)->input($this->node)['skip_reason'])->toBe($gateway ? 'gateway' : 'roleless');
+        $this->postJson($this->url, ['base' => true])->assertAccepted();
+        $cli = Operation::query()->sole()->input['_converge']['intent']['cli'];
+        expect($cli['skip_reason'])->toBeNull()->and($cli['plan_error'])->toBeNull()
+            ->and($cli['release'])->toMatchArray(['url' => 'https://example.test/orbit', 'sha256' => str_repeat('c', 64)])
+            ->and($cli['profile'])->toContain('10.44.0.2');
+        Http::assertNothingSent();
+        Process::assertNothingRan();
+    } finally {
+        fclose($manifest);
+    }
+})->with(['roleless' => [false], 'Gateway' => [true]]);
+
 it('replays an idempotent start without recapturing private input or dispatching again', function (): void {
     $first = $this->withHeader('Idempotency-Key', 'node-converge-replay')->postJson($this->url, ['base' => true])->assertAccepted();
     $frames = count($this->frames);
@@ -109,7 +142,12 @@ it('refuses unsupported Nodes from recorded eligibility with no live probe', fun
     Node::withoutEvents(fn () => $this->node->forceFill($attributes)->save());
     $this->postJson($this->url, ['base' => true])->assertUnprocessable()->assertJsonPath('error.code', 'node.converge_unsupported');
     expect(Operation::query()->count())->toBe(0)->and($this->frames)->toBe([]);
-})->with(['inactive' => [['status' => 'failed']], 'macOS' => [['platform' => 'macos']], 'unmanaged' => [['ssh_host_fingerprint' => null]]]);
+})->with([
+    'inactive' => [['status' => 'failed']], 'macOS' => [['platform' => 'macos']], 'unmanaged' => [['ssh_host_fingerprint' => null]],
+    'missing verifier' => [['agent_secret_hash' => null]], 'empty verifier' => [['agent_secret_hash' => '']],
+    'short verifier' => [['agent_secret_hash' => str_repeat('a', 63)]], 'uppercase verifier' => [['agent_secret_hash' => str_repeat('A', 64)]],
+    'nonhex verifier' => [['agent_secret_hash' => str_repeat('g', 64)]], 'linebreak verifier' => [['agent_secret_hash' => str_repeat('a', 64)."\n"]],
+]);
 
 it('reserves the target and the recorded shared hub even for a base-only scope', function (): void {
     $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);

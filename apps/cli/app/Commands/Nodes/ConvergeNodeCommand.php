@@ -9,6 +9,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\Requests\Nodes\ConvergeNodeRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
@@ -26,6 +27,15 @@ final class ConvergeNodeCommand extends NodeCommand
 
     #[\Override]
     protected $description = 'Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.';
+
+    /** @param array<string, mixed> $details */
+    #[\Override]
+    protected function renderGatewayFailure(string $code, string $message, ?string $requestId = null, ?string $humanMessage = null, array $details = []): int
+    {
+        GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage, $details, includeCode: true);
+
+        return self::FAILURE;
+    }
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
