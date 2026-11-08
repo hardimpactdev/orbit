@@ -608,7 +608,7 @@ final readonly class SwampCommandStep
             'limit' => 2, 'select' => '{"id": id, "name": name, "version": version, "content": content}',
         ]);
         $rows = is_array($reply['data'] ?? null) ? ($reply['data']['results'] ?? null) : null;
-        $row = is_array($rows) && count($rows) === 1 ? array_values($rows)[0] : null;
+        $row = is_array($rows) && count($rows) === 1 ? array_first($rows) : null;
         if (! is_array($row) || ($row['id'] ?? null) !== $artifact['dataId'] || ($row['name'] ?? null) !== $name
             || ($row['version'] ?? null) !== $artifact['version']) {
             throw $this->unavailable();
