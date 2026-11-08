@@ -36,9 +36,9 @@ sequenceDiagram
     end
     SW->>V: Select the Router in DNS<br/>child dns-publish
     %%> DNS lifecycle:
-    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
-    %%> - private DNS answers Cluster names with the Router's WireGuard address for every caller; LAN members reach it through the hub
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its supported LAN members with LAN addresses through a Cluster-only DNS delegate
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
     %%> Why it always runs:
     %%> - after a failure before the cutover it removes the LAN rules and DNS selection the stored state does not need

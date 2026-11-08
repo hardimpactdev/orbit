@@ -33,8 +33,10 @@ sequenceDiagram
       %%> - returns every affected Route to its Node scope, with generated domains on the Node TLDs; the cutover is inside the child
     end
     SW->>V: Drop the Router from DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
     %%> DNS lifecycle:
-    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
     %%> - private DNS stops answering Cluster names with the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent

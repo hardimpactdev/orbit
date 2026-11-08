@@ -35,8 +35,10 @@ sequenceDiagram
       %%> - the child moves the Routes' own DNS records and removes the Router's LAN rules to the workload; the steps below change only the member's LAN rules and the Cluster names in DNS
     end
     SW->>V: Select the Node in DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
     %%> DNS lifecycle:
-    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
     %%> - private DNS answers the Node's names with the Node instead of the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent

@@ -28,8 +28,10 @@ sequenceDiagram
     GW->>SW: Start run, full intent<br/>operation-cluster-update
     GW-->>CLI: 202 Accepted<br/>task ID
     SW->>V: Add the new TLD in DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
     %%> DNS lifecycle:
-    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> Why first:
     %%> - the new names must resolve before the child withdraws the old sites; the old TLD keeps answering
     %%> Managed peers:
@@ -41,7 +43,7 @@ sequenceDiagram
     end
     SW->>V: Prune old DNS answers<br/>child dns-publish
     %%> DNS lifecycle:
-    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> Why it always runs:
     %%> - it removes only what the stored state does not need, so after a failure before the cutover it removes the new TLD again
     alt every step succeeds

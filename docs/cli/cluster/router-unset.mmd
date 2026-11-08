@@ -57,6 +57,8 @@ sequenceDiagram
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   SW->>M: Withdraw Cluster DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
   %%> What it does:
   %%> - checks the VPN projection, restores every selected member to VPN split policy, waits DNS grace, then removes only the owned Cluster resolver
   %%> On failure:

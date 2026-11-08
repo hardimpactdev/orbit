@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0248, Cluster router resolver amendment. Shared publication; member scope and outage policy await review.
+  %% Target design: ADR 0248, Cluster router resolver amendment. Shared publication with Cluster-only DNS delegates and no automatic VPN fallback.
   %% Tightened: flow-tighten rules 18, 22, 27, 28: one phase per target, parallel targets, shared peer policy, retain old paths until members confirm.
   %% status: draft
   %% command: none · shared DNS publication
@@ -16,7 +16,7 @@ sequenceDiagram
   Note over GW: Render DNS and selection<br/>one database revision
   %%> What it does:
   %%> - reads stored desired and pending Route, Cluster, Router and membership rows in the revision transaction
-  %%> - builds the complete VPN answer set, one LAN overlay per active Cluster Router, and each member's split policy from the same address-selection rule
+  %%> - builds the VPN WireGuard answers, Router LAN answers for its LAN members, and each member's Cluster delegate and remaining VPN policy from one address-selection rule
   %%> - includes explicit retirement targets from unfinished transitions; a missing row alone never authorizes deletion
   GW->>SW: Start run, full intent<br/>child dns-publish
   %%> Inputs:
@@ -49,10 +49,12 @@ sequenceDiagram
   %%> When:
   %%> - only changed member policies, after their required resolver projections pass; the lifecycle caller waits for every affected member
   %%> What it does:
-  %%> - persists and applies one complete selection on both private scopes; never leaves an equal Cluster suffix on LAN and WireGuard
+  %%> - persists one Cluster-only DNS delegate with the Router LAN address as its sole server, plus the remaining WireGuard policy; never leaves equal suffixes on both scopes
   %%> - checks uncached Cluster A and AAAA, another private name, public resolution and the actual selected scope in the same phase
-  %%> Open:
-  %%> - a LAN link that also supplies public DNS cannot isolate its servers per domain; the ADR asks for the scope decision before implementation
+  %%> Unsupported members:
+  %%> - systemd below 258 or missing delegate support keeps VPN selection; returns dns.cluster_delegate_unsupported and Doctor reports it
+  %%> Runtime failure:
+  %%> - Cluster resolver or LAN failure makes selected Cluster lookups fail until repair; Doctor reports it and no automatic VPN fallback runs
   opt replacing or withdrawing
     %% path: retire
     Note over SW: Wait the DNS grace<br/>existing 31-second grace

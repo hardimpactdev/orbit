@@ -93,6 +93,8 @@ sequenceDiagram
     %%> Why:
     %%> - the candidate only becomes the Router when it can serve every Route
     SW->>M: Select the Router in DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
     %%> What it does:
     %%> - the shared publication checks the candidate LAN resolver and VPN projection, then persists and checks every eligible member's new policy before the 31-second DNS grace
     %%> How:

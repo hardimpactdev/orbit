@@ -12,9 +12,9 @@ Every DNS publication renders the whole private DNS from the Gateway database. O
 
 In progress.
 
-The VPN desired-state build is in PR #3165 and is not merged. The Cluster Router amendment and its charts are draft. Resolve the two review questions below before implementing the amendment or cutting over live DNS.
+The VPN desired-state build is in PR #3165 and is not merged. The Cluster Router amendment and its charts are draft. The member mechanism is a Cluster-only DNS delegate with no automatic VPN fallback. Implementation and live cutover wait for design review.
 
-Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces the publication machinery of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), retains its Router LAN DNS firewall families, and defines the simpler Cluster resolver below. The old delegate and automatic fallback plan is not implicitly approved by this amendment.
+Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces the publication machinery of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), retains its Router LAN DNS firewall families, and defines the simpler Cluster resolver below. Members use the Cluster-only DNS delegate below; the old automatic fallback plan is superseded.
 
 The VPN baseline and Cluster amendment:
 
@@ -111,13 +111,28 @@ Reuse `swamp/ansible/dns-publish.yml`, its templates and its validation, lock, s
 
 ### Member selection and persistence
 
-An active Cluster's managed Linux members with a recorded LAN address use its ready LAN Router, including the Router itself. Roles do not decide membership eligibility. A roleless member needs managed SSH enrollment before selection; report an unmanaged member as unresolved work rather than claiming it was configured. Nodes without a LAN address and non-members retain VPN split DNS. A conflicting explicit DNS override is refused before changing it.
+An active Cluster's managed Linux members with a recorded LAN address and delegate support use its ready LAN Router, including the Router itself. Roles do not decide membership eligibility. A roleless member needs managed SSH enrollment before selection; report an unmanaged member as unresolved work rather than claiming it was configured. Nodes without a LAN address and non-members retain VPN split DNS. A conflicting explicit DNS override is refused before changing it.
 
-The Gateway renders the Cluster TLD and outside-TLD Cluster Route domains onto the LAN DNS scope. Every other private suffix stays on `orbit`, with the VPN server. Both private scopes are route-only. Remove equal or more specific competing WireGuard domains for the selected Cluster; do not deduplicate across destination scopes. Keep more specific foreign namespaces on VPN. An outside-TLD Route domain also captures descendant queries in resolved; the Cluster resolver forwards those queries back to VPN DNS.
+The Gateway renders one systemd-resolved DNS delegate for the Cluster TLD and outside-TLD Cluster Route domains. It has one DNS server: the Router LAN address. Every other private suffix stays on `orbit`, with the VPN server. Both private scopes are route-only. Remove equal or more specific competing WireGuard domains for the selected Cluster; do not deduplicate across destination scopes. Keep more specific foreign namespaces on VPN. An outside-TLD Route domain also captures descendant queries in resolved; the Cluster resolver forwards those queries back to VPN DNS.
 
-One shared member phase serves `fleet.peer_dns`, Node convergence, explicit DNS repair and Cluster lifecycle work. Its digest includes Cluster and Router identity, LAN address, both domain sets and VPN address. Record the revision separately so an unchanged effective policy stays unchanged. Lifecycle runs wait for affected members in their own Swamp graph; an asynchronous peer reconcile is not the handover barrier. The phase discovers the LAN interface by the stored local address and its route to the Router. It validates the active network manager, persists owned settings through reboot and link recreation, applies the live policy, flushes affected cached answers and checks the resulting scope. There is no global `resolved.conf`, `resolv.conf`, address, route or DHCP change. Doctor and peer reconciliation use this same effective policy, so they cannot undo a healthy LAN selection.
+```ini
+[Delegate]
+DNS=<Router LAN address>
+Domains=<Cluster route-only domains>
+DefaultRoute=no
+```
 
-**Same-link limitation, open for review.** systemd-resolved has one server set per link, not one set per routing domain. The read-only inspection of Beast found its public DNS server `192.168.6.1` on LAN link `enp11s0`, with no global DNS server. Replacing that link's server changes public DNS too; appending the Router lets either server answer Cluster names. Setting `DNSDefaultRoute=no` there also removes the public default scope. Direct LAN per-link selection is valid only when a separate public resolver scope already exists. Never apply it silently to the current shared-link topology. A persistent networkd drop-in or NetworkManager profile owns direct link selection where supported; a bare `resolvectl` command is not persistence.
+Write `/etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate` and persist the remaining VPN domains in the existing WireGuard hook and DNS marker. Stage, apply and check both scopes under the member's peer lock. Reload systemd-resolved only when the delegate file or live scope differs; apply changed WireGuard link policy and flush affected cached answers in the same phase. On withdrawal, prepare the complete VPN split policy, remove the delegate, reload resolved, apply the VPN link policy and check selection before retiring the old Router. The delegate survives reboot, and the WireGuard hook cannot recreate a competing domain on tunnel restart.
+
+One shared member phase serves `fleet.peer_dns`, Node convergence, explicit DNS repair and Cluster lifecycle work. Its digest includes Cluster and Router identity, LAN address, both domain sets, VPN address and delegate capability. Record the revision separately so an unchanged effective policy stays unchanged. Lifecycle runs wait for affected members in their own Swamp graph; an asynchronous peer reconcile is not the handover barrier. The phase checks that the recorded LAN address has a route to the Router. There is no LAN-link DNS, global `resolved.conf`, `resolv.conf`, address, route or DHCP change. Doctor and peer reconciliation use this same effective policy, so they cannot undo a healthy delegate.
+
+The delegate keeps public DNS independent even when LAN and public traffic share an interface. systemd-resolved has one server set per link, not one set per routing domain. Beast uses public DNS server `192.168.6.1` on LAN link `enp11s0`; that link and its server stay unchanged. The delegate is an independent scope, and the routing table sends its queries to the Router over the LAN.
+
+### Required systemd version
+
+DNS delegates require **systemd 258 or newer** and an active systemd-resolved with delegate support, as the [delegate manual](https://www.freedesktop.org/software/systemd/man/258/systemd.dns-delegate.html) specifies. Read-only inspection confirmed the running service is active, the installed resolver binary is version `259.5-0ubuntu3.4`, and the delegate manual is installed on beast, sabre and shark. All three meet the minimum. This confirms support; the implementation's Molecule proof must exercise actual delegate selection and persistence.
+
+A member without delegate support keeps the complete VPN split policy and receives WireGuard answers, with no LAN path. The phase reports `dns.cluster_delegate_unsupported` as a successful degraded outcome, records the effective VPN policy and removes any owned delegate. Doctor reports `node.cluster_dns_delegate_unsupported`. Do not add a second member-selection mechanism. When a systemd upgrade adds delegate support, the policy digest changes and reconcile can select the delegate after checking support.
 
 ### Membership and Router lifecycle
 
@@ -143,20 +158,15 @@ An unchanged target needs no reload; a newer publication with identical content 
 
 A deliberate rollback records the intended prior topology as new desired state and publishes a fresh revision through the same graph. It first restores and checks the serving endpoint, then moves members, then retires the unused endpoint. Do not replay an old render across the fleet or restore a whole Node. Do not delete an old Router, its LAN address or its DNS access while an offline member can still select it. Keep that member as an explicit blocker.
 
-The proposed minimal runtime policy has no automatic VPN fallback for selected Cluster names. A failed Cluster resolver or LAN path makes uncached names in that scope fail until repair or an explicit selection change. Other private names still use VPN, and ordinary public names retain their public scope. A VPN outage leaves locally answered Cluster names available, but forwarded names fail. This runtime policy is a review question below; installing two unequal servers does not provide ordered preference and automatic return.
+There is no automatic VPN fallback for selected Cluster names. A failed Cluster resolver or LAN path makes uncached names in that scope fail until repair or an explicit selection change. Other private names still use VPN, and ordinary public names retain their public scope. A VPN outage leaves locally answered Cluster names available, but forwarded names fail. Doctor reports `node.cluster_dns_unreachable` when the delegate or LAN resolver path fails. Keep the delegate selected until repair; no probe switches servers. The Router hosts these Routes, so fallback adds machinery without making a failed Router serve traffic.
 
 ### Rollout and acceptance
 
 PR #3165 stays unmerged. Build and prove Router DNS and member selection while the PHP listener still serves VPN DNS; the overlay can forward to that existing endpoint. The implementation needs a deployable pre-cutover stack layer: split listener deletion and VPN socket takeover into the final layer, rather than deploying the #3165 base as a prerequisite. This design branch is based on #3165 for review only and is not deployable. Prove and select LAN members before allowing the final cutover layer to run. The cutover preserves the LAN path for members that have selected their Cluster resolver.
 
-Use real Ubuntu Molecule machines for a VPN resolver, a Router and a member. Cover record-only reload and unchanged PID, TLD restart, invalid config and bind conflict, UDP/TCP, AAAA NODATA, exact descendants, nested foreign namespaces, Cluster without a TLD, roleless managed members, member policy persistence after reboot and link restart, and ordinary public DNS with VPN down. Prove join, leave, Router move/unset, deactivate, offline-member cleanup refusal, phase rollback, controller interruption and a newer revision overtaking an older transition. Include the shared LAN/public interface case after the scope decision; it cannot be skipped for the real fleet.
+Use real Ubuntu Molecule machines for a VPN resolver, a Router and a member. Cover record-only reload and unchanged PID, TLD restart, invalid config and bind conflict, UDP/TCP, AAAA NODATA, exact descendants, nested foreign namespaces, Cluster without a TLD, roleless managed members, member policy persistence after reboot and link restart, and ordinary public DNS with VPN down. Prove join, leave, Router move/unset, deactivate, offline-member cleanup refusal, phase rollback, controller interruption and a newer revision overtaking an older transition. Include the shared LAN/public interface case, a member without delegate support that keeps WireGuard answers, and a Cluster DNS or LAN failure that leaves the delegate selected and reports a Doctor finding.
 
 Before cutover, update the comparison kit to query the member stub separately from direct VPN and Router endpoints. Preserve a fresh baseline and list every expected change. The historical five WireGuard exceptions under `.test` may become LAN answers under the complete Cluster suffix; distinguish that preselection change from the VPN cutover. Do not declare byte-for-byte agreement with old LAN expectations until each exception is classified by Route ownership. List the address change on app-prod separately. The design step changes neither the kit nor live DNS.
-
-### Review questions
-
-1. For members whose LAN interface also supplies public DNS, use an independent systemd-resolved DNS delegate for Cluster names, leaving uplink DNS intact, or let the Cluster resolver also handle their public queries? The delegate is recommended. It changes the requested direct per-link mechanism and needs explicit approval; the alternative changes public DNS availability through VPN.
-2. When a Cluster resolver or LAN path fails, do Cluster lookups fail until repair, as the minimal draft shows, or do members automatically select VPN and return to LAN after recovery? Automatic fallback needs a bounded, proven recovery mechanism; a list of two servers is insufficient.
 
 ### What gets deleted
 

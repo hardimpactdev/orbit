@@ -13,32 +13,43 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Render changed policy<br/>Cluster and VPN scopes
   %%> Requirements:
-  %%> - an active, managed Linux Node with an active Cluster membership and a LAN address selects its Cluster's ready LAN Router, including the Router itself
-  %%> - all other managed peers keep the VPN split policy; unsupported link ownership or a conflicting explicit DNS override refuses before mutation
+  %%> - an active, managed Linux Node with an active Cluster membership, LAN address and systemd-resolved delegate support selects its Cluster's ready LAN Router, including the Router itself
+  %%> - all other managed peers keep the VPN split policy; a conflicting explicit DNS override refuses before mutation
   %%> - a roleless member needs managed SSH enrollment, not a workload role; unmanaged devices are reported without claiming convergence
   %%> Result:
-  %%> - a complete per-Node projection, revision and digest, including the public resolver invariant
+  %%> - a complete per-Node projection, revision and digest, including delegate capability and the public resolver invariant
   GW->>SW: Start run, full intent<br/>operation-fleet-peer-dns
   %%> Inputs:
-  %%> - LAN server, owned suffixes, remaining VPN domains, probes and pinned SSH connection; no global resolver replacement
+  %%> - Cluster delegate with one LAN server, owned suffixes, remaining VPN domains, probes and pinned SSH connection; no global resolver replacement
   %%> - the same projection is passed to this phase by the shared DNS publication during a Cluster transition
   Note over SW: Write the intent
   %%> What it does:
   %%> - ships the playbook and private run file; a matching policy still gets its end check
   SW->>N: Apply member DNS policy<br/>Ansible phase
   %%> What it does:
-  %%> - resolves the LAN interface from the recorded LAN address and routing table; validates the active network manager and public DNS path before writing
-  %%> - snapshots only owned policy, persists it through link recreation and reboot, applies live scope selection and flushes affected cached answers
-  %%> - leaves addresses, routes, DHCP, resolv.conf and global resolved settings alone
-  %%> Open:
-  %%> - direct LAN per-link DNS is supported only with a separate public DNS scope; same-link public DNS needs the ADR's scope decision
-  %%> - runtime VPN fallback is a separate open decision; two unequal servers are not an ordered failback mechanism
-  alt policy and answers match
+  %%> - checks systemd-resolved delegate support and the LAN route; the vpn Node answers WireGuard addresses and the Router resolver answers its LAN members with LAN addresses
+  %%> - snapshots owned policy, persists the Cluster-only delegate and remaining WireGuard hook and marker, applies both scopes, and checks them in the same phase
+  %%> - leaves LAN-link DNS, addresses, routes, DHCP, resolv.conf and global resolved settings alone; reloads resolved only when the delegate file or live scope differs
+  %%> Runtime failure:
+  %%> - the delegate has no VPN server; Cluster DNS or LAN failure makes its Cluster lookups fail until repair, and Doctor reports it
+  alt delegate support missing
+    %% path: delegate-unsupported
+    Note over N: Kept VPN DNS<br/>dns.cluster_delegate_unsupported
+    %%> Result:
+    %%> - systemd below 258 or missing delegate support removes any owned delegate; checks and records the complete VPN split policy as a successful degraded outcome
+    %%> - Cluster lookups receive WireGuard answers and Doctor reports node.cluster_dns_delegate_unsupported; no second mechanism
+  else delegate supported
+    %% path: delegate-supported
+    Note over N: Cluster delegate selected<br/>one LAN server · systemd 258+
+    %%> Result:
+    %%> - only Cluster domains use the delegate; LAN-link public DNS and remaining VPN domains keep their own scopes
+  end
+  alt effective policy matches
     %% path: succeeded
     N-->>SW: Policy checked<br/>revision · digest · scope
     %%> What it proves:
-    %%> - Cluster A uses LAN and AAAA is NODATA; another private name uses VPN and a public name retains its ordinary resolver
-    %%> - on withdrawal the Cluster suffix uses VPN before LAN policy is removed; no duplicate best-match domain remains
+    %%> - on a supported member Cluster A uses LAN and AAAA is NODATA; unsupported members get WireGuard answers; other private and public names retain their selected resolvers
+    %%> - on withdrawal the Cluster suffix uses VPN before the delegate is removed; no duplicate best-match domain remains
     %%> - an unchanged policy records a successful skip without a resolver reload
   else apply or check fails
     %% path: failed
