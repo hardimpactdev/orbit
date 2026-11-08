@@ -89,6 +89,8 @@ sequenceDiagram
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
     Note over GW: Record check 17<br/>passed, failed or changed
+    %%> Rules:
+    %%> - a check preserves its admitted subtask base as the start commit; the candidate HEAD is never a new base for a retry
   else a step fails
     N--xSW: exit ≠ 0 or no reply
     SW--xGW: Run failed<br/>error_code, failed step
