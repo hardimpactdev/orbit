@@ -79,7 +79,7 @@ Deno.test("private input is mode-protected, literal and limited to target plus r
         assertEquals(await Deno.readTextFile(`${folder}/known_hosts`), "10.44.0.2 ssh-ed25519 pinned\n10.44.0.7 ssh-ed25519 pinned\n");
         const vars = await Deno.readTextFile(`${folder}/vars.yml`);
         assertEquals(vars.includes(unsafeYaml(secret)), true);
-        assertEquals(vars.includes('"kind": !unsafe "node.converge"'), true);
+        assertEquals(vars.includes('"kind": "node.converge"'), true);
         for (const name of ["inventory.json", "known_hosts", "vars.yml"]) assertEquals((await Deno.stat(`${folder}/${name}`)).mode! & 0o777, 0o600);
         await assertRejects(() => Deno.stat(`${folder}/secret-agent_verifier`), Deno.errors.NotFound);
     } finally { await Deno.remove(folder, { recursive: true }); }

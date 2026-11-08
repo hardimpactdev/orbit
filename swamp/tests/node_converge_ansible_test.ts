@@ -6,6 +6,37 @@ import { fileURLToPath } from "node:url";
 // Use the shape-gate Ansible environment to run this suite.
 const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${name}.yml`, import.meta.url));
 const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
+
+Deno.test("generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible", async () => {
+    const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+    const folder = await Deno.makeTempDir();
+    try {
+        const fixture = {
+            // The real app-dev intent includes find's negation argument. Tagging it !unsafe breaks Ansible's YAML loader.
+            argv: ["find", "/etc/php", "-name", "*.conf", "!", "-name", "orbit.conf"],
+            values: ["on", "off", "yes", "no", "true", "false", "null", "1", "01", "", "[]", "{}"],
+            templates: ["{{ lookup('pipe', 'false') }}", "{% if false %}literal{% endif %}", "{# literal comment #}"],
+            enabled: true, empty: null, count: 7,
+        };
+        const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], fixture }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        await convergeInput(folder, "/unused", "/unused");
+        await Deno.writeTextFile(`${folder}/roundtrip.json`, JSON.stringify([{
+            hosts: "localhost", connection: "local", gather_facts: false,
+            tasks: [{ name: "Read generated literal values", "ansible.builtin.copy": {
+                dest: `${folder}/result.json`, content: "{{ converge_intent.fixture | to_json }}", mode: "0600",
+            } }],
+        }]));
+        const result = await new Deno.Command("ansible-playbook", {
+            args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, `${folder}/roundtrip.json`],
+            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
+        }).output();
+        assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
+        assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result.json`)), fixture);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchanged = true) {
     const folder = await Deno.makeTempDir();
     try {
@@ -123,6 +154,8 @@ Deno.test("role phases accept generated extra vars without shadowing each role's
         }]));
         // Relative includes must resolve beside the production playbook.
         await Deno.symlink(fileURLToPath(new URL("../ansible/tasks", import.meta.url)), `${folder}/tasks`);
+        // Production also has a playbook with the same basename as the runtime's renewal tasks.
+        await Deno.symlink(fileURLToPath(new URL("../ansible/swamp-worker-renewal.yml", import.meta.url)), `${folder}/swamp-worker-renewal.yml`);
         for (const pass of [1, 2]) {
             const result = await new Deno.Command("ansible-playbook", {
                 args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, "-e", `orbit_run=${folder}`, "--tags", "roles,check", `${folder}/phase.json`],

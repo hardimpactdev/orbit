@@ -72,6 +72,7 @@ sequenceDiagram
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
   %%> - before discovery and cases, the shared runner installs the checkout's pinned Ansible collections, renders its Swamp grants and reloads them; the restored base can lack a new callback or vault key pattern
+  %%> - the proof-only play records the tested Gateway revision and configures its static CLI catalog from the checksum-pinned published fixture; the candidate CLI still runs from source, and no real Gateway receives this catalog
   %%> - prerequisite preparation uses the candidate's Ansible play on the nested Gateway; a failure stops the cases as an infrastructure failure
   %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: the restored containers boot the state of `base`, whose database may predate the checkout's migrations

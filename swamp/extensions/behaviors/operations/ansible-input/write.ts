@@ -25,7 +25,7 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.08.3",
+    version: "2026.11.09.1",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },

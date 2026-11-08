@@ -78,6 +78,26 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(result['failed'][0].startswith('act[0] cli firewall:allow: exit 1'))
         self.assertTrue(any(step['step'].startswith('expect') for step in receipt['steps']))
 
+    def test_operation_diagnostics_survive_setup_receipts_and_ci_verdict_lines(self):
+        case = self.spec.case(CASE)
+        case.setup.append(spec.Step('cli', {'run': ['firewall:allow', '80'], 'expect': {'exit': 0}}))
+        operation = {'id': 17, 'status': 'failed', 'failed_step': 'Converge input', 'error_code': 'operation.native_failed',
+                     'error': {'detail': 'private-error-sentinel'}}
+        original = self.fleet.cli
+
+        def cli(args, **kwargs):
+            if args[0] == 'firewall:allow':
+                return {'rc': 1, 'json': operation, 'stdout': json.dumps(operation), 'stderr': ''}
+            return original(args, **kwargs)
+
+        with patch.object(self.fleet, 'cli', side_effect=cli):
+            result = runner.run_case(case, self.fleet, self.spec, Path(self.directory.name))
+        receipt = json.loads(next(Path(self.directory.name).glob(CASE + '/*/receipt.json')).read_text())
+        self.assertEqual((result['verdict'], result['cause']), ('unrun', 'precondition'))
+        for failures in (receipt['failed'], json.loads(runner.verdict_line(result))['failed']):
+            self.assertIn("failed_step='Converge input', error_code='operation.native_failed'", failures[0])
+            self.assertNotIn('private-error-sentinel', failures[0])
+
     def test_a_port_that_is_not_blocked_before_the_command_is_unrun_not_a_pass(self):
         self.fleet.deny_ignored = True
         result, _ = self.execute()

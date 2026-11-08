@@ -1,12 +1,15 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.08.3
+version: 2026.11.09.1
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
 behaviors:
   - operations/ansible-input/write.ts
 additionalFiles:
+  - ansible/proof-gateway.yml
+  - ansible/tasks/proof-gateway-release.yml
+  - proof/cli-release.json
   - ansible/library/orbit_artifact.py
   - ansible/tasks/artifact-fetch.yml
   - ansible/transport-exit-codes.json

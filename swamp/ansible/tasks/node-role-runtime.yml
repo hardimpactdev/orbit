@@ -80,7 +80,7 @@
   vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: false }
 - name: Install Swamp worker renewal
   when: rt.swamp is not none
-  ansible.builtin.import_tasks: swamp-worker-renewal.yml
+  ansible.builtin.import_tasks: tasks/swamp-worker-renewal.yml
 - name: Write runtime units
   ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", mode: "0644" }
   loop: "{{ rt.units }}"

@@ -280,6 +280,8 @@ Each case ends with one JSON line of at most 1 KB, because Swamp cuts step outpu
 
 Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
 
+A failed CLI check includes the Operation's public `failed_step` and `error_code`, when present, in its failure message. This also applies to a failed setup command. Named-step checks read those fields from `operation:show`; human output uses its printed Operation ID. Private error details stay out of the verdict line.
+
 A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
 
 ## Write and review

@@ -100,7 +100,7 @@ class FleetPreparationTest(unittest.TestCase):
         self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
                                    'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
                                    '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
-                                   '--tags', 'collections,grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'])
+                                   '/home/orbit/orbit/swamp/ansible/proof-gateway.yml'])
         self.assertEqual(calls[1], 'discover')
 
     def test_failed_grant_preparation_stops_before_any_discovery_or_case(self):

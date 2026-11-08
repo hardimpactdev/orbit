@@ -3,7 +3,7 @@ type Ssh = { target: { host: string; port: number; user: string; host_keys: stri
 /** Every string is literal, including nested Tool values and private environment files. */
 export function unsafeYaml(value: unknown, depth = 0): string {
     const pad = "  ".repeat(depth);
-    if (typeof value === "string") return `!unsafe ${JSON.stringify(value)}`;
+    if (typeof value === "string") return `${["{{", "{%", "{#"].some((marker) => value.includes(marker)) ? "!unsafe " : ""}${JSON.stringify(value)}`;
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     const entries = Array.isArray(value) ? value.map((item) => [null, item]) : Object.entries(value);
     if (!entries.length) return Array.isArray(value) ? "[]" : "{}";
