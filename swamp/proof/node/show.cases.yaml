@@ -239,7 +239,7 @@ cases:
               - {path: skipped, absent: true}
       - cli:
           run: [node:role:list, "${retained.id}"]
-          expect: {exit: 0, request: none, json: [{path: roles, equals: "${recorded-roles}"}]}
+          expect: {exit: 0, request: none, json: [{path: assignments, equals: "${recorded-roles}"}]}
       - cli:
           run: [node:list]
           expect: {exit: 0, request: none, json: [{path: "nodes[id=${retained.id}].assignments", equals: "${recorded-roles}"}]}

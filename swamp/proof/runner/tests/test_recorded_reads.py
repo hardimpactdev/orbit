@@ -91,7 +91,7 @@ class RecordedReadsTest(unittest.TestCase):
         assignments = [{'id': 8, 'role': 'database', 'status': 'failed', 'failed_step': 'converge:Check the role', 'error_code': 'node.role_failed'}]
         self.run.names.update({'retained.id': 9, 'recorded-roles': assignments})
         node = {'id': 9, 'roles': ['database'], 'assignments': assignments}
-        documents = {'node:show': node, 'node:list': {'nodes': [node]}, 'node:role:list': {'roles': assignments}}
+        documents = {'node:show': node, 'node:list': {'nodes': [node]}, 'node:role:list': {'assignments': assignments}}
         compared = set()
         for stage in retained.stages:
             for step in stage.act:
