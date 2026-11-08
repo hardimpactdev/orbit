@@ -449,7 +449,6 @@ impl Command for ReadInventory {
 #[cfg(test)]
 mod tests;
 
-pub(super) mod setup;
 pub(super) mod volumes;
 
 pub mod image;

@@ -71,7 +71,7 @@ Task VM placement uses Incus hosts only. The fleet uses Beast and Shark. Set `ta
 The common converge brings a task VM on such a host to the pins of the release, on every base refresh and every task start. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
 
 ```bash
-orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":12,"task_max_vms":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 This is an example, not the live configuration of beast. Preserve a host's current values when changing its configuration. The API patch takes the object directly:
@@ -80,7 +80,8 @@ This is an example, not the live configuration of beast. Preserve a host's curre
 {
   "task_vms": {
     "cidr": "10.251.77.0/24",
-    "max_vms": 4,
+    "max_vms": 12,
+    "task_max_vms": 2,
     "pool": "orbit-tasks",
     "image_alias": "orbit-task-base"
   }
@@ -97,11 +98,14 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | --- | --- | --- | --- |
 | `cidr` | Yes | | Private IPv4 bridge network from `/16` to `/28`, not a host address; it must not overlap the VPN subnet or another host's bridge |
 | `max_vms` | Yes | | Slot capacity, integer from 1 to 64; VM sizes consume one, two, or three slots |
+| `task_max_vms` | No | `null` | Task-work VM count from 0 to `max_vms`. Parked VMs and operator proofs count; authenticated CI and base refresh proofs are exempt. Null adds no limit |
+| `ci_only` | No | `false` | Boolean. Only authenticated CI proofs and this host’s own base refresh proof may use this host; CI prefers it over shared hosts |
 | `project` | No | `orbit-tasks` | Incus project name |
 | `network` | No | `orbittask0` | Bridge name: `orbittask` followed by 1 to 6 lowercase letters or digits |
 | `pool` | No | `orbit-tasks` | Incus ZFS storage pool for images, root disks, topology seeds, and their clones |
 | `image_alias` | No | `orbit-task-base` | Local base image alias used for task VM launches; a non-empty valid Incus alias. A host refresh moves it; the old image becomes `<alias>-previous` |
-| `zfs_dataset` | No | `null` | New dataset below a ZFS pool, such as `fast/orbit-tasks`, used when preparing a missing pool; never the whole ZFS pool or an existing dataset |
+| `pool_size` | No | `640GiB` | Size in `MiB` or `GiB` of a new loop-backed ZFS pool when no dataset is configured; existing pools are not resized |
+| `zfs_dataset` | No | `null` | New dataset below a ZFS pool, such as `fast/orbit-tasks`, used instead of a loop file when preparing a missing pool; never the whole ZFS pool or an existing dataset |
 | `cpus` | No | `2` | vCPUs per normal VM, integer from 1 to 64 |
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
@@ -109,7 +113,9 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-A slot is a place under `max_vms`, nothing more. A task start takes the lowest free slot number on its host, names the VM `<node>-tvm-<n>`, and mints a new Node and keys for it; the end of its group deletes the VM, the Node and the keys (chart `docs/cli/task/start.mmd`).
+Each Large VM consumes three `max_vms` units. `task_max_vms` counts VMs, not units. With `max_vms=12` and `task_max_vms=2`, task work may hold two Large VMs and CI or base refresh proofs may use the remaining two places. Prep, build, review, provision and parked task VMs share the limit; only an authenticated CI proof or a base refresh proof is exempt. Lowering the limit removes no claim; new task work is refused with `tasks.capacity_unavailable` until the count falls below it.
+
+Shared hosts keep one Large place for authenticated CI proofs and refresh proofs; task work and operator proofs cannot take it. A CI-only host with `max_vms=6` admits up to two Large proof VMs. A task start takes the lowest free public slot number on its host, names the VM `<node>-tvm-<n>`, and mints a new Node and keys for it; the end of its group deletes the VM, the Node and the keys (chart `docs/cli/task/start.mmd`).
 
 Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 

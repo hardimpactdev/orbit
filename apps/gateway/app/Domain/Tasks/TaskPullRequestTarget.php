@@ -11,7 +11,8 @@ use App\Models\Task;
 /** The published pull request of an external group, as the Gateway read it at admission. */
 final readonly class TaskPullRequestTarget
 {
-    public function __construct(public GitHubRepository $repository, public int $number, public GitHubPullRequest $pull) {}
+    /** @param list<array{name: string, conclusion: string|null, status: string|null, head: string|null, app: string|null}> $checks */
+    public function __construct(public GitHubRepository $repository, public int $number, public GitHubPullRequest $pull, public array $checks = []) {}
 
     /** @return array{project_id:int,group_id:int,repository:string,pr_number:int} */
     public function intent(Task $group): array

@@ -31,8 +31,8 @@ use App\Models\Process;
 /** Role-owned runtime intent. Capture never discovers accounts or executes a host command. */
 final readonly class NodeRoleRuntimeInput
 {
-    /** The swamp role's worker instances: two, so one drains and restarts while the other runs (ADR 0243). */
-    public const array SwampWorkers = ['a', 'b'];
+    /** The swamp role's worker instances: three, so two keep serving while one drains and restarts (ADR 0243). */
+    public const array SwampWorkers = ['a', 'b', 'c'];
 
     public function __construct(private AgentDelivery $agents, private ProcessTargetResolver $targets,
         private DockerProcessRenderer $docker, private RecordProcessIntentAction $processes, private ProcessSpecification $specifications,

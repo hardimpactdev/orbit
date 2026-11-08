@@ -67,7 +67,7 @@ function roundWorld(TaskVmState $state = TaskVmState::Ready): array
         $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
         $github->shouldReceive('repositoryChecksToken')->andReturn('checks-token');
         $github->shouldReceive('pullRequest')->andReturn($pull);
-        $github->shouldReceive('checkRuns')->andReturn([new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: ROUND_HEAD, appSlug: 'github-actions')]);
+        $github->shouldReceive('checkRuns')->andReturn([new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: ROUND_HEAD, appSlug: 'github-actions', outputSummary: 'private raw output')]);
     }));
     $host = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'tvm-host', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.11', 'public_ssh_port' => 22,
@@ -102,7 +102,7 @@ function roundCandidate(Task $group, Task $subtask, string $head = ROUND_HEAD): 
 {
     $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x',
         'head_before' => str_repeat('1', 40), 'tree_before' => str_repeat('2', 40), 'head_after' => str_repeat('3', 40), 'tree_after' => str_repeat('4', 40),
-        'commit_sha' => $head, 'started_at' => now(), 'finished_at' => now()]);
+        'commit_sha' => $head, 'exit_code' => 0, 'output' => 'private check output', 'started_at' => now(), 'finished_at' => now()]);
     Operation::query()->create(['kind' => OperationKinds::TasksCheck, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
         'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
         'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $head, 'head' => $check->head_after, 'tree' => $check->tree_after,
@@ -149,6 +149,20 @@ it('admits one round with the review, fix and push, resuming only a parked VM', 
         ->and(AgentThread::query()->where('role', 'reviewer')->count())->toBe(1);
 })->with([TaskVmState::Ready, TaskVmState::Parked]);
 
+it('captures only public check results bound to the exact reviewed head and handoff tree', function (): void {
+    [$group, $subtask] = roundWorld();
+    $check = roundCandidate($group, $subtask);
+
+    $input = admitRound($group)->input;
+
+    expect($input['review_evidence'])->toBe([
+        'head' => ROUND_HEAD, 'tree' => str_repeat('4', 40),
+        'handoff' => ['check_id' => $check->id, 'outcome' => 'passed', 'commit' => ROUND_HEAD, 'tree' => str_repeat('4', 40), 'exit_code' => 0],
+        'hosted_checks' => [['name' => 'Required checks', 'conclusion' => 'success', 'status' => 'completed', 'head' => ROUND_HEAD, 'app' => 'github-actions']],
+    ]);
+    expect(json_encode($input['review_evidence']))->not->toContain('private raw output', 'private check output', 'checks-token', 'reviews-token');
+});
+
 it('captures no fix, check or check row in round 3, because findings there end the run', function (): void {
     [$group, $subtask] = roundWorld();
     roundCandidate($group, $subtask);
@@ -164,15 +178,22 @@ it('captures no fix, check or check row in round 3, because findings there end t
         ->and(TaskCheck::query()->count())->toBe($checks);
 });
 
-it('admits the head that an earlier round pushed, which has no handoff check, and refuses any other head', function (): void {
+it('admits an earlier pushed fix with its passed local check and refuses a missing receipt', function (): void {
     [$group, $subtask] = roundWorld();
 
     expect(fn () => app(TaskReviewRoundIntent::class)->start($group, ROUND_HEAD, 'test', null))
         ->toThrow(ResourceOperationException::class, 'passed handoff candidate');
 
-    TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => str_repeat('1', 40), 'round' => 1, 'verdict' => TaskReviewRoundVerdict::Findings, 'pushed_commit' => ROUND_HEAD]);
+    $round = TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => str_repeat('1', 40), 'round' => 1, 'verdict' => TaskReviewRoundVerdict::Findings, 'pushed_commit' => ROUND_HEAD]);
+    expect(fn () => app(TaskReviewRoundIntent::class)->start($group, ROUND_HEAD, 'test', null))
+        ->toThrow(ResourceOperationException::class, 'passed handoff candidate');
+    $check = roundCandidate($group, $subtask);
+    Operation::query()->where('kind', OperationKinds::TasksCheck)->delete();
+    $round->update(['check_id' => $check->id]);
 
-    expect(admitRound($group)->input['round'])->toBe(2);
+    $input = admitRound($group)->input;
+    expect($input['round'])->toBe(2)
+        ->and($input['review_evidence']['handoff']['check_id'])->toBe($check->id);
 });
 
 it('refuses a fourth round and a group whose task VM is neither parked nor running', function (): void {
@@ -235,7 +256,7 @@ it('reads the Operation without writing the Pi token, writes it once at run star
     $read = $projection->input($operation);
 
     expect($writes->calls)->toBe([])
-        ->and(array_keys($read['intent']))->toEqualCanonicalizing(['project_id', 'group_id', 'repository', 'pr_number', 'round', 'head', 'task_vm_id', ...($state === TaskVmState::Parked ? ['resume'] : []), 'review', 'fix', 'check', 'publish'])
+        ->and(array_keys($read['intent']))->toEqualCanonicalizing(['project_id', 'group_id', 'repository', 'pr_number', 'round', 'head', 'task_vm_id', 'review_evidence', ...($state === TaskVmState::Parked ? ['resume'] : []), 'review', 'fix', 'check', 'publish'])
         ->and($read['intent']['check'])->toHaveKeys(['command_deliverables', 'execution_references_json'])->not->toHaveKey('execution_secrets')
         ->and($read['intent']['check']['execution_references_json'])->toBe('{}')
         ->and(json_encode($read['resume_secrets']))->toBe('{}');

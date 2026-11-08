@@ -25,6 +25,8 @@ sequenceDiagram
   Note over GW: Validate, lock the Node
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
+  %%> - `task_vms.ci_only` is a strict boolean; true reserves the whole host for authenticated CI proofs and its own refresh proof; `max_vms=6` fits up to two Large VMs
+  %%> - `task_vms.task_max_vms` is a VM count from 0 to `max_vms` (at most 64), or null for no extra limit; it caps task work and operator proofs, including parked claims, but excludes authenticated CI and base refresh proofs; lowering it removes no claim
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:

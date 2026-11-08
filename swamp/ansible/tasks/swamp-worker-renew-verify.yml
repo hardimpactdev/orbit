@@ -1,7 +1,7 @@
 ---
 - name: Probe the live connected worker
   ansible.builtin.command:
-    argv: "{{ ['timeout', '125', renewal_swamp_binary, 'worker', 'verify', renewal_names[renewal_verify_slot]] + renewal_remote }}"
+    argv: "{{ ['timeout', '125', renewal_swamp_binary, 'worker', 'verify', renewal_verify_name] + renewal_remote }}"
   become: true
   become_user: "{{ orbit_user }}"
   environment: "{{ renewal_environment }}"
@@ -17,8 +17,8 @@
     that:
       - renewal_check.total == 1
       - renewal_check.workers | length == 1
-      - renewal_check.workers[0].name == renewal_names[renewal_verify_slot]
-    fail_msg: "Worker {{ renewal_verify_slot }} is not connected"
+      - renewal_check.workers[0].name == renewal_verify_name
+    fail_msg: "Worker {{ renewal_verify_name }} is not connected"
 # A full survivor cannot take follow-on work within the workflows' 30s queue budget.
 # Exit this round without draining; the service retries after five minutes.
 - name: Require the live probe to pass with spare dispatch capacity
@@ -27,4 +27,4 @@
       - renewal_check.passed == 1
       - renewal_check.failed == 0
       - renewal_check.workers[0].status == 'pass'
-    fail_msg: "Deferring renewal: {{ renewal_verify_slot }} failed its live probe or is full; no further drain, retry in five minutes"
+    fail_msg: "Deferring renewal: {{ renewal_verify_name }} failed its live probe or is full; no further drain, retry in five minutes"

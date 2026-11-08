@@ -58,6 +58,10 @@ sequenceDiagram
   Note over SW: snapshot_before
   %%> What it does:
   %%> - Validate the HEAD and tree returned by the official SSH operations.
+  Note over SW: review_prompt
+  %%> What it does:
+  %%> - A review-round caller supplies sanitized check evidence. Bind its head to the candidate and its tree to the workspace snapshot, then append it to the Pi prompt.
+  %%> - Refuse another head or tree before any Pi send. Other turns keep their prepared prompt.
   SW->>N: receipt_prepare
   %%> What it does:
   %%> - Create the agent receipt directory in the checkout.
