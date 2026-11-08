@@ -157,11 +157,8 @@ Deno.test("the capture wrapper keeps the command literal and its exit code", asy
 
 Deno.test("a GitHub installation token in the new format, with dots and dashes, is redacted whole", () => {
     // The shape of the token that Composer echoed in `Your github oauth token for github.com contains invalid characters`.
-    const token = "ghs_" + "A".repeat(20) + "_" +
-        ["eyJhbGciOiJSUzI1NiJ9", "eyJpYXQiOjE3NjIzMzQ2NjV9", "sig-nature_ok"]
-            .join(".");
-    const text =
-        `In BaseIO.php line 143:\n  Your github oauth token for github.com contains invalid characters: "${token}"\n`;
+    const token = "ghs_" + "A".repeat(20) + "_" + ["eyJhbGciOiJSUzI1NiJ9", "eyJpYXQiOjE3NjIzMzQ2NjV9", "sig-nature_ok"].join(".");
+    const text = `In BaseIO.php line 143:\n  Your github oauth token for github.com contains invalid characters: "${token}"\n`;
 
     assertEquals(
         redactText(text),
