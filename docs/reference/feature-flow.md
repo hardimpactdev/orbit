@@ -91,7 +91,7 @@ swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 | Value | Meaning |
 | --- | --- |
 | `skip` | The path needs no proof: documentation, charts, case descriptions, the web app. |
-| `<family>:<command>` | The cases file of each listed command runs. Without a cases file, the command is listed as uncovered. |
+| `<family>:<command>` | Select each listed command. Code changes run its whole cases file; cases-only changes run the affected entries. Without a cases file, the command is listed as uncovered. |
 | `*` | Every case runs. The list does not use it: a proof runs only when a command's own code or cases change. |
 | `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
 
@@ -102,9 +102,18 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - A rename or a delete counts for the old path too.
 - A change to the selection list selects nothing by itself.
 - A file list that GitHub returns incomplete selects every case, and so does `--all`.
-- List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
-- List a helper that several commands share with every one of them.
 - A cases file selects its own command. Charts and pages are `skip`.
+
+After choosing commands, choose their cases:
+
+1. Read each cases file at the merge base and head. A change to the command's code selects every head case with reason `command code changed`.
+2. For cases-only changes, compare parsed entries by case id. Select changed entries (`changed`) and new entries (`added`), including all their variants. Deleted entries select nothing. Comments, formatting, case order and uncovered descriptions select nothing.
+3. Include cases that use a changed fixture (`uses changed fixture`) or file var (`uses changed var`), following nested fixture uses and var references. Unused fixtures and vars select nothing.
+4. Include all users of changed batch setup (`batch setup changed`), even when only `batches.yaml` changed. Changes to file-wide fleet settings select every case (`file settings changed`).
+5. Keep selected cases in their batches. Restore the fleet before each batch, run its setup, then run only the selected case ids. Balance these batches across CI VMs.
+6. Report each case id, reason and verdict. No selected cases succeeds without a VM; a selected command with no verdict fails.
+
+The Gateway and `bin/ci-build-plan` use the same comparison rules, checked with shared fixtures.
 
 The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. The Node family selects `node:list` and reports the remaining Node commands as uncovered until they have cases. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
 

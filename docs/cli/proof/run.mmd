@@ -14,26 +14,34 @@ sequenceDiagram
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
-  GW->>GH: Read whole batches<br/>expand case ids
-  %%> Read the selected YAML at the commit. Empty or malformed selected cases fail. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
+  GW->>GH: Read cases at merge base and head
+  %%> Read the selected command files and batch definitions at both commits. A command code change selects its whole cases file. Empty or malformed selected files fail.
+  GW->>GW: Compare case definitions by id
+  %%> For cases-only changes, select added and changed entries and every variant of each. Deleted entries select nothing. Ignore YAML formatting and comments.
+  GW->>GW: Include users of changed dependencies
+  %%> Follow fixture uses and file vars, including nested uses. A changed batch setup selects its users; changed fleet settings select all users. Keep the selected cases in their batches with the required setup.
+  GW->>GW: Record case ids and reasons
+  %%> Gateway and CI planning use the same rules and shared test fixtures. Report changed, added, uses changed fixture, uses changed var, batch setup changed or command code changed for each selected case. Zero selected cases succeeds without a VM.
+  GW->>GW: Plan selected cases in batches
+  %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
   %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
   Q->>GW: Admit the front proof
   %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green.
   GW->>GW: Balance whole batches<br/>by measured time
-  %%> Longest measured batch first; assign each to the least loaded VM. A batch never splits. Record expected cases and all shard operations atomically.
+  %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically.
   GW->>SW: Start one run per VM
   SW->>VM: Claim a slot
   %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
   SW->>VM: Read the workspace commit
   SW->>SW: Check the workspace commit
-  loop each assigned whole batch, in order
+  loop each assigned batch, in order
     SW->>VM: Restore the head checkout
     %%> A prior new-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
     SW->>VM: Read the command batches
     SW->>SW: Select the assigned batch
     SW->>VM: Restore the base snapshot
-    SW->>VM: Run the batch
+    SW->>VM: Run the selected cases with batch setup
     SW->>VM: Prove new cases fail
     VM-->>SW: Verdict lines
   end
