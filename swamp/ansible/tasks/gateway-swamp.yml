@@ -37,6 +37,7 @@
     # The workers run as the swamp account and read their tokens directly: systemd credentials do nothing in a system container.
     - { path: "{{ swamp_credentials }}/a", mode: "0750", group: "{{ swamp_user }}" }
     - { path: "{{ swamp_credentials }}/b", mode: "0750", group: "{{ swamp_user }}" }
+    - { path: "{{ swamp_credentials }}/c", mode: "0750", group: "{{ swamp_user }}" }
   loop_control: { label: "{{ item.path }}" }
 - name: Write the units
   ansible.builtin.copy:
@@ -121,7 +122,7 @@
   no_log: true
 - name: Look for the worker tokens
   ansible.builtin.stat: { path: "{{ swamp_credentials }}/{{ item }}/server.token" }
-  loop: [a, b]
+  loop: [a, b, c]
   register: worker_tokens
 - name: Mint the worker tokens
   ansible.builtin.shell:
@@ -136,7 +137,7 @@
     executable: /bin/bash
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
-  loop: [a, b]
+  loop: [a, b, c]
   when: not (worker_tokens.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first)
   no_log: true
 - name: Place the worker tokens
@@ -153,11 +154,13 @@
     - { worker: a, kind: server, token: server }
     - { worker: b, kind: enrollment, token: enrollment }
     - { worker: b, kind: server, token: server }
+    - { worker: c, kind: enrollment, token: enrollment }
+    - { worker: c, kind: server, token: server }
   loop_control: { label: "{{ item.worker }} {{ item.kind }}" }
   no_log: true
 - name: Remove the staged worker tokens
   ansible.builtin.file: { path: "{{ swamp_home }}/.config/swamp/worker-{{ item.0 }}.{{ item.1 }}", state: absent }
-  loop: "{{ ['a', 'b'] | product(['enrollment', 'server']) | list }}"
+  loop: "{{ ['a', 'b', 'c'] | product(['enrollment', 'server']) | list }}"
   loop_control: { label: "{{ item.0 }} {{ item.1 }}" }
 # What the Gateway needs to start runs: its run and read tokens, the front's address and the identity it gives Nodes.
 - name: Give the Gateway its Swamp settings
@@ -281,7 +284,7 @@
   ansible.builtin.wait_for: { host: 127.0.0.1, port: 9418, timeout: 90 }
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", enabled: true, state: started }
-  loop: [a, b]
+  loop: [a, b, c]
 - name: Start the recorder
   ansible.builtin.systemd: { name: "{{ item.name }}", enabled: true, state: started }
   loop: "{{ control.recorder }}"
@@ -341,7 +344,7 @@
   ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--agent-secret-hash={{ agent_verifier.stdout }}"] }
   become_user: "{{ swamp_user }}"
   changed_when: true
-# Serve and both workers run: the machine serves Swamp, so the swamp role of its Node stands.
+# Serve and all three workers run: the machine serves Swamp, so the swamp role of its Node stands.
 - name: Record that this machine serves Swamp
   ansible.builtin.command: { argv: [php, "{{ swamp_app }}/artisan", "orbit:bootstrap-control-plan", "--serving"] }
   become_user: "{{ swamp_user }}"

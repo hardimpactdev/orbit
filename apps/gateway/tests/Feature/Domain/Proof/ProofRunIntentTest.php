@@ -22,9 +22,13 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Cluster;
@@ -33,6 +37,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Env;
@@ -212,10 +217,10 @@ describe('which commits Orbit proves', function (): void {
 });
 
 /** The request, then the queue job: the proof as the admission left it. */
-function proofAdmitted(bool $all = false, bool $reportOnly = false): Operation
+function proofAdmitted(bool $all = false, bool $reportOnly = false, ?Node $caller = null): Operation
 {
     Queue::fake();
-    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, $all, 'tester', null, reportOnly: $reportOnly);
+    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, $all, 'tester', null, reportOnly: $reportOnly, authenticatedCaller: $caller);
     app(ProofRunIntent::class)->admit($proof->id);
 
     return $proof->refresh();
@@ -231,7 +236,7 @@ function proofFailureDetail(Operation $proof): ?string
  * One host with room for one large task VM and a base snapshot that a refresh built from the release `$copiesCommit`, and a commit under proof that
  * changes a firewall workflow. Returns the temporary release layout, which the test removes.
  */
-function proofHostWithCopies(object $source, ?string $copiesCommit): string
+function proofHostWithCopies(object $source, ?string $copiesCommit, int $maxVms = 6): string
 {
     $base = sys_get_temp_dir().'/orbit-proof-copies-'.bin2hex(random_bytes(4));
     $commit = 'eeeeeeeeeeee0000000000000000000000000000';
@@ -252,7 +257,7 @@ function proofHostWithCopies(object $source, ?string $copiesCommit): string
         'input' => $copiesCommit === null ? [] : ['commit' => $copiesCommit],
         'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 3, 4, '8GiB', '20GiB')], '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB')], '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
     $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
     proofWorld($source);
 
@@ -270,7 +275,7 @@ describe('proof:run admission', function (): void {
         $seconds = microtime(true) - $started;
 
         expect($proof->status)->toBe(OperationStatus::Running)
-            ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => []])
+            ->and($proof->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => []])
             ->and($seconds)->toBeLessThan(1.0)
             ->and(Task::query()->count())->toBe(0)->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
         Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
@@ -435,7 +440,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM.')
+            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM within the task VM limit and outside the CI/refresh reserve.')
             ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
@@ -456,16 +461,47 @@ describe('proof:run admission', function (): void {
             ->and($proof->result['cases'])->toBe([])->and(Task::query()->count())->toBe(0);
     });
 
-    it('passes the reserve of a report-only run down to the claim of its slot', function (): void {
+    it('admits report-only CI into the reserved slot instead of leaving it free', function (): void {
         $source = proofSource();
-        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
+        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000', maxVms: 3);
         $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+        $observed = null;
+        TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
+            $observed = $vm->slot_number;
+            throw new ResourceOperationException('test.slot_observed', 'Stop before preparing execution.', 409);
+        });
 
-        // Room for one task VM: a report-only run leaves it to task and proof work.
-        $proof = proofAdmitted(reportOnly: true);
+        $ci = Node::query()->where('name', 'beast')->sole();
+        $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        $proof = proofAdmitted(reportOnly: true, caller: $ci);
 
         Process::run(['rm', '-rf', $base]);
-        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and(proofFailureDetail($proof))->toContain('with 1 more left free');
+        expect($observed)->toBe(1)->and($proof->error_code)->toBe('test.slot_observed');
+    });
+
+    it('waits visibly for a busy CI reserve, then reports capacity with the selected commands and no cases', function (): void {
+        $this->freezeTime();
+        $source = proofSource();
+        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000', maxVms: 3);
+        $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+        $host = Node::query()->where('name', 'beast')->sole();
+        TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+            'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.150']);
+
+        $ci = Node::query()->where('name', 'beast')->sole();
+        $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        $proof = proofAdmitted(reportOnly: true, caller: $ci);
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+            ->and($proof->input['runs'])->toBe([])->and(Task::query()->count())->toBe(0);
+        Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id && $job->delay === ProofRunIntent::RetrySeconds);
+        Queue::assertNotPushed(CancelProofGroup::class);
+        $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($proof->result['selected_commands'])->toBe(['firewall:allow'])->and($proof->result['cases'])->toBe([]);
     });
 
     it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {
@@ -789,8 +825,8 @@ describe('keep_failed', function (): void {
         $kept = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, keepFailed: true);
         $plain = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
 
-        expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => [], 'keep_failed' => true])
-            ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'runs' => []]);
+        expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => [], 'keep_failed' => true])
+            ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_reserve' => false, 'runs' => []]);
     });
 });
 
@@ -931,4 +967,206 @@ describe('a proof that cannot be placed while a report-only proof is on its way 
         expect($proof->status)->toBe(OperationStatus::Running)->and($proof->error_code)->toBeNull()->and($proof->current_step)->toBe(ProofRunIntent::WaitStep);
         Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->delay === ProofRunIntent::RetrySeconds);
     });
+});
+
+/** Two shared hosts at twelve budget units, filled to the reserve or the explicit task count. */
+function proofReservedFleet(object $source, ?int $taskMaxVms = null): array
+{
+    $copies = 'dddddddddddd0000000000000000000000000000';
+    $base = proofHostWithCopies($source, $copies, maxVms: 12);
+    $source->ranges[$copies] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+    $beast = Node::query()->where('name', 'beast')->sole();
+    $shark = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.11', 'wireguard_ip' => '10.44.0.11', 'user' => 'orbit']));
+    $build = TaskVmImageBuild::query()->where('host_node_id', $beast->id)->sole()->replicate();
+    $build->host_node_id = $shark->id;
+    $build->save();
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $shark->id, 'node_id' => $shark->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['commit' => $copies], 'result' => ['refreshed' => true, 'host_node_id' => $shark->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms),
+            new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    foreach ([$beast, $shark] as $index => $host) {
+        foreach (($taskMaxVms === null ? [2, 3, 4] : [2, 3]) as $number) {
+            TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => $number, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+                'group_id' => Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task claim', 'brief' => 'Work', 'status' => TaskGroupStatus::Todo])->id,
+                'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(140 + $index * 4 + $number)]);
+        }
+    }
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']));
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $operator = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'operator', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+    $beast->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    foreach ([$beast, $shark, $operator] as $caller) {
+        $caller->accessibleNodes()->attach($gateway);
+    }
+    Queue::fake();
+
+    return [$base, $beast, $shark, $operator];
+}
+
+/** Authenticate through the peer IP, then inspect the queued record independently of the request. */
+function proofHttpQueued(Node $caller, bool $reportOnly = false, ?string $key = null): Operation
+{
+    $response = test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->withHeader('Idempotency-Key', $key ?? fake()->uuid())
+        ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'report_only' => $reportOnly]);
+    $response->assertAccepted();
+
+    return Operation::query()->findOrFail($response->json('data.id'));
+}
+
+describe('authenticated proof capacity at the HTTP boundary', function (): void {
+    it('persists CI eligibility before queueing and uses proof capacity after the request ends', function (?int $taskMaxVms): void {
+        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
+        try {
+            $proof = proofHttpQueued($ci, reportOnly: true);
+            Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+            // Eligibility is a server-authenticated admission snapshot, not the queue worker's identity or a new role lookup.
+            $ci->roles()->where('role', RoleName::CiRunner)->delete();
+            $observed = null;
+            TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
+                $observed = [$vm->host_node_id, $vm->slot_number];
+                throw new ResourceOperationException('test.slot_observed', 'Stop before execution.', 409);
+            });
+            app(ProofRunIntent::class)->admit($proof->id);
+            expect($observed)->toBe([$ci->id, 1])->and($proof->refresh()->error_code)->toBe('test.slot_observed');
+            expect($proof->input)->toMatchArray(['caller_node_id' => $ci->id, 'ci_reserve' => true]);
+        } finally {
+            Process::run(['rm', '-rf', $base]);
+        }
+    })->with(['shared reserve' => null, 'two-task limit' => 2]);
+
+    it('refuses operator and task-node proofs at task capacity regardless of report-only mode', function (string $identity, bool $reportOnly, ?int $taskMaxVms): void {
+        [$base, , $taskNode, $operator] = proofReservedFleet(proofSource(), $taskMaxVms);
+        try {
+            $taskNode->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+            $caller = $identity === 'operator' ? $operator : $taskNode;
+            $this->freezeTime();
+            $proof = proofHttpQueued($caller, $reportOnly);
+            app(ProofRunIntent::class)->admit($proof->id);
+            if ($reportOnly) {
+                expect($proof->refresh()->current_step)->toBe(ProofRunIntent::WaitStep);
+                $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
+                app(ProofRunIntent::class)->admit($proof->id);
+            }
+            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
+            expect($proof->input)->toMatchArray(['caller_node_id' => $caller->id, 'ci_reserve' => false]);
+        } finally {
+            Process::run(['rm', '-rf', $base]);
+        }
+    })->with([['operator', false, null], ['operator', true, null], ['task', false, null], ['task', true, null], ['operator', false, 2], ['task', false, 2]]);
+
+    it('never cancels authenticated CI when an operator proof is refused', function (): void {
+        [$base, $ci, , $operator] = proofReservedFleet(proofSource());
+        try {
+            $protected = proofHttpQueued($ci, reportOnly: true);
+            foreach (app(TaskVmSettings::class)->hosts as $index => $host) {
+                TaskVm::query()->create(['host_node_id' => $host->nodeId, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+                    'name' => 'occupied-reserve-'.$index, 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.'.(155 + $index)]);
+            }
+            [, $run] = proofRunningElsewhere();
+            $run->update(['input' => ['proof_operation_id' => $protected->id, 'group_id' => $run->target_id]]);
+            $proof = proofHttpQueued($operator);
+            app(ProofRunIntent::class)->admit($proof->id);
+            expect($protected->refresh()->status)->toBe(OperationStatus::Running)->and($protected->cancel_requested_at)->toBeNull();
+            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable');
+            Queue::assertNotPushed(CancelProofGroup::class);
+        } finally {
+            Process::run(['rm', '-rf', $base]);
+        }
+    });
+
+    it('binds a CI idempotency key to the authenticated caller', function (): void {
+        [$base, $ci, , $operator] = proofReservedFleet(proofSource());
+        try {
+            $key = fake()->uuid();
+            $proof = proofHttpQueued($ci, key: $key);
+            $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', $key)
+                ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'report_only' => false])->assertConflict();
+            expect($proof->refresh()->input['ci_reserve'])->toBeTrue();
+        } finally {
+            Process::run(['rm', '-rf', $base]);
+        }
+    });
+
+    it('refuses another task start at the task limit even when its caller runs CI', function (?int $taskMaxVms): void {
+        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
+        try {
+            app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
+            {
+                public function resolve(Project $project): string
+                {
+                    return PROOF_SHA;
+                }
+            });
+            $group = Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task', 'brief' => 'Build it', 'status' => TaskGroupStatus::Todo]);
+            $this->withServerVariables(['REMOTE_ADDR' => $ci->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
+                ->postJson('/api/v1/tasks/'.$group->id.'/start')->assertConflict()->assertJsonPath('error.code', 'tasks.capacity_unavailable');
+            expect(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
+        } finally {
+            Process::run(['rm', '-rf', $base]);
+        }
+    })->with(['shared reserve' => null, 'two-task limit' => 2]);
+});
+
+it('does not grant CI eligibility from a name, inactive role, or request flag', function (string $roleState): void {
+    [$base, , , $operator] = proofReservedFleet(proofSource());
+    try {
+        $operator->update(['name' => 'orbit-proof-ci-runner']);
+        $operator->roles()->create(['role' => RoleName::CiRunner, 'status' => $roleState]);
+        $proof = proofHttpQueued($operator);
+        expect($proof->input['ci_reserve'])->toBeFalse();
+        $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
+            ->postJson('/api/v1/proof/run', ['commit' => PROOF_SHA, 'ci_reserve' => true, 'caller_node_id' => 9])->assertUnprocessable();
+    } finally {
+        Process::run(['rm', '-rf', $base]);
+    }
+})->with(['provisioning', 'failed']);
+
+it('records CI-only host intent through node:update and rejects non-boolean policy', function (): void {
+    [$base, , $sabre, $operator] = proofReservedFleet(proofSource());
+    try {
+        $operator->accessibleNodes()->attach($sabre);
+        $host = ['cidr' => '10.252.12.0/24', 'max_vms' => 6, 'cpus' => 6, 'memory' => '12GiB', 'ci_only' => true];
+        $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
+            ->patchJson('/api/v1/nodes/'.$sabre->id, ['task_vms' => $host])->assertOk()->assertJsonPath('data.settings.task_vms.ci_only', true);
+        expect($sabre->refresh()->settings['task_vms']['ci_only'])->toBeTrue();
+        $this->withHeader('Idempotency-Key', fake()->uuid())->patchJson('/api/v1/nodes/'.$sabre->id, ['task_vms' => [...$host, 'ci_only' => 'true']])->assertUnprocessable();
+        expect($sabre->refresh()->settings['task_vms']['ci_only'])->toBeTrue();
+    } finally {
+        Process::run(['rm', '-rf', $base]);
+    }
+});
+
+it('places an authenticated CI proof on CI-only capacity before a shared reserve', function (): void {
+    [$base, $ci, , $operator] = proofReservedFleet(proofSource());
+    try {
+        $sabre = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
+        $build = TaskVmImageBuild::query()->where('host_node_id', $ci->id)->sole()->replicate();
+        $build->host_node_id = $sabre->id;
+        $build->save();
+        Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $sabre->id, 'node_id' => $sabre->id,
+            'status' => OperationStatus::Succeeded, 'input' => ['commit' => 'dddddddddddd0000000000000000000000000000'],
+            'result' => ['refreshed' => true, 'host_node_id' => $sabre->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
+        $settings = app(TaskVmSettings::class);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+            [...$settings->hosts, new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
+        $operatorProof = proofHttpQueued($operator);
+        app(ProofRunIntent::class)->admit($operatorProof->id);
+        expect($operatorProof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe(6);
+        $proof = proofHttpQueued($ci);
+        $observed = null;
+        TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
+            $observed = [$vm->host_node_id, $vm->slot_number];
+            throw new ResourceOperationException('test.slot_observed', 'Stop before execution.', 409);
+        });
+        app(ProofRunIntent::class)->admit($proof->id);
+        expect($observed)->toBe([$sabre->id, 1]);
+    } finally {
+        Process::run(['rm', '-rf', $base]);
+    }
 });

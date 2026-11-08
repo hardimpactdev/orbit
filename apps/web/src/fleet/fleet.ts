@@ -54,10 +54,7 @@ export const instanceNodeName = (fleet: Fleet, id: number): string =>
 
 /** Whether an Instance is for development or production, from its Node's `app-dev` or `app-prod` role. */
 export const instancePlacement = (fleet: Fleet, instance: Instance): string => {
-    const roles =
-        fleet.nodes
-            .find((node) => node.id === instance.node.id)
-            ?.roles.map((assignment) => assignment.role) ?? [];
+    const roles = fleet.nodes.find((node) => node.id === instance.node.id)?.roles ?? [];
 
     if (roles.includes("app-dev")) return "development";
     if (roles.includes("app-prod")) return "production";

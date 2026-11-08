@@ -77,7 +77,7 @@ final class ShowNodeCommand extends NodeCommand
             'ID' => $node->id,
             'Status' => $node->status,
             'Agent' => $node->agent?->label(),
-            'Roles' => NodeOutput::roles($node->roles),
+            'Roles' => NodeOutput::roles($node->assignments),
             'SSH' => NodeOutput::sshEndpoint($node),
             'Cluster' => $node->clusterName,
             'WireGuard' => $node->wireguardIp,

@@ -96,7 +96,6 @@ pub fn all() -> Vec<Entry> {
         entry::<incus::ReadImages>(),
         entry::<incus::ReadInstances>(),
         entry::<incus::ReadInventory>(),
-        entry::<incus::setup::PrepareHost>(),
         entry::<incus::volumes::ReadVolumes>(),
         entry::<incus::vm::ReadVm>(),
         entry::<incus::vm::ChangeVm>(),

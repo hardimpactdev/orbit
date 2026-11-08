@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Actions/Nodes/{UpdateNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
   - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
+  - apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php
   - packages/php-sdk/src/Requests/Nodes/**
   - packages/php-sdk/src/Responses/Nodes/**
 ---
@@ -16,11 +17,19 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 
 [Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
 
+[`node:list`](/cli/node/list) reads the recorded Nodes visible to the caller, including their assignment states and Cluster names. List and show use the same assignment fields as `node:role:list`; they do not refresh the machines.
+
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
 
-Node list and detail responses retain every role assignment, with its ID, role, lifecycle status, failed step and error code. They use the same assignment shape as `node:role:list`, not a list of role names. Human output adds non-active statuses and any retained failure detail to each role name. `node:show` also includes the recorded Cluster name; these reads do not contact the Node.
+Node list and detail responses keep `roles` as a list of role names. Their shared `assignments` projection retains every assignment with its ID, role, lifecycle status, failed step and error code, using the same fields as `node:role:list`. Human show output adds non-active statuses and retained failure detail to each role name. Both reads include the recorded Cluster name and do not contact the Node.
+
+## Authority
+
+`NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
+
+A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
 ## Commands
 
@@ -46,6 +55,8 @@ Every command accepts `--json`. Every command that targets an existing Node take
 Lists use tables. Below the minimum table width, each row becomes a labeled record. Details use an aligned tree, with an em dash for an empty value. While the Gateway works, the CLI shows one progress indicator per request, because it does not receive the steps. JSON output contains only the response.
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
+
+Set `task_vms.task_max_vms` through `node:update --task-vms` to cap task-work VM claims on a host. Parked claims count; authenticated CI and base refresh proofs are exempt. See [Task VM fields](/reference/node-settings#task-vm-fields) for the count and resource limits.
 
 ## Why it works this way
 
@@ -75,4 +86,8 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 
 `node:update` is a partial patch: it changes only the fields you name. The name, the platform, and the task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
+Set `task_vms.ci_only` through `node:update --task-vms=JSON` to admit only authenticated CI proofs and the host’s own refresh proof. CI prefers these hosts. The [host settings reference](/reference/node-settings#task-vm-fields) lists capacity units and validation.
+
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.
+
+Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).

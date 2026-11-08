@@ -25,13 +25,7 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": [
-                    {
-                        "id": 1,
-                        "role": "app-dev",
-                        "status": "active",
-                        "failed_step": null,
-                        "error_code": null
-                    }
+                    "app-dev"
                 ],
                 "settings": null,
                 "updating": null,
@@ -40,7 +34,16 @@
                     "state": "online",
                     "since": null
                 },
-                "cluster_name": "development"
+                "cluster_name": "development",
+                "assignments": [
+                    {
+                        "id": 2,
+                        "role": "app-dev",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ]
             },
             {
                 "id": 1,
@@ -62,13 +65,7 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": [
-                    {
-                        "id": 2,
-                        "role": "gateway",
-                        "status": "active",
-                        "failed_step": null,
-                        "error_code": null
-                    }
+                    "gateway"
                 ],
                 "settings": null,
                 "updating": null,
@@ -76,7 +73,17 @@
                 "agent": {
                     "state": "offline",
                     "since": "2026-11-02T17:55:00Z"
-                }
+                },
+                "cluster_name": null,
+                "assignments": [
+                    {
+                        "id": 1,
+                        "role": "gateway",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null
+                    }
+                ]
             }
         ],
         "meta": {

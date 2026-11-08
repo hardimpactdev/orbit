@@ -188,7 +188,7 @@ A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has on
 
 ### Build and seal a release
 
-Admission reads the target commit's pin from `apps/gateway/resources/agent/frozen-manifest.json`. It verifies the published manifest, checksums and [provenance](#release-provenance) in PHP. The manifest must match the pin. Changing agent source does not change the delivered observer until a commit moves the pin. An unavailable delivery returns `gateway.release_agent_delivery_unavailable`; a bad proof returns `gateway.release_provenance_invalid`.
+Admission reads the target commit's pin from `apps/gateway/resources/agent/frozen-manifest.json`, on GitHub from `raw.githubusercontent.com`. It verifies the published manifest, checksums and [provenance](#release-provenance) in PHP. The manifest must match the pin. Changing agent source does not change the delivered observer until a commit moves the pin. An unavailable delivery returns `gateway.release_agent_delivery_unavailable`; a bad proof returns `gateway.release_provenance_invalid`.
 
 The Swamp build step fetches the full commit through the run's GitHub token. It checks ancestry and refuses a downgrade with `gateway.release_downgrade`, unless the run has `force=true`. It then:
 

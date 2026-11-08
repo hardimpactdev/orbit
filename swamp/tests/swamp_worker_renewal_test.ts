@@ -1,5 +1,6 @@
 /** Exercise the production Ansible renewal through real modules and disposable command stubs. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1.0.12";
 
 const decoder = new TextDecoder();
 const playbook =
@@ -11,7 +12,7 @@ const identity = (flag: string) =>
   decoder.decode(
     new Deno.Command("id", { args: [flag] }).outputSync().stdout,
   ).trim();
-const slots = ["a", "b"] as const;
+const slots = ["a", "b", "c"] as const;
 type Slot = typeof slots[number];
 interface Worker {
   name: string;
@@ -24,11 +25,19 @@ interface Worker {
 interface State {
   workers: Record<Slot, Worker>;
   receipts?: Partial<Record<Slot, string>>;
+  connections?: Partial<Record<Slot, string>>;
   probe_error?: Partial<Record<Slot, string>>;
   drain_on_probe?: Slot;
   fill_on_probe?: Slot;
+  shrink_on_probe?: Slot;
   stop_usec?: number;
   journal_error?: Slot;
+  starting?: Slot[];
+  lose_on_restart?: Slot;
+  age_peer_on_probe?: boolean;
+  elapse_drain_seconds?: number;
+  unit_states?: Partial<Record<Slot, string>>;
+  start_limited?: Slot[];
 }
 
 // All boundary executables use this Deno stub. No Python test or fixture code.
@@ -52,7 +61,13 @@ if (name === "getent") {
 } else if (name === "journalctl") {
     const slot = args.find(arg => arg.startsWith("--unit=")).split("@")[1][0];
     if (state.journal_error === slot) Deno.exit(124);
-    console.log(state.receipts?.[slot] ?? '2026-11-08T01:00:00Z [INF] worker: Enrolled as "' + state.workers[slot].name + '"');
+    const message = state.receipts?.[slot] ?? '2026-11-08T01:00:00Z [INF] worker: Enrolled as "' + state.workers[slot].name + '"';
+    if (args.includes("--output=cat")) console.log(message);
+    else {
+        if (!args.includes("--boot=0") || !args.includes("--output=json")) throw new Error("connection receipt must use journal JSON from this boot");
+        console.log(message ? JSON.stringify({MESSAGE: message, __REALTIME_TIMESTAMP:
+            String(Date.parse(state.connections?.[slot] ?? state.workers[slot].enrolledAt)*1000)}) : "");
+    }
 } else if (name === "queued-dispatch") {
     event("queued-follow-on");
     const deadline = Date.now() + 30_000;
@@ -67,38 +82,59 @@ if (name === "getent") {
 } else if (name === "busctl") {
     console.log("t " + (state.stop_usec ?? 4500000000));
 } else if (name === "systemctl") {
+    const slot = args[1]?.split("@")[1]?.[0];
+    const current = state.workers[slot];
     if (args[0] === "show") {
-        console.log("LoadState=loaded\nActiveState=active\nUnitFileState=enabled");
-    } else if (args[0] === "restart") {
-        const slot = args[1].split("@")[1][0];
-        const peer = slot === "a" ? "b" : "a";
-        if (!accepting(state.workers[peer])) throw new Error("both workers unavailable");
-        event("drain-" + slot);
-        state.workers[slot].status = "draining";
-        save();
-        if (slot === "a" && exists("hold-drain")) {
+        const active = state.unit_states?.[slot] ?? "active";
+        console.log(args.includes("--value") ? active : "LoadState=loaded\nActiveState=" + active + "\nUnitFileState=" + "enabled");
+    } else if (args[0] === "is-enabled") {
+        console.log("enabled");
+    } else if (args[0] === "reset-failed") {
+        event("reset-failed-" + slot);
+        state.start_limited = (state.start_limited ?? []).filter(value => value !== slot); save();
+    } else if (args[0] === "start") {
+        if (state.start_limited?.includes(slot)) throw new Error("start-limit-hit");
+        event("start-" + slot);
+        state.unit_states = {...state.unit_states, [slot]: "active"};
+        state.starting = [...(state.starting ?? []), slot]; save();
+    } else if (["restart", "stop"].includes(args[0])) {
+        event("attempt-" + args[0] + "-" + slot);
+        const others = Object.entries(state.workers).filter(([key,worker]) => key !== slot && accepting(worker));
+        if ((accepting(current) || args[0] === "stop") &&
+            (others.length !== 2 || others.reduce((total,[,worker]) => total + worker.capacity,0) < 8)) {
+            throw new Error("renewal reduced original eight-slot accepting capacity");
+        }
+        event((accepting(current) ? "drain-" : "recover-") + slot);
+        current.status = "draining"; save();
+        if (exists("hold-drain-" + slot)) {
             const deadline = Date.now() + 40_000;
-            while (exists("hold-drain")) {
+            while (exists("hold-drain-" + slot)) {
                 if (Date.now() >= deadline) throw new Error("drain barrier timed out");
                 await pause();
             }
-            event("dispatch-a-success");
+            event("dispatch-" + slot + "-success");
         }
+        // Publish the parent thread's updates made while a long dispatch was held.
+        state = JSON.parse(Deno.readTextFileSync(path));
         state.workers[slot].status = "disconnected";
-        save();
-        event("stopped-" + slot);
+        for (const [other, worker] of Object.entries(state.workers)) {
+            if (other !== slot && state.elapse_drain_seconds) worker.enrolledAt =
+                new Date(Date.parse(worker.enrolledAt) - state.elapse_drain_seconds*1000).toISOString();
+        }
+        if (state.lose_on_restart) state.workers[state.lose_on_restart].status = "disconnected";
+        if (args[0] === "restart") state.starting = [...(state.starting ?? []), slot];
+        save(); event("stopped-" + slot);
     } else throw new Error(JSON.stringify(args));
 } else if (name === "swamp") {
-    if (args[1] === "list") {
-        for (const slot of ["a", "b"]) {
-            const worker = state.workers[slot];
-            if (worker.status === "disconnected" && worker.instanceUuid === "old-" + slot) {
-                if (exists("hold-enrollment")) event("waiting-" + slot);
-                else {
-                    Object.assign(worker, {status: "idle", instanceUuid: "new-" + slot, enrolledAt: new Date().toISOString()});
-                    event("enrolled-" + slot);
-                    save();
-                }
+    if (args[0] === "worker" && args[1] === "list") {
+        for (const slot of state.starting ?? []) {
+            if (exists("hold-enrollment-" + slot)) event("waiting-" + slot);
+            else {
+                const previous = state.workers[slot].instanceUuid;
+                Object.assign(state.workers[slot], {status: "idle", instanceUuid: previous.startsWith("new-") ? previous + "-next" : "new-" + slot, enrolledAt: new Date().toISOString()});
+                if (state.connections) state.connections[slot] = new Date().toISOString();
+                state.starting = state.starting.filter(value => value !== slot);
+                event("enrolled-" + slot); save();
             }
         }
         console.log(JSON.stringify({workers: Object.values(state.workers)}));
@@ -106,8 +142,12 @@ if (name === "getent") {
         const slot = Object.keys(state.workers).find(slot => state.workers[slot].name === args[2]);
         if (!slot) throw new Error("verification used an unknown worker name: " + args[2]);
         event("verify-" + slot);
-        const error = state.probe_error?.[slot];
+        if (state.age_peer_on_probe) {
+            state.connections = {...state.connections, b: new Date(Date.now() - (7*60+50)*60_000).toISOString()}; save();
+        }
+        const error = state.probe_error?.[slot] ?? (state.workers[slot].activeDispatchIds.length >= state.workers[slot].capacity ? "at capacity" : undefined);
         if (state.drain_on_probe === slot) { state.workers[slot].status = "draining"; save(); }
+        if (state.shrink_on_probe === slot) { state.workers[slot].capacity = 2; save(); }
         if (state.fill_on_probe === slot) {
             state.workers[slot].activeDispatchIds = ["one", "two", "three", "four"]; save();
         }
@@ -134,7 +174,11 @@ function worker(slot: Slot): Worker {
 class Fixture {
   root = Deno.makeTempDirSync({ prefix: "worker-renewal-" });
   state: State = {
-    workers: { a: worker("a"), b: worker("b") },
+    workers: {
+      a: worker("a"),
+      b: worker("b"),
+      c: worker("c"),
+    },
   };
   child?: Deno.ChildProcess;
   done?: Promise<Deno.CommandOutput>;
@@ -200,24 +244,27 @@ class Fixture {
       throw error;
     }
   }
-  start() {
+  start(testPlaybook = playbook, extraVars: Record<string, unknown> = {}) {
+    this.completed = false;
     this.write();
     this.child = new Deno.Command("timeout", {
       args: [
-        "60",
+        "90",
         "ansible-playbook",
         "-i",
         "localhost,",
         "-c",
         "local",
-        playbook,
+        testPlaybook,
         "-e",
         JSON.stringify({
           orbit_user: identity("-un"),
           orbit_node_id: 209,
+          renewal_capacity: 4,
           ansible_become: false,
           ansible_python_interpreter: "{{ ansible_playbook_python }}",
           renewal_swamp_binary: `${this.root}/swamp`,
+          ...extraVars,
         }),
       ],
       env: this.env,
@@ -249,8 +296,10 @@ class Fixture {
     return this.events();
   }
   async close() {
-    this.release("hold-drain");
-    this.release("hold-enrollment");
+    for (const slot of slots) {
+      this.release(`hold-drain-${slot}`);
+      this.release(`hold-enrollment-${slot}`);
+    }
     if (this.child && !this.completed) this.child.kill("SIGTERM");
     await this.done;
     Deno.removeSync(this.root, { recursive: true });
@@ -270,109 +319,179 @@ function test(name: string, run: (f: Fixture) => Promise<void>) {
     },
   });
 }
-function terminate(child: Deno.ChildProcess) {
-  try {
-    child.kill("SIGTERM");
-  } catch (error) {
-    if (
-      !(error instanceof Deno.errors.NotFound) &&
-      !(error instanceof TypeError &&
-        error.message === "Child process has already terminated")
-    ) throw error;
-  }
-}
 const fresh = () => new Date().toISOString();
 
-test("a finishes and re-enrolls before b drains", async (f) => {
-  f.hold("hold-drain");
-  f.hold("hold-enrollment");
+test("two permanent peers accept before a drains and c stays running", async (f) => {
+  f.hold("hold-drain-a");
+  f.hold("hold-enrollment-a");
   f.start();
   await f.waitFor("drain-a");
-  assert(!f.events().includes("drain-b"));
+  assertEquals(f.read().workers.c.instanceUuid, "old-c");
+  assertEquals(f.read().workers.c.status, "idle");
   assertEquals(f.read().workers.b.status, "idle");
-  f.release("hold-drain");
+  f.release("hold-drain-a");
   await f.waitFor("waiting-a");
   assert(!f.events().includes("drain-b"));
-  f.release("hold-enrollment");
-  assertEquals(
-    (await f.result()).filter((e) => !/^(waiting|stopped)-/.test(e)),
-    [
-      "verify-b",
-      "drain-a",
-      "dispatch-a-success",
-      "enrolled-a",
-      "verify-a",
-      "verify-a",
-      "drain-b",
-      "enrolled-b",
-      "verify-b",
-    ],
+  assert(!f.events().includes("drain-c"));
+  f.release("hold-enrollment-a");
+  const events = await f.result();
+  assert(events.indexOf("verify-b") < events.indexOf("drain-a"));
+  assert(events.indexOf("verify-c") < events.indexOf("drain-a"));
+  assert(events.indexOf("enrolled-a") < events.indexOf("verify-a"));
+  assert(
+    !events.some((event) =>
+      event.startsWith("start-") || event.startsWith("attempt-stop-")
+    ),
   );
 });
-test("unavailable peer prevents drain", async (f) => {
-  f.state.workers.b.status = "draining";
+test("b renews next while fresh a and permanent c stay connected", async (f) => {
+  f.state.workers.a.enrolledAt = fresh();
   f.start();
-  assertEquals(await f.result(false), []);
+  const events = await f.result();
+  assert(events.indexOf("verify-c") < events.indexOf("drain-b"));
+  assert(events.includes("enrolled-b"));
+  assert(!events.includes("drain-a"));
+  assert(!events.includes("drain-c"));
 });
-test("empty live check prevents drain despite idle record", async (f) => {
-  f.state.probe_error = { b: "empty" };
+test("c renews as an equal permanent worker when it is oldest", async (f) => {
+  f.state.workers.a.enrolledAt = fresh();
+  f.state.workers.b.enrolledAt = fresh();
   f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
+  const events = await f.result();
+  assert(events.indexOf("verify-a") < events.indexOf("drain-c"));
+  assert(events.indexOf("verify-b") < events.indexOf("drain-c"));
+  assert(events.includes("enrolled-c"));
+  assert(!events.includes("drain-a"));
+  assert(!events.includes("drain-b"));
 });
-test("full survivor defers without draining either worker", async (f) => {
-  f.state.workers.b.activeDispatchIds = ["one", "two", "three", "four"];
+test("three due workers finish sequential 75 minute drains before their session caps", async (f) => {
+  for (const worker of Object.values(f.state.workers)) {
+    worker.enrolledAt = new Date(Date.now() - 3 * 3600_000 - 1000)
+      .toISOString();
+  }
+  f.state.elapse_drain_seconds = 75 * 60;
+  for (const slot of slots) {
+    f.start();
+    await f.result();
+    f.state = f.read();
+    assertEquals(f.state.workers[slot].instanceUuid, `new-${slot}`);
+    // Advance the five-minute timer between real playbook rounds.
+    for (const worker of Object.values(f.state.workers)) {
+      worker.enrolledAt = new Date(Date.parse(worker.enrolledAt) - 5 * 60_000)
+        .toISOString();
+    }
+  }
+  assertEquals(f.events().filter((event) => event.startsWith("drain-")), [
+    "drain-a",
+    "drain-b",
+    "drain-c",
+  ]);
+});
+test("two 4h45 bases renew beside fresh c without a second retirement drain", async (f) => {
+  for (const slot of ["a", "b"] as const) {
+    f.state.workers[slot].enrolledAt = new Date(
+      Date.now() - (4 * 60 + 45) * 60_000,
+    ).toISOString();
+  }
+  f.state.workers.c.enrolledAt = fresh();
+  f.state.elapse_drain_seconds = 75 * 60;
   f.start();
-  assertEquals(await f.result(false), []);
-});
-test("native capacity refusal defers without drain", async (f) => {
-  f.state.probe_error = { b: "Worker 'swamp-role-209-b' is at capacity" };
+  await f.result();
+  f.state = f.read();
   f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
+  await f.result();
+  assertEquals(f.events().filter((event) => event.startsWith("drain-")), [
+    "drain-a",
+    "drain-b",
+  ]);
+  assertEquals(f.read().workers.c.status, "idle");
 });
-test("capacity refusal cannot hide a peer that started draining", async (f) => {
-  f.state.probe_error = { b: "Worker 'swamp-role-209-b' is at capacity" };
-  f.state.drain_on_probe = "b";
-  f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
-});
-test("survivor filling during probe defers without drain", async (f) => {
-  f.state.fill_on_probe = "b";
-  f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
-});
-test("queued follow-on finishes on survivor while a drains", async (f) => {
-  f.hold("hold-drain");
-  f.state.workers.b.activeDispatchIds = ["one", "two", "three"];
+test("full b keeps eight accepting slots with c during a long drain and queued work succeeds", async (f) => {
+  f.state.workers.b.status = "busy";
+  f.state.workers.b.activeDispatchIds = ["1", "2", "3", "4"];
+  f.hold("hold-drain-a");
   f.start();
   await f.waitFor("drain-a");
-  const state = f.read();
-  state.workers.b.activeDispatchIds.push("four");
-  f.write(state);
-  const queued = new Deno.Command("timeout", {
-    args: ["30", `${f.root}/queued-dispatch`],
+  const live = f.read();
+  assertEquals(live.workers.b.capacity + live.workers.c.capacity, 8);
+  const queued = await new Deno.Command("timeout", {
+    args: ["5", `${f.root}/queued-dispatch`],
     env: f.env,
-    stdout: "null",
-    stderr: "piped",
-  }).spawn();
-  try {
-    await f.waitFor("queued-follow-on");
-    assert(!f.events().includes("follow-on-success-b"));
-    state.workers.b.activeDispatchIds.pop();
-    f.write(state);
-    assert((await queued.status).success);
-    assert(f.events().includes("follow-on-success-b"));
-    assert(!f.events().includes("drain-b"));
-    assertEquals(f.read().workers.a.status, "draining");
-  } finally {
-    // output() closes the piped stderr and reaps the process even on assertion failure.
-    terminate(queued);
-    await queued.output();
+  }).output();
+  assert(queued.success, decoder.decode(queued.stderr));
+  assert(f.events().includes("follow-on-success-c"));
+  assertEquals(f.read().workers.a.status, "draining");
+  f.release("hold-drain-a");
+  const events = await f.result();
+  assert(!events.includes("verify-b")); // Pinned verify rejects at_capacity.
+  assert(!events.includes("drain-c"));
+});
+test("both full survivors defer without draining anyone", async (f) => {
+  for (const slot of ["b", "c"] as const) {
+    f.state.workers[slot].status = "busy";
+    f.state.workers[slot].activeDispatchIds = ["1", "2", "3", "4"];
   }
-  f.release("hold-drain");
-  await f.result();
+  f.start();
+  assertEquals(await f.result(false), []);
+  assertStringIncludes(f.output, "both survivors are full");
+});
+for (const status of ["disconnected", "draining"]) {
+  test(`${status} peer blocks all maintenance`, async (f) => {
+    f.state.workers.c.status = status;
+    f.start();
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(
+      f.output,
+      "all three permanent workers must be connected",
+    );
+  });
+}
+for (const error of ["empty", "at capacity", "data plane failed"]) {
+  test(`peer probe ${error} prevents any drain`, async (f) => {
+    f.state.probe_error = { c: error };
+    f.start();
+    const events = await f.result(false);
+    assert(events.includes("verify-c"));
+    assert(!events.some((event) => event.startsWith("attempt-restart-")));
+  });
+}
+for (const change of ["fill", "drain", "shrink"]) {
+  test(`peer ${change} during probe cannot reduce the accepting pool`, async (f) => {
+    if (change === "fill") {
+      f.state.fill_on_probe = "c";
+      f.state.workers.b.activeDispatchIds = ["1", "2", "3", "4"];
+    } else if (change === "drain") f.state.drain_on_probe = "c";
+    else f.state.shrink_on_probe = "c";
+    f.start();
+    const events = await f.result(false);
+    assert(events.includes("verify-c"));
+    assert(!events.includes("attempt-restart-a"));
+  });
+}
+test("failed re-enrollment leaves both survivors running and blocks the next round", async (f) => {
+  f.hold("hold-enrollment-a");
+  f.start();
+  await f.result(false);
+  assertEquals(f.read().workers.b.status, "idle");
+  assertEquals(f.read().workers.c.status, "idle");
+  f.state = f.read();
+  f.state.starting = []; // Persistent failure; real systemd retains its crash backoff.
+  f.start();
+  await f.result(false);
+  assertEquals(f.events().filter((event) => event.startsWith("drain-")), [
+    "drain-a",
+  ]);
+});
+test("failed peer during blocking drain logs detection after restart and stops", async (f) => {
+  f.state.lose_on_restart = "b";
+  f.start();
+  const events = await f.result(false);
+  assert(events.includes("drain-a"));
+  assertStringIncludes(f.output, "detected after restart, no further drain");
+  assert(!events.includes("drain-c"));
 });
 for (const remint of [false, true]) {
-  test(`${remint ? "remint ANSI" : "bootstrap quoted"} names resolve consistently`, async (f) => {
+  test(`${remint ? "remint ANSI" : "bootstrap quoted"} names resolve for all three units`, async (f) => {
     f.state.receipts = {};
     for (const slot of slots) {
       const name = `orbit-worker-${slot}${remint ? "-1794096000" : ""}`;
@@ -383,72 +502,228 @@ for (const remint of [false, true]) {
     }
     f.start();
     const events = await f.result();
-    assert(events.indexOf("enrolled-a") < events.indexOf("drain-b"));
+    assert(events.indexOf("verify-c") < events.indexOf("drain-a"));
+    assert(events.includes("verify-a"));
   });
 }
-test("missing receipt logs stopped renewal and eight-hour risk without drain", async (f) => {
-  f.state.receipts = { a: "" };
-  f.start();
-  assertEquals(await f.result(false), []);
-  assertStringIncludes(f.output, "Worker renewal stopped");
-  assertStringIncludes(
-    f.output,
-    "eight-hour session cap can still abort active dispatches",
-  );
-});
-test("journal read failure logs the public renewal-stopped error", async (f) => {
-  f.state.journal_error = "a";
-  f.start();
-  assertEquals(await f.result(false), []);
-  assertStringIncludes(f.output, "Worker renewal stopped");
-  assertStringIncludes(
-    f.output,
-    "eight-hour session cap can still abort active dispatches",
-  );
-});
-test("other probe errors prevent drain", async (f) => {
-  f.state.probe_error = { b: "Worker 'swamp-role-209-b' is draining" };
-  f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
-});
-test("new instance must pass live check before b is touched", async (f) => {
-  f.state.probe_error = { a: "data plane failed" };
-  f.start();
-  const events = await f.result(false);
-  assert(events.includes("enrolled-a"));
-  assert(!events.includes("drain-b"));
-});
-test("failed enrollment leaves b accepting and untouched", async (f) => {
-  f.hold("hold-enrollment");
-  f.start();
-  const events = await f.result(false);
-  assert(events.includes("waiting-a"));
-  assert(!events.includes("drain-b"));
-  assertEquals(f.read().workers.b.status, "idle");
-});
-test("retry preserves freshly renewed a", async (f) => {
-  Object.assign(f.state.workers.a, {
-    instanceUuid: "new-a",
-    enrolledAt: fresh(),
+for (const readFailure of [false, true]) {
+  test(`${readFailure ? "unreadable" : "missing"} c receipt logs stopped renewal without drain`, async (f) => {
+    if (readFailure) f.state.journal_error = "c";
+    else f.state.receipts = { c: "" };
+    f.start();
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(f.output, "Worker renewal stopped");
+    assertStringIncludes(
+      f.output,
+      "eight-hour session cap can still abort active dispatches",
+    );
   });
-  f.start();
-  assertEquals(await f.result(), [
-    "verify-a",
-    "drain-b",
-    "stopped-b",
-    "enrolled-b",
-    "verify-b",
-  ]);
-});
-test("fresh workers remain persistent", async (f) => {
+}
+test("fresh workers stay persistent and no credential API exists at renewal time", async (f) => {
   for (const worker of Object.values(f.state.workers)) {
     worker.enrolledAt = fresh();
   }
   f.start();
   assertEquals(await f.result(), []);
 });
-test("old stop allowance prevents any restart", async (f) => {
+test("old stop allowance prevents any drain", async (f) => {
   f.state.stop_usec = 300000000;
   f.start();
-  assertEquals(await f.result(false), ["verify-b"]);
+  assertEquals(await f.result(false), []);
 });
+test("peer approaching eight-hour cap during probe blocks drain", async (f) => {
+  f.state.age_peer_on_probe = true;
+  f.start();
+  const events = await f.result(false);
+  assert(events.includes("verify-c"));
+  assert(!events.includes("attempt-restart-a"));
+  assertStringIncludes(f.output, "session headroom changed");
+});
+
+test("same-process reconnect clears old enrolledAt lockout and renews on connection age", async (f) => {
+  // Swamp retains the process UUID and enrolledAt when it reconnects after the
+  // hard cap. A real journal receipt now records the successful new socket.
+  f.state.workers.a.enrolledAt = new Date(Date.now() - 12 * 3600_000)
+    .toISOString();
+  f.state.workers.b.enrolledAt = fresh();
+  f.state.workers.c.enrolledAt = fresh();
+  f.state.connections = { a: fresh() };
+  f.start();
+  assertEquals(await f.result(), []);
+  assertEquals(f.read().workers.a.instanceUuid, "old-a");
+  // Once this socket is due, the same stale durable metadata must not block it.
+  f.state = f.read();
+  f.state.connections!.a = new Date(Date.now() - 3 * 3600_000 - 1000)
+    .toISOString();
+  f.start();
+  const events = await f.result();
+  assert(events.includes("drain-a"));
+  assert(events.includes("enrolled-a"));
+  assertEquals(f.read().workers.a.instanceUuid, "new-a");
+  assert(!events.includes("drain-b"));
+  assert(!events.includes("drain-c"));
+});
+
+const remintTasks =
+  new URL("../ansible/tasks/gateway-swamp-remint.yml", import.meta.url)
+    .pathname;
+for (const missing of ["directory", "enrollment", "server", "empty server"]) {
+  test(`proof remint with missing c ${missing} fails before any service stops`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    if (missing !== "directory") {
+      Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+      for (const kind of ["enrollment", "server"]) {
+        if (missing !== kind) {
+          Deno.writeTextFileSync(
+            `${credentials}/c/${kind}.token`,
+            missing === "empty server" && kind === "server"
+              ? ""
+              : "synthetic-test-only",
+          );
+        }
+      }
+    }
+    const testPlaybook = `${f.root}/remint.yml`;
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise the real proof fleet remint",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: [{ "ansible.builtin.import_tasks": remintTasks }],
+      }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(
+      f.output,
+      "Swamp remint stopped before stopping any service",
+    );
+  });
+}
+for (const suffix of ["", "-1794127800"]) {
+  test(`proof remint preflight accepts c${suffix} without exposing tokens`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+    for (const kind of ["enrollment", "server"]) {
+      Deno.writeTextFileSync(
+        `${credentials}/c/${kind}.token`,
+        `orbit-worker-c${
+          kind === "server" ? "-access" : suffix
+        }.synthetic-test-only`,
+      );
+    }
+    const tasks = parse(Deno.readTextFileSync(remintTasks)) as Array<
+      Record<string, unknown>
+    >;
+    const stop = tasks.findIndex((task) => task.name === "Stop the workers");
+    assert(stop > 0);
+    const testPlaybook = `${f.root}/preflight.yml`;
+    // Execute the actual production prefix, stopping before its first mutation.
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise the production remint preflight",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: tasks.slice(0, stop),
+      }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(), []);
+    assert(!f.output.includes("synthetic-test-only"));
+  });
+}
+
+for (const state of ["failed", "inactive"]) {
+  test(`recovers a ${state} unit past its restart limit before voluntary renewal`, async (f) => {
+    f.state.workers.c.status = "disconnected";
+    f.state.unit_states = { c: state };
+    f.state.start_limited = ["c"];
+    f.state.receipts = { c: "" };
+    f.start();
+    const events = await f.result();
+    assert(events.indexOf("reset-failed-c") >= 0);
+    assert(events.indexOf("start-c") > events.indexOf("reset-failed-c"));
+    assert(!events.some((event) => event.startsWith("drain-")));
+    assertStringIncludes(f.output, "connection will be checked next round");
+  });
+}
+test("does not recover a down unit without two serving peers", async (f) => {
+  f.state.workers.c.status = "disconnected";
+  f.state.unit_states = { c: "failed" };
+  f.state.workers.b.status = "disconnected";
+  f.start();
+  assertEquals(await f.result(false), []);
+});
+
+for (
+  const invalid of [
+    "bare enrollment",
+    "wrong enrollment name",
+    "bare server",
+    "wrong server name",
+    "empty secret",
+  ]
+) {
+  test(`proof remint rejects c ${invalid} before any service stops`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+    Deno.writeTextFileSync(
+      `${credentials}/c/enrollment.token`,
+      invalid === "bare enrollment"
+        ? "synthetic-test-only"
+        : invalid === "wrong enrollment name"
+        ? "orbit-worker-b.synthetic-test-only"
+        : "orbit-worker-c.synthetic-test-only",
+    );
+    Deno.writeTextFileSync(
+      `${credentials}/c/server.token`,
+      invalid === "bare server"
+        ? "synthetic-test-only"
+        : invalid === "wrong server name"
+        ? "orbit-worker-b-access.synthetic-test-only"
+        : invalid === "empty secret"
+        ? "orbit-worker-c-access."
+        : "orbit-worker-c-access.synthetic-test-only",
+    );
+    const testPlaybook = `${f.root}/remint.yml`;
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise production remint with malformed c credentials",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: [{ "ansible.builtin.import_tasks": remintTasks }],
+      }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(
+      f.output,
+      "Swamp remint stopped before stopping any service",
+    );
+    assert(!f.output.includes("synthetic-test-only"));
+  });
+}

@@ -161,11 +161,15 @@ it('rejects an invalid node role list node id before connector io', function (st
     'negative' => '-1',
 ]);
 
-it('resolves a node name through the node list before listing roles', function (): void {
+it('resolves a node name through recorded native failure labels before listing roles', function (): void {
     $assignment = node_role_assignment_payload();
+    $assignment['status'] = 'failed';
+    $assignment['failed_step'] = 'converge:Require supported Ubuntu';
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_list_node_payload(id: 7, name: 'mini')],
+            'data' => [array_replace(node_role_list_node_payload(id: 7, name: 'mini'), [
+                'assignments' => [$assignment],
+            ])],
             'meta' => ['request_id' => node_role_command_request_id()],
         ]),
         ListNodeRolesRequest::class => MockResponse::make([
@@ -176,6 +180,10 @@ it('resolves a node name through the node list before listing roles', function (
 
     $this
         ->artisan('node:role:list', ['node' => 'mini', '--json' => true])
+        ->expectsOutput(json_encode([
+            'assignments' => [$assignment],
+            'request_id' => node_role_command_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
 
     expect($mockClient->getLastRequest())
@@ -188,7 +196,8 @@ it('resolves a named Node carrying a native recorded assignment failure', functi
     $assignment = failed_node_role_assignment_payload();
     $assignment['failed_step'] = $failedStep;
     $node = node_role_list_node_payload(id: 7, name: 'mini');
-    $node['roles'] = [$assignment];
+    $node['roles'] = ['app-dev'];
+    $node['assignments'] = [$assignment];
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
             'data' => [$node],

@@ -214,7 +214,7 @@ it('carries the merge base of the commit into the selection, for the proof of a 
     expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
 });
 
-it('selects both Node detail proofs for an owning path changed on its own', function (string $path): void {
+it('keeps both Node detail proofs and shared list coverage for an owning path changed on its own', function (string $path, bool $family = true, bool $list = true): void {
     $root = dirname(base_path(), 2);
     if (! is_file($root.'/swamp/proof/selection.txt')) {
         $this->markTestSkipped('Needs the repository checkout.');
@@ -225,9 +225,14 @@ it('selects both Node detail proofs for an owning path changed on its own', func
         proofChanges([$path]), false, ProofSelection::casesFiles($files));
 
     expect($selected->files())->toBe([
+        ...($list ? ['swamp/proof/node/list.cases.yaml'] : []),
         'swamp/proof/node/show.cases.yaml',
         'swamp/proof/node/show-recorded.cases.yaml',
-    ])->and($selected->uncovered)->toBe([])
+    ])->and(array_column($selected->uncovered, 'reason'))->toBe($family ? array_map(
+        static fn (string $command): string => 'no cases file for '.$command,
+        ['node:access:add', 'node:access:remove', 'node:add', 'node:converge', 'node:metrics', 'node:remove',
+            'node:role:add', 'node:role:list', 'node:role:relocate', 'node:role:remove', 'node:update', 'node:wireguard-key'],
+    ) : [])
         ->and($selected->everythingBecause)->toBeNull()
         ->and($selected->nothingToProve())->toBeFalse();
 })->with([
@@ -245,21 +250,22 @@ it('selects both Node detail proofs for an owning path changed on its own', func
     'agent projection' => 'apps/gateway/app/Data/Nodes/NodeAgentData.php',
     'Node model' => 'apps/gateway/app/Models/Node.php',
     'role model' => 'apps/gateway/app/Models/NodeRole.php',
-    'access model' => 'apps/gateway/app/Models/NodeAccess.php',
-    'Cluster name' => 'apps/gateway/app/Models/Cluster.php',
+    'access model' => ['apps/gateway/app/Models/NodeAccess.php', false],
+    'Cluster name' => ['apps/gateway/app/Models/Cluster.php', false],
     'Node controller' => 'apps/gateway/app/Http/Controllers/Api/NodesController.php',
     'role controller' => 'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
-    'agent liveness' => 'apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php',
+    'agent liveness' => ['apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php', false],
+    'agent state' => ['apps/gateway/app/Domain/NodeFacts/NodeAgentState.php', false],
     'agent eligibility' => 'apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php',
-    'recorded agent view' => 'apps/gateway/app/Infrastructure/AgentView/CacheAgentStateView.php',
-    'agent view contract' => 'apps/gateway/app/Domain/AgentView/AgentStateView.php',
+    'recorded agent view' => ['apps/gateway/app/Infrastructure/AgentView/CacheAgentStateView.php', false],
+    'agent view contract' => ['apps/gateway/app/Domain/AgentView/AgentStateView.php', false],
     'SDK detail request' => 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
     'SDK list request' => 'packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php',
     'SDK role request' => 'packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php',
     'SDK detail projection' => 'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
     'SDK role projection' => 'packages/php-sdk/src/Responses/Nodes/NodeRoleAssignmentResponse.php',
-    'approved cases alone' => 'swamp/proof/node/show.cases.yaml',
-    'supplemental cases alone' => 'swamp/proof/node/show-recorded.cases.yaml',
+    'approved cases alone' => ['swamp/proof/node/show.cases.yaml', false, false],
+    'supplemental cases alone' => ['swamp/proof/node/show-recorded.cases.yaml', false, false],
 ]);
 
 const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
@@ -389,6 +395,23 @@ it('selects every case for every tracked file of the shared directories', functi
     $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
     expect($unselected)->toBe([]);
 });
+
+it('selects the recorded Node list proof for its implementation and cases', function (string $path): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $result = ProofSelection::select(
+        (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ['swamp/proof/node/list.cases.yaml'],
+    );
+
+    expect($result->everythingBecause)->toBeNull()->and($result->cases)->toBe([
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml'],
+    ]);
+})->with([
+    'apps/cli/app/Commands/Nodes/ListNodesCommand.php',
+    'apps/gateway/app/Data/Nodes/NodeData.php',
+    'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
+    'swamp/proof/node/list.cases.yaml',
+]);
 
 /** The two file sets that started a proof of every case, with the helper of OperationRunBudgets (`longestFixedSeconds`) at the place where it lives now, in OperationBudgetTable. */
 dataset('swamp unit changes that touch no command', [

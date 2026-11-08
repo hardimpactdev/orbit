@@ -17,7 +17,7 @@ cases:
       - cli:
           run: [node:show, "${retained.id}"]
           forms: [json, human]
-          save: {roles: recorded-roles}
+          save: {assignments: recorded-roles}
           expect:
             exit: 0
             request: none
@@ -41,16 +41,17 @@ cases:
               - {path: failed_step, equals: "converge:apps"}
               - {path: error_code, equals: node.enrollment_failed}
               - {path: agent, equals: null}
-              - {path: "roles[0].role", equals: app-dev}
-              - {path: "roles[0].status", equals: active}
-              - {path: "roles[1].role", equals: app-prod}
-              - {path: "roles[1].status", equals: provisioning}
-              - {path: "roles[2].role", equals: metrics}
-              - {path: "roles[2].status", equals: removing}
-              - {path: "roles[3].role", equals: database}
-              - {path: "roles[3].status", equals: failed}
-              - {path: "roles[3].failed_step", equals: "converge:database"}
-              - {path: "roles[3].error_code", equals: node.role_failed}
+              - {path: roles, equals: [app-dev, app-prod, metrics, database]}
+              - {path: "assignments[0].role", equals: app-dev}
+              - {path: "assignments[0].status", equals: active}
+              - {path: "assignments[1].role", equals: app-prod}
+              - {path: "assignments[1].status", equals: provisioning}
+              - {path: "assignments[2].role", equals: metrics}
+              - {path: "assignments[2].status", equals: removing}
+              - {path: "assignments[3].role", equals: database}
+              - {path: "assignments[3].status", equals: failed}
+              - {path: "assignments[3].failed_step", equals: "converge:database"}
+              - {path: "assignments[3].error_code", equals: node.role_failed}
               - {path: "access.can_access[0].id", equals: "${app-dev.id}"}
               - {path: "access.can_access[0].name", equals: app-dev}
               - {path: "access.accessible_by[0].id", equals: "${app-prod.id}"}
@@ -58,17 +59,17 @@ cases:
               - {path: skipped, absent: true}
       - cli:
           run: [node:role:list, "${retained.id}"]
-          expect: {exit: 0, request: none, json: [{path: assignments, equals: "${recorded-roles}"}]}
+          expect: {exit: 0, request: none, json: [{path: roles, equals: "${recorded-roles}"}]}
       - cli:
           run: [node:list]
-          expect: {exit: 0, request: none, json: [{path: "nodes[id=${retained.id}].roles", equals: "${recorded-roles}"}]}
+          expect: {exit: 0, request: none, json: [{path: "nodes[id=${retained.id}].assignments", equals: "${recorded-roles}"}]}
       - cli:
           run: [node:show, "${retained.id}"]
-          expect: {exit: 0, request: none, json: [{path: roles, equals: "${recorded-roles}"}, {path: skipped, absent: true}]}
+          expect: {exit: 0, request: none, json: [{path: assignments, equals: "${recorded-roles}"}, {path: skipped, absent: true}]}
       - recorded_request:
           node: "${retained.id}"
           caller: gateway
-          expect: [{path: status, equals: 200}, {path: body.data.status, equals: failed}, {path: body.data.roles, equals: "${recorded-roles}"}]
+          expect: [{path: status, equals: 200}, {path: body.data.status, equals: failed}, {path: body.data.assignments, equals: "${recorded-roles}"}]
     expect:
       - unchanged: {since: act, what: [operations, node_records]}
 
@@ -98,6 +99,7 @@ cases:
               - {path: lan_ip, equals: null}
               - {path: settings, equals: null}
               - {path: roles, equals: []}
+              - {path: assignments, equals: []}
               - {path: skipped, absent: true}
       - recorded_request:
           node: "${sparse.id}"

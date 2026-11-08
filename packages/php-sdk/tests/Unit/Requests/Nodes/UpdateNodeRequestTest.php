@@ -22,7 +22,8 @@ it('sends a partial settings patch and preserves omitted members', function (): 
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
-                'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
+                'roles' => ['app-dev'],
+                'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
                 'settings' => [
                     'apps' => ['path' => '/srv/orbit/apps'],
                 ],
@@ -55,10 +56,10 @@ it('sends a partial settings patch and preserves omitted members', function (): 
 });
 
 it('sends task host intent and explicit clearing without touching apps', function (): void {
-    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', max_vms: 4, operator_owned: []);
+    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', max_vms: 12, operator_owned: [], task_max_vms: 2);
     $request = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true, taskVms: $host);
     expect($request->body()->all())->toBe(['task_vms' => [
-        'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => [],
+        'cidr' => '10.251.77.0/24', 'max_vms' => 12, 'operator_owned' => [], 'task_max_vms' => 2,
     ]]);
     $clear = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true);
     expect($clear->body()->all())->toBe(['task_vms' => null]);

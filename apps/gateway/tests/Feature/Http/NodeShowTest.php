@@ -68,14 +68,15 @@ describe('node:show recorded read', function (): void {
         $before = recordedNodeSnapshot();
         $this->getJson('/api/v1/nodes/'.$this->node->id.'/roles')->assertOk()->assertJsonPath('data', $expectedRoles);
         $list = $this->getJson('/api/v1/nodes')->assertOk()->json('data');
-        expect(collect($list)->firstWhere('id', $this->node->id)['roles'])->toBe($expectedRoles);
+        expect(collect($list)->firstWhere('id', $this->node->id)['assignments'])->toBe($expectedRoles);
         for ($repeat = 0; $repeat < 2; $repeat++) {
             $this->getJson('/api/v1/nodes/'.$this->node->id)->assertOk()
                 ->assertJsonPath('data.id', $this->node->id)
                 ->assertJsonPath('data.name', 'retained')
                 ->assertJsonPath('data.cluster_id', $cluster->id)
                 ->assertJsonPath('data.cluster_name', 'development')
-                ->assertJsonPath('data.roles', $expectedRoles)
+                ->assertJsonPath('data.roles', array_column($expectedRoles, 'role'))
+                ->assertJsonPath('data.assignments', $expectedRoles)
                 ->assertJsonPath('data.status', 'failed')
                 ->assertJsonPath('data.failed_step', 'converge:apps')
                 ->assertJsonPath('data.error_code', 'node.enrollment_failed')
@@ -98,7 +99,7 @@ describe('node:show recorded read', function (): void {
         $this->getJson('/api/v1/nodes/'.$this->node->id)->assertOk()
             ->assertJsonPath('data.cluster_name', null)->assertJsonPath('data.agent', null)
             ->assertJsonPath('data.settings', null)->assertJsonPath('data.lan_ip', null)
-            ->assertJsonPath('data.roles', []);
+            ->assertJsonPath('data.roles', [])->assertJsonPath('data.assignments', []);
         expect(recordedNodeSnapshot())->toBe($before);
         Http::assertNothingSent();
         Process::assertNothingRan();
@@ -134,7 +135,7 @@ describe('node:show recorded read', function (): void {
         $before = recordedNodeSnapshot();
         $this->getJson('/api/v1/nodes/'.$this->node->id)->assertOk()
             ->assertJsonPath('data.name', 'renamed')->assertJsonPath('data.settings.apps.path', '/srv/new-apps')
-            ->assertJsonPath('data.roles.0.id', $role->id)->assertJsonPath('data.roles.0.status', 'removing');
+            ->assertJsonPath('data.assignments.0.id', $role->id)->assertJsonPath('data.assignments.0.status', 'removing');
         expect(recordedNodeSnapshot())->toBe($before);
         Http::assertNothingSent();
         Process::assertNothingRan();

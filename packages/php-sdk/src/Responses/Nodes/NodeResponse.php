@@ -10,7 +10,10 @@ use SensitiveParameter;
 
 final readonly class NodeResponse
 {
-    /** @param list<NodeRoleAssignmentResponse> $roles */
+    /**
+     * @param  list<string>  $roles
+     * @param  list<NodeRoleAssignmentResponse>  $assignments
+     */
     public function __construct(
         public int $id,
         public string $name,
@@ -37,6 +40,7 @@ final readonly class NodeResponse
         public ?NodeUpdatingResponse $updating = null,
         public ?NodeAgentResponse $agent = null,
         public ?string $clusterName = null,
+        public array $assignments = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -49,7 +53,6 @@ final readonly class NodeResponse
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
-            clusterName: is_string($data['cluster_name'] ?? null) ? $data['cluster_name'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             platform: is_string($data['platform'] ?? null) ? $data['platform'] : null,
@@ -74,12 +77,14 @@ final readonly class NodeResponse
                 : null,
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            roles: self::assignments(array_key_exists('roles', $data) ? $data['roles'] : [], $requestId),
+            roles: self::stringList($data['roles'] ?? []),
             requestId: $requestId,
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
             settings: self::settings($data['settings'] ?? null),
             updating: NodeUpdatingResponse::tryFromGatewayData($data['updating'] ?? null),
             agent: NodeAgentResponse::tryFromGatewayData($data['agent'] ?? null),
+            clusterName: is_string($data['cluster_name'] ?? null) ? $data['cluster_name'] : null,
+            assignments: self::assignmentList(array_key_exists('assignments', $data) ? $data['assignments'] : [], $requestId),
         );
     }
 
@@ -91,7 +96,6 @@ final readonly class NodeResponse
         $data = [
             'id' => $this->id,
             'cluster_id' => $this->clusterId,
-            'cluster_name' => $this->clusterName,
             'name' => $this->name,
             'status' => $this->status,
             'platform' => $this->platform,
@@ -108,10 +112,15 @@ final readonly class NodeResponse
             'ssh_host_fingerprint' => $this->sshHostFingerprint,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
-            'roles' => array_map(static fn (NodeRoleAssignmentResponse $role): array => $role->toArray(), $this->roles),
+            'roles' => $this->roles,
             'settings' => $this->settings?->toArray(),
             'updating' => $this->updating?->toArray(),
             'agent' => $this->agent?->toArray(),
+            'cluster_name' => $this->clusterName,
+            'assignments' => array_map(
+                static fn (NodeRoleAssignmentResponse $assignment): array => $assignment->toArray(),
+                $this->assignments,
+            ),
             'request_id' => $this->requestId,
         ];
 
@@ -122,27 +131,8 @@ final readonly class NodeResponse
         return $data;
     }
 
-    private static function settings(mixed $value): ?NodeSettings
-    {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $settings = [];
-
-        foreach ($value as $key => $item) {
-            if (! is_string($key)) {
-                continue;
-            }
-
-            $settings[$key] = $item;
-        }
-
-        return NodeSettings::fromGatewayData($settings);
-    }
-
     /** @return list<NodeRoleAssignmentResponse> */
-    private static function assignments(mixed $value, string $requestId): array
+    private static function assignmentList(mixed $value, string $requestId): array
     {
         if (! is_array($value) || ! array_is_list($value)) {
             throw new GatewayApiException('Gateway response contains invalid node role assignments.', requestId: $requestId);
@@ -167,5 +157,46 @@ final readonly class NodeResponse
         return is_array($value)
             && ! array_is_list($value)
             && array_all(array_keys($value), static fn (int|string $key): bool => is_string($key));
+    }
+
+    private static function settings(mixed $value): ?NodeSettings
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $settings = [];
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $settings[$key] = $item;
+        }
+
+        return NodeSettings::fromGatewayData($settings);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                continue;
+            }
+
+            $result[] = $item;
+        }
+
+        return $result;
     }
 }

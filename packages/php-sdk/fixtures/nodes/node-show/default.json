@@ -24,13 +24,7 @@
             "failed_step": null,
             "error_code": null,
             "roles": [
-                {
-                    "id": 1,
-                    "role": "app-dev",
-                    "status": "active",
-                    "failed_step": null,
-                    "error_code": null
-                }
+                "app-dev"
             ],
             "settings": null,
             "updating": null,
@@ -39,11 +33,20 @@
                 "state": "online",
                 "since": null
             },
+            "cluster_name": "development",
+            "assignments": [
+                {
+                    "id": 2,
+                    "role": "app-dev",
+                    "status": "active",
+                    "failed_step": null,
+                    "error_code": null
+                }
+            ],
             "access": {
                 "can_access": [],
                 "accessible_by": []
-            },
-            "cluster_name": "development"
+            }
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

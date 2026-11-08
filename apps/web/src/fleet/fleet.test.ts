@@ -94,15 +94,7 @@ describe("Instance placement", () => {
                     nodes: [
                         {
                             ...node,
-                            roles: [
-                                {
-                                    id: 1,
-                                    role: "app-dev",
-                                    status: "active",
-                                    failed_step: null,
-                                    error_code: null,
-                                },
-                            ],
+                            roles: ["app-dev"],
                         },
                     ],
                 },
@@ -116,15 +108,7 @@ describe("Instance placement", () => {
                     nodes: [
                         {
                             ...node,
-                            roles: [
-                                {
-                                    id: 1,
-                                    role: "app-prod",
-                                    status: "active",
-                                    failed_step: null,
-                                    error_code: null,
-                                },
-                            ],
+                            roles: ["app-prod"],
                         },
                     ],
                 },

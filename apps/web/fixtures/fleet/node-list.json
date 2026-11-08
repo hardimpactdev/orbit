@@ -23,7 +23,14 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": null,
                 "error_code": null,
-                "roles": [
+                "roles": ["gateway"],
+                "settings": null,
+                "updating": {
+                    "kind": "gateway_release",
+                    "since": "2026-01-02T09:58:00+00:00",
+                    "release": 31
+                },
+                "assignments": [
                     {
                         "id": 1,
                         "role": "gateway",
@@ -31,13 +38,7 @@
                         "failed_step": null,
                         "error_code": null
                     }
-                ],
-                "settings": null,
-                "updating": {
-                    "kind": "gateway_release",
-                    "since": "2026-01-02T09:58:00+00:00",
-                    "release": 31
-                }
+                ]
             },
             {
                 "id": 2,
@@ -58,7 +59,10 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": null,
                 "error_code": null,
-                "roles": [
+                "roles": ["app-dev", "database"],
+                "settings": null,
+                "updating": null,
+                "assignments": [
                     {
                         "id": 2,
                         "role": "app-dev",
@@ -73,9 +77,7 @@
                         "failed_step": null,
                         "error_code": null
                     }
-                ],
-                "settings": null,
-                "updating": null
+                ]
             },
             {
                 "id": 3,
@@ -96,7 +98,10 @@
                 "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
                 "failed_step": "install_runtime",
                 "error_code": "node.provisioning_failed",
-                "roles": [
+                "roles": ["app-prod"],
+                "settings": null,
+                "updating": null,
+                "assignments": [
                     {
                         "id": 4,
                         "role": "app-prod",
@@ -104,9 +109,7 @@
                         "failed_step": null,
                         "error_code": null
                     }
-                ],
-                "settings": null,
-                "updating": null
+                ]
             },
             {
                 "id": 4,
@@ -129,7 +132,8 @@
                 "error_code": null,
                 "roles": [],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "assignments": []
             }
         ],
         "meta": {

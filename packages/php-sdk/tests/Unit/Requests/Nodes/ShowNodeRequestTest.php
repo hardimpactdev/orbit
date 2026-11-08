@@ -34,7 +34,8 @@ describe(ShowNodeRequest::class, function (): void {
                     'ssh_host_fingerprint' => 'SHA256:operator',
                     'failed_step' => null,
                     'error_code' => null,
-                    'roles' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
+                    'roles' => ['app-dev'],
+                    'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
                     'access' => [
                         'can_access' => [
                             ['id' => 3, 'name' => 'app-dev'],
@@ -79,7 +80,9 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('10.0.0.2')
             ->and($response->sshHostFingerprint)
             ->toBe('SHA256:operator')
-            ->and($response->roles[0]->role)
+            ->and($response->roles)
+            ->toBe(['app-dev'])
+            ->and($response->assignments[0]->role)
             ->toBe('app-dev')
             ->and($response->access)
             ->not

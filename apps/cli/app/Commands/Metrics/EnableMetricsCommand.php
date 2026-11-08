@@ -99,7 +99,7 @@ final class EnableMetricsCommand extends MetricsCommand
             $rows[$node->id] = [
                 (string) $node->id,
                 $node->name,
-                NodeOutput::roles($node->roles) ?? '—',
+                NodeOutput::roles($node->assignments) ?? '—',
             ];
         }
 

@@ -49,34 +49,31 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
-# Recorded Node detail: both the approved cases and the supplemental recorded-state cases prove these shared reads.
-# Keep both files selected even when only one cases file or one projection changes.
-apps/cli/app/Commands/Nodes/ShowNodeCommand.php             node:show node:show-recorded
-apps/cli/app/Commands/Nodes/NodeCommand.php                 node:show node:show-recorded
-apps/cli/app/Commands/Nodes/NodeOutput.php                  node:show node:show-recorded
-apps/cli/app/Commands/Nodes/ListNodesCommand.php            node:show node:show-recorded
-apps/cli/app/Commands/Nodes/ListNodeRolesCommand.php        node:show node:show-recorded
-apps/cli/app/Commands/Nodes/ShowNodeMetricsCommand.php      node:show node:show-recorded
-apps/gateway/app/Actions/Nodes/ShowNodeAction.php           node:show node:show-recorded
-apps/gateway/app/Actions/Nodes/ListNodesAction.php          node:show node:show-recorded
-apps/gateway/app/Actions/Nodes/ListNodeRolesAction.php      node:show node:show-recorded
-apps/gateway/app/Data/Nodes/**                             node:show node:show-recorded
-apps/gateway/app/Models/Node.php                           node:show node:show-recorded
-apps/gateway/app/Models/NodeRole.php                       node:show node:show-recorded
-apps/gateway/app/Models/NodeAccess.php                     node:show node:show-recorded
-apps/gateway/app/Models/Cluster.php                        node:show node:show-recorded
-apps/gateway/app/Http/Controllers/Api/NodesController.php   node:show node:show-recorded
-apps/gateway/app/Http/Controllers/Api/NodeRolesController.php  node:show node:show-recorded
-apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php     node:show node:show-recorded
-apps/gateway/app/Domain/NodeFacts/NodeAgentState.php        node:show node:show-recorded
-apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php   node:show node:show-recorded
-apps/gateway/app/Domain/AgentView/**                       node:show node:show-recorded
-apps/gateway/app/Infrastructure/AgentView/**               node:show node:show-recorded
-packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php    node:show node:show-recorded
-packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php   node:show node:show-recorded
-packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php  node:show node:show-recorded
-packages/php-sdk/src/Responses/Nodes/**                    node:show node:show-recorded
-swamp/proof/node/show.cases.yaml                           node:show node:show-recorded
+# The Node family. List and both show proofs cover shared paths; the remaining commands are reported as uncovered.
+swamp/proof/node/list.cases.yaml                          node:list
+apps/cli/app/Commands/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/cli/app/Support/CommandVocabulary/node.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Actions/Nodes/**                            node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Data/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Domain/Nodes/**                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Domain/Nodes/SwampRoleUnits.php             none: service unit definitions, not a command request
+apps/gateway/app/Http/Controllers/Api/Node*.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Http/Requests/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Infrastructure/Nodes/**                     node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Models/Node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/app/Models/NodeRole.php                         node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+apps/gateway/routes/api/node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+packages/php-sdk/src/Requests/Nodes/**                       node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+packages/php-sdk/src/Responses/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key node:show-recorded
+
+# Shared recorded-read dependencies outside the Node-family directories.
+apps/gateway/app/Models/NodeAccess.php                     node:list node:show node:show-recorded
+apps/gateway/app/Models/Cluster.php                        node:list node:show node:show-recorded
+apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php     node:list node:show node:show-recorded
+apps/gateway/app/Domain/NodeFacts/NodeAgentState.php        node:list node:show node:show-recorded
+apps/gateway/app/Domain/AgentView/**                       node:list node:show node:show-recorded
+apps/gateway/app/Infrastructure/AgentView/**               node:list node:show node:show-recorded
+swamp/proof/node/show.cases.yaml                          node:show node:show-recorded
 swamp/proof/node/show-recorded.cases.yaml                  node:show node:show-recorded
 
 # Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break

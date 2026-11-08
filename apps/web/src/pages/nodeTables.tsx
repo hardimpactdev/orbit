@@ -105,11 +105,7 @@ export function useNodeTables(wide = false) {
                           value: (n) => String(n.roles.length),
                           sort: (n) => n.roles.length,
                           // The count keeps the column narrow; the names show on hover.
-                          cell: (n) => (
-                              <span title={n.roles.map((assignment) => assignment.role).join(", ")}>
-                                  {n.roles.length}
-                              </span>
-                          ),
+                          cell: (n) => <span title={n.roles.join(", ")}>{n.roles.length}</span>,
                       },
                       {
                           header: "WireGuard IP",

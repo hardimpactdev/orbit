@@ -22,30 +22,30 @@ class RecordedReadsTest(unittest.TestCase):
 
     def test_structured_values_preserve_null_and_compare_complete_assignments(self):
         roles = [{'id': 9, 'role': 'database', 'status': 'failed', 'failed_step': 'converge:database', 'error_code': 'node.role_failed'}]
-        document = {'nodes': [{'id': 2, 'roles': roles}], 'agent': None}
-        wanted = [{'path': 'nodes[id=2].roles', 'equals': roles}, {'path': 'agent', 'equals': None}, {'path': 'skipped', 'absent': True}]
+        document = {'nodes': [{'id': 2, 'assignments': roles}], 'agent': None}
+        wanted = [{'path': 'nodes[id=2].assignments', 'equals': roles}, {'path': 'agent', 'equals': None}, {'path': 'skipped', 'absent': True}]
         self.assertEqual(steps.check_json(document, wanted), [])
-        document['nodes'][0]['roles'][0]['status'] = 'active'
+        document['nodes'][0]['assignments'][0]['status'] = 'active'
         # The expectation is not a reference to the actual mutable object.
-        self.assertTrue(steps.check_json(document, [{'path': 'nodes[id=2].roles[0].status', 'equals': 'failed'}]))
+        self.assertTrue(steps.check_json(document, [{'path': 'nodes[id=2].assignments[0].status', 'equals': 'failed'}]))
         self.assertTrue(steps.check_json({}, [{'path': 'agent', 'equals': None}]))
         self.assertTrue(steps.check_json({'skipped': None}, [{'path': 'skipped', 'absent': True}]))
 
     def test_array_index_and_unique_id_selection_refuse_ambiguous_or_missing_rows(self):
-        self.assertEqual(steps.json_value({'roles': [{'status': 'removing'}]}, 'roles[0].status'), 'removing')
+        self.assertEqual(steps.json_value({'assignments': [{'status': 'removing'}]}, 'assignments[0].status'), 'removing')
         for rows in ([], [{'id': 2}, {'id': 2}]):
             with self.assertRaises(steps.Infra):
                 steps.json_value({'nodes': rows}, 'nodes[id=2]')
         with self.assertRaises(steps.Infra):
-            steps.json_value({'roles': []}, 'roles[4]')
+            steps.json_value({'assignments': []}, 'assignments[4]')
 
     def test_cli_saves_typed_projection_and_asserts_json(self):
         roles = [{'id': 8, 'role': 'app-dev', 'status': 'provisioning'}]
-        self.run.cli = Mock(return_value={'rc': 0, 'json': {'roles': roles}, 'stdout': '{}', 'stderr': ''})
-        self.assertEqual(steps.cli(self.run, {'run': ['node:show', '2'], 'save': {'roles': 'recorded-roles'},
-                                            'expect': {'exit': 0, 'json': [{'path': 'roles[0].status', 'equals': 'provisioning'}]}}), [])
+        self.run.cli = Mock(return_value={'rc': 0, 'json': {'assignments': roles}, 'stdout': '{}', 'stderr': ''})
+        self.assertEqual(steps.cli(self.run, {'run': ['node:show', '2'], 'save': {'assignments': 'recorded-roles'},
+                                            'expect': {'exit': 0, 'json': [{'path': 'assignments[0].status', 'equals': 'provisioning'}]}}), [])
         self.assertEqual(self.run.resolve('${recorded-roles}'), roles)
-        self.assertTrue(steps.cli(self.run, {'run': ['node:show', '2'], 'expect': {'json': [{'path': 'roles', 'equals': []}]}}))
+        self.assertTrue(steps.cli(self.run, {'run': ['node:show', '2'], 'expect': {'json': [{'path': 'assignments', 'equals': []}]}}))
 
     def test_node_record_baseline_detects_writes_to_each_table(self):
         baseline = {'nodes': [{'id': 1}], 'node_roles': [], 'node_access': [], 'clusters': []}
@@ -84,6 +84,26 @@ class RecordedReadsTest(unittest.TestCase):
         self.assertTrue(all(case.lock == 'all' for case in supplemental.cases))
         for case in supplemental.cases:
             self.assertTrue(any(step.name == 'cli' and step.args['run'][0] == 'node:show' for stage in case.stages for step in stage.act))
+
+    def test_retained_case_compares_assignments_without_replacing_public_role_names(self):
+        root = Path(__file__).resolve().parents[4]
+        supplemental = spec.load(root / 'swamp/proof/node/show-recorded.cases.yaml', runner.BATCHES)
+        retained = next(case for case in supplemental.cases if case.id == 'retained-recorded-detail')
+        assignments = [{'id': 8, 'role': 'database', 'status': 'failed', 'failed_step': 'converge:Check the role', 'error_code': 'node.role_failed'}]
+        self.run.names.update({'retained.id': 9, 'recorded-roles': assignments})
+        node = {'id': 9, 'roles': ['database'], 'assignments': assignments}
+        documents = {'node:show': node, 'node:list': {'nodes': [node]}, 'node:role:list': {'roles': assignments}}
+        compared = set()
+        for stage in retained.stages:
+            for step in stage.act:
+                if step.name != 'cli' or not any(item.get('equals') == '${recorded-roles}' for item in step.args.get('expect', {}).get('json', [])):
+                    continue
+                command = step.args['run'][0]
+                with self.subTest(command=command), patch.object(steps, 'operation_ids', return_value=set()):
+                    self.run.cli = Mock(return_value={'rc': 0, 'json': documents[command], 'stdout': '{}', 'stderr': ''})
+                    self.assertEqual(steps.cli(self.run, self.run.resolve(step.args)), [])
+                compared.add(command)
+        self.assertEqual(compared, set(documents))
 
     def test_json_flag_precedes_option_terminator(self):
         with patch.object(fleet.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '{}', '')) as call:
