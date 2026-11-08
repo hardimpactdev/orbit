@@ -1290,3 +1290,38 @@ it('holds later CI proofs behind the queue front even before the front has selec
     $intent->admit($second->id);
     expect($second->refresh()->input['runs'])->toHaveCount(2);
 });
+
+it('lets task cancellation take precedence over a capacity wait or admitted task holding the group lock', function (bool $waiting): void {
+    Queue::fake();
+    app(TaskExtensionState::class)->enable();
+    [, $project] = slotPoolHost(taskPlaces: 1);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $holder = $waiting ? app(TaskVmSlotPool::class)->take(slotPoolGroup($project)) : null;
+    $group = slotPoolGroup($project);
+    $work = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    if (! $waiting) {
+        $work->update(['status' => OperationStatus::Running]);
+    }
+    expect($work->refresh()->lock_key)->not->toBeNull();
+
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+
+    expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($work->cancel_requested_at)->not->toBeNull()
+        ->and($work->lock_key)->toBeNull();
+    expect($cancel->kind)->toBe('tasks.cancel')
+        ->and($cancel->status)->toBe(OperationStatus::Queued)
+        ->and($cancel->lock_key)->not->toBeNull();
+    expect($group->refresh()->capacity_wait_reason)->toBeNull();
+    if ($waiting) {
+        app(TaskVmAdmission::class)->admit($work->id);
+        expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and(TaskVm::forGroup($group))->toBeNull()
+            ->and($cancel->input['release'])->toBeNull()
+            ->and($holder?->refresh()->state)->not->toBe(TaskVmState::Destroyed);
+    } else {
+        expect(TaskVm::forGroup($group)?->state)->toBe(TaskVmState::Releasing)
+            ->and($cancel->input['release'])->not->toBeNull();
+    }
+})->with([true, false]);
