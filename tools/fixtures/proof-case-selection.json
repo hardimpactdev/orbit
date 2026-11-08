@@ -268,6 +268,45 @@
       },
       "before_batches": "batches: {fresh: {}, other: {}}\n",
       "after_batches": "batches: {fresh: {}, other: {}}\n"
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: Changed case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "runner and case edits run the whole selected file",
+      "changed_paths": [
+        "swamp/proof/runner/spec.py"
+      ],
+      "expected": {
+        "a": "proof tooling changed",
+        "b": "proof tooling changed"
+      }
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "selection list disables narrowing even without an effective case change",
+      "changed_paths": [
+        "swamp/proof/selection.txt"
+      ],
+      "expected": {
+        "a": "proof tooling changed",
+        "b": "proof tooling changed"
+      }
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    typo: true\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "unknown fixture key in the base cannot select zero cases",
+      "expected": {
+        "a": "selection uncertain",
+        "b": "selection uncertain"
+      }
     }
   ]
 }

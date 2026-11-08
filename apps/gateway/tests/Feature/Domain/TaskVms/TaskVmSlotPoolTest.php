@@ -1247,6 +1247,12 @@ function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
     $source->shouldReceive('branchesWithHead')->andReturn(['feature']);
     $source->shouldReceive('changes')->andReturn(new ProofChangedFiles($commit, [new ProofChangedFile($casesOnly ? 'swamp/proof/firewall/allow.cases.yaml' : 'changed.php', 'modified')], true));
     $source->shouldReceive('proofPaths')->andReturn(['swamp/proof/firewall/allow.cases.yaml']);
+    $source->shouldReceive('caseSelection')->andReturnUsing(static fn (string $base, string $head): array => [
+        'version' => 1, 'base' => $base, 'head' => $head, 'files' => [[
+            'command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml',
+            'only' => ['a'], 'reasons' => ['a' => 'changed'],
+        ]],
+    ]);
     $source->shouldReceive('range')->andReturn(new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles($commit, [], true)));
     $source->shouldReceive('file')->andReturnUsing(static fn (string $sha, string $path): string => match ($path) {
         ProofSelectionList::Path => "changed.php firewall:allow\nswamp/proof/firewall/allow.cases.yaml firewall:allow\n",

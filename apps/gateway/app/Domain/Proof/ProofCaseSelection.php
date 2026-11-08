@@ -33,7 +33,7 @@ final readonly class ProofCaseSelection
             if (! is_string($id) || preg_match('/\A[a-zA-Z0-9_-]+(?:\[[a-zA-Z0-9_-]+\])?\z/D', $id) !== 1
                 || isset($selected[$id]) || ! is_string($reasons[$id] ?? null) || ! in_array($reasons[$id], [
                     'changed', 'added', 'uses changed fixture', 'uses changed var', 'batch setup changed',
-                    'file settings changed', 'command code changed', 'selection uncertain',
+                    'file settings changed', 'command code changed', 'proof tooling changed', 'selection uncertain',
                 ], true)) {
                 return null;
             }

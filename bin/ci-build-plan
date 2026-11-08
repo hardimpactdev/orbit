@@ -112,7 +112,7 @@ def proof_cases(paths, selection, read, files):
             continue
         code_changed = everything or any(path not in (file, batch_path) for path in commands.get(command, []))
         chosen = select_cases(read('base', file), read('head', file), code_changed,
-                              read('base', batch_path), read('head', batch_path))
+                              read('base', batch_path), read('head', batch_path), changed_paths=paths)
         # Keep empty entries in the artifact: the Gateway must distinguish verified zero from missing data.
         result.append({'command': command, 'file': file, **chosen})
     return sorted(result, key=lambda entry: entry['command'])

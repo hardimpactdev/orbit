@@ -35,6 +35,9 @@ def definitions(cases_text, batches_text):
         raw = spec.read_yaml(cases)
     if not loaded.cases:
         raise spec.SpecError('Selected command has no cases')
+    for fixture in (raw.get('fixtures') or {}).values():
+        if not isinstance(fixture, dict) or set(fixture) - {'summary', 'params', 'steps'}:
+            raise spec.SpecError('Unknown fixture construct')
     settings = {key: canonical(getattr(loaded, key)) for key in ('command', 'target', 'sources', 'baseline', 'spread', 'parallel')}
     result = {}
     for case in loaded.cases:
@@ -46,13 +49,19 @@ def definitions(cases_text, batches_text):
     return result, raw
 
 
-def select(before, after, code_changed=False, before_batches=None, after_batches=None):
+def select(before, after, code_changed=False, before_batches=None, after_batches=None, changed_paths=()):
     """None ids means whole file: uncertainty can never become a successful empty selection."""
     current = None
     try:
         current, raw = definitions(after, after_batches)
         if code_changed:
             return {'only': list(current), 'reasons': dict.fromkeys(current, 'command code changed')}
+        # Tooling changes do not select commands, but must never narrow their own proof.
+        if any(path.startswith(('swamp/proof/runner/', 'apps/gateway/app/Domain/Proof/',
+                                'apps/gateway/app/Infrastructure/Proof/'))
+               or path in ('swamp/proof/selection.txt', 'bin/ci-build-plan', 'bin/ci-proof-run', '.github/workflows/ci.yml')
+               for path in changed_paths):
+            return {'only': list(current), 'reasons': dict.fromkeys(current, 'proof tooling changed')}
         previous, old = definitions(before, before_batches) if before is not None else ({}, {'cases': []})
         old_cases = {case['id']: case for case in old['cases']}
         raw_cases = {case['id']: case for case in raw['cases']}

@@ -111,9 +111,9 @@ After choosing commands, choose their cases:
 3. Read the runner result in the Gateway. Validate its identity and selected case ids.
 4. Record selected case ids and reasons. Keep each case in its batch with its required setup.
 
-The runner compares canonical definitions by id. A command code change selects the whole file. Any parse error or unknown construct also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
+The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
 
-Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
+Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed`, `proof tooling changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
 
 Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.
 
