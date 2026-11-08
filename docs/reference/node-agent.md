@@ -38,6 +38,8 @@ The Gateway installs the observer only on active managed Linux Nodes with a Wire
 
 A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment reads its platform and existing tunnel address through pinned SSH. It installs no agent binary. Tool operations keep the enrolled account and its existing package-manager scopes.
 
+Task VM host preparation runs through the shared Ansible phase of a [base refresh](/reference/compute-drivers#prepare-an-incus-host). The agent observes Incus state; host preparation uses the pool and network intent of the refresh.
+
 ## What it observes
 
 The Gateway's watch list also names the dedicated Cluster DNS units, resolved and the read-only Cluster DNS health service and timer. The existing unit facts let Doctor report resolver outages. The agent changes no DNS policy; [member repair](/reference/private-dns#repair-one-peer) applies the shared policy.

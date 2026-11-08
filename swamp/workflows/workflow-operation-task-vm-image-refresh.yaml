@@ -41,11 +41,23 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
+- name: host
+  labels: {role: swamp}
+  steps:
+  - name: Prepare the host
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-host-phase
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
+        execution_secrets: '${{ inputs.execution_secrets }}', tags: host-prepare}
 # The egress log of the host bridge (docs/reference/compute-drivers.md#log-task-vm-egress): log-only. Only a safety check of the part fails
 # it (rules that do not load, a bridge with IPv6, an ACL that lost its drop rule); it runs before the base is touched, so a failure here
 # leaves the base as it was and starts no rollback.
 - name: egress
   labels: {role: swamp}
+  dependsOn: [{job: host, condition: {type: succeeded}}]
   steps:
   - name: Log egress
     labels: {role: swamp}

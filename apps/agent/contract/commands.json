@@ -377,19 +377,6 @@
       ]
     },
     {
-      "name": "incus.prepare-host",
-      "summary": "Converge a task VM host's ZFS pool, isolated bridge, project, profile, and stock image.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "task_vm.setup_failed"
-      ]
-    },
-    {
       "name": "incus.volumes",
       "summary": "Read custom volume names in one Incus project and pool.",
       "mutates": false,

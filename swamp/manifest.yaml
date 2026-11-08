@@ -64,6 +64,7 @@ additionalFiles:
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
   - ansible/task-vm-host.yml
+  - ansible/tasks/task-vm-host-prepare.yml
   - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
