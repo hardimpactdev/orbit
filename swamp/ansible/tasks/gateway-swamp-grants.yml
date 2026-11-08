@@ -2,6 +2,7 @@
 # A nested fleet keeps its grants on its own disk, over the candidate checkout. Render from that checkout after every restore,
 # just as a release does, rather than replaying the control plan saved when the base image was built.
 - name: Render the checkout's Swamp grants
+  become: true
   become_user: "{{ control.user }}"
   ansible.builtin.command:
     argv: [php, "{{ control.repository | dirname }}/apps/gateway/artisan", orbit:bootstrap-control-plan,
@@ -20,6 +21,7 @@
   loop_control: { label: "{{ item.key }}" }
   register: current_control_grants
 - name: Reload the checkout's Swamp grants
+  become: true
   become_user: "{{ control.user }}"
   ansible.builtin.command:
     argv: [timeout, "90", swamp, access, reload, --server, "ws://127.0.0.1:9418", --token-file,
