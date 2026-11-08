@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Commands\Nodes\ShowNodeMetricsCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -39,6 +43,45 @@ describe('node metrics contract', function (): void {
         run_contract('nodes/node-metrics/default', 'node:metrics', ['node' => '1'], 'nodes/node-metrics/default.human.txt', 0);
         run_contract('nodes/node-metrics/default', 'node:metrics', ['node' => '1', '--json' => true], 'nodes/node-metrics/default.json', 0);
     });
+
+    it('resolves a failed Node by name before looking up metrics with its numeric ID', function (string $label): void {
+        $body = json_decode(gateway_fixture('nodes/node-metrics/default')['body'], true, flags: JSON_THROW_ON_ERROR);
+        $mock = MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [[
+                    'id' => 1,
+                    'name' => 'app-dev',
+                    'status' => 'active',
+                    'roles' => ['app-dev'],
+                    'failed_step' => $label,
+                    'error_code' => 'node_role.convergence_failed',
+                ]],
+                'meta' => $body['meta'],
+            ]),
+            ShowNodeMetricsRequest::class => MockResponse::make($body),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $nodes = $connector->send(new ListNodesRequest)->dtoOrFail();
+        expect($nodes)->toBeInstanceOf(NodesResponse::class)
+            ->and($nodes->nodes[0]->failedStep)->toBe($label);
+
+        // Exercise the inherited resolver without changing metrics' numeric-only input contract.
+        $nodeId = new ReflectionMethod(ShowNodeMetricsCommand::class, 'resolveNodeId')->invoke(
+            app(ShowNodeMetricsCommand::class), $connector, 'app-dev', $nodes,
+        );
+        expect($nodeId)->toBe(1);
+        expect(Artisan::call('node:metrics', ['node' => (string) $nodeId, '--json' => true]))->toBe(0);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($output['node_id'])->toBe(1)
+            ->and($output['node_name'])->toBe('app-dev')
+            ->and($output['observed_at'])->toBe($body['data']['observed_at']);
+        $mock->assertSentCount(1, ListNodesRequest::class);
+        $mock->assertSentCount(1, ShowNodeMetricsRequest::class);
+        expect($mock->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/1/metrics');
+    })->with([
+        'owner reproduction' => ['converge:Require supported Ubuntu'],
+        'role-list reproduction' => ['converge:Check the role'],
+    ]);
 
     it('refuses invalid and omitted IDs locally without looking up names or contacting the Gateway', function (?string $id, bool $json): void {
         $mock = MockClient::global([]);

@@ -184,6 +184,38 @@ it('resolves a node name through the node list before listing roles', function (
         ->toBe('/api/v1/nodes/7/roles');
 });
 
+it('reads a failed assignment with a native label after resolving the Node by name', function (string $label): void {
+    $assignment = [
+        ...failed_node_role_assignment_payload(),
+        'failed_step' => $label,
+    ];
+    $node = [
+        ...node_role_list_node_payload(id: 7, name: 'mini'),
+        'failed_step' => $label,
+        'error_code' => $assignment['error_code'],
+    ];
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [$node],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+        ListNodeRolesRequest::class => MockResponse::make([
+            'data' => [$assignment],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('node:role:list', ['node' => 'mini', '--json' => true]))->toBe(0);
+    $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($output['assignments'])->toBe([$assignment]);
+    $mockClient->assertSentCount(1, ListNodesRequest::class);
+    $mockClient->assertSentCount(1, ListNodeRolesRequest::class);
+    expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/7/roles');
+})->with([
+    'owner reproduction' => ['converge:Require supported Ubuntu'],
+    'role-list reproduction' => ['converge:Check the role'],
+]);
+
 it('rejects an unknown node name before the role list request', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([

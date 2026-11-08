@@ -18,6 +18,8 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
+Role-assignment `failed_step` values are recorded step labels, not lowercase identifiers. The client preserves capitalization and spaces, such as `converge:Require supported Ubuntu` and `converge:Check the role`. Labels must be nonempty UTF-8 text of at most 128 bytes, without control or formatting characters.
+
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
 
 ## Commands

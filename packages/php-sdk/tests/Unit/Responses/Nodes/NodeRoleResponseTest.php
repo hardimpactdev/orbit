@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
 
@@ -48,6 +49,55 @@ describe('node role assignment response transport', function (): void {
             ->and(array_unique(array_column($assignments, 'role')))
             ->toBe(['ingress']);
     });
+
+    it('preserves recorded native failure labels verbatim', function (?string $label): void {
+        $assignment = NodeRoleAssignmentResponse::fromGatewayData([
+            'id' => 41,
+            'role' => 'app-dev',
+            'status' => 'failed',
+            'failed_step' => $label,
+            'error_code' => 'node_role.convergence_failed',
+        ], node_role_request_id());
+
+        expect($assignment->failedStep)->toBe($label)
+            ->and($assignment->toArray()['failed_step'])->toBe($label)
+            ->and($assignment->requestId)->toBe(node_role_request_id());
+    })->with([
+        'owner reproduction' => ['converge:Require supported Ubuntu'],
+        'role-list reproduction' => ['converge:Check the role'],
+        'removal label' => ['remove:Remove from the source'],
+        'punctuation' => ['converge:Check Ubuntu (24.04) / x86_64'],
+        'unicode' => ['converge:Préparer Ubuntu'],
+        'surrounding spaces' => ['converge: Check the role '],
+        'maximum byte length' => [str_repeat('A', 128)],
+        'unset' => [null],
+    ]);
+
+    it('rejects malformed and unsafe failure labels', function (mixed $label): void {
+        expect(fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
+            'id' => 41,
+            'role' => 'app-dev',
+            'status' => 'failed',
+            'failed_step' => $label,
+        ], node_role_request_id()))->toThrow(
+            GatewayApiException::class,
+            'Gateway response contains an invalid node role assignment failed_step.',
+        );
+    })->with([
+        'empty' => [''],
+        'over length' => [str_repeat('A', 129)],
+        'multibyte over byte limit' => [str_repeat('é', 65)],
+        'array' => [[]],
+        'integer' => [1],
+        'boolean' => [false],
+        'malformed UTF-8' => ["converge:Check \xFF"],
+        'Unicode control' => ["converge:Check\u{009B}Ubuntu"],
+        'Unicode formatting' => ["converge:Check\u{202E}Ubuntu"],
+        ...array_map(
+            static fn (int $byte): array => ['converge:Check'.chr($byte).'Ubuntu'],
+            [...range(0, 31), 127],
+        ),
+    ]);
 
     it('maps role list responses with the stable request id', function (): void {
         $list = new NodeRolesResponse(

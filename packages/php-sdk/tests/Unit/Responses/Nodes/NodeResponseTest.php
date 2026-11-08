@@ -216,6 +216,21 @@ it('keeps real access in node collections while stripping nested request ids', f
         ]);
 });
 
+it('preserves recorded native failure labels through the Node response', function (string $label): void {
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'failed_step' => $label,
+        'error_code' => 'node_role.convergence_failed',
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->failedStep)->toBe($label)
+        ->and($response->toArray()['failed_step'])->toBe($label)
+        ->and($response->id)->toBe(4)
+        ->and($response->name)->toBe('app-dev');
+})->with([
+    'owner reproduction' => ['converge:Require supported Ubuntu'],
+    'role-list reproduction' => ['converge:Check the role'],
+]);
+
 it('uses only canonical node network fields', function (): void {
     $response = NodeResponse::fromGatewayData(node_response_gateway_data([
         'wireguard_address' => '10.44.0.99',
