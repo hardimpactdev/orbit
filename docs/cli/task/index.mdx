@@ -10,7 +10,7 @@ covers:
 
 The `task` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `task:create` is the MCP tool `task-create`. Some operations have no CLI command. Use the MCP tool `task-check-cancel` to stop a running task check. The two merge steps of a task pull request, [`task:pr-ready`](/cli/task/pr-ready) and [`task:pr-merge`](/cli/task/pr-merge), are API and MCP only. The agent thread stream, `GET /api/v1/tasks/{task}/agents/{session}/stream`, serves the web app; [`task:agent:show`](/cli/task/agent-show) reads the same recorded snapshot. The stream sends one snapshot and ends; output updates when each turn ends. Reads never contact a task VM or Pi server.
 
-A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
+A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. A command build verifies its runner plan as a deliverable; handoff runs the configured Project check once before the deliverables. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
 To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metrics) with its numeric Node ID. See [task VM resource observations](/reference/tasks#every-task-group-runs-on-its-own-task-vm).
 

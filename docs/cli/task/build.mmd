@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
   %%> - records the approval (the head, the mode and the reviewer) in the intent
-  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes (the check command of the Project, or a review deliverable when the Project has none)
+  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; the runner plan of the cases file is a command deliverable; handoff runs the configured Project check once, before the deliverables; when the Project has no check command, the subtask also has a review deliverable for the Project check
   %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the task VM identity, its resume only when parked, the sync and the first turn
   %%> - names the vault keys of the Pi token and of the read token
   %%> Refuses:
