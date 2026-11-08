@@ -7,9 +7,10 @@ namespace App\Commands\Nodes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Laravel\Prompts\TextPrompt;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Responses\Nodes\NodeMetricsResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class ShowNodeMetricsCommand extends NodeCommand
 {
@@ -23,29 +24,41 @@ final class ShowNodeMetricsCommand extends NodeCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        if ($this->argument('node') === null && $this->consoleMode()->mayPrompt) {
-            $this->input->setArgument('node', $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
-                'Node ID',
-                required: 'Node ID is required.',
-                validate: fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
-                    ? 'Node ID must be a positive integer.' : null,
-            )));
-        }
+        $nodeId = null;
 
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+        if ($this->argument('node') !== null || ! $this->consoleMode()->mayPrompt) {
+            $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
 
-        if ($nodeId === null) {
-            if ($this->option('json') !== true) {
-                ConsoleWriter::write($this->output, "Code: node.id_invalid\n");
+            if ($nodeId === null) {
+                if ($this->option('json') !== true) {
+                    ConsoleWriter::write($this->output, "Code: node.id_invalid\n");
+                }
+
+                return self::FAILURE;
             }
-
-            return self::FAILURE;
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
+        }
+
+        if ($nodeId === null) {
+            $nodes = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class,
+                ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
+
+            if (! $nodes instanceof NodesResponse) {
+                return self::FAILURE;
+            }
+
+            $rows = [];
+
+            foreach ($nodes->nodes as $node) {
+                $rows[$node->id] = [(string) $node->id, $node->name];
+            }
+
+            $nodeId = (int) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
         }
 
         $metrics = $this->sendWithProgress(

@@ -32,19 +32,7 @@ impl Sampler {
             "io": {"some_avg10": pressure(&fs::read_to_string("/proc/pressure/io").unwrap_or_default())},
         });
         let mounts = fs::read_to_string("/proc/self/mounts").ok()?;
-        data["disks"] = Value::Array(
-            crate::facts::data_mounts(&mounts)
-                .into_iter()
-                .filter_map(|mount| {
-                    let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
-                    Some(json!({
-                        "mount": mount,
-                        "used": stat.f_blocks.saturating_sub(stat.f_bfree).saturating_mul(stat.f_frsize),
-                        "total": stat.f_blocks.saturating_mul(stat.f_frsize),
-                    }))
-                })
-                .collect(),
-        );
+        data["disks"] = Value::Array(disks(&mounts));
         Some(data)
     }
 
@@ -118,6 +106,22 @@ impl Sampler {
             "uptime_seconds": uptime as u64,
         }))
     }
+}
+
+fn disks(mounts: &str) -> Vec<Value> {
+    let mut mounts = crate::facts::data_mounts(mounts);
+    mounts.sort_by_key(|mount| mount != "/");
+    mounts
+        .into_iter()
+        .filter_map(|mount| {
+            let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
+            Some(json!({
+                "mount": mount,
+                "used": stat.f_blocks.saturating_sub(stat.f_bfree).saturating_mul(stat.f_frsize),
+                "total": stat.f_blocks.saturating_mul(stat.f_frsize),
+            }))
+        })
+        .collect()
 }
 
 fn cpu_counters(stat: &str) -> BTreeMap<u32, (u64, u64)> {
@@ -218,6 +222,13 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn disks_put_root_first_when_mount_input_lists_a_data_mount_before_it() {
+        let data = disks("/dev/data /tmp ext4 rw 0 0\n/dev/root / ext4 rw 0 0\n");
+        let mounts: Vec<_> = data.iter().map(|disk| disk["mount"].as_str()).collect();
+        assert_eq!(mounts, vec![Some("/"), Some("/tmp")]);
     }
 
     #[test]
