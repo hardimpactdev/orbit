@@ -42,7 +42,7 @@ sequenceDiagram
   SW->>VM: Check the head<br/>behind a platform change?
   %%> What it does:
   %%> - the first step of the run, before any restore or case, in the task VM's workspace: `git merge-base HEAD origin/main`, then `git diff --name-only` from that merge base to `origin/main`, limited to the platform list `swamp/proof/platform.txt` (the glob syntax of `selection.txt`), read from `origin/main` and passed to git as pathspecs, so no matcher of ours runs
-  %%> - `origin/main` is the clone of main that a proof VM already holds (CI, see "Name the new cases" below) or the ref that `task:sync` fetched (the author's own VM). The check does not read the live main: main moves every few minutes, and a change that landed after the last sync is not seen
+  %%> - `origin/main` is the clone of main that a proof VM already holds (CI, see "Select replay cases" below) or the ref that `task:sync` fetched (the author's own VM). The check does not read the live main: main moves every few minutes, and a change that landed after the last sync is not seen
   %%> - a head that lacks a platform change is refused with `proof.head_behind_platform`. The error names the merge base, the commit of main and the first platform paths that main changed, and tells the author to merge `origin/main` and prove again
   %%> - a workspace with no `origin/main`, or none that shares a merge base with the head, is refused with `proof.sync_needed`: run `task:sync`. An `origin/main` without a platform list passes
   %%> - a head that has every platform change goes on; the workspace is not changed
@@ -98,6 +98,10 @@ sequenceDiagram
     end
   end
   opt added or changed cases opt into replay, in CI
+    SW->>SW: Check main verdicts
+    %%> Continue only after every head case passed and CI supplied merge_base and head.
+    SW->>VM: Check out the merge base
+    %%> A second checkout supplies definitions and is never mounted in the fleet.
     SW->>VM: Select replay cases<br/>runner case-level comparison
     %%> Only CI sets merge_base and head, and only after every main verdict passed. An author's proof never switches the checkout.
     %%> The head runner expands both definitions with the case-level selection comparison, then keeps only fails_on_base: true cases assigned to this batch. Changed fixtures, vars, variants, settings and batch setup count.
@@ -105,6 +109,10 @@ sequenceDiagram
     %%> Read base definitions in a second checkout, never mounted in the fleet, then remove it. A missing base cases file means all head cases are added; invalid definitions fail selection.
     %%> The merge-base code uses the schema and dependencies of the head. A runner step absent on base fails the check; land it before a case that needs it.
     %%> negative breaks the effect; fails_on_base checks that new or fixed behavior needs the new code. Existing refusals and offline handling normally leave the flag unset.
+    SW->>VM: Remove the base checkout
+    %%> Cleanup also follows failed selection.
+    SW->>SW: Name replay cases
+    %%> Keep only selected flagged ids admitted to this batch.
     SW->>VM: Switch the checkout<br/>merge base
     %%> Switch only when replay has selected cases. The nested containers mount this checkout.
     SW->>NT: Read the nested checkout
@@ -118,24 +126,6 @@ sequenceDiagram
     %%> The first batch uses the restore above; later batches restore base themselves.
     SW->>SW: Join replay verdicts<br/>CASE@merge-base lines
     %%> Each replay must end failed with cause assertion. A pass, another cause or a missing line produces a failed CASE@merge-base verdict and fails the proof. No other case replays.
-  end
-  SW->>NT: Restore base<br/>then apply
-    %%> What it does:
-    %%> - the restore of `base` that every batch uses: restore and start, readiness, then the apply step, now on the merge-base code
-    SW->>NT: Run the new cases<br/>only them, in their batches
-    %%> What it does:
-    %%> - the batches of the plan that hold a new case, in order; the first starts from the restore above, each later one restores `base` itself
-    Note over SW: Join the new verdicts<br/>CASE@merge-base lines
-    %%> What it does:
-    %%> - the check passes when every new case ends `failed` with cause `assertion`; the report step joins one line for each new case, `CASE@merge-base`, `passed` when it failed that way and `failed` when it passed, ended otherwise or printed no line
-    %%> - the Gateway records these lines as rows of the command, so a new case that does not fail fails the run; the old cases do not run again
-    %%> Why:
-    %%> - a case that passes without the code it covers proves nothing; ADR 0163 asks the same of a task deliverable (`fails_on_base`)
-    %%> - the VM is destroyed after the run, so no live checkout is changed
-    %%> Built, not yet passed live:
-    %%> - all of the above: the jobs `can-fail` and `can-fail-batches` of the Swamp workflow `proof-fleet-verify`, and `merge_base` and `head` in the intent of `proof:run`; the checkout is switched with `git checkout --force --detach` and `git checkout COMMIT -- FILE`
-    %%> Not built:
-    %%> - exercising the CI gate with a known failing case (stage 4)
   end
   SW->>NT: Restore base<br/>fleet clean on the author's code
   %%> Why:

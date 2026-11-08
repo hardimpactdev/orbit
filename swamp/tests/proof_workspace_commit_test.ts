@@ -59,3 +59,40 @@ Deno.test("assigned batches use the old runner plan interface and filter its who
     assert(select({}) === "first 1 a b\nsecond 0 c\nfirst-more 0 d");
     assert(select({ batch: "absent" }) === "");
 });
+
+Deno.test("merge-base replay fails a flagged case that passes on base and rejects missing or infrastructure verdicts", async () => {
+    const verify = parse(await Deno.readTextFile(new URL("../workflows/workflow-proof-fleet-verify.yaml", import.meta.url))) as Workflow;
+    const steps = verify.jobs.flatMap(job => job.steps);
+    const report = steps.find(step => step.name === "report")!;
+    const env = (report.task.inputs as { env: { BASE_LINES: string } }).env;
+    const expr = env.BASE_LINES.slice(3, -2).trim();
+    const result = (line: string, ids = "fixed") => environment.evaluate(expr, { steps: {
+        "Name replay cases": { outputs: { stdout: ids } },
+        "fail-batch-0": { outputs: { report: { stdout: line } } },
+    } }) as string;
+    for (const line of [
+        '{"id": "fixed", "verdict": "passed", "secs": 1}',
+        '{"id": "fixed", "verdict": "failed", "cause": "infrastructure", "secs": 1}',
+        "",
+    ]) {
+        const row = JSON.parse(result(line));
+        assert(row.id === "fixed@merge-base" && row.verdict === "failed");
+    }
+    const failed = '{"id": "fixed", "verdict": "failed", "cause": "assertion", "secs": 1}';
+    assert(JSON.parse(result(failed)).verdict === "passed");
+    assert(result(failed, "") === "", "no eligible flagged case produces no merge-base verdict");
+});
+
+Deno.test("replay selection stays within the admitted batch and skips switching with no eligible cases", async () => {
+    const verify = parse(await Deno.readTextFile(new URL("../workflows/workflow-proof-fleet-verify.yaml", import.meta.url))) as Workflow;
+    const steps = verify.jobs.flatMap(job => job.steps);
+    const name = steps.find(step => step.name === "Name replay cases")!;
+    const expr = (name.task.inputs as { env: { IDS: string } }).env.IDS.slice(3, -2).trim();
+    const context = { steps: {
+        "Select replay cases": { outputs: { stdout: "fixed other-batch" } },
+        plan: { outputs: { stdout: "first 0 fixed unchanged\n" } },
+    } };
+    assert(environment.evaluate(expr, context) === "fixed");
+    const guard = (steps.find(step => step.name === "Switch the checkout to the merge base") as Step & { guard: string }).guard.slice(3, -2).trim();
+    assert(environment.evaluate(guard, { steps: { "Name replay cases": { outputs: { stdout: "" } } } }) === true);
+});

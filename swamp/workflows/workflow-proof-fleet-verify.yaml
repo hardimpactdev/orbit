@@ -31,7 +31,7 @@ jobs:
 - name: plan
   labels: {role: swamp}
   steps:
-  # A previous batch's new-case check can leave the checkout at the merge base.
+  # A previous batch's flagged-case check can leave the checkout at the merge base.
   - name: Restore the head checkout
     labels: {role: swamp}
     writes: true
@@ -47,8 +47,8 @@ jobs:
         hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
       inputs:
         hosts: name:target
-        timeoutSec: 130
-        argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?head.orValue("") }}']
+        timeoutSec: 70
+        argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?head.orValue("") }}']
   # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. Keep that original interface for older heads.
   - name: Read the runner plan
     dependsOn: [{step: Restore the head checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -80,7 +80,7 @@ jobs:
         - --lines
         - --file
         - ${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}
-  # Every later consumer reads this scoped plan, including new-case checks and missing-verdict reporting.
+  # Every later consumer reads this scoped plan, including flagged-case checks and missing-verdict reporting.
   - name: plan
     dependsOn: [{step: Read the runner plan, condition: {type: succeeded}}]
     labels: {role: swamp}
@@ -165,7 +165,7 @@ jobs:
         setup: ${{ self.batch.setup }}
         restore: ${{ self._index > 0 }}
         cases: ${{ self.batch.cases }}
-# A new case must fail on the merge base (3-proof.mmd, `Prove the case can fail`). Only a proof in CI sets `base` and `head` in the intent; `orbit proof` leaves them out, because the switch would replace the author's own checkout. With no new case no step changes anything.
+# Only an added or changed case with fails_on_base: true must fail on the merge base (3-proof.mmd, `Select replay cases`). Only a proof in CI sets `base` and `head` in the intent; `orbit proof` leaves them out, because the switch would replace the author's own checkout. With no selected flagged case no step changes anything.
 - name: can-fail
   labels: {role: swamp}
   dependsOn:
@@ -174,7 +174,7 @@ jobs:
   - job: batches
     condition: {type: completed}
   steps:
-  # A new case is proven only in CI (the intent of `proof:run` holds `merge_base` and `head`) and only when every case of the plan passed.
+  # A flagged case is replayed only in CI (the intent of `proof:run` holds `merge_base` and `head`) and only when every case of the plan passed.
   - name: 'Check the main verdicts'
     labels: {role: swamp}
     task:
@@ -193,71 +193,71 @@ jobs:
     writes: true
     guard: '${{ steps["Check the main verdicts"].outputs.stdout.trim() != "yes" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-check-out-the-merge-base").split(".").join("-") }}', methodName: exec, globalArgs: &vm {name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-check-out-the-merge-base").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'worktree', 'add', '--detach', '${{ inputs.intent.checkout_path + ".base" }}', '${{ inputs.intent.?merge_base.orValue("") }}'], timeoutSec: 130}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'worktree', 'add', '--detach', '${{ inputs.intent.checkout_path + ".base" }}', '${{ inputs.intent.?merge_base.orValue("") }}'], timeoutSec: 70}}
     dependsOn: [{step: 'Check the main verdicts', condition: {type: succeeded}}]
-  # A command with no cases file at the merge base has no plan there: every case is new. The runner reads the cases file of the base with the runner of the base.
-  - name: 'Plan the merge base'
+  # The head runner uses the case-level comparison, then filters fails_on_base. Code/tooling whole-file selection never makes unchanged cases eligible.
+  - name: 'Select replay cases'
     labels: {role: swamp}
     guard: '${{ steps["Check the main verdicts"].outputs.stdout.trim() != "yes" }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-plan-the-merge-base").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-plan-the-merge-base").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', okExitCodes: any, argv: ['timeout', '60', 'python3', '${{ inputs.intent.checkout_path + ".base/swamp/proof/runner/runner.py" }}', 'plan', '--lines', '--file', '${{ inputs.intent.checkout_path + ".base/" + inputs.intent.file }}'], timeoutSec: 70}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-select-replay-cases").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-select-replay-cases").split(".").join("-") }}'},
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'python3', '${{ inputs.intent.checkout_path + "/swamp/proof/runner/runner.py" }}', 'replay', '--file', '${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}', '--base-file', '${{ inputs.intent.checkout_path + ".base/" + inputs.intent.file }}', '--base-batches', '${{ inputs.intent.checkout_path + ".base/swamp/proof/batches.yaml" }}'], timeoutSec: 70}}
     dependsOn: [{step: 'Check out the merge base', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   - name: 'Remove the merge base checkout'
     labels: {role: swamp}
     writes: true
     guard: '${{ steps["Check the main verdicts"].outputs.stdout.trim() != "yes" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-remove-the-merge-base-checkout").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-remove-the-merge-base-checkout").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'worktree', 'remove', '--force', '${{ inputs.intent.checkout_path + ".base" }}'], timeoutSec: 130}}
-    dependsOn: [{step: 'Plan the merge base', condition: {type: always}}]
-  # The ids of the plan of the head that the plan of the merge base lacks, on one line.
-  - name: 'Name the new cases'
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'worktree', 'remove', '--force', '${{ inputs.intent.checkout_path + ".base" }}'], timeoutSec: 70}}
+    dependsOn: [{step: 'Select replay cases', condition: {type: always}}]
+  # Restrict the changed flagged ids to this shard/batch, on one line.
+  - name: 'Name replay cases'
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: proof-verify-new-cases
+      behaviorName: proof-verify-flagged-cases
       methodName: execute
       inputs:
         run: |
           printf '%s\n' "$IDS"
         env:
-          IDS: '${{ (steps["Check the main verdicts"].outputs.stdout.trim() == "yes") ? [steps["Plan the merge base"].outputs.stdout.trim().split("\n").filter(l, l.split(" ").size() >= 3).map(l, l.split(" ", 3)[2]).join(" ").split(" ")].map(old, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !(c in old))).map(ids, ids.join(" "))[0] : "" }}'
+          IDS: '${{ steps[?"Select replay cases"].?outputs.?stdout.orValue("").trim().split(" ").filter(c, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").exists(p, p == c)).join(" ") }}'
     dependsOn: [{step: 'Remove the merge base checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-  # The one checkout switches to the merge base, with only the cases file of the command and the batches of the head. The nested containers have it as a disk device, so they see the switch at once.
+  # The one checkout switches to the merge base, with the head cases, batches and spec loader (which accepts fails_on_base). The base runner and steps stay. The nested containers have it as a disk device, so they see the switch at once.
   - name: 'Switch the checkout to the merge base'
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'
+    guard: '${{ steps["Name replay cases"].outputs.stdout.trim() == "" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-switch-the-checkout-to-the-merge-base").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-switch-the-checkout-to-the-merge-base").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?merge_base.orValue("") }}'], timeoutSec: 130}}
-    dependsOn: [{step: 'Name the new cases', condition: {type: succeeded}}]
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?merge_base.orValue("") }}'], timeoutSec: 70}}
+    dependsOn: [{step: 'Name replay cases', condition: {type: succeeded}}]
   # The nested Gateway reads the checkout as a disk device: it must show the merge base before the apply.
   - name: 'Read the nested checkout'
     labels: {role: swamp}
-    guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'
+    guard: '${{ steps["Name replay cases"].outputs.stdout.trim() == "" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-nested-checkout").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-nested-checkout").split(".").join("-") }}'},
       inputs: {hosts: 'name:target', argv: ['timeout', '60', 'incus', 'exec', 'nested-gateway', '--user', '1000', '--', 'git', '-C', '/home/orbit/orbit', 'rev-parse', 'HEAD'], timeoutSec: 70}}
     dependsOn: [{step: 'Switch the checkout to the merge base', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   - name: 'Check the nested checkout'
     labels: {role: swamp}
-    guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'
+    guard: '${{ steps["Name replay cases"].outputs.stdout.trim() == "" }}'
     task: {type: assert, expr: 'steps["Read the nested checkout"].outputs.stdout.trim() == inputs.intent.?merge_base.orValue("")', severity: high, message: The nested Gateway does not show the merge base after the switch of the checkout}
     dependsOn: [{step: 'Read the nested checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   - name: 'Take the cases of the head'
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'
+    guard: '${{ steps["Name replay cases"].outputs.stdout.trim() == "" }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-take-the-cases-of-the-head").split(".").join("-") }}', methodName: exec, globalArgs: {<<: *vm, name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-take-the-cases-of-the-head").split(".").join("-") }}'},
-      inputs: {hosts: 'name:target', argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '${{ inputs.intent.?head.orValue("") }}', '--', '${{ inputs.intent.file }}', 'swamp/proof/batches.yaml'], timeoutSec: 130}}
+      inputs: {hosts: 'name:target', argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '${{ inputs.intent.?head.orValue("") }}', '--', '${{ inputs.intent.file }}', 'swamp/proof/batches.yaml', 'swamp/proof/runner/spec.py'], timeoutSec: 70}}
     dependsOn: [{step: 'Check the nested checkout', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # Restore `base` and apply the checkout, which is now the merge base.
   - name: 'Restore the base snapshot'
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps["Name the new cases"].outputs.stdout.trim() == "" }}'
+    guard: '${{ steps["Name replay cases"].outputs.stdout.trim() == "" }}'
     task: {type: workflow, workflowIdOrName: proof-fleet-restore, inputs: {ssh_execution: '${{ inputs.intent.ssh_execution }}'}}
     dependsOn: [{step: 'Take the cases of the head', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-# Only the new cases, in their batches. The first batch starts from the restore above; each later batch restores `base` itself.
+# Only the selected flagged cases, in their batches. The first batch starts from the restore above; each later batch restores `base` itself.
 - name: can-fail-batches
   labels: {role: swamp}
   concurrency: 1
@@ -269,7 +269,7 @@ jobs:
     labels: {role: swamp}
     forEach:
       item: batch
-      in: '${{ steps.plan.outputs.stdout.trim().split("\n").map(l, {"batch": l.split(" ", 3)[0], "setup": l.split(" ", 3)[1] == "1", "cases": l.split(" ", 3)[2].split(" ").filter(c, c in steps["Name the new cases"].outputs.stdout.trim().split(" "))}).filter(b, size(b.cases) > 0) }}'
+      in: '${{ steps.plan.outputs.stdout.trim().split("\n").map(l, {"batch": l.split(" ", 3)[0], "setup": l.split(" ", 3)[1] == "1", "cases": l.split(" ", 3)[2].split(" ").filter(c, c in steps["Name replay cases"].outputs.stdout.trim().split(" "))}).filter(b, size(b.cases) > 0) }}'
     guard: '${{ steps.exists(k, k.startsWith("fail-batch-") && steps[k].?outputs.?report.?stdout.orValue("").contains("run stopped")) }}'
     allowFailure: true
     task:
@@ -326,6 +326,6 @@ jobs:
         run: |
           printf '%s\n%s\n' "$LINES" "$BASE_LINES"
         env:
-          # One line for each new case, `CASE@merge-base`: passed when the case failed with cause assertion on the merge base, failed when it passed, ended otherwise or printed no line.
-          BASE_LINES: '${{ [steps.filter(k, k.startsWith("fail-batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("")).join("\n")].map(all, steps[?"Name the new cases"].?outputs.?stdout.orValue("").trim().split(" ").filter(c, c != "").map(c, [all.split("\n").filter(l, l.contains("\"id\": \"" + c + "\""))].map(f, (size(f) > 0 && f[0].contains("\"verdict\": \"failed\"") && f[0].contains("\"cause\": \"assertion\"")) ? "{\"id\": \"" + c + "@merge-base\", \"verdict\": \"passed\", \"secs\": 0}" : "{\"id\": \"" + c + "@merge-base\", \"verdict\": \"failed\", \"cause\": \"assertion\", \"secs\": 0, \"failed\": [\"the new case did not fail with cause assertion on the merge base\"]}")[0]).join("\n"))[0] }}'
+          # One line for each selected flagged case, `CASE@merge-base`: passed when the case failed with cause assertion on the merge base, failed when it passed, ended otherwise or printed no line.
+          BASE_LINES: '${{ [steps.filter(k, k.startsWith("fail-batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("")).join("\n")].map(all, steps[?"Name replay cases"].?outputs.?stdout.orValue("").trim().split(" ").filter(c, c != "").map(c, [all.split("\n").filter(l, l.contains("\"id\": \"" + c + "\""))].map(f, (size(f) > 0 && f[0].contains("\"verdict\": \"failed\"") && f[0].contains("\"cause\": \"assertion\"")) ? "{\"id\": \"" + c + "@merge-base\", \"verdict\": \"passed\", \"secs\": 0}" : "{\"id\": \"" + c + "@merge-base\", \"verdict\": \"failed\", \"cause\": \"assertion\", \"secs\": 0, \"failed\": [\"the flagged case did not fail with cause assertion on the merge base\"]}")[0]).join("\n"))[0] }}'
           LINES: '${{ [steps.filter(k, k.startsWith("batch-")).map(k, steps[k].?outputs.?report.?stdout.orValue("").trim()).filter(x, x != "")].map(x, (x + [x.join("\n")].map(e, steps.plan.outputs.stdout.trim().split("\n").map(l, l.split(" ", 3)[2]).join(" ").split(" ").filter(c, !e.contains("\"id\": \"" + c + "\"")).map(c, "{\"id\": \"" + c + "\", \"verdict\": \"unrun\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"run stopped: the fleet or the batch setup did not succeed\"]}"))[0]).join("\n"))[0] }}'

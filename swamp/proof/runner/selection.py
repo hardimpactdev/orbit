@@ -62,28 +62,42 @@ def select(before, after, code_changed=False, before_batches=None, after_batches
                or path in ('swamp/proof/selection.txt', 'bin/ci-build-plan', 'bin/ci-proof-run', '.github/workflows/ci.yml')
                for path in changed_paths):
             return {'only': list(current), 'reasons': dict.fromkeys(current, 'proof tooling changed')}
-        previous, old = definitions(before, before_batches) if before is not None else ({}, {'cases': []})
-        old_cases = {case['id']: case for case in old['cases']}
-        raw_cases = {case['id']: case for case in raw['cases']}
-        reasons = {}
-        # Group by the source id so changing a variant selects all its siblings.
-        for name, case in raw_cases.items():
-            ids = [key for key in current if key == name or key.startswith(name + '[')]
-            reason = 'added' if name not in old_cases else 'changed' if encoded(case) != encoded(old_cases[name]) else None
-            if reason is None:
-                changed = [key for key in ids if key not in previous or encoded(current[key]) != encoded(previous[key])]
-                if not changed:
-                    continue
-                if any(key not in previous or encoded(current[key]['settings']) != encoded(previous[key]['settings']) for key in changed):
-                    reason = 'file settings changed'
-                elif any(encoded(current[key]['setup']) != encoded(previous[key]['setup']) for key in changed):
-                    reason = 'batch setup changed'
-                elif encoded(raw.get('fixtures')) != encoded(old.get('fixtures')):
-                    reason = 'uses changed fixture'
-                else:
-                    reason = 'uses changed var'
-            reasons.update(dict.fromkeys(ids, reason))
+        reasons = changed_cases(before, after, before_batches, after_batches)
         return {'only': list(reasons), 'reasons': reasons}
     except Exception:  # Invalid/unknown definitions must select work, never nothing_to_prove.
         return {'only': list(current) if current else None,
                 'reasons': dict.fromkeys(current or [], 'selection uncertain')}
+
+
+def changed_cases(before, after, before_batches, after_batches):
+    """Case-level changes, without whole-file execution overrides. Invalid definitions raise."""
+    current, raw = definitions(after, after_batches)
+    previous, old = definitions(before, before_batches) if before is not None else ({}, {'cases': []})
+    old_cases = {case['id']: case for case in old['cases']}
+    raw_cases = {case['id']: case for case in raw['cases']}
+    reasons = {}
+    # Group by the source id so changing a variant selects all its siblings.
+    for name, case in raw_cases.items():
+        ids = [key for key in current if key == name or key.startswith(name + '[')]
+        reason = 'added' if name not in old_cases else 'changed' if encoded(case) != encoded(old_cases[name]) else None
+        if reason is None:
+            changed = [key for key in ids if key not in previous or encoded(current[key]) != encoded(previous[key])]
+            if not changed:
+                continue
+            if any(key not in previous or encoded(current[key]['settings']) != encoded(previous[key]['settings']) for key in changed):
+                reason = 'file settings changed'
+            elif any(encoded(current[key]['setup']) != encoded(previous[key]['setup']) for key in changed):
+                reason = 'batch setup changed'
+            elif encoded(raw.get('fixtures')) != encoded(old.get('fixtures')):
+                reason = 'uses changed fixture'
+            else:
+                reason = 'uses changed var'
+        reasons.update(dict.fromkeys(ids, reason))
+    return reasons
+
+
+def replay_cases(before, after, before_batches, after_batches):
+    """Only changed cases that opt into proving a failure on the base."""
+    current, _ = definitions(after, after_batches)
+    changed = changed_cases(before, after, before_batches, after_batches)
+    return [name for name in changed if current[name]['case']['fails_on_base']]

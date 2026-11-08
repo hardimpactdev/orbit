@@ -41,9 +41,27 @@ sequenceDiagram
     SW->>VM: Read the command batches
     SW->>SW: Select the assigned batch
     SW->>VM: Restore the base snapshot
-    SW->>VM: Run selected cases<br/>with batch setup
-    SW->>VM: Replay changed flagged cases
-    %%> Use the runner’s case-level comparison, then filter fails_on_base: true and the admitted batch. Whole-file code or tooling selection does not replay unchanged flags. Each replay must fail with cause assertion; passing or missing evidence fails.
+    SW->>VM: Run batch setup
+    SW->>VM: Run selected cases
+    opt CI replay after every head case passed
+      SW->>SW: Check head verdicts
+      SW->>VM: Check out the base
+      SW->>VM: Select replay cases
+      %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.
+      SW->>VM: Remove the base copy
+      SW->>SW: Scope replay case ids
+      %%> Keep only cases admitted to this batch.
+      SW->>VM: Switch to the base
+      SW->>VM: Read nested commit
+      SW->>SW: Check nested commit
+      SW->>VM: Take head case files
+      %%> Copy cases, batches and the spec loader. Keep base runner and step implementations.
+      SW->>VM: Restore base snapshot
+      SW->>VM: Run replay setup
+      SW->>VM: Run replay cases
+      SW->>SW: Join replay verdicts
+      %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
+    end
     VM-->>SW: Verdict lines
   end
   SW->>VM: Release the slot
