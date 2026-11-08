@@ -106,3 +106,5 @@ When a phase teaches a new rule or pitfall, add it here in the same PR. Replace 
 Incus boot configuration must converge on an existing base before it starts, not only at `incus init`. Snapshot copies inherit that configuration. Test a stale existing base and an already-current base as well as a new base.
 
 Detect a ZFS loop pool from its actual source file, not only a missing `zfs_dataset` setting: an existing native pool may omit that setting. Apply a loop host's ARC limit both in the running module and its boot configuration; leave native host ARC intent unchanged. Host capacity must include measured VM memory and a separate margin for host services.
+
+An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's first boot. A route allowance affects forwarded traffic only, and Incus's own accept rules cannot override another nftables input chain's drop. Scope DHCP to the bridge and DNS to its host address; keep the rest of host input closed.

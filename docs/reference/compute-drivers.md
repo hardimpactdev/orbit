@@ -1138,6 +1138,8 @@ A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
 2. Run `task-vms:refresh-image {node} --from-stock`. Its host phase prepares the host, then the refresh builds the base and proves one start from its snapshot.
 
+Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
+
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
 ### Limit fleet traffic on the hub
