@@ -41,7 +41,7 @@ About 74 commands have a chart and a page from earlier docs-only PRs. Their old 
 
 ## 2. Development environment
 
-A task claims one place in the host's task pool and gets a fresh VM and Node identity. The start copies the host's base snapshot and seed, writes the identity and Pi credentials, converges the VM and checks out the task branch. The base holds the agent, Pi, tools, Swamp, a warm checkout of main with its dependencies, and a nested fleet of three Incus containers: Gateway, app-dev and app-prod. Publication releases the VM, workspace, Node, keys and hub peer. A later build, fix or review round claims again from the base at the published task head. [Capacity ideal state](#capacity-ideal-state) defines the separate CI pool and proof queue.
+A task claims one place in the host's task pool and gets a fresh VM and Node identity. The start copies the host's base snapshot and seed, writes the identity and Pi credentials, converges the VM and checks out the task branch. The base holds the agent, Pi, tools, Swamp, a warm checkout of main with its dependencies, and a nested fleet of three Incus containers: Gateway, app-dev and app-prod. Before running cases, the shared proof runner renders Swamp grants from the checkout and reloads them, so new vault key patterns do not depend on the base image's age. Publication releases the VM, workspace, Node, keys and hub peer. A later build, fix or review round claims again from the base at the published task head. [Capacity ideal state](#capacity-ideal-state) defines the separate CI pool and proof queue.
 
 The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so the author's changes reach them at once. A restore of `base` is a reboot of the containers.
 

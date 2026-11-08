@@ -97,7 +97,10 @@ class Fleet:
 
     @staticmethod
     def must(argv, what):
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired as error:
+            raise FleetError(f'{what}: timed out after 120 seconds') from error
         if done.returncode != 0:
             raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
 
@@ -179,6 +182,14 @@ def listed_node_ids():
 
 
 def from_environment():
+    # The guest's grants are restored from base, but the checkout under test owns the vault key patterns. Prepare through that
+    # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
+    # whose grant files already match the checkout.
+    Fleet.must(['incus', 'exec', GUEST_PREFIX + 'gateway', '--', 'timeout', '110', 'env',
+                'ANSIBLE_CONFIG=' + NODE_CHECKOUT + '/swamp/ansible/ansible.cfg',
+                '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
+                '--tags', 'grants', NODE_CHECKOUT + '/swamp/ansible/gateway-bootstrap.yml'],
+               'cannot prepare the nested Swamp grants from the tested checkout')
     return discover()
 
 

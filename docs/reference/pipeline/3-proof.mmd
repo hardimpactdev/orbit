@@ -71,6 +71,8 @@ sequenceDiagram
   SW->>NT: Apply the code<br/>migrate · restart services
   %%> What it does:
   %%> - runs the migrations and restarts the long-running services (Horizon, the scheduler, the agent-view subscriber) in the nested Gateway, so they run the checked-out code
+  %%> - before discovery and cases, the shared runner renders the checkout's Swamp grants and reloads them; restored grants belong to the base image and can lack the candidate's vault key patterns
+  %%> - grant preparation uses the candidate's Ansible play on the nested Gateway; a failure stops the cases as an infrastructure failure
   %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: the restored containers boot the state of `base`, whose database may predate the checkout's migrations
   loop each batch, in the order of swamp/proof/batches.yaml

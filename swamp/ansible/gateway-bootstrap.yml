@@ -38,3 +38,13 @@
   tasks:
     - name: Renew the Swamp tokens
       ansible.builtin.import_tasks: tasks/gateway-swamp-remint.yml
+- name: Gateway Swamp grants
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - grants
+  tasks:
+    - name: Apply the checkout's Swamp grants
+      ansible.builtin.import_tasks: tasks/gateway-swamp-grants.yml
