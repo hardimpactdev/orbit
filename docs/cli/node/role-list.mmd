@@ -1,0 +1,27 @@
+sequenceDiagram
+  %% Target design: docs/cli/node/role-list.mdx and docs/reference/cli-ux.md. Read recorded role assignments only.
+  %% status: draft
+  %% command: node:role:list
+  %% kind: node.role_list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: node:role:list NODE
+  %%> Command:
+  %%> - `orbit node:role:list NODE`
+  %%> - syntax: `<node> [--json]`
+  %%> Refuses:
+  %%> - `node.id_invalid`: a supplied Node selector is not a positive integer; the CLI refuses it before the request
+  %%> - `http.404`: the Node is unknown
+  %%> - `node_access.required`: the caller has no access grant to the Node
+  Note over GW: Read role assignments<br/>sort by role name
+  %%> What it does:
+  %%> - reads recorded assignments, including their lifecycle status, failed step and error code
+  %%> - starts no Operation or Swamp run and contacts no Node, even when that Node is unreachable
+  %%> - changes no state; a repeat reads the current records again, with no skip outcome
+  GW-->>CLI: Role assignments
+  %%> Result:
+  %%> - an empty list succeeds, as does a list containing failed assignments
+  %%> - a refused read changes nothing; there is no partial mutation to recover

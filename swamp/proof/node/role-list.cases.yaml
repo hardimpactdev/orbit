@@ -1,0 +1,120 @@
+# Format: docs/reference/verification-cases.
+# Read-only command: no partial mutation or skip outcome belongs to this read.
+command: node:role:list
+chart: node/role-list
+target: app-dev
+sources: []
+baseline: [ufw, operations]
+
+uncovered:
+  http.404: "Needs a fixture that binds a guaranteed unused positive Node ID, to check an unknown Node without a concrete ID."
+  empty-list: "Needs a roleless-Node fixture with a bound ID, to check No roles. and an empty assignments array."
+  lifecycle-and-partial-failure: "Needs role-assignment fixtures for provisioning, removing and failed states, including a partially completed role write with known failure fields. They would prove listing succeeds without retrying or changing that write, and a repeated read preserves its failure details."
+  json-contract: "Needs record support for node:role:list assignments and positional Node IDs, including field, null and ordering assertions. It would check the documented schema, the same alphabetical order as the human table and equal assignment rows on repeat."
+  read-only-boundary: "Needs a role-record baseline provider and a transport/run audit to prove assignment state is unchanged and no Node contact or Swamp run occurs. Current cases check only unchanged UFW and Operations; the offline case checks Operations only."
+
+cases:
+  - id: recorded-roles
+    batch: fresh-fleet
+    covers: [main]
+    summary: Required arguments list the recorded active role with lifecycle and failure columns.
+    act:
+      - cli:
+          run: [node:role:list, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: [ID, ROLE, STATUS, FAILED STEP, ERROR CODE, app-dev, active, "—"]}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: repeat-read
+    batch: fresh-fleet
+    covers: [main]
+    summary: Repeating the read succeeds again without creating an Operation or changing the firewall.
+    stages:
+      - act:
+          - cli:
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [json, human]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
+      - act:
+          - cli:
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [json, human]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+        expect:
+          - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: alphabetical-role-order
+    batch: fresh-fleet
+    covers: [main]
+    summary: The Gateway Node's bootstrap roles appear in alphabetical rather than enum order.
+    fails_today: ListNodeRolesAction sorts by RoleName declaration order, putting vpn before swamp.
+    setup:
+      - cli:
+          run: [node:role:list, "${gateway.id}"]
+          forms: [human]
+          expect: {exit: 0, human: [gateway, swamp, vpn]}
+    act:
+      - cli:
+          run: [node:role:list, "${gateway.id}"]
+          tty: [{see: ROLE}, {see: gateway}, {see: swamp}, {see: vpn}]
+          expect: {exit: 0, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: invalid-node-id
+    batch: fresh-fleet
+    covers: [main]
+    summary: Zero is refused as a Node ID.
+    act:
+      - cli:
+          run: [node:role:list, "0"]
+          forms: [json, human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: noninteger-node-selector
+    batch: fresh-fleet
+    covers: [main]
+    summary: A registered name or decimal is refused rather than resolved through the Node list.
+    fails_today: NodeCommand resolves names; app-dev succeeds and a decimal reports node.not_found instead of node.id_invalid.
+    variants:
+      - {name: registered-name, selector: app-dev}
+      - {name: decimal, selector: "1.5"}
+    act:
+      - cli:
+          run: [node:role:list, "${selector}"]
+          forms: [json, human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}
+
+  - id: unreachable-node
+    batch: node-down
+    covers: [main]
+    summary: Recorded assignments remain readable with the target's agent and SSH stopped.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:role:list, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: [app-dev, active]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: access-required
+    batch: no-grant
+    covers: [main]
+    summary: A caller without a grant cannot list the target's assignments.
+    act:
+      - cli:
+          as: app-prod
+          run: [node:role:list, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [ufw, operations]}

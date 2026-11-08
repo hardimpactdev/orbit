@@ -2,6 +2,11 @@
 title: "orbit node:role:list"
 sidebarTitle: "node:role:list"
 description: "List the roles of one Node with their status and failed step."
+covers:
+  - apps/cli/app/Commands/Nodes/ListNodeRolesCommand.php
+  - apps/gateway/app/Actions/Nodes/ListNodeRolesAction.php
+  - apps/gateway/app/Data/Nodes/NodeRoleAssignmentData.php
+  - packages/php-sdk/src/Responses/Nodes/NodeRolesResponse.php
 ---
 
 ```bash
@@ -10,18 +15,30 @@ orbit node:role:list <node> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | See the [Node family selector rule](/cli/node) and [input modes](/reference/cli-ux#input-and-output-modes). |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the roles as JSON: `assignments`, each with `id`, `role`, `status`, `failed_step` and `error_code`, which are null when unset. |
+| `--json` | off | Use the [standard machine-output mode](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:role:list 7
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer. The caller needs an access grant to the Node (`node_access.required`), and an unknown Node is refused with `http.404`.
+The list has one row per role assignment, sorted by role name, with the columns ID, ROLE, STATUS, FAILED STEP and ERROR CODE. A Node without roles says `No roles.`. The JSON result contains `assignments` and `request_id`; each assignment has `id`, `role`, `status`, `failed_step` and `error_code`. Unset failure fields are null.
 
-The list shows what Orbit has recorded for the Node. It does not contact the Node, so it works while the Node is unreachable. It has one row per role assignment, sorted by role name, with the columns ID, ROLE, STATUS, FAILED STEP and ERROR CODE. A missing value shows `—`. A Node without roles says `No roles.`.
+A role's status is `provisioning`, `active`, `failed`, or `removing`. Failed assignments retain their failed step and error code; listing them still succeeds. For recovery, see [`node:role:add`](/cli/node/role-add) and [`node:role:remove`](/cli/node/role-remove).
 
-A role's status is `provisioning`, `active`, `failed`, or `removing`. A failed role keeps its failed step and error code. A `converge:` failure is retried with [`node:role:add`](/cli/node/role-add) and `--converge`. A `remove:` failure is retried by running [`node:role:remove`](/cli/node/role-remove) again. A `provisioning` or `removing` role is in progress until its claim goes stale.
+## How it works
+
+Orbit reads its recorded assignments without contacting the Node, so the command works while the Node is unreachable. It starts no Operation and changes no state, even if a role is in progress or failed. Repeating it reads the current records again; this is not a skipped action and has no skip reason code. A failed read leaves nothing to undo.
+
+<div className="flow-at" data-chart="node/role-list"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The supplied Node selector is not a positive integer. The CLI sends no role-list request. |
+| `node_access.required` | The caller has no access grant to the Node. |
+| `http.404` | The Node is unknown. |
