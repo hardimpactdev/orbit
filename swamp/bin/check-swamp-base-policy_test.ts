@@ -99,6 +99,7 @@ Deno.test("real frozen policy owns limits and dependencies", async () => {
 Deno.test("stale baseline evidence can be repaired without growing immutable source debt", async () => {
     await temporary(async (repo) => {
         await init(repo);
+        await write(repo + "/.gitignore", "__pycache__/\n");
         const swamp = repo + "/swamp";
         await copyPolicy(swamp);
         await write(
@@ -106,6 +107,11 @@ Deno.test("stale baseline evidence can be repaired without growing immutable sou
             '{"agent.status":"observer"}',
         );
         const source = swamp + "/extensions/behaviors/caller.ts";
+        const runner = swamp + "/bin/check-swamp-base-policy.py";
+        const runnerSource = await Deno.readTextFile(
+            script("check-swamp-base-policy.py"),
+        );
+        await write(runner, runnerSource);
         const current = 'deps.http("POST", "/api/v1/current", {});\n';
         await write(source, current);
         const ledger = swamp + "/config/swamp-shape-baseline.json";
@@ -133,7 +139,7 @@ Deno.test("stale baseline evidence can be repaired without growing immutable sou
             run(Deno.execPath(), [
                 "run",
                 "-A",
-                script("check-swamp-shape.ts"),
+                swamp + "/bin/check-swamp-shape.ts",
                 "--base",
                 base,
             ], { cwd: swamp });
@@ -150,6 +156,46 @@ Deno.test("stale baseline evidence can be repaired without growing immutable sou
         assertEquals(repaired.code, 0, repaired.stdout + repaired.stderr);
         const policy = await frozen();
         assertEquals(policy.code, 0, policy.stdout + policy.stderr);
+        assertStringIncludes(policy.stdout, "baseline_repair=true");
+        const checker = swamp + "/bin/check-swamp-shape.ts";
+        const checkerSource = await Deno.readTextFile(checker);
+        await write(
+            checker,
+            checkerSource.replace(
+                "production(file) &&",
+                '!file.startsWith("bin/check-swamp-base-policy") && production(file) &&',
+            ),
+        );
+        await write(
+            runner,
+            runnerSource.replace("import tempfile\n", "import tempfile\nimport time\n") +
+                "\ntime.sleep(1)\n",
+        );
+        await commit(repo, "gate-only debt cannot hide behind a stale-label repair");
+        assertEquals(
+            await git(repo, "diff", "--name-only", base, "HEAD"),
+            [
+                "swamp/bin/check-swamp-base-policy.py",
+                "swamp/bin/check-swamp-shape.ts",
+                "swamp/config/swamp-shape-baseline.json",
+            ].join("\n"),
+        );
+        const hidden = await shape();
+        assertEquals(hidden.code, 0, hidden.stdout + hidden.stderr);
+        const debt = await frozen();
+        assert(debt.code !== 0, debt.stdout + debt.stderr);
+        assertStringIncludes(debt.stderr, "custom-control 1 exceeds 0");
+        await write(runner, runnerSource);
+        await write(checker, checkerSource);
+        for (const invalid of [
+            { ...baseline.entries[0], count: 2 },
+            { ...baseline.entries[0], evidence: ["POST /api/v1/another"] },
+        ]) {
+            await write(ledger, JSON.stringify({ schema: 1, entries: [invalid] }));
+            await commit(repo, "bootstrap cannot change counts or invent labels");
+            assert((await frozen()).code !== 0);
+        }
+        await write(ledger, JSON.stringify(baseline));
         for (
             const changed of [
                 current + current,
