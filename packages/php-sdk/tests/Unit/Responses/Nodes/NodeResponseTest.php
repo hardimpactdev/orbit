@@ -8,6 +8,47 @@ use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
+it('preserves every typed role assignment and its recorded failure in both Node response forms', function (string $failedStep, string $errorCode): void {
+    $assignments = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $assignments[] = [
+            'id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
+            'failed_step' => $status === 'failed' ? $failedStep : null,
+            'error_code' => $status === 'failed' ? $errorCode : null,
+        ];
+    }
+    $data = node_response_gateway_data(['assignments' => $assignments]);
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $node = NodeResponse::fromGatewayData($data, $requestId);
+    $nodes = new NodesResponse([$node], $requestId);
+
+    expect($node->assignments)->toHaveCount(4)
+        ->and($node->assignments[2]->failedStep)->toBe($failedStep)
+        ->and($node->assignments[2]->errorCode)->toBe($errorCode)
+        ->and($node->assignments[2]->requestId)->toBe($requestId)
+        ->and($node->toArray()['assignments'])->toBe($assignments)
+        ->and($nodes->toArray()['nodes'][0]['assignments'])->toBe($assignments);
+    expect($node->toArray())->not->toHaveKey('role_assignments');
+})->with([
+    'native role check' => ['converge:Check the role', 'packages.failed'],
+    'recorded Ubuntu requirement' => ['converge:Require supported Ubuntu', 'role.os_unsupported'],
+]);
+
+it('normalizes non-assignment values to the canonical empty assignment list', function (mixed $assignments): void {
+    $node = NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => $assignments]), 'request-id');
+
+    expect($node->assignments)->toBe([])
+        ->and($node->toArray()['assignments'])->toBe([]);
+})->with([
+    'scalar' => 'invalid',
+    'object instead of list' => [['role' => 'app-dev']],
+    'scalar item' => [[42]],
+]);
+
+it('rejects malformed nested role assignments', function (): void {
+    NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => [['id' => 0]]]), 'request-id');
+})->throws(GatewayApiException::class);
+
 it('preserves the original positional constructor contract', function (): void {
     $response = new NodeResponse(
         4,
