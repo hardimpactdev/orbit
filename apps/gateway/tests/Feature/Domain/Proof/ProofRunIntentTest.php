@@ -440,7 +440,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM outside the CI/refresh reserve.')
+            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM within the task VM limit and outside the CI/refresh reserve.')
             ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
@@ -969,8 +969,8 @@ describe('a proof that cannot be placed while a report-only proof is on its way 
     });
 });
 
-/** Two shared hosts at twelve budget units, with all six public Large places occupied. */
-function proofReservedFleet(object $source): array
+/** Two shared hosts at twelve budget units, filled to the reserve or the explicit task count. */
+function proofReservedFleet(object $source, ?int $taskMaxVms = null): array
 {
     $copies = 'dddddddddddd0000000000000000000000000000';
     $base = proofHostWithCopies($source, $copies, maxVms: 12);
@@ -985,11 +985,13 @@ function proofReservedFleet(object $source): array
         'status' => OperationStatus::Succeeded, 'input' => ['commit' => $copies], 'result' => ['refreshed' => true, 'host_node_id' => $shark->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
     $settings = app(TaskVmSettings::class);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
-        [...$settings->hosts, new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB')], '/pi', str_repeat('a', 64), ['gpt-6']));
+        [new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms),
+            new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: $taskMaxVms)], '/pi', str_repeat('a', 64), ['gpt-6']));
     foreach ([$beast, $shark] as $index => $host) {
-        foreach ([2, 3, 4] as $number) {
+        foreach (($taskMaxVms === null ? [2, 3, 4] : [2, 3]) as $number) {
             TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => $number, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
-                'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.'.(140 + $index * 4 + $number)]);
+                'group_id' => Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task claim', 'brief' => 'Work', 'status' => TaskGroupStatus::Todo])->id,
+                'name' => $host->name.'-tvm-'.$number, 'state' => TaskVmState::Parked, 'wireguard_ip' => '10.44.0.'.(140 + $index * 4 + $number)]);
         }
     }
     $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
@@ -1017,8 +1019,8 @@ function proofHttpQueued(Node $caller, bool $reportOnly = false, ?string $key = 
 }
 
 describe('authenticated proof capacity at the HTTP boundary', function (): void {
-    it('persists CI eligibility before queueing and uses the reserve after the request ends', function (): void {
-        [$base, $ci] = proofReservedFleet(proofSource());
+    it('persists CI eligibility before queueing and uses proof capacity after the request ends', function (?int $taskMaxVms): void {
+        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
         try {
             $proof = proofHttpQueued($ci, reportOnly: true);
             Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
@@ -1035,10 +1037,10 @@ describe('authenticated proof capacity at the HTTP boundary', function (): void 
         } finally {
             Process::run(['rm', '-rf', $base]);
         }
-    });
+    })->with(['shared reserve' => null, 'two-task limit' => 2]);
 
-    it('refuses operator and task-node proofs outside the reserves regardless of report-only mode', function (string $identity, bool $reportOnly): void {
-        [$base, , $taskNode, $operator] = proofReservedFleet(proofSource());
+    it('refuses operator and task-node proofs at task capacity regardless of report-only mode', function (string $identity, bool $reportOnly, ?int $taskMaxVms): void {
+        [$base, , $taskNode, $operator] = proofReservedFleet(proofSource(), $taskMaxVms);
         try {
             $taskNode->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
             $caller = $identity === 'operator' ? $operator : $taskNode;
@@ -1050,12 +1052,12 @@ describe('authenticated proof capacity at the HTTP boundary', function (): void 
                 $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
                 app(ProofRunIntent::class)->admit($proof->id);
             }
-            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe(6);
+            expect($proof->refresh()->error_code)->toBe('tasks.capacity_unavailable')->and(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
             expect($proof->input)->toMatchArray(['caller_node_id' => $caller->id, 'ci_reserve' => false]);
         } finally {
             Process::run(['rm', '-rf', $base]);
         }
-    })->with([['operator', false], ['operator', true], ['task', false], ['task', true]]);
+    })->with([['operator', false, null], ['operator', true, null], ['task', false, null], ['task', true, null], ['operator', false, 2], ['task', false, 2]]);
 
     it('never cancels authenticated CI when an operator proof is refused', function (): void {
         [$base, $ci, , $operator] = proofReservedFleet(proofSource());
@@ -1090,8 +1092,8 @@ describe('authenticated proof capacity at the HTTP boundary', function (): void 
         }
     });
 
-    it('does not let a task start take a reserve even when its caller runs CI', function (): void {
-        [$base, $ci] = proofReservedFleet(proofSource());
+    it('refuses another task start at the task limit even when its caller runs CI', function (?int $taskMaxVms): void {
+        [$base, $ci] = proofReservedFleet(proofSource(), $taskMaxVms);
         try {
             app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
             {
@@ -1103,11 +1105,11 @@ describe('authenticated proof capacity at the HTTP boundary', function (): void 
             $group = Task::query()->create(['project_id' => config('proof.project'), 'title' => 'Task', 'brief' => 'Build it', 'status' => TaskGroupStatus::Todo]);
             $this->withServerVariables(['REMOTE_ADDR' => $ci->wireguard_ip])->withHeader('Idempotency-Key', fake()->uuid())
                 ->postJson('/api/v1/tasks/'.$group->id.'/start')->assertConflict()->assertJsonPath('error.code', 'tasks.capacity_unavailable');
-            expect(TaskVm::query()->count())->toBe(6);
+            expect(TaskVm::query()->count())->toBe($taskMaxVms === null ? 6 : 4);
         } finally {
             Process::run(['rm', '-rf', $base]);
         }
-    });
+    })->with(['shared reserve' => null, 'two-task limit' => 2]);
 });
 
 it('does not grant CI eligibility from a name, inactive role, or request flag', function (string $roleState): void {

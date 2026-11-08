@@ -27,6 +27,7 @@ final class NodeTaskVmsData extends Data
         public array $operator_owned = [],
         public bool $ci_only = false,
         public string $pool_size = '640GiB',
+        public ?int $task_max_vms = null,
     ) {}
 
     /** @param array<string, mixed> $value */
@@ -39,7 +40,7 @@ final class NodeTaskVmsData extends Data
             cidr: $host->cidr, max_vms: $host->maxVms, project: $host->project,
             network: $host->network, pool: $host->pool, image_alias: $host->imageAlias,
             zfs_dataset: $host->zfsDataset, cpus: $host->cpus, memory: $host->memory,
-            disk: $host->disk, operator_owned: $host->operatorOwned, ci_only: $host->ciOnly, pool_size: $host->poolSize,
+            disk: $host->disk, operator_owned: $host->operatorOwned, ci_only: $host->ciOnly, pool_size: $host->poolSize, task_max_vms: $host->taskMaxVms,
         );
     }
 }

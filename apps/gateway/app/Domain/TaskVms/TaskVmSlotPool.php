@@ -63,7 +63,7 @@ final readonly class TaskVmSlotPool
         $room = array_diff_key($room, $skipped);
         if ($room === []) {
             $names = Node::query()->whereKey(array_keys($skipped))->get()->mapWithKeys(static fn (Node $node): array => [$node->id => $node->name])->all();
-            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: no host has room for another task VM'.($proof || $group === null ? ' (including the shared CI/refresh reserve).' : ' outside the CI/refresh reserve.')
+            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: no host has room for another task VM'.($proof || $group === null ? ' (including the shared CI/refresh reserve).' : ' within the task VM limit and outside the CI/refresh reserve.')
                 .($names === [] ? '' : self::staleImages($names)));
         }
         $node = Node::query()->findOrFail(array_key_first($room));

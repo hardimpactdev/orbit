@@ -45,6 +45,8 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
+Set `task_vms.task_max_vms` through `node:update --task-vms` to cap task-work VM claims on a host. Parked claims count; authenticated CI and base refresh proofs are exempt. See [Task VM fields](/reference/node-settings#task-vm-fields) for the count and resource limits.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
