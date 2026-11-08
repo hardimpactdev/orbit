@@ -1,0 +1,123 @@
+{
+  "base": {
+    "command": "demo:run",
+    "target": "app-dev",
+    "sources": [
+      "gateway"
+    ],
+    "baseline": [
+      "operations"
+    ],
+    "vars": {
+      "args": [
+        "--json"
+      ],
+      "unused": [
+        "unused"
+      ]
+    },
+    "fixtures": {
+      "inner": {
+        "steps": [
+          {
+            "cli": {
+              "run": [
+                "demo:run"
+              ]
+            }
+          }
+        ]
+      },
+      "outer": {
+        "steps": [
+          {
+            "use": "inner"
+          }
+        ]
+      },
+      "unused": {
+        "steps": []
+      }
+    },
+    "cases": [
+      {
+        "id": "a",
+        "batch": "fresh",
+        "setup": [
+          {
+            "use": "outer"
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "batch": "fresh",
+        "act": [
+          {
+            "cli": {
+              "run": [
+                "demo:run",
+                "@args"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "c",
+        "batch": "other",
+        "act": [
+          {
+            "cli": {
+              "run": [
+                "demo:run"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "v",
+        "batch": "fresh",
+        "act": [
+          {
+            "use": {
+              "fixture": "inner"
+            }
+          }
+        ],
+        "variants": [
+          {
+            "name": "x",
+            "port": 80
+          },
+          {
+            "name": "y",
+            "port": 81
+          }
+        ]
+      }
+    ]
+  },
+  "tests": [
+    {"name": "changed case runs alone","after": {"cases": [{"id": "a","batch": "fresh","setup": [{"use": "outer"}],"summary": "Changed"},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "inner"}}],"variants": [{"name": "x","port": 80},{"name": "y","port": 81}]}]},"expected": {"a": "changed"}},
+    {"name": "added case runs alone","after": {"cases": [{"id": "a","batch": "fresh","setup": [{"use": "outer"}]},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "inner"}}],"variants": [{"name": "x","port": 80},{"name": "y","port": 81}]},{"id": "new","batch": "fresh"}]},"expected": {"new": "added"}},
+    {"name": "deleted case runs nothing","after": {"cases": [{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "inner"}}],"variants": [{"name": "x","port": 80},{"name": "y","port": 81}]}]},"expected": {}},
+    {"name": "command code runs every case","after": {},"expected": {"a": "command code changed","b": "command code changed","c": "command code changed","v[x]": "command code changed","v[y]": "command code changed"},"code_changed": true},
+    {"name": "changed nested fixture runs its users","after": {"fixtures": {"inner": {"steps": [{"cli": {"run": ["demo:run","--json"]}}]},"outer": {"steps": [{"use": "inner"}]},"unused": {"steps": []}}},"expected": {"a": "uses changed fixture","v[x]": "uses changed fixture","v[y]": "uses changed fixture"}},
+    {"name": "unused fixture runs nothing","after": {"fixtures": {"inner": {"steps": [{"cli": {"run": ["demo:run"]}}]},"outer": {"steps": [{"use": "inner"}]},"unused": {"steps": [],"summary": "Changed"}}},"expected": {}},
+    {"name": "changed var runs its user","after": {"vars": {"args": ["--json","--quiet"],"unused": ["unused"]}},"expected": {"b": "uses changed var"}},
+    {"name": "unused var runs nothing","after": {"vars": {"args": ["--json"],"unused": ["changed"]}},"expected": {}},
+    {"name": "nested var runs its user","after": {"vars": {"args": ["@ports"],"ports": ["--quiet"]}},"expected": {"b": "uses changed var"},"before": {"vars": {"args": ["@ports"],"ports": ["--json"]}}},
+    {"name": "variant change runs all variants","after": {"cases": [{"id": "a","batch": "fresh","setup": [{"use": "outer"}]},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "inner"}}],"variants": [{"name": "x","port": 443},{"name": "y","port": 81}]}]},"expected": {"v[x]": "changed","v[y]": "changed"}},
+    {"name": "changed batch setup runs its users","after": {},"expected": {"a": "batch setup changed","b": "batch setup changed","v[x]": "batch setup changed","v[y]": "batch setup changed"},"before_batches": {"fresh": {},"other": {}},"after_batches": {"fresh": {"setup": [{"ipv6_addresses": {"nodes": ["gateway"]}}]},"other": {}}},
+    {"name": "unused batch setup runs nothing","after": {},"expected": {},"before_batches": {"unused": {}},"after_batches": {"unused": {"setup": [{"ipv6_addresses": {"nodes": ["gateway"]}}]}}},
+    {"name": "batch summary runs nothing","after": {},"expected": {},"before_batches": {"fresh": {"summary": "Old"}},"after_batches": {"fresh": {"summary": "New"}}},
+    {"name": "fleet settings run all users","after": {"target": "app-prod"},"expected": {"a": "file settings changed","b": "file settings changed","c": "file settings changed","v[x]": "file settings changed","v[y]": "file settings changed"}},
+    {"name": "uncovered and chart metadata run nothing","after": {"uncovered": {"gap": "More detail"},"chart": "changed"},"expected": {}},
+    {"name": "reordered cases run nothing","after": {"cases": [{"id": "v","batch": "fresh","act": [{"use": {"fixture": "inner"}}],"variants": [{"name": "x","port": 80},{"name": "y","port": 81}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "a","batch": "fresh","setup": [{"use": "outer"}]}]},"expected": {}},
+    {"name": "new cases file runs every case","after": {},"expected": {"a": "added","b": "added","c": "added","v[x]": "added","v[y]": "added"},"new_file": true},
+    {"name": "scalar types differ","after": {"vars": {"args": [true]}},"expected": {"b": "uses changed var"},"before": {"vars": {"args": [1]}}},
+    {"name": "variant fixture names resolve","after": {"fixtures": {"inner": {"steps": [{"cli": {"run": ["demo:run"]}}],"summary": "Changed"},"outer": {"steps": [{"use": "inner"}]},"unused": {"steps": []}},"cases": [{"id": "a","batch": "fresh","setup": [{"use": "outer"}]},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "${fixture}"}}],"variants": [{"name": "x","fixture": "inner"},{"name": "y","fixture": "inner"}]}]},"expected": {"a": "uses changed fixture","v[x]": "uses changed fixture","v[y]": "uses changed fixture"},"before": {"cases": [{"id": "a","batch": "fresh","setup": [{"use": "outer"}]},{"id": "b","batch": "fresh","act": [{"cli": {"run": ["demo:run","@args"]}}]},{"id": "c","batch": "other","act": [{"cli": {"run": ["demo:run"]}}]},{"id": "v","batch": "fresh","act": [{"use": {"fixture": "${fixture}"}}],"variants": [{"name": "x","fixture": "inner"},{"name": "y","fixture": "inner"}]}]}}
+  ]
+}

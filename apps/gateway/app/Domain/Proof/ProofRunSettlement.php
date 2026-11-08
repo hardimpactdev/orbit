@@ -91,6 +91,25 @@ final readonly class ProofRunSettlement
                 }
             }
 
+            $reasons = [];
+            $selections = $input['cases'] ?? [];
+            foreach (is_array($selections) ? $selections : [] as $selection) {
+                $selection = ValidatedData::object($selection);
+                $command = ValidatedData::string($selection['command']);
+                $reasons[$command] = ValidatedData::stringMap($selection['reasons'] ?? []);
+            }
+            foreach ($cases as &$case) {
+                $command = ValidatedData::string($case['command'] ?? '');
+                $id = ValidatedData::string($case['case'] ?? '');
+                if (str_ends_with($id, '@merge-base')) {
+                    $id = substr($id, 0, -11);
+                }
+                if (isset($reasons[$command][$id])) {
+                    $case['reason'] = $reasons[$command][$id];
+                }
+            }
+            unset($case);
+
             $this->store->change($proof, [
                 'status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
                 'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : ($workspace !== [] ? ProofCommandProjection::WorkspaceCommitMismatch : ($interrupted ? self::AdmissionInterrupted : 'proof.run_failed'))),

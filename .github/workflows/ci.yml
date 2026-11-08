@@ -419,7 +419,7 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
-          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --swamp-base --github-output "$GITHUB_OUTPUT"
+          python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --swamp-base --github-output "$GITHUB_OUTPUT"
 
   proof:
     name: Proof harness

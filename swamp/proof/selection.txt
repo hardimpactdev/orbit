@@ -152,7 +152,7 @@ packages/php-sdk/src/Responses/Operations/**               none: shared code; a 
 
 # The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change
-swamp/proof/batches.yaml                         none: shared code; a proof runs only when a command's own code or cases change
+swamp/proof/batches.yaml                         none: batch setup changes select their users by definition
 swamp/proof/runner/**                            none: shared code; a proof runs only when a command's own code or cases change
 swamp/proof/runner/tests/**                      skip
 tools/swamp-proof-guest/**                       none: shared code; a proof runs only when a command's own code or cases change

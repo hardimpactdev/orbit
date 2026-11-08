@@ -39,7 +39,7 @@ Orbit proves only code that it can trust. The commit must be the head of a branc
 
 ## Which cases run
 
-Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. The runner runs the cases file `swamp/proof/<family>/<command>.cases.yaml` of each of those commands. `--all` runs every case. A change to the selection list, or a file list that GitHub returns incomplete, also runs every case. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
+Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. A code change runs the command’s whole cases file. A change only to its cases selects added or changed entries and users of changed fixtures, vars or batch setup. Deleted entries select nothing. `--all` and an incomplete file list run every case. A selection-list change alone selects nothing. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
 
 When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a cases file, are listed as uncovered in the result and do not fail the run.
 
@@ -65,7 +65,7 @@ Orbit reads the full case reports, checks the expected case identities and merge
 
 Each selected case ends `passed`, `failed` or `unrun`. A case that exceeds the budget is `failed`. A case is `unrun` when its setup could not start or the run stopped before it. Neither `failed` nor `unrun` counts as a pass. If the fleet never becomes ready, every selected case is `unrun`.
 
-The result names the commit, each case with its command, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |

@@ -55,8 +55,8 @@ def evaluate(code, output):
     raw_cases = result.get('cases')
     cases = [case for case in raw_cases or [] if isinstance(case, dict)] if isinstance(raw_cases, list) else []
     well_formed = isinstance(raw_cases, list) and len(cases) == len(raw_cases)
-    lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
-    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
+    lines = ['| Command | Case | Reason | Verdict |', '| --- | --- | --- | --- |']
+    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('reason') or ''} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')

@@ -14,15 +14,15 @@ sequenceDiagram
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
-  GW->>GH: Read cases at merge base and head
+  GW->>GH: Read cases at<br/>merge base and head
   %%> Read the selected command files and batch definitions at both commits. A command code change selects its whole cases file. Empty or malformed selected files fail.
-  GW->>GW: Compare case definitions by id
+  GW->>GW: Compare case<br/>definitions by id
   %%> For cases-only changes, select added and changed entries and every variant of each. Deleted entries select nothing. Ignore YAML formatting and comments.
-  GW->>GW: Include users of changed dependencies
+  GW->>GW: Include users of<br/>changed dependencies
   %%> Follow fixture uses and file vars, including nested uses. A changed batch setup selects its users; changed fleet settings select all users. Keep the selected cases in their batches with the required setup.
-  GW->>GW: Record case ids and reasons
+  GW->>GW: Record case ids<br/>and reasons
   %%> Gateway and CI planning use the same rules and shared test fixtures. Report changed, added, uses changed fixture, uses changed var, batch setup changed or command code changed for each selected case. Zero selected cases succeeds without a VM.
-  GW->>GW: Plan selected cases in batches
+  GW->>GW: Plan selected cases<br/>in batches
   %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
   %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
@@ -41,7 +41,7 @@ sequenceDiagram
     SW->>VM: Read the command batches
     SW->>SW: Select the assigned batch
     SW->>VM: Restore the base snapshot
-    SW->>VM: Run the selected cases with batch setup
+    SW->>VM: Run selected cases<br/>with batch setup
     SW->>VM: Prove new cases fail
     VM-->>SW: Verdict lines
   end

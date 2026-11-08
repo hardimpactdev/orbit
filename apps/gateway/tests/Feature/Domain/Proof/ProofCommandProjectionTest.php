@@ -475,7 +475,8 @@ it('merges full shard reports beyond the history tail, requires every case, and 
         $ended['result']['report'] = implode("\n", $lines);
         // Native history keeps only a tail. The fixed capture supplies the full report independently.
         $ended['result']['steps']['Report'] = ['status' => 'succeeded', 'stdout' => substr($ended['result']['report'], -4096)];
-        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow', 'firewall:deny'], 'batches' => $batches]]);
+        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow', 'firewall:deny'], 'batches' => $batches,
+            'cases' => array_map(static fn (array $batch): array => ['command' => $batch['command'], 'file' => $batch['file'], 'reasons' => array_fill_keys($batch['cases'], 'uses changed fixture')], $batches)]]);
         app(ProofCommandProjection::class)->apply($run, $ended);
         if ($index === 0) {
             expect($proof->refresh()->status)->toBe(OperationStatus::Running);
@@ -483,6 +484,7 @@ it('merges full shard reports beyond the history tail, requires every case, and 
     }
     expect($proof->refresh()->status)->toBe($omit ? OperationStatus::Failed : OperationStatus::Succeeded)
         ->and($proof->result['cases'])->toHaveCount(240)
+        ->and(array_unique(array_column($proof->result['cases'], 'reason')))->toBe(['uses changed fixture'])
         ->and($firstGroup->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($secondGroup->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($firstVm->refresh()->state)->toBe(TaskVmState::Destroyed)

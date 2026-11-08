@@ -30,7 +30,14 @@ class EvaluateTest(unittest.TestCase):
             with self.subTest(wrapper=wrapper):
                 passed, lines = proof.evaluate(0, document('passed', 'passed', wrapper=wrapper))
                 self.assertTrue(passed)
-                self.assertIn('| firewall:allow | case-0 | passed |', lines)
+                self.assertIn('| firewall:allow | case-0 |  | passed |', lines)
+
+    def test_the_ci_summary_names_the_case_and_selection_reason(self):
+        output = json.dumps({'result': {'outcome': 'passed', 'selected_commands': ['demo:run'],
+                                       'cases': [{'command': 'demo:run', 'case': 'changed-case', 'reason': 'uses changed fixture', 'verdict': 'passed'}]}})
+        passed, lines = proof.evaluate(0, output)
+        self.assertTrue(passed)
+        self.assertIn('| demo:run | changed-case | uses changed fixture | passed |', lines)
 
     def test_any_other_verdict_fails(self):
         for verdict in ('failed', 'unrun', 'skipped', ''):
@@ -67,7 +74,7 @@ class EvaluateTest(unittest.TestCase):
         output = json.dumps({'result': {'outcome': 'passed', 'cases': [{'command': 'firewall:allow', 'program': 'swamp/proof/firewall/allow.cases.yaml', 'verdict': 'passed'}]}})
         passed, lines = proof.evaluate(0, output)
         self.assertTrue(passed)
-        self.assertIn('| firewall:allow | allow.cases.yaml | passed |', lines)
+        self.assertIn('| firewall:allow | allow.cases.yaml |  | passed |', lines)
 
     def test_nothing_to_prove_passes_and_lists_uncovered_paths(self):
         output = json.dumps({'result': {'outcome': 'nothing_to_prove', 'cases': [],

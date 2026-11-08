@@ -93,7 +93,7 @@ jobs:
         run: |
           printf '%s\n' "$PLAN"
         env:
-          PLAN: '${{ steps["Read the runner plan"].outputs.stdout.trim().split("\n").filter(l, inputs.intent.?batch.orValue("") == "" || l.startsWith(inputs.intent.?batch.orValue("") + " ")).join("\n") }}'
+          PLAN: '${{ steps["Read the runner plan"].outputs.stdout.trim().split("\n").filter(l, inputs.intent.?batch.orValue("") == "" || l.startsWith(inputs.intent.?batch.orValue("") + " ")).map(l, l.split(" ", 3)).map(p, [p[0], p[1], p[2].split(" ").filter(c, !has(inputs.intent.case_ids) || c in inputs.intent.case_ids).join(" ")]).filter(p, p[2] != "").map(p, p.join(" ")).join("\n") }}'
 # Before the first batch (3-proof.mmd): the fleet is made ready for the cases. A step that fails stops the run, and every case is unrun with cause infrastructure.
 - name: prepare
   labels: {role: swamp}

@@ -33,6 +33,8 @@ use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
 use Throwable;
 
 /**
@@ -118,7 +120,7 @@ final readonly class ProofRunIntent
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
             // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
-            $batches = ($intent['ci_pool'] ?? false) === true ? app(ProofBatchPlan::class)->read($commit, $selection->cases) : [];
+            $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
             $fresh = $this->freshHosts($selection->mergeBase);
             app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent, $batches): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
@@ -136,19 +138,19 @@ final readonly class ProofRunIntent
                     ->where('input->ci_pool', true)->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier CI proof.');
                 }
-                $shards = $ci ? ProofBatchPlan::split($batches, app(TaskVmSlotPool::class)->freeCiPlaces()) : array_map(static fn (array $case): array => [$case], $selection->cases);
+                $shards = $ci ? ProofBatchPlan::split($batches, app(TaskVmSlotPool::class)->freeCiPlaces()) : array_map(static fn (array $case): array => array_values(array_filter($batches, static fn (array $batch): bool => $batch['command'] === $case['command'])), $selection->cases);
                 $runs = [];
                 foreach ($shards as $assignments) {
                     $case = $assignments[0];
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance, $ci ? ProofBatchPlan::stored($assignments) : []), 'proof-run', null,
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance, ProofBatchPlan::stored($assignments)), 'proof-run', null,
                         ciPool: ($intent['ci_pool'] ?? false) === true, capacityRequest: ['proof_operation_id' => $proof->id, 'base' => $selection->mergeBase, 'command' => $case['command'], 'file' => $case['file']]));
-                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, ...($ci ? ['assignments' => $assignments] : [])];
+                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, 'assignments' => $assignments];
                 }
 
                 // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, ...($ci ? ['batches' => $batches] : [])], 'current_step' => null]);
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'current_step' => null]);
 
                 return $runs;
             }));
@@ -303,6 +305,57 @@ final readonly class ProofRunIntent
             throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
         }
 
-        return ProofSelection::select($list, $changes, $all, $casesFiles);
+        $selection = ProofSelection::select($list, $changes, $all, $casesFiles);
+        try {
+            $read = function (string $sha, string $path): ?array {
+                $text = $this->source->file($sha, $path);
+                if ($text === null) {
+                    return null;
+                }
+                $value = Yaml::parse($text);
+                if (! is_array($value) || array_is_list($value)) {
+                    throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML: '.$path.'.', 409);
+                }
+
+                return ValidatedData::object($value);
+            };
+            $batchPath = 'swamp/proof/batches.yaml';
+            $batchChanged = in_array($batchPath, $changes->paths(), true);
+            $candidates = $selection->cases;
+            if ($batchChanged) {
+                foreach (array_diff($casesFiles, $selection->files()) as $file) {
+                    $spec = $read($commit, $file);
+                    $candidates[] = ['command' => ValidatedData::string($spec['command'] ?? null), 'file' => $file];
+                }
+            }
+            if ($candidates === []) {
+                return $selection;
+            }
+            $beforeBatches = ValidatedData::object($read($changes->mergeBase, $batchPath)['batches'] ?? []);
+            $afterBatches = ValidatedData::object($read($commit, $batchPath)['batches'] ?? []);
+            $rules = $list === null ? null : ProofSelectionList::parse($list);
+            $selected = [];
+            foreach ($candidates as $candidate) {
+                $codeChanged = $selection->everythingBecause !== null || array_any($changes->paths(), static function (string $path) use ($rules, $candidate, $batchPath): bool {
+                    $rule = $rules?->match($path);
+
+                    return $path !== $candidate['file'] && $path !== $batchPath && $rule?->kind === ProofRuleKind::Commands && in_array($candidate['command'], $rule->commands, true);
+                });
+                $head = $read($commit, $candidate['file']);
+                if ($head === null || ($head['command'] ?? null) !== $candidate['command']) {
+                    throw new ResourceOperationException('proof.selection_invalid', 'Selected command has no valid cases: '.$candidate['command'].'.', 409);
+                }
+                $ids = ProofCaseSelection::select($read($changes->mergeBase, $candidate['file']), $head, $codeChanged, $beforeBatches, $afterBatches);
+                if ($ids !== []) {
+                    $selected[] = [...$candidate, 'only' => array_keys($ids), 'reasons' => $ids];
+                }
+            }
+
+            return new ProofSelectionResult($selected, $selection->uncovered, $selection->everythingBecause, $selection->mergeBase);
+        } catch (ParseException) {
+            throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML.', 409);
+        } catch (GitHubApiException) {
+            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
+        }
     }
 }

@@ -35,6 +35,8 @@ The review records enough evidence for another maintainer to assess the result.
 
 Store detailed logs in CI artifacts or in shared evidence outside the checkout, and link them from the review. Share only sanitized records. When no machines are available, the reviewer returns code findings and marks the Incus review as pending. For documentation and tooling changes, verify the behavior that the change affects.
 
+CI compares proof case definitions at the merge base and head before starting the proof job. It uses the same selection rules as the Gateway. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
+
 ## After review
 
 Address the blocking findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The final review must cover the head that the gate reads. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci). After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.

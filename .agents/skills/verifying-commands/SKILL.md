@@ -41,7 +41,7 @@ Keep each protocol's bound firewall identity and select the placement anchor for
 
 ## CI
 
-Run the whole affected proof, including commands that consume a changed shared workflow, extension or role: list them in `swamp/proof/selection.txt` ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
+Run the cases selected by `swamp/proof/selection.txt` and definition comparison ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Command code selects the whole file. Cases-only changes select changed or added entries and users of changed fixtures, vars or batch setup. Shared code selects nothing by itself. Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
 
 ## Report
 
