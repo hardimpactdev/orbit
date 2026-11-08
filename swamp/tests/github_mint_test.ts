@@ -59,7 +59,7 @@ Deno.test("every mint step names a purpose the Gateway issues and the run it bel
             }
         }
     }
-    assert(calls >= 7, `expected the seven task steps to mint, found ${calls}`);
+    assert(calls >= 6, `expected the six task steps to mint, found ${calls}`);
 });
 
 /** The jobs that must have run before `job`. */

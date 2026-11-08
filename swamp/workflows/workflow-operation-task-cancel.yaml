@@ -1,6 +1,6 @@
 id: 8ba8f6c9-0a5e-44da-9710-4bde40935894
 name: operation-task-cancel
-description: End one task group on 209 (docs/cli/tasks/cancel.mmd); push approved work, then release its task VM, which deletes the VM, its seed clone, its hub peer and its Node.
+description: End one task group on 209 (docs/cli/tasks/cancel.mmd); release its task VM, which deletes the VM, its seed clone, its hub peer and its Node. Origin already has the approved work.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -13,8 +13,6 @@ inputs:
       type: integer
       minimum: 1
     kind: {type: string, enum: [tasks.cancel, tasks.maintenance_finish]}
-    # The root run of the Operation, passed by a parent run (the proof run); a run the Gateway starts is the root.
-    run_id: {type: string, pattern: '^[a-f0-9-]{36}$'}
     intent:
       type: object
     execution_secrets: {type: object, additionalProperties: false}
@@ -30,28 +28,11 @@ jobs:
 - name: cancel
   labels: {role: swamp}
   steps:
-  - name: Push approved work
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.push == null }}
-    task:
-      type: workflow
-      workflowIdOrName: task-approved-push
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: '${{ has(inputs.run_id) ? inputs.run_id : run.id }}'
-        intent: '${{ inputs.intent.push == null ? {} : inputs.intent.push }}'
-        execution_secrets: '${{ inputs.intent.push == null ? {} : {"github_token": inputs.intent.push.github_token} }}'
   # The VM and its seed clone are deleted and its hub peer is removed; the Gateway then deletes its Node.
-  # A push that failed keeps the work on the slot: the release waits for a push that passed or did not run.
   - name: Release the slot
     labels: {role: swamp}
     writes: true
     guard: ${{ inputs.intent.release == null }}
-    dependsOn:
-    - step: Push approved work
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-slot-release
@@ -67,5 +48,5 @@ jobs:
   steps:
   - name: Check the end
     labels: {role: swamp}
-    task: {type: assert, expr: '(inputs.intent.push == null || steps["Push approved work"].status == "succeeded") && (inputs.intent.release == null || steps["Release the slot"].status == "succeeded")',
-      severity: high, message: The approved work was not pushed, or the task VM was not released.}
+    task: {type: assert, expr: 'inputs.intent.release == null || steps["Release the slot"].status == "succeeded"',
+      severity: high, message: The task VM was not released.}
