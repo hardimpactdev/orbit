@@ -20,10 +20,6 @@ final readonly class ShowTaskGroupAction
 
         $group->loadMissing(['project', 'tasks', 'taskable']);
 
-        if (! $group->groupStatus()->isActive()) {
-            return $group;
-        }
-
         return $this->metrics->refresh($group);
     }
 }

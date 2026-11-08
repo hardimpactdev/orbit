@@ -32,7 +32,7 @@ CLEANUP_SECONDS = 60
 REPORT_SECONDS = 65
 # The Gateway counts an agent as offline after 15 s without an event.
 OFFLINE_SECONDS = 20
-CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human'}
+CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human', 'steps'}
 LIST_ROWS = {'firewall:list': 'rules'}
 # The parts of a list answer that `record` reads, per Node: `rules` and `managed` are lists, `unmatched` is the list under `live`,
 # and `live` is the one object that holds the state of the report.
@@ -247,6 +247,12 @@ def cli(run, args):
         raise Infra('cli expect request is none')
     if 'skipped' in expect and 'json' not in forms:
         raise Infra('cli expect skipped is read from the JSON form: add json to forms')
+    if 'steps' in expect:
+        wanted = expect['steps']
+        if not isinstance(wanted, dict) or set(wanted) != {'name', 'count'} or not isinstance(wanted['name'], str) or not wanted['name'].strip() or type(wanted['count']) is not int or wanted['count'] < 0:
+            raise Infra('cli expect steps needs a name and a nonnegative integer count')
+        if 'json' not in forms:
+            raise Infra('cli expect steps is read from the JSON form: add json to forms')
     argv = [str(item) for item in args['run']]
     # The default is the candidate CLI of the outer VM, which acts for the fleet as its operator; `gateway` is that same caller.
     caller = args.get('as')
@@ -286,6 +292,8 @@ def check_result(run, label, form, forms, result, expect):
                 failures.append(f"{label}: code {code}, expected {expect['code']}")
         if 'skipped' in expect and expect['skipped'] not in skip_reasons(document):
             failures.append(f"{label}: not skipped with {expect['skipped']}")
+        if 'steps' in expect:
+            failures.extend(check_operation_steps(run, label, document, expect['steps']))
         return failures
     # The human form has no JSON: the code and the status are read from the JSON form when the call has one.
     text = terminal.plain(result['stdout'] + result['stderr'])
@@ -301,6 +309,23 @@ def check_result(run, label, form, forms, result, expect):
             if status != expect['status']:
                 failures.append(f"{label}: status {status}, expected {expect['status']}" + ('' if found else ' (no Operation in the output)'))
     return failures
+
+
+def check_operation_steps(run, label, document, wanted):
+    operation_id = document.get('id')
+    if not operation_id:
+        return [f'{label}: no Operation ID for steps']
+    result = run.cli(['operation:show', str(operation_id)])
+    if result['rc'] != 0:
+        return [f'{label}: could not read Operation steps']
+    rows = (result['json'] or {}).get('steps')
+    if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('name'), str) or not isinstance(row.get('status'), str) for row in rows):
+        return [f'{label}: Operation step data is missing or invalid']
+    pattern = re.compile(re.escape(wanted['name']) + r'(?:-([0-9]+)-\1)?')
+    count = sum(bool(pattern.fullmatch(row['name'])) and row['status'] in ('running', 'succeeded', 'failed') for row in rows)
+    if count != wanted['count']:
+        return [f"{label}: ran {count} steps named {wanted['name']}, expected {wanted['count']}"]
+    return []
 
 
 def matches(row, wanted):

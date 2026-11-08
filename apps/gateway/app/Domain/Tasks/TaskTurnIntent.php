@@ -51,7 +51,10 @@ final readonly class TaskTurnIntent
             $reference = ValidatedData::object(ValidatedData::object($intent['execution_secrets'])['pi_token']);
             $intent['execution_secrets'] = ['pi_token' => app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), (string) TaskVm::forGroup($group)?->pi_token)];
 
-            return $this->start->execute('tasks.turn', 'task_group', $group->id, ValidatedData::integer($intent['node_id']), $intent, $caller, $request);
+            $operation = $this->start->execute('tasks.turn', 'task_group', $group->id, ValidatedData::integer($intent['node_id']), $intent, $caller, $request);
+            app(TaskBroadcasts::class)->threadChanged(ValidatedData::integer($intent['thread_id']));
+
+            return $operation;
         });
     }
 

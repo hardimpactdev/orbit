@@ -11,7 +11,7 @@ use App\Models\Task;
  * Handles a new commit or new diff counts that a Node agent reports for a task group's workspace
  * (ADR 0151). It stores the group's line counts when the diff is complete, and it always marks the
  * group for a `task_group.updated` notice, so a new commit reaches open tabs also when the diff is over
- * the agent's limits. Those tabs then show the group, which counts the lines over SSH.
+ * the agent's limits. Those tabs read the last recorded counts; a truncated report keeps the previous counts.
  */
 final readonly class TaskWorkspaceSummary
 {

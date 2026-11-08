@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ListTaskGroupsAction
 {
-    public function __construct(private RequireTasksExtensionAction $requireExtension) {}
+    public function __construct(private RequireTasksExtensionAction $requireExtension, private TaskGroupMetricsRefresher $metrics) {}
 
     /**
      * @return Collection<int, Task>
@@ -24,6 +25,6 @@ final readonly class ListTaskGroupsAction
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))
             ->orderByDesc('id')
-            ->get();
+            ->get()->each(fn (Task $group): Task => $this->metrics->refresh($group));
     }
 }

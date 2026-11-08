@@ -7,9 +7,9 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals}.php"
 ---
 
 # Tasks
@@ -71,7 +71,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
 | `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
-| `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
+| `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics): distinct-thread tokens, per-subtask usage deltas, recorded whole-branch line counts, and duration |
 
 Clearing the assistance flag can keep the last reason.
 
@@ -259,7 +259,7 @@ A parked VM is woken by the admission of a turn, a check, a publish or a script,
 
 The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
 
-Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps the first terminal event of the turn in the run's private worker directory, and a TypeScript step reads only its state and finite nonnegative usage.
+Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps at most 1 MiB of recent stream events in the run's private worker directory. The terminal reader returns available usage, nullable cost, and at most 256 KiB of recent redacted transcript entries. A marker names omitted history.
 
 Receipt and diff files are downloaded to the same directory, and TypeScript readers redact them with the repository redaction rule before they enter native history. Parser errors can quote private input, so a failed step reports only one fixed code, such as `tasks.pi_event_invalid` or `tasks.difference_invalid`.
 
@@ -275,7 +275,7 @@ Separate native steps capture workspace evidence, create `.git/orbit` and remove
 
 The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
 
-When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null` and `receipt_error: null`. A receipt that breaks the [schema](#turn-receipt) produces `receipt: null` and one fixed `receipt_error`; the turn itself still succeeds. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
+When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null` and `receipt_error: null`. A receipt that breaks the [schema](#turn-receipt) produces `receipt: null` and one fixed `receipt_error`; the turn itself still succeeds. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; token metrics, nullable cost, and the recorded transcript.
 
 After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
 
@@ -513,8 +513,6 @@ The task and subtask operations return these errors.
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
-| `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
-| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server could not serve, when Orbit saved no transcript |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
 
@@ -894,7 +892,7 @@ Worker output can arrive after a step finishes. In the pinned Swamp version, wor
 
 ## Agent threads
 
-An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. The external runtime keeps the transcript. Orbit keeps the link and the metrics.
+An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. The external runtime writes the transcript. Orbit keeps recorded snapshots, the link and the metrics.
 
 Each subtask gets a fresh implementer thread. Each subtask's first review starts a fresh reviewer thread. Thread titles are `Orbit task #{task} / subtask #{subtask} · Implementer: {title}` and `Orbit task #{task} · Review: {title}`.
 
@@ -931,7 +929,7 @@ The driver maps a model name to Pi's `provider/model` form. Every model uses the
 
 ### Archive finished threads
 
-Task-agent threads are Pi sessions, and their files live on the task VM. Orbit keeps the thread row and its metrics after the work ends. Before Orbit deletes a ready task VM with its workspace, it saves each started thread's transcript on the Gateway, at `storage/app/private/task-transcripts/{task}/{thread}.json`. The file holds the driver's redacted observation: the state, the transcript entries, and the token metrics. A thread that Orbit cannot read is reported and skipped, so saving never stops workspace removal. A VM that died before removal leaves no saved transcript. The Gateway has no `tasks:archive-threads` command, and transcript archival is part of explicit cleanup.
+Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the VM is deleted. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
 
 ## Session routing
 
@@ -1074,7 +1072,7 @@ The board retains recorded lifecycle times, PR identity, token usage and line ch
 
 ### Tokens and line diff
 
-Thread observations retain usage and cost. Workspace observations retain line changes. Records remain available after a workspace is removed.
+Task operations record thread usage and nullable cost. Missing metrics keep the last recorded values. Each thread counts once in group totals; subtask tokens are the usage added by its turns. A migration clears legacy subtask totals copied from cumulative thread usage to null (unknown). New turns record deltas from that point; earlier totals are not rebuilt. List and detail reads use the same totals and recorded lifecycle times, including finished groups. Workspace observations retain complete line counts; missing, stale or truncated observations keep the stored counts. Reads never refresh a Node. Records remain available after a workspace is removed.
 
 ### Thread token metrics
 
@@ -1123,7 +1121,7 @@ The Gateway scheduler runs `tasks:pr-gate` every minute while the Tasks extensio
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/tasks/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A parked VM resumes before review; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
@@ -1236,42 +1234,31 @@ The strip shows tokens per merged PR with its cost, lead time, yield, first-pass
 
 ## Agent viewer
 
-The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads](#read-a-thread) the thread's normalized conversation, as a snapshot or as a delta after a cursor. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
+Task state reads answer from recorded Gateway state: `tasks:show`, `tasks:list`, `tasks:agents`, `tasks:agent:show`, insights, and the web board. Reads never contact a task VM, Pi server, or Node. A parked or deleted VM does not change that rule. The Swamp run view may read recorded runs from Swamp, the trusted control plane.
 
-Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
-
-A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the thread's Node is gone, the stream sends the [saved transcript](#archive-finished-threads) as one snapshot and ends. Without a saved transcript, it returns HTTP 409 `tasks.agent_unavailable`.
+The Agents section lists started threads and their recorded metrics. Any unfinished Operation that holds a thread makes that thread `working`, even if its last completed turn was `done`. A terminal projection records the final state and clears an old observation error.
 
 ### Read a thread
 
-`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
+`GET /api/v1/task-groups/{group}/agents/{session}` returns one recorded transcript snapshot. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and MCP tool `tasks-agent-show` use it. The SSE endpoint sends the same snapshot and ends. Reconnecting reads the latest recorded snapshot. `after_sequence` is accepted but does not request a live Pi read; `cursor` is null and `kind` is `snapshot`.
 
-A first read returns a transcript snapshot. If it exceeds the Gateway budget, the snapshot keeps the newest entries that fit and starts with an explicit truncation marker. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
+Swamp records a bounded transcript on turn finalization after success, failure, disconnect or EOF. It keeps user and assistant message text, redacted before any bound applies. Tool entries keep only the name, status and duration when known. Tool arguments, outputs and raw errors are not kept; a failed tool says `tool failed: <class>`, where the class is one of `timeout`, `aborted`, `exit_nonzero`, `permission`, `not_found` or `error`. Assistant diagnostics are omitted. Structural fields are never redacted. Missing terminal usage stays unknown. Native cancellation skips finalization and keeps the previous recorded transcript.
 
-| Field | Meaning |
-| --- | --- |
-| `thread_id` | The agent thread ID |
-| `kind` | `snapshot` when `entries` replaces the transcript, with a truncation marker when older entries were omitted. `delta` when `entries` holds only the entries after `after_sequence` |
-| `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown or before the thread starts |
-| `entries` | Normalized transcript entries, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
-| `input_requests` | Open input requests. A Pi thread has none |
-| `tokens`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, `peak_context_tokens` | The [thread token metrics](#thread-token-metrics). Each is null when unknown |
-| `lines_added`, `lines_deleted` | The thread's line diff, or null |
-| `error`, `provider_error` | The error of a `failed` turn and its provider class |
-| `cursor` | The thread's place in its events after this answer. Null for a saved transcript or a thread that has not started |
-| `archived` | True when the answer is the saved transcript |
+Redaction of message text is best effort. A model can write a secret in any shape, so no redactor is complete. Tool arguments and outputs are never stored. Message text loses known secret values and credential shapes: PEM blocks, JWTs, bearer and GitHub tokens, and URL credentials. It also loses the value of a secret-named field in common JSON, `key: value`, `key=value` and quoted forms. HTTP `Authorization` and `Cookie` lines lose their whole value. A field name is secret by the Gateway's secret-word rule, which includes session identifiers. Swamp mirrors that rule in `swamp/extensions/behaviors/_lib/public_output.ts`.
 
-The cursor has the form `{run}.{sequence}`. Pass it back as `after_sequence`, or to the stream as `after_sequence` or `Last-Event-ID`. Either one then sends only what came after it. Replace your transcript with a snapshot. Merge a delta into it by id and kind, so a changed entry replaces the earlier one. A delta can repeat an entry that you already have. A cursor from an earlier run of the Pi server gets a snapshot. The run changes when the Pi server restarts or unloads an idle session. A Pi server binary built before delta reads answers every read with a snapshot.
+These forms are known to pass unredacted:
 
-A thread that has not started yet returns an empty snapshot: no entries, a null `state`, and a null `cursor`. Poll it again until it starts.
+- JSON with a line break between a key and its value.
+- YAML block scalars, such as `password: |`.
+- TOML and Python triple-quoted strings.
+- Field names inside an escaped container quote.
+- Unicode-escaped or percent-encoded field names.
+- `.env` values `true`, `false` and `null`, such as `PASSWORD=true`.
 
-When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. It does the same when the thread's Pi server fails and Orbit saved a transcript, as after the task VM is deleted. A saved transcript does not change, so a reader can stop polling it.
 
-The read waits at most 5 seconds for the Pi server. The Gateway gives the Pi server a 16 MiB response budget. A larger snapshot keeps only the newest complete entries that fit, with a system message marking the omitted history. An oversized delta becomes a bounded snapshot, so the cursor still names the current state. Orbit uses the same bounded snapshot when it [saves a transcript](#archive-finished-threads), with a 15-second request budget.
+Each child turn records its transcript when it ends, while its parent operation can keep running. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
 
-The [tick](#session-routing) reads only state, turn identity, errors, and token metrics; it never fetches the transcript. A long transcript does not make a healthy agent unobservable on an updated Pi server. The [Pi rollout requirements](/reference/pi-server#read-after-a-cursor) describe older binaries.
-
-The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or violates the response budget, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
+A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.agent_transcript_unavailable`. A thread of another task returns 404. Neither error contacts the original Node.
 
 ## Cancel a stuck task
 
@@ -1302,9 +1289,10 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
-Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown and saves the agent transcripts while the VM is `ready`, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
+Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown while the VM is `ready` and retains recorded agent transcripts, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
 
 Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a slot number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
+
 
 ### Direct lifecycle acknowledgement
 
@@ -1479,13 +1467,11 @@ The reviewer chooses a cause from a fixed list when it hands off, because it alr
 
 ### Transcripts outlive the task VM
 
-A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Orbit saves the redacted observation on the Gateway just before the delete. It reuses the snapshot the agent viewer already streams, so the copy needs no second format and no second redaction path.
+A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Swamp records redacted transcript evidence when each turn ends. The Gateway keeps it after the VM is deleted. Cleanup needs no live transcript read.
 
-### Agents read a snapshot, browsers stream
+### Recorded snapshots for all readers
 
-An MCP tool call returns one answer and holds no request open, so an agent cannot follow the stream. The [thread read](#read-a-thread) gives it the same content as one JSON response. The read and the stream share the checks, the saved-transcript fallback, and the sanitizer, so they never redact differently. The cursor stays the Pi server's, so a reader can move from the read to the stream without a gap. The Gateway keeps no state per reader.
-
-A poll returns a delta, because a transcript only grows: downloading it again on every poll would cost more on each call and pass the MCP output limit for a long thread. The Pi server already keeps the events of its current run for the stream, so it can answer a delta from the same cursor. The 16 MiB limit bounds the memory of one read and stays above real transcripts, so Swamp still observes a long thread. A thread that has not started is a normal state, so its read is an empty snapshot and not an error.
+JSON reads and the browser stream return the same stored snapshot and use the same sanitizer. Readers keep no connection to Pi. During a turn, activity comes from the recorded Operation; transcript updates arrive with the terminal result.
 
 ### Insights come from recorded times
 

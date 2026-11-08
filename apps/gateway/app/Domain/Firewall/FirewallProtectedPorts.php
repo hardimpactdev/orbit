@@ -29,7 +29,7 @@ final readonly class FirewallProtectedPorts
     /** An allow repeats Orbit's own access when its ports lie inside one protected entry that is open to its source. */
     public function repeats(Node $node, string $port, string $source): bool
     {
-        return array_any($this->entries($node), fn ($entry) => ($entry['source'] === 'any' || $entry['source'] === $source) && self::within($port, $entry['port']));
+        return array_any($this->entries($node), fn ($entry) => FirewallSource::contains($entry['source'], $source) && self::within($port, $entry['port']));
     }
 
     /** @return list<array{port: string, source: string}> */

@@ -76,23 +76,31 @@ A failed apply or verification reports `node.firewall_convergence_failed`. Failu
 
 ## Rule identity
 
-A rule's identity on a Node is its port, protocol, and source ([ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source)). An omitted `--protocol` means both `tcp` and `udp`; an omitted `--from` means `any`. Admission refuses:
+A rule's identity on a Node is its port, protocol, and normalized source ([ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source)). An omitted `--protocol` means both `tcp` and `udp`; an omitted `--from` means `any`.
+
+Orbit stores addresses in canonical form and CIDRs as their network address; `/32` IPv4 and `/128` IPv6 host CIDRs become plain addresses. An address or CIDR affects only its address family; `any` affects both. Explicit `0.0.0.0/0` and `::/0` remain single-family sources.
+
+Admission refuses:
 
 - an allow and a deny with the same identity: `firewall.rule_conflict`;
 - a rule for both protocols beside a `tcp` or `udp` rule on the same port and source: `firewall.rule_overlap`.
 
-Repeating `firewall:allow` or `firewall:deny` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. The same skip applies to an allow on a protected port: its ports lie inside one port Orbit already opens, and its source is one that port already admits (see [`firewall:allow`](/cli/firewall/allow)). A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
+Repeating `firewall:allow` or `firewall:deny` reuses the rule record and checks the Node. Correct entries are skipped; missing or misplaced entries are repaired. If the whole rule is already correct, the command succeeds with skip reason `firewall.rule_exists`. A failed rule can be retried with the same identity and action. A running firewall change still excludes another change on the same Node.
+
+An allow also skips when its entire port or range lies inside one protected entry for SSH, configured recovery SSH, WireGuard, or a role, and that entry admits its entire source (see [`firewall:allow`](/cli/firewall/allow)). An entry for `any` admits both address families; an address admits only that address; a CIDR admits contained addresses and subnets in the same family. A range or source extending beyond that one entry takes the normal operator-rule path.
 
 The port is one number from 1 through 65535, such as `25`, or an ordered range, such as `8000:8100`. Service names are not accepted. The CLI checks the port, source, and protocol before it sends a request.
 
-`--label` is optional free text of at most 255 characters. The UFW comment Orbit writes is `orbit` plus the label, sanitized: printable characters only, quotes removed, at most 64 characters. Matching never reads the comment; only the identity selects a rule.
+`--label` is optional free text of at most 255 characters. The UFW comment Orbit writes is `orbit` plus the label, sanitized: printable characters only, quotes removed, at most 64 characters. Only the identity selects a rule to change. Labels need not be unique; [`firewall:list --live`](/cli/firewall/list#compare-with-the-live-firewall) checks complete operator tuples before using labels as evidence of drift.
 
 ### Order on the Node
 
 UFW stops at the first rule that matches, so Orbit sets the order of every operator rule it writes:
 
-- Operator rules sit above Orbit's own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
+- Orbit places new operator rules above its own `orbit:` rules. A deny on a port therefore also applies to WireGuard peers that `orbit:wireguard-members` would admit.
 - A narrower rule sits above a broader one, allow or deny alike: one address above a CIDR above anywhere.
+
+An existing equal allow keeps its comment and position below managed allows or source-disjoint managed rules. An overlapping deny still requires a move. [`firewall:allow`](/cli/firewall/allow) describes how Orbit repairs a partially applied rule.
 
 Overlap at a different scope is the way to restrict a port. These pairs are admitted:
 
@@ -120,7 +128,7 @@ Every command accepts `--json` and requires `--node` with a numeric Node ID. In 
 
 ## Error codes
 
-The CLI validates the port, source, and protocol before it sends a request. Orbit returns admission errors. A failure while applying appears in the Operation's history. If execution stops before the final check, the final Operation reports `operation.native_failed`.
+The CLI validates the port, source, and protocol before it sends a request. Orbit returns admission errors. A failure while applying appears in the Operation's history. If execution stops before the final check, the final Operation reports `operation.native_failed`. The rule stays visible as `failed`; [`firewall:list --json`](/cli/firewall/list) shows its recorded failed step and error code.
 
 | Error code | Meaning |
 | --- | --- |

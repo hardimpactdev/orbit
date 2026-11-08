@@ -154,7 +154,7 @@ A card for a task that asks for direction says `Needs your direction`, and the t
 | `agent_thread.updated` | That task's agent threads and the task |
 | `tasks.updated` | Nothing. It stores the new `enabled` value. |
 
-The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
+The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event. The agent thread stream returns recorded Gateway snapshots, including after the Node is deleted. [Thread reads](/reference/tasks#read-a-thread) define the transcript and activity state.
 
 The [insights strip](/reference/tasks#task-insights) above the task board reads `GET /api/v1/task-insights` when the board opens and every 5 minutes after. Task events do not refetch it, because one task changes the numbers only a little. The strip opens on **more**. Its open or closed state is stored in the browser under `orbit.tasks.insights.expanded`.
 

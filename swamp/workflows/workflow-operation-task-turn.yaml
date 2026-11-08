@@ -366,9 +366,7 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        # The worker has no jq. awk keeps the first terminal event of this turn, unparsed, in
-        # the run's private directory; the terminal step parses it. Nothing from the stream
-        # reaches history. The match ends the read, so curl may get EPIPE: only awk's status counts.
+        # Keep a bounded stream tail privately. Only redacted terminal evidence reaches history.
         run: |
           set -u
           umask 077
@@ -377,12 +375,23 @@ jobs:
             --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
             "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
             awk -v turn="$ORBIT_PI_TURN" -v out="$ORBIT_TERMINAL" '
-              BEGIN { code = 22 }
+              BEGIN { code = 22; first = 1; last = 0; bytes = 0; printf "" > out; close(out) }
               length($0) > 1048576 { code = 21; exit }
-              $0 ~ ("\"turnId\"[ \t]*:[ \t]*\"" turn "\"") && $0 ~ /"state"[ \t]*:[ \t]*"(done|failed)"/ {
-                print > out; code = 0; exit
+              {
+                truncated = 0; rows[++last] = $0; bytes += length($0) + 1
+                while (bytes > 1048576 && first < last) { bytes -= length(rows[first]) + 1; delete rows[first++]; truncated = 1 }
+                if (truncated) {
+                  print "{\"kind\":\"truncated\"}" > out
+                  for (i = first; i <= last; i++) print rows[i] > out
+                } else { print $0 >> out }
+                close(out)
               }
-              END { exit code }' 2>/dev/null || status=$?
+              $0 ~ ("\"turnId\"[ \t]*:[ \t]*\"" turn "\"") && $0 ~ /"state"[ \t]*:[ \t]*"(done|failed)"/ {
+                code = 0; exit
+              }
+              END {
+                exit code
+              }' 2>/dev/null || status=$?
           case $status in
             0) exit 0 ;;
             21) code=tasks.pi_event_too_large ;;
@@ -404,7 +413,7 @@ jobs:
     dependsOn:
     - step: observe
       condition:
-        type: succeeded
+        type: completed
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -413,6 +422,7 @@ jobs:
       inputs:
         path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
         turn: ${{ steps.prepare.outputs.turn_key }}
+        partial: true
   - name: snapshot_after_index
     labels: {role: swamp}
     dependsOn:

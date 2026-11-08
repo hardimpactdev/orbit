@@ -16,7 +16,7 @@ final class ShowTaskAgentCommand extends TaskCommand
     protected $signature = 'tasks:agent:show
         {group? : Numeric task group ID}
         {session? : Numeric agent thread ID}
-        {--after-sequence= : The cursor of a previous read; return only the entries after it}
+        {--after-sequence= : Accepted; reads return a recorded snapshot}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -66,7 +66,7 @@ final class ShowTaskAgentCommand extends TaskCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Agent thread: '.$snapshot->threadId, [
             'State' => $snapshot->state,
             'Kind' => $snapshot->kind,
-            'Source' => $snapshot->archived ? 'saved transcript' : 'live',
+            'Source' => $snapshot->archived ? 'saved transcript' : 'no recorded transcript',
             'Cursor' => $snapshot->cursor,
             'Tokens' => self::tokens($snapshot->tokens),
             'Input' => self::tokens($snapshot->inputTokens),
@@ -81,7 +81,7 @@ final class ShowTaskAgentCommand extends TaskCommand
         ]));
 
         if ($snapshot->entries === []) {
-            $this->writeHumanMessage($snapshot->kind === 'delta' ? 'No entries after the cursor.' : 'No entries.');
+            $this->writeHumanMessage('No entries.');
         }
 
         foreach ($snapshot->entries as $entry) {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Tasks;
 
-/** One redacted read of an agent thread's conversation: a snapshot or a delta after a cursor, live from its Node or from the saved transcript. */
+/** One redacted snapshot of an agent thread's recorded Gateway state. */
 final readonly class TaskAgentSnapshotResponse
 {
     /**

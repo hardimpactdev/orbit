@@ -67,7 +67,7 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
         $input = $this->input($operation);
         $secrets = ValidatedData::object($input['execution_secrets']);
         $pi = ValidatedData::object($secrets['pi_token']);
-        $vm = TaskVm::query()->find(ValidatedData::integer(ValidatedData::object(ValidatedData::object($operation->input)['resume'])['task_vm_id']));
+        $vm = TaskVm::query()->find(ValidatedData::integer(ValidatedData::object($operation->input)['task_vm_id']));
         if (! $vm instanceof TaskVm || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
             throw new ResourceOperationException('tasks.review_round_refused', 'The task VM or its Pi credential is gone, so the round cannot start.', 409);
         }
@@ -92,18 +92,18 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
 
             // The resume step is a child run, not a task_vm.resume Operation, so the VM is recorded as ready here once the step succeeded.
             if (NativeRunResult::stepStatus($native, 'Resume the VM') === 'succeeded') {
-                $vm = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($intent['resume'])['task_vm_id']));
+                $vm = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($intent['task_vm_id']));
                 if ($vm instanceof TaskVm && $vm->state === TaskVmState::Parked) {
                     $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
                 }
             }
             $review = TaskPrepResults::turn($native['review'] ?? null);
             if ($review !== null) {
-                TaskTurnProjection::recordThread($operation->target_id, ValidatedData::integer(ValidatedData::object($intent['review'])['thread_id']), $review);
+                TaskTurnProjection::recordTurn($operation, ValidatedData::integer(ValidatedData::object($intent['review'])['thread_id']), $review);
             }
             $fix = TaskPrepResults::turn($native['fix'] ?? null);
             if ($fix !== null) {
-                TaskTurnProjection::recordThread($operation->target_id, ValidatedData::integer(ValidatedData::object($intent['fix'])['thread_id']), $fix);
+                TaskTurnProjection::recordTurn($operation, ValidatedData::integer(ValidatedData::object($intent['fix'])['thread_id']), $fix);
             }
             $round = TaskReviewRound::query()->where('operation_id', $operation->id)->firstOrFail();
             $verdict = $this->verdict($native, $status === 'succeeded');

@@ -84,7 +84,7 @@ The `tasks/tasks-show/watched` fixture records a running task whose branch pull 
 
 The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
-The `tasks/tasks-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
+The `tasks/tasks-agent-show` fixtures record four Gateway snapshots. `default` is a running thread with a saved transcript. `after-sequence` returns a complete snapshot even when a cursor was supplied. `pending` has no recorded transcript. `archived` is a saved transcript from an ended thread. Every cursor is null. `archived` means a stored transcript exists; later turns can replace it. The SDK and CLI replay all four. See [Read a thread](/reference/tasks#read-a-thread).
 
 Node fixtures include `agent`, the [agent liveness](/reference/node-agent#liveness). `NodeResponseFixturesTest` seeds the agent-view cache, so the Gateway Node is offline since a fixed time and the app-dev Node is online. Re-record the node-list, node-show and node-add responses together when `agent` changes.
 

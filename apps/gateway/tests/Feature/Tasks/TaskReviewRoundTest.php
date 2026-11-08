@@ -56,7 +56,7 @@ const ROUND_HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
  *
  * @return array{0: Task, 1: Task, 2: TaskVm, 3: Instance}
  */
-function roundWorld(): array
+function roundWorld(TaskVmState $state = TaskVmState::Ready): array
 {
     SwampNodeFixture::ensure();
     app(TaskExtensionState::class)->enable();
@@ -86,7 +86,7 @@ function roundWorld(): array
         'review_mode' => TaskReviewMode::Automatic, 'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
     $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
         'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
-    $vm->update(['name' => 'tvm-'.$vm->id]);
+    $vm->update(['state' => $state, 'name' => $state === TaskVmState::Parked ? 'tvm-'.$vm->id : 'shark-tvm-1', 'slot_number' => $state === TaskVmState::Ready ? 1 : null]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
@@ -119,8 +119,8 @@ function admitRound(Task $group, string $head = ROUND_HEAD): Operation
     return Operation::query()->where('kind', OperationKinds::TasksReviewRound)->latest('id')->firstOrFail();
 }
 
-it('admits one round with the whole intent of the resume, the review, the fix, the check and the push, and vault key names only', function (): void {
-    [$group, $subtask, $vm, $instance] = roundWorld();
+it('admits one round with the review, fix and push, resuming only a parked VM', function (TaskVmState $state): void {
+    [$group, $subtask, $vm, $instance] = roundWorld($state);
     roundCandidate($group, $subtask);
 
     $operation = admitRound($group);
@@ -130,7 +130,9 @@ it('admits one round with the whole intent of the resume, the review, the fix, t
     expect($operation->kind)->toBe('tasks.review_round')
         ->and($operation->node_id)->toBe($instance->node_id)
         ->and($input)->toMatchArray(['round' => 1, 'head' => ROUND_HEAD, 'group_id' => $group->id, 'repository' => 'hardimpactdev/orbit', 'pr_number' => 7])
-        ->and($input['resume']['task_vm_id'])->toBe($vm->id)
+        ->and($input['task_vm_id'])->toBe($vm->id)
+        ->and(isset($input['resume']))->toBe($state === TaskVmState::Parked)
+        ->and($input['resume']['task_vm_id'] ?? null)->toBe($state === TaskVmState::Parked ? $vm->id : null)
         ->and([$input['review']['role'], $input['review']['new_session'], $input['review']['candidate']])->toBe(['reviewer', true, ROUND_HEAD])
         ->and([$input['fix']['role'], $input['fix']['new_session'], $input['fix']['thread_id']])->toBe(['implementer', false, $subtask->fresh()->implementer_agent_thread_id])
         ->and($input['fix']['prompt'])->toContain('round 1')
@@ -145,7 +147,7 @@ it('admits one round with the whole intent of the resume, the review, the fix, t
         // A test has no Swamp, so the start is refused, and the refusal ends the round and closes its check row.
         ->and([$round->verdict, TaskCheck::query()->findOrFail($round->check_id)->status])->toBe([TaskReviewRoundVerdict::Failed, TaskCheckStatus::Cancelled])
         ->and(AgentThread::query()->where('role', 'reviewer')->count())->toBe(1);
-});
+})->with([TaskVmState::Ready, TaskVmState::Parked]);
 
 it('captures no fix, check or check row in round 3, because findings there end the run', function (): void {
     [$group, $subtask] = roundWorld();
@@ -189,13 +191,12 @@ it('refuses a fourth round and a group whose task VM is neither parked nor runni
 });
 
 /** An admitted round whose run is going on, with its operation set as the stored run. */
-function runningRound(): array
+function runningRound(TaskVmState $state = TaskVmState::Parked): array
 {
-    [$group, $subtask, $vm, $instance] = roundWorld();
+    [$group, $subtask, $vm, $instance] = roundWorld($state);
     roundCandidate($group, $subtask);
     $operation = admitRound($group);
     $operation->update(['status' => OperationStatus::Running, 'error_code' => null, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
-    $vm->update(['state' => TaskVmState::Parked]);
 
     return [$operation->refresh(), $group, $vm, $subtask, TaskReviewRound::query()->sole()];
 }
@@ -213,8 +214,8 @@ function roundTurn(string $outcome, string $summary, int $tokens): array
     return ['shape_result' => ['result_json' => json_encode(['state' => 'done', 'receipt' => ['outcome' => $outcome, 'summary' => $summary], 'metrics' => ['tokens' => $tokens]])]];
 }
 
-it('reads the Operation without writing the Pi token, writes it once at run start, and gives the check workflows their inputs', function (): void {
-    [$operation, , $vm] = runningRound();
+it('reads the Operation without writing the Pi token, writes it once at run start, and gives the check workflows their inputs', function (TaskVmState $state): void {
+    [$operation, , $vm] = runningRound($state);
     $writes = new class
     {
         /** @var list<array{string, string, string}> */
@@ -234,7 +235,7 @@ it('reads the Operation without writing the Pi token, writes it once at run star
     $read = $projection->input($operation);
 
     expect($writes->calls)->toBe([])
-        ->and(array_keys($read['intent']))->toEqualCanonicalizing(['project_id', 'group_id', 'repository', 'pr_number', 'round', 'head', 'resume', 'review', 'fix', 'check', 'publish'])
+        ->and(array_keys($read['intent']))->toEqualCanonicalizing(['project_id', 'group_id', 'repository', 'pr_number', 'round', 'head', 'task_vm_id', ...($state === TaskVmState::Parked ? ['resume'] : []), 'review', 'fix', 'check', 'publish'])
         ->and($read['intent']['check'])->toHaveKeys(['command_deliverables', 'execution_references_json'])->not->toHaveKey('execution_secrets')
         ->and($read['intent']['check']['execution_references_json'])->toBe('{}')
         ->and(json_encode($read['resume_secrets']))->toBe('{}');
@@ -247,14 +248,14 @@ it('reads the Operation without writing the Pi token, writes it once at run star
 
     $vm->update(['pi_token' => null]);
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
-});
+})->with([TaskVmState::Ready, TaskVmState::Parked]);
 
-it('records a pass: the verdict, the thread metrics, the VM as ready, and the check row as cancelled', function (): void {
-    [$operation, , $vm, , $round] = runningRound();
+it('records a pass: the verdict, the thread metrics, the VM as ready, and the check row as cancelled', function (TaskVmState $state): void {
+    [$operation, , $vm, , $round] = runningRound($state);
     $thread = AgentThread::query()->findOrFail($operation->input['review']['thread_id']);
 
     $projected = app(TaskReviewRoundProjection::class)->apply($operation, roundEnd('succeeded', [
-        'steps' => ['Resume the VM' => ['status' => 'succeeded'], 'Push the fix' => ['status' => 'skipped']],
+        'steps' => ['Resume the VM' => ['status' => $state === TaskVmState::Parked ? 'succeeded' : 'skipped'], 'Push the fix' => ['status' => 'skipped']],
         'review' => roundTurn('approved', 'Nothing to fix.', 40), 'verdict' => 'pass', 'findings' => '',
     ]));
 
@@ -265,7 +266,7 @@ it('records a pass: the verdict, the thread metrics, the VM as ready, and the ch
         ->and($thread->refresh()->tokens)->toBe(40)
         ->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
         ->and(TaskCheck::query()->findOrFail($round->check_id)->status)->toBe(TaskCheckStatus::Cancelled);
-});
+})->with([TaskVmState::Ready, TaskVmState::Parked]);
 
 it('records the findings, the local check of the fix and the pushed commit of a round that fixed them', function (): void {
     [$operation, , , , $round] = runningRound();
