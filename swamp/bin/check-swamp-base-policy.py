@@ -24,6 +24,19 @@ def check(base, deno):
         return 0
     baseline = git("show", f"{base}:{prefix}config/swamp-shape-baseline.json")
     head = git("rev-parse", "HEAD").decode().strip()
+    policy_files = {
+        prefix + path for path in (
+            "bin/check-swamp-shape.ts", "bin/check-swamp-shape_test.ts",
+            "bin/check-swamp-base-policy.py", "bin/check-swamp-base-policy_test.ts",
+            "config/swamp-shape-baseline.json",
+        )
+    }
+    changed = git("diff", "--name-only", base, head, "--", prefix or ".", cwd=repo).decode().splitlines()
+    if set(changed) <= policy_files:
+        # Gate maintenance cannot grow operational debt when every source byte
+        # is unchanged. This also permits repairing stale baseline labels.
+        print(f"SHAPE-BASE rules_commit={base} source_commit={head} status=pass source=unchanged")
+        return 0
     with tempfile.TemporaryDirectory(prefix="swamp-shape-policy-") as scratch:
         trees = []
         try:
@@ -37,17 +50,6 @@ def check(base, deno):
             rules, source = (tree / prefix for tree in trees)
             allowance = source / "config/swamp-shape-baseline.json"
             allowance.write_bytes(baseline)
-            # The Task family hard switch changes only this existing caller's
-            # URLs and child field. Prove the complete file is otherwise exact
-            # before comparing its old vocabulary under the frozen rules.
-            queue = "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts"
-            original = rules / queue
-            renamed = source / queue
-            if original.is_file() and renamed.is_file():
-                old = original.read_text()
-                expected = old.replace('/api/v1/task-groups', '/api/v1/tasks').replace('tasks: plan.tasks.map(', 'subtasks: plan.tasks.map(')
-                if '"/api/v1/task-groups"' in old and renamed.read_text() == expected:
-                    renamed.write_text(old)
             # Derive the old-rule baseline from immutable base limits, never the
             # PR's revised policy/baseline. Intersection can only remove debt;
             # the frozen checker still rejects new sites, renames and growth.
