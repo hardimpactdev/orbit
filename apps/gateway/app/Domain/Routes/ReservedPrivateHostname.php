@@ -19,6 +19,9 @@ final readonly class ReservedPrivateHostname
 
     public const string Metrics = 'metrics.'.self::PrivateSpace;
 
+    /** The vpn Node itself. The old dnsmasq backend answered it with a host-record. */
+    public const string Vpn = 'vpn.'.self::PrivateSpace;
+
     /** @param iterable<ContributedPrivateHostnames> $contributions */
     public function __construct(
         #[Tag(ContributedPrivateHostnames::class)] private iterable $contributions,
@@ -27,7 +30,7 @@ final readonly class ReservedPrivateHostname
     /** @return list<string> Core's names, then the names that extensions reserve. */
     public function names(): array
     {
-        $names = [self::Gateway, self::Metrics, WebSocketHostname::Value, AnalyticsHostname::Value];
+        $names = [self::Gateway, self::Metrics, self::Vpn, WebSocketHostname::Value, AnalyticsHostname::Value];
 
         foreach ($this->contributions as $contribution) {
             array_push($names, ...array_keys($contribution->hostnames()));

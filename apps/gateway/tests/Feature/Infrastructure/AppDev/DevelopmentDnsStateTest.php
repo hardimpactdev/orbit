@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Models\Cluster;
@@ -37,6 +38,24 @@ describe('DevelopmentDnsConfigRenderer state', function (): void {
         expect($state['listen'])->toBe(['10.44.0.1'])
             ->and($state['tlds'])->toBe([['name' => 'prod', 'address' => '10.44.0.4'], ['name' => 'test', 'address' => '10.44.0.7']])
             ->and($state['records'])->toContain(['name' => 'gateway.orbit', 'address' => '10.44.0.2', 'pair' => true]);
+    });
+
+    it('renders vpn.orbit with the WireGuard address of the vpn Node, as the old backend did, and reserves the name', function (): void {
+        dnsNode('vpn', '10.44.0.1', RoleName::Vpn);
+        dnsNode('gateway', '10.44.0.2', RoleName::Gateway);
+
+        $records = app(DevelopmentDnsConfigRenderer::class)->state()->toIntent()['records'];
+
+        expect($records)->toContain(['name' => 'vpn.orbit', 'address' => '10.44.0.1', 'pair' => true])
+            ->and(in_array('vpn.orbit', app(ReservedPrivateHostname::class)->names(), true))->toBeTrue();
+    });
+
+    it('renders no vpn.orbit while no Node holds the vpn role', function (): void {
+        dnsNode('gateway', '10.44.0.2', RoleName::Gateway);
+
+        $names = array_column(app(DevelopmentDnsConfigRenderer::class)->state()->toIntent()['records'], 'name');
+
+        expect($names)->not->toContain('vpn.orbit');
     });
 
     it('lets a Cluster TLD win over a Node that owns the same TLD', function (): void {

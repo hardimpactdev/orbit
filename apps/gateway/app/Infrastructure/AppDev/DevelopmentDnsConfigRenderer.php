@@ -73,6 +73,13 @@ final readonly class DevelopmentDnsConfigRenderer
             }
         }
 
+        $vpn = $this->roleNode(RoleName::Vpn);
+        $address = $vpn instanceof Node ? app(RouteRenderContext::class)->wireguardIp($vpn) : null;
+
+        if ($address !== null) {
+            $hosts[ReservedPrivateHostname::Vpn] = $address;
+        }
+
         $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket));
         $address = $websocket instanceof Node ? app(RouteRenderContext::class)->wireguardIp($websocket) : null;
 
