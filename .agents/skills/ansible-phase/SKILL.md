@@ -115,3 +115,5 @@ An unpromoted base is a failed build artifact, not a reusable base. Recreate it 
 Keep outer command inputs under distinct names in `-e @vars.yml`. Extra vars outrank include and block vars, so shared role tasks cannot replace an outer `intent`, `secrets` or `plans`. Test the generated vars through the real phase invocation.
 
 An extraction `creates` guard proves only that a path exists. Once a live version check selects repair, unpack the verified archive again so a stale extracted binary cannot be published back.
+
+A restored proof Gateway keeps the base image's installed collections and generated grants. Prepare both from the candidate checkout before cases; a new callback or vault key pattern must not depend on rebuilding the image.

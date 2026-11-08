@@ -47,6 +47,7 @@ additionalFiles:
   - ansible/tasks/gateway-swamp.yml
   - ansible/tasks/gateway-swamp-remint.yml
   - ansible/tasks/gateway-swamp-grants.yml
+  - ansible/tasks/gateway-ansible-collections.yml
   - ansible/tasks/php.yml
   - ansible/tasks/exporter.yml
   - ansible/tasks/exporter-pool.yml

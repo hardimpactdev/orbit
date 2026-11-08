@@ -91,7 +91,7 @@ class SetupTest(unittest.TestCase):
 
 
 class FleetPreparationTest(unittest.TestCase):
-    def test_candidate_grants_are_prepared_before_the_discovery_cli(self):
+    def test_candidate_collections_and_grants_are_prepared_before_the_discovery_cli(self):
         calls = []
         with patch.object(fleet_module.Fleet, 'must', side_effect=lambda argv, why: calls.append(argv)), \
                 patch.object(fleet_module, 'discover', side_effect=lambda: calls.append('discover') or 'fleet'):
@@ -100,7 +100,7 @@ class FleetPreparationTest(unittest.TestCase):
         self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
                                    'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
                                    '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
-                                   '--tags', 'grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'])
+                                   '--tags', 'collections,grants', '/home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml'])
         self.assertEqual(calls[1], 'discover')
 
     def test_failed_grant_preparation_stops_before_any_discovery_or_case(self):

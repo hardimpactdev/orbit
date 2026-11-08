@@ -22,6 +22,8 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             folder = Path(directory)
             repository = folder / 'swamp'
             (repository / 'grants').mkdir(parents=True)
+            (repository / 'ansible').mkdir()
+            (repository / 'ansible/requirements.yml').write_text((ANSIBLE / 'requirements.yml').read_text())
             (folder / 'bin').mkdir()
             stale = '{"grants": []}\n'
             current = json.dumps({'grants': [{'subject': 'user:orbit-gateway', 'actions': ['write', 'read'],
@@ -32,11 +34,20 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             (folder / 'plan.json').write_text(json.dumps({'grants': {'grants/orbit-gateway.yaml': current}}))
             (folder / 'bin/php').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/render.log"\ncat "$FIXTURE/plan.json"\n')
             (folder / 'bin/swamp').write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/reload.log"\ncat "$FIXTURE/reload.json"\n')
-            for name in ('php', 'swamp'):
+            (folder / 'bin/ansible-galaxy').write_text(
+                '#!/bin/sh\nset -eu\nprintf "%s\\n" "$*" >> "$FIXTURE/collections.log"\n'
+                'test "$4" = "$FIXTURE/swamp/ansible/requirements.yml"\n'
+                'grep -q ansible.posix "$4"\n'
+                'if test ! -f "$FIXTURE/collections-installed"; then\n'
+                '  touch "$FIXTURE/collections-installed"\n  echo "Installing pinned candidate collections"\n'
+                'else\n  echo "Nothing to do. All requested collections are already installed."\nfi\n')
+            for name in ('php', 'swamp', 'ansible-galaxy'):
                 (folder / 'bin' / name).chmod(0o755)
             # The host's account/group names differ on macOS. The fixture exercises real copies in its private directory;
             # production ownership stays in the imported tasks and is not applied to this developer's temporary files.
-            tasks = yaml.safe_load((ANSIBLE / 'tasks/gateway-swamp-grants.yml').read_text())
+            tasks = yaml.safe_load((ANSIBLE / 'tasks/gateway-ansible-collections.yml').read_text())
+            tasks[0]['ansible.builtin.command']['argv'][2] = str(folder / 'bin/ansible-galaxy')
+            tasks += yaml.safe_load((ANSIBLE / 'tasks/gateway-swamp-grants.yml').read_text())
             for task in tasks:
                 if 'ansible.builtin.copy' in task:
                     task['ansible.builtin.copy'].pop('owner')
@@ -57,6 +68,7 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
             self.assertEqual(grant.read_text(), current)
             self.assertEqual(grant.stat().st_mode & 0o777, 0o640)
+            self.assertTrue((folder / 'collections-installed').is_file())
             repaired = run(True)
             self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
             # Even though the failed reload left the desired files on disk, serve must receive the retry.
@@ -70,11 +82,14 @@ class GatewaySwampGrantsTest(unittest.TestCase):
             self.assertEqual(restored.returncode, 0, restored.stdout + restored.stderr)
             self.assertEqual(grant.read_text(), current)
             self.assertTrue(all('--checkout=' + str(repository) in line for line in (folder / 'render.log').read_text().splitlines()))
+            self.assertEqual(len((folder / 'collections.log').read_text().splitlines()), 4)
 
     def test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants(self):
         plays = yaml.safe_load((ANSIBLE / 'gateway-bootstrap.yml').read_text())
         grants = next(play for play in plays if 'grants' in play.get('tags', []))
         self.assertEqual(grants['tasks'][0]['ansible.builtin.import_tasks'], 'tasks/gateway-swamp-grants.yml')
+        collections = next(play for play in plays if 'collections' in play.get('tags', []))
+        self.assertEqual(collections['tasks'][0]['ansible.builtin.import_tasks'], 'tasks/gateway-ansible-collections.yml')
 
 
 if __name__ == '__main__':
