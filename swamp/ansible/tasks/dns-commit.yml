@@ -19,7 +19,7 @@
   loop: "{{ dns_new_files }}"
 - name: Keep the files of the old listener setup
   ansible.builtin.copy:
-    src: "{{ dns_snapshot }}/files/{{ item.copy }}"
+    src: "{{ dns_snapshot }}/files/{{ item.saved }}"
     dest: "{{ dns_previous }}/legacy/{{ item.path | basename }}"
     remote_src: true
     mode: preserve
