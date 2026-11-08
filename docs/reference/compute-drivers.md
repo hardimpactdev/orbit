@@ -442,7 +442,7 @@ The release deletes the VM, its seed clone and its identity volume, and removes 
 
 A VM of the old pool has no slot number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release, and the sweep releases such a VM again after a failed release. Rows the old pool left in `destroying` were recorded `destroyed`.
 
-The release deletes by name, so admission refuses with `task_vm.release_refused` when the VM or its seed clone is a base VM or base seed of the host, or the seed clone of another live task VM of the host. The base names are the canonical `<host>-base` and `<host>-base-seed`, and every VM and seed name the host's refreshes recorded in its project, so a renamed host keeps its old base safe. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
+The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for slot n, under the host name it had when the slot was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
 
 A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
 

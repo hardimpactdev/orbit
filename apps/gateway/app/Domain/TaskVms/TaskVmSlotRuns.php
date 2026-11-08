@@ -123,20 +123,15 @@ final readonly class TaskVmSlotRuns
     public function release(TaskVm $slot): array
     {
         // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host. It deletes by name, so
-        // a name that is the host's base or its seed, or that another live row of the host holds, is refused before anything runs.
-        $host = $this->host($slot);
-        $names = [$slot->name, self::seedClone($slot)];
-        $node = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
-        $taken = $this->images->baseNames($node, $this->settings->host($node->id));
-        foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereKeyNot($slot->id)->get() as $other) {
-            array_push($taken, $other->name, self::seedClone($other));
-        }
-        if (array_intersect($names, $taken) !== []) {
-            throw new ResourceOperationException('task_vm.release_refused', "The release of task VM [{$slot->name}] would delete the base or another live task VM of [{$node->name}].", 409,
-                details: ['task_vm_id' => $slot->id, 'names' => array_values(array_intersect($names, $taken))]);
+        // it deletes only a task VM's name: `<host>-tvm-<n>` of slot n, under the host name it had then, or `tvm-<id>` of the old pool. A
+        // name of another shape, such as a base or a seed, refuses. Names are unique, so no task VM name is another VM's or its seed.
+        $shape = $slot->slot_number === null ? '/^tvm-[0-9]+$/' : '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-tvm-'.$slot->slot_number.'$/';
+        if (preg_match($shape, $slot->name) !== 1) {
+            throw new ResourceOperationException('task_vm.release_refused', "Task VM [{$slot->name}] has no task VM name (<host>-tvm-<slot> or tvm-<id>), so no release deletes it.", 409,
+                details: ['task_vm_id' => $slot->id]);
         }
 
-        return ['intent' => ['host' => $host, 'slot' => ['name' => $slot->name, 'seed_clone' => $names[1]],
+        return ['intent' => ['host' => $this->host($slot), 'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot)],
             'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
     }
 

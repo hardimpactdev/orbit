@@ -625,27 +625,30 @@ it('has the sweep release an old-pool VM again after its release failed', functi
         ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
 });
 
-it('never releases a name that is the host\'s base or its seed', function (string $name): void {
+it('releases only a task VM name: any other name of a slotless row refuses, whatever base or seed it names', function (string $name): void {
     [$host] = slotPoolHost();
     slotPoolSweepWorld();
-    $vm = oldPoolVm($host, name: $name, state: TaskVmState::Failed);
+    // The host was renamed after a refresh recorded beast-base; a release never takes the shape of a name on trust.
+    $host->update(['name' => 'sabre']);
+    $vm = oldPoolVm($host->refresh(), name: $name, state: TaskVmState::Failed);
 
-    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'would delete the base')
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no task VM name')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
         ->and($vm->refresh()->state)->toBe(TaskVmState::Failed);
-})->with(['beast-base', 'beast-base-seed']);
+})->with(['beast-base', 'beast-base-seed', 'sabre-base', 'sabre-base-seed', 'tvm-610-seed', 'shark-tvm-3', 'research-vm']);
 
-it('never releases a seed clone that another live task VM of the host holds', function (string $suffix): void {
+it('releases tvm-<id> of the old pool and <host>-tvm-<slot> of a slot, under the host name it had, each with its own seed clone', function (): void {
     [$host, $project] = slotPoolHost();
     slotPoolSweepWorld();
-    $live = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    // The schema keeps VM names unique, but a stale row may carry the name of a live VM's seed clone.
-    $stale = oldPoolVm($host, name: $live->name.$suffix, state: TaskVmState::Failed);
+    $old = oldPoolVm($host, name: 'tvm-610', state: TaskVmState::Failed);
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $slot->update(['name' => 'shark-tvm-'.$slot->slot_number, 'group_id' => null, 'state' => TaskVmState::Failed]);
 
-    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($stale, 'test'))->toThrow(ResourceOperationException::class, 'another live task VM')
-        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
-        ->and($live->refresh()->state)->toBe(TaskVmState::Provisioning);
-})->with(['its seed clone' => ['-seed']]);
+    $runs = app(TaskVmSlotRuns::class);
+    expect($runs->startRelease($old, 'test')->input['intent']['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($runs->startRelease($slot->refresh(), 'test')->input['intent']['slot'])
+        ->toBe(['name' => 'shark-tvm-'.$slot->slot_number, 'seed_clone' => 'shark-tvm-'.$slot->slot_number.'-seed']);
+});
 
 it('never releases a VM whose host is no task VM host', function (): void {
     [, $project] = slotPoolHost();
@@ -666,17 +669,6 @@ it('refuses the release of a VM whose Node has no WireGuard public key, which na
     expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no WireGuard public key')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });
-
-it('never releases the base a refresh recorded, under the name it had before the host was renamed', function (string $name): void {
-    [$host] = slotPoolHost();
-    slotPoolSweepWorld();
-    // The refresh recorded beast-base and beast-base-seed; the host is now named sabre.
-    $host->update(['name' => 'sabre']);
-    $vm = oldPoolVm($host->refresh(), name: $name, state: TaskVmState::Failed);
-
-    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'would delete the base')
-        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
-})->with(['beast-base', 'beast-base-seed', 'sabre-base']);
 
 it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
     [$host] = slotPoolHost();

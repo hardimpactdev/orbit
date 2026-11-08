@@ -14,7 +14,7 @@ sequenceDiagram
   participant HUB as VPN hub<br/>over ssh
   Note over GW: Admit the release
   %%> Requirements:
-  %%> - the VM and its seed clone are neither a base VM or base seed of the host (the canonical names and every name its refreshes recorded) nor the seed clone of another live task VM of the host; otherwise `task_vm.release_refused`
+  %%> - the VM has a task VM name: `<host>-tvm-<n>` for slot n, or `tvm-<id>` for the old pool; its seed clone follows from that name. Any other name, such as a base or a seed, refuses with `task_vm.release_refused`
   %%> - the host is a configured task VM host (otherwise `task_vm.unknown_host`), and the VM's Node records the WireGuard public key that names its hub peer (otherwise `task_vm.slot_refused`)
   %%> - a sweep release locks the row and checks the host again: a refresh that opened after the selection leaves the row alone
   %%> - a VM of the old pool, with no slot number, is released the same way: its seed clone is `<name>-topology-seed`
