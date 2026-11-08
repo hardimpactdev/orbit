@@ -9,19 +9,23 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Responses\DatabaseServers\DatabaseServersResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 
-final class AddNodeRoleCommand extends NodeCommand
+class AddNodeRoleCommand extends NodeCommand
 {
     use FollowsNodeRoleOperations;
 
     #[\Override]
     protected $signature = 'node:role:add
-        {node : Positive numeric Node ID}
-        {role : Role name}
+        {node? : Positive numeric Node ID}
+        {role? : Role name}
         {--converge : Converge an existing assignment}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--postgres-process= : For the analytics role: ID of its PostgreSQL 16 or managed PostgreSQL 18 storage Process}
@@ -35,16 +39,31 @@ final class AddNodeRoleCommand extends NodeCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
+        $nodeId = $this->argument('node') === null ? null : $this->positiveId('node', 'Node', 'node.id_invalid');
 
-        if ($role === null) {
+        if ($this->argument('node') !== null && $nodeId === null) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+        $role = $this->argument('role');
 
-        if ($nodeId === null) {
-            return self::FAILURE;
+        if ($role !== null || ! $this->consoleMode()->mayPrompt) {
+            $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
+
+            if ($role === null) {
+                return self::FAILURE;
+            }
+        }
+
+        if ($nodeId === null && ! $this->consoleMode()->mayPrompt) {
+            return $this->renderGatewayFailure('node.id_invalid', 'Node ID must be a positive integer.');
+        }
+
+        if ($role === null) {
+            $roles = ['gateway', 'ingress', 'app-dev', 'app-prod', 'database', 'analytics', 'metrics', 'websocket', 'ci-runner', 'swamp'];
+            $role = (string) $this->commandPrompts()->selectEntity('Role', ['Name'], array_combine(
+                $roles, array_map(static fn (string $name): array => [$name], $roles),
+            ));
         }
 
         foreach (['postgres-process', 'clickhouse-process'] as $option) {
@@ -63,6 +82,24 @@ final class AddNodeRoleCommand extends NodeCommand
 
         if ($connector === null) {
             return self::FAILURE;
+        }
+
+        if ($nodeId === null) {
+            $nodes = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class,
+                ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
+
+            if (! $nodes instanceof NodesResponse) {
+                return self::FAILURE;
+            }
+
+            $rows = [];
+            foreach ($nodes->nodes as $node) {
+                $rows[$node->id] = [(string) $node->id, $node->name];
+            }
+            $nodeId = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
+            if (! is_int($nodeId)) {
+                return self::FAILURE;
+            }
         }
 
         $storage = $role === 'analytics' ? $this->analyticsStorage($connector) : [null, null];
@@ -93,7 +130,7 @@ final class AddNodeRoleCommand extends NodeCommand
 
     /**
      * The analytics role names its two storage Processes. An omitted one is picked from the Docker
-     * Processes that run the right image; `--json` and `--no-interaction` refuse instead.
+     * Processes that run the supported image (PostgreSQL 18 also needs managed ownership); `--json` and `--no-interaction` refuse instead.
      *
      * @return array{int, int}|null
      */
@@ -101,9 +138,10 @@ final class AddNodeRoleCommand extends NodeCommand
     {
         $ids = [];
         $candidates = null;
+        $managedPostgres = null;
 
         foreach ([
-            ['postgres-process', 'PostgreSQL Process', '/(?:^|\/)postgres:16(?:[.\-@]|$)/'],
+            ['postgres-process', 'PostgreSQL Process', '/(?:^|\/)postgres:16(?:[.-][A-Za-z0-9._-]*)?(?:@|$)/'],
             ['clickhouse-process', 'ClickHouse Process', '/(?:^|\/)clickhouse\/clickhouse-server(?::|@|$)/'],
         ] as [$option, $label, $image]) {
             $value = $this->option($option);
@@ -137,12 +175,29 @@ final class AddNodeRoleCommand extends NodeCommand
                 return null;
             }
 
+            if ($option === 'postgres-process') {
+                $servers = $this->sendWithProgress($connector, new ListDatabaseServersRequest, DatabaseServersResponse::class,
+                    ['List Database Servers', 'Loading Database Servers', 'Loaded Database Servers']);
+                if (! $servers instanceof DatabaseServersResponse) {
+                    return null;
+                }
+                $managedPostgres = [];
+                foreach ($servers->servers as $server) {
+                    if ($server->driver === 'pgsql' && $server->processId !== null) {
+                        $managedPostgres[$server->processId] = true;
+                    }
+                }
+            }
+
             $rows = [];
 
             foreach ($candidates->processes as $process) {
                 $declared = $process->runtimeConfig['image'] ?? null;
 
-                if ($process->targetType === 'node' && is_string($declared) && preg_match($image, $declared) === 1) {
+                $pattern = $option === 'postgres-process' && isset($managedPostgres[$process->id])
+                    ? '/(?:^|\/)postgres:18(?:[.-][A-Za-z0-9._-]*)?(?:@|$)/' : $image;
+
+                if ($process->targetType === 'node' && $process->runtime === 'docker' && is_string($declared) && preg_match($pattern, $declared) === 1) {
                     $rows[$process->id] = [(string) $process->id, $process->name, $declared];
                 }
             }

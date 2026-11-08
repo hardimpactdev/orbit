@@ -96,9 +96,6 @@
       when: rt.swamp is not none
       ansible.builtin.import_tasks: tasks/swamp-start-cache.yml
       vars: { swamp_start_cache: /tmp/deno-compile-swamp.cache, swamp_cache_check_only: false }
-    - name: Install Swamp worker renewal
-      when: rt.swamp is not none
-      ansible.builtin.import_tasks: tasks/swamp-worker-renewal.yml
     - name: Write runtime units
       ansible.builtin.copy: { dest: "/etc/systemd/system/{{ item.name }}", content: "{{ item.unit }}", mode: "0644" }
       loop: "{{ rt.units }}"
@@ -364,3 +361,79 @@
           - incus.service
       changed_when: false
   vars: { rt: "{{ intent.runtime }}" }
+
+- name: Observe Tool Manager accounts
+  hosts: role_node
+  tags: [tools-read]
+  become: true
+  tasks:
+    - name: Read the enrolled account
+      ansible.builtin.getent: { database: passwd, key: "{{ intent.ssh.target.user }}" }
+    - name: Capture the Tool Manager account
+      ansible.builtin.copy:
+        dest: "{{ run_folder }}/tools-account.json"
+        content: "{{ ansible_facts.getent_passwd | to_json }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+- name: Set up Tool Managers
+  hosts: role_node
+  tags: [tools]
+  become: true
+  tasks:
+    - name: Apply pinned Tool Managers
+      ansible.builtin.include_tasks: tasks/role-tool-manager.yml
+      loop: "{{ plans.managers }}"
+      loop_control: { loop_var: manager }
+- name: Initialize and run Analytics
+  hosts: role_node
+  tags: [analytics]
+  become: true
+  vars: { analytics: "{{ intent.runtime.analytics }}" }
+  tasks:
+    - name: Apply Analytics initialization and runtime
+      when: analytics is not none and kind != 'node.role_converge'
+      ansible.builtin.import_tasks: tasks/role-analytics.yml
+- name: Run Swamp
+  hosts: role_node
+  tags: [swamp]
+  become: true
+  vars: { rt: "{{ intent.runtime }}" }
+  tasks:
+    - name: Apply the Swamp runtime
+      when: rt.swamp is not none
+      ansible.builtin.import_tasks: tasks/role-swamp.yml
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+- name: Observe role publications
+  hosts: publication_nodes
+  tags: [publication-read]
+  become: true
+  tasks:
+    - name: Read PHP and DNS state
+      ansible.builtin.import_tasks: tasks/role-publication-read.yml
+- name: Publish role PHP pools
+  hosts: publication_nodes
+  tags: [php]
+  become: true
+  tasks:
+    - name: Apply composed PHP pools
+      ansible.builtin.import_tasks: tasks/role-publication-php.yml
+- name: Publish role DNS
+  hosts: publication_nodes
+  tags: [dns]
+  become: true
+  tasks:
+    - name: Apply composed private DNS
+      ansible.builtin.import_tasks: tasks/role-publication-dns.yml
+- name: Remove Analytics initialization containers
+  hosts: role_node
+  tags: [cleanup]
+  become: true
+  tasks:
+    - name: Remove init containers
+      community.docker.docker_container: { name: "{{ item.name }}", state: absent, force_kill: true }
+      loop: "{{ (intent.runtime.analytics or {}).get('initialize', []) }}"
+      loop_control: { label: "{{ item.name }}" }
+      when: kind != 'node.role_converge'

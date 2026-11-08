@@ -303,7 +303,7 @@ jobs:
       behaviorName: ${{ "ansible-role-prerequisites-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prerequisites
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags prerequisites
           "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: &id001 {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
             steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s
@@ -312,22 +312,60 @@ jobs:
   dependsOn:
   - job: ansible
     condition: {type: succeeded}
+- name: tools_read
+  labels: {role: swamp}
+  dependsOn: [{job: prerequisites, condition: {type: succeeded}}]
+  steps:
+  - name: Read Tool Manager accounts
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-tools_read-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags tools-read "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
+- name: tools_plan
+  labels: {role: swamp}
+  dependsOn: [{job: tools_read, condition: {type: succeeded}}]
+  steps:
+  - name: Compose tools resources
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-role-compose-tools-" + string(inputs.node_id) }}
+      methodName: composeRole
+      inputs: {path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}', phase: tools}
+  - name: Write literal tools variables
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Compose tools resources, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-vars-tools-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" node.role_add.composed
+        env: *id001
 - name: phase_13
   labels: {role: swamp}
+  dependsOn: [{job: tools_plan, condition: {type: succeeded}}]
   steps:
   - name: Set up Tool Managers
     labels: {role: swamp}
     writes: true
-    forEach: {item: manager, in: '${{ inputs.intent.managers }}'}
-    concurrency: 1
     task:
-      type: workflow
-      workflowIdOrName: operation-tool-manager-setup
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ self.manager }}', ssh: '${{ inputs.intent.ssh
-          }}', report: false, converge: true}
-  dependsOn:
-  - job: prerequisites
-    condition: {type: succeeded}
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-phase_13-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags tools "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: node
   labels: {role: swamp}
   steps:
@@ -340,7 +378,7 @@ jobs:
       behaviorName: ${{ "ansible-role-node-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags node "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags node "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
   dependsOn:
   - job: phase_13
@@ -359,109 +397,27 @@ jobs:
       behaviorName: ${{ "ansible-role-storage-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags storage-firewall "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags storage-firewall "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
-- name: phase_46
+- name: analytics
   labels: {role: swamp}
+  dependsOn: [{job: analytics_storage, condition: {type: succeeded}}]
   steps:
-  - name: Pull the Analytics image
-    concurrency: 1
-    guard: ${{ inputs.kind == "node.role_converge" }}
+  - name: Apply Analytics runtime-0
+    guard: ${{ inputs.kind == "node.role_converge" || inputs.intent.runtime.analytics == null }}
     labels: {role: swamp}
     writes: true
-    forEach: {item: analytics, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics]
-        }}'}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/docker_image'
-      behaviorName: ${{ "role-add-analytics-image-"+string(inputs.node_id) + "-"+string(self._index) }}
-      methodName: apply
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.analytics.intent.installation.definition.image
-          }}', ensure: present}
-      inputs: {}
-  dependsOn:
-  - job: analytics_storage
-    condition: {type: succeeded}
-- name: phase_47
-  labels: {role: swamp}
-  steps:
-  - name: Create Analytics database
-    guard: ${{ inputs.kind == "node.role_converge" }}
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics.initialize[0]]
-        }}'}
-    concurrency: 1
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
-            inputs.intent.ssh.identity_file }}'}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
-      inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}
-  dependsOn:
-  - job: phase_46
-    condition: {type: succeeded}
-- name: analytics_migrate
-  labels: {role: swamp}
-  steps:
-  - name: Migrate Analytics database
-    guard: ${{ inputs.kind == "node.role_converge" }}
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics.initialize[1]]
-        }}'}
-    concurrency: 1
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "role-add-analytics-migrate-"+string(inputs.node_id)+"-"+string(self._index) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "role-add-analytics-migrate-"+string(inputs.node_id)+"-"+string(self._index) }}
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
-            inputs.intent.ssh.identity_file }}'}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
-      inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}
-  dependsOn:
-  - job: phase_47
-    condition: {type: succeeded}
-- name: phase_48
-  labels: {role: swamp}
-  steps:
-  - name: Apply Analytics runtime
-    guard: ${{ inputs.kind == "node.role_converge" }}
-    labels: {role: swamp}
-    writes: true
-    forEach: {item: analytics, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics]
-        }}'}
-    task:
-      type: workflow
-      workflowIdOrName: operation-process-create
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-analytics-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: process.create
-        intent: ${{ self.analytics.intent }}
-        execution_secrets: {environment: '${{ "analytics_environment" in inputs.execution_secrets ? inputs.execution_secrets["analytics_environment"] : {}
-            }}'}
-  dependsOn:
-  - job: analytics_migrate
-    condition: {type: succeeded}
+        run: timeout 2100 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags analytics "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: readiness
   labels: {role: swamp}
-  dependsOn: [{job: phase_48, condition: {type: succeeded}}]
+  dependsOn: [{job: analytics, condition: {type: succeeded}}]
   steps:
   - name: Wait for Analytics
     labels: {role: swamp}
@@ -472,300 +428,23 @@ jobs:
       behaviorName: ${{ "ansible-role-ready-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags readiness "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        run: timeout 90 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags readiness "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
 - name: swamp_runtime_job
-  dependsOn:
-  - {job: readiness, condition: {type: succeeded}}
+  labels: {role: swamp}
+  dependsOn: [{job: readiness, condition: {type: succeeded}}]
   steps:
-    # The recipe's pinned release, by checksum, at a path of its own version: no process runs from it yet.
   - name: Install Swamp
+    labels: {role: swamp}
     writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: '${{ ("swamp-binary-"+string(inputs.node_id)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs:
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
-        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
-        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
-        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
-        become: true
-        url: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.url }}'
-        path: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.path }}'
-        checksum: '${{ "sha256:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.sha256 }}'
-        owner: root
-        group: root
-        mode: '0755'
-      inputs: {}
-    # Serve and the workers run /usr/local/bin/swamp. While it is a file, rename it into a fresh 0755 directory under
-    # /usr/local/lib/orbit-swamp and link the path to the release at once: a rename keeps the inode, so a running process
-    # keeps a binary it can start children from. Replacing the file in place would leave it running a deleted binary
-    # (Swamp db3f6373 rollout, 2026-11-03). A link is left alone; Link Swamp then points it at the release.
-  - name: Keep the running Swamp
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    dependsOn: [{step: Install Swamp, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("swamp-keep-"+string(inputs.node_id)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("swamp-keep-"+string(inputs.node_id)).split(".").join("-") }}'
-        transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}
-        hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-swamp_runtime_job-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        hosts: name:target
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/timeout, '60', /bin/sh, -c, 'b=/usr/local/bin/swamp; [ -L "$b" ] || [ ! -e "$b" ] || { [ "$(stat -c %d "$b")" = "$(stat -c %d /usr/local/lib)" ] || { echo "swamp.binary_cross_filesystem: $b" >&2; exit 1; }; mkdir -p /usr/local/lib/orbit-swamp && d=$(mktemp -d /usr/local/lib/orbit-swamp/replaced-XXXXXXXX) && chmod 0755 "$d" && mv -f "$b" "$d/swamp" && ln -s "$1" "$b"; }', sh, '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.path }}']
-        timeoutSec: 70
-    # Swapping a link never touches a running process: it runs the file the link named when it started.
-  - name: Link Swamp
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    dependsOn: [{step: Keep the running Swamp, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("swamp-link-"+string(inputs.node_id)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs:
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
-        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
-        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
-        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
-        become: true
-        path: /usr/local/bin/swamp
-        ensure: present
-        target: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.path }}'
-      inputs: {}
-  - name: Apply Swamp identity
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("swamp-identity-"+string(inputs.node_id)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{
-          ("swamp-identity-"+string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-            : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-            : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-            : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-              : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-                : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/install, -C, -m, '0440',
-          -o, root, -g, '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-            : inputs.intent.runtime.swamp).user }}', /etc/orbit/node-proxy/id_ed25519, /etc/orbit/swamp-role-worker/ssh-identity]}}
-  - name: Apply Swamp serve
-    writes: true
-    # The unit runs /usr/local/bin/swamp, so it starts only after the link names the pinned release.
-    dependsOn: [{step: Link Swamp, condition: {type: succeeded}}]
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-serve-"+string(inputs.node_id)).split(".").join("-") }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-serve.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).units.serve }}', enabled: true, ensure: running}, inputs: {}}
-  # The workers run as the swamp account and read their token files themselves (no systemd credential: it does nothing in a container). The folders go
-  # to root:<account> 0750 and the files to 0640 BEFORE the unit that reads them is written, in this play, so a converge never leaves a unit that a worker
-  # cannot start from. Tokens placed by hand as root 0600 are repaired here.
-  - name: Own the Swamp worker credentials
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    forEach:
-      item: worker
-      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("swamp-credentials-own-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("swamp-credentials-own-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/chown, -R, '${{ "root:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).user }}', '${{ "/etc/orbit/swamp-role-worker/" + self.worker }}'], timeoutSec: 40}}
-  - name: Close the Swamp worker credentials
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    forEach:
-      item: worker
-      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers }}'
-    dependsOn: [{step: Own the Swamp worker credentials, condition: {type: succeeded}}]
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("swamp-credentials-close-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("swamp-credentials-close-"+string(inputs.node_id)+"-"+self.worker).split(".").join("-") }}', transport: {kind: ssh, user: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.user }}', port: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.port }}', identityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host }}', transport: {hostKeys: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).ssh_execution.target.host_keys }}'}}]},
-      inputs: {hosts: 'name:target', argv: [/usr/bin/sudo, -n, --, /usr/bin/chmod, -R, 'u=rwX,g=rX,o=', '${{ "/etc/orbit/swamp-role-worker/" + self.worker }}'], timeoutSec: 40}}
-  - name: Apply Swamp worker unit
-    writes: true
-    # The unit runs /usr/local/bin/swamp, so it starts only after the link names the pinned release and the credentials are readable.
-    dependsOn: [{step: Link Swamp, condition: {type: succeeded}}, {step: Close the Swamp worker credentials, condition: {type: succeeded}}]
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-worker-unit-"+string(inputs.node_id)).split(".").join("-") }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-worker@.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).units.worker }}'}, inputs: {}}
-  labels:
-    role: swamp
-- name: swamp_workers_job
-  dependsOn:
-  - {job: swamp_runtime_job, condition: {type: succeeded}}
-  steps:
-  - name: Start ${{ self.worker }}
-    concurrency: 1
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    forEach:
-      item: worker
-      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-        : inputs.intent.runtime.swamp).workers }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-worker-"+string(inputs.node_id) + "-"+self.worker).split(".").join("-") }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: '${{ "orbit-swamp-worker@" + self.worker + ".service" }}', enabled: true, ensure: running},
-      inputs: {}}
-  labels:
-    role: swamp
-- name: swamp_worker_renewal_job
-  dependsOn:
-  - {job: swamp_workers_job, condition: {type: succeeded}}
-  steps:
-  - name: Start sequential Swamp worker renewal
-    writes: true
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "swamp-worker-renewal-"+string(inputs.node_id) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-worker-renewal.timer, enabled: true, ensure: running},
-      inputs: {}}
-  labels:
-    role: swamp
-- name: swamp_check_job
-  dependsOn:
-  - {job: swamp_worker_renewal_job, condition: {type: succeeded}}
-  steps:
-  - name: Check Swamp serve
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-serve-"+string(inputs.node_id)).split(".").join("-") }}', methodName: check, globalArgs: {
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-serve.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).units.serve }}', enabled: true, ensure: running}, inputs: {}}
-  - name: Check Swamp worker unit
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-worker-unit-"+string(inputs.node_id)).split(".").join("-") }}', methodName: check, globalArgs: {
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-worker@.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).units.worker }}'}, inputs: {}}
-  - name: Check ${{ self.worker }}
-    concurrency: 1
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    forEach:
-      item: worker
-      in: '${{ inputs.intent.runtime.swamp == null ? [] : (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-        : inputs.intent.runtime.swamp).workers }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("swamp-worker-"+string(inputs.node_id) + "-"+self.worker).split(".").join("-") }}', methodName: check,
-      globalArgs: {nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: '${{ "orbit-swamp-worker@" + self.worker + ".service" }}', enabled: true, ensure: running},
-      inputs: {}}
-  - name: Check Swamp binary
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: '${{ ("swamp-binary-"+string(inputs.node_id)).split(".").join("-") }}'
-      methodName: check
-      globalArgs:
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
-        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
-        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
-        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
-        become: true
-        url: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.url }}'
-        path: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.path }}'
-        checksum: '${{ "sha256:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.sha256 }}'
-        owner: root
-        group: root
-        mode: '0755'
-      inputs: {}
-  - name: Check Swamp link
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/link'
-      behaviorName: '${{ ("swamp-link-"+string(inputs.node_id)).split(".").join("-") }}'
-      methodName: check
-      globalArgs:
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
-        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
-        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
-        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
-        become: true
-        path: /usr/local/bin/swamp
-        ensure: present
-        target: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":"","path":""} } : inputs.intent.runtime.swamp).binary.path }}'
-      inputs: {}
-  - name: Check Swamp identity
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("swamp-identity-file-"+string(inputs.node_id)).split(".").join("-") }}', methodName: check, globalArgs: {
-        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
-          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, path: /etc/orbit/swamp-role-worker/ssh-identity, ensure: present, owner: root, group: '${{ (inputs.intent.runtime.swamp
-          == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).user
-          }}', mode: '0440'}, inputs: {}}
-  labels:
-    role: swamp
-- name: Check Swamp runtime_job
-  dependsOn:
-  - {job: swamp_check_job, condition: {type: succeeded}}
-  steps:
-  - name: Check Swamp runtime
-    guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: assert, expr: '["Check Swamp binary", "Check Swamp link", "Check Swamp serve", "Check Swamp worker unit", "Check Swamp identity"].all(k, steps[k].outputs.status == "compliant") && (inputs.intent.runtime.swamp
-        == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers.all(w,
-        steps["Check " + w].outputs.status == "compliant")', severity: high, message: 'The swamp role''s binary, serve, workers or SSH identity drifted'}
-    labels:
-      role: swamp
-  labels:
-    role: swamp
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags swamp "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: phase_51
   labels: {role: swamp}
   steps:
@@ -793,30 +472,62 @@ jobs:
             transport: {hostKeys: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.host_keys
                 }}'}
   dependsOn:
-  - job: Check Swamp runtime_job
+  - job: swamp_runtime_job
     condition: {type: succeeded}
+- name: publication_read
+  labels: {role: swamp}
+  dependsOn: [{job: phase_51, condition: {type: succeeded}}]
+  steps:
+  - name: Read role publications
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-publication_read-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags publication-read "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
+- name: publication_plan
+  labels: {role: swamp}
+  dependsOn: [{job: publication_read, condition: {type: succeeded}}]
+  steps:
+  - name: Compose publication resources
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-role-compose-publication-" + string(inputs.node_id) }}
+      methodName: composeRole
+      inputs: {path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}', phase: publication}
+  - name: Write literal publication variables
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Compose publication resources, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-vars-publication-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" node.role_add.composed
+        env: *id001
 - name: phase_52
   labels: {role: swamp}
+  dependsOn: [{job: publication_plan, condition: {type: succeeded}}]
   steps:
   - name: Publish PHP pools
     labels: {role: swamp}
     writes: true
-    forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p, p.after.php != null && (p.after.php.configurations.size() > 0 ||
-        (p.before.php != null && p.before.php.configurations.size() > 0))) }}'}
     task:
-      type: workflow
-      workflowIdOrName: operation-route-php-delta
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-phase_52-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: '${{ self.publication.control_node_id }}', host_keys: '${{
-            self.publication.host_keys }}', connection: '${{ self.publication.connection }}', before: '${{ self.publication.before.php }}', after: '${{
-            self.publication.after.php }}', direction: forward}
-        execution_secrets: {}
-  dependsOn:
-  - job: phase_51
-    condition: {type: succeeded}
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags php "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: publication
   labels: {role: swamp}
   steps:
@@ -829,7 +540,7 @@ jobs:
       behaviorName: ${{ "ansible-role-publication-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags publication
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags publication
           "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
   dependsOn:
@@ -847,7 +558,7 @@ jobs:
       behaviorName: ${{ "ansible-role-firewall-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags firewall
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags firewall
           "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
   dependsOn:
@@ -855,29 +566,19 @@ jobs:
     condition: {type: succeeded}
 - name: phase_56
   labels: {role: swamp}
+  dependsOn: [{job: firewall, condition: {type: succeeded}}]
   steps:
   - name: Publish private DNS
     labels: {role: swamp}
     writes: true
-    forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p,p.after.dns != null) }}'}
     task:
-      type: workflow
-      workflowIdOrName: route-dns-publish
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-phase_56-" + string(inputs.node_id) }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.publication.node_id }}
-          connection: ${{ self.publication.connection }}
-          host_keys: ${{ self.publication.host_keys }}
-          before: ${{ self.publication.before.dns }}
-          after: ${{ self.publication.after.dns }}
-          alternatives: []
-        execution_secrets: {}
-  dependsOn:
-  - job: firewall
-    condition: {type: succeeded}
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" -e "run_folder=$ORBIT_RUN" --tags dns "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: exporters
   labels: {role: swamp}
   steps:
@@ -890,7 +591,7 @@ jobs:
       behaviorName: ${{ "ansible-role-exporters-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags exporters
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags exporters
           "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
     guard: ${{ inputs.intent.exporters.size() == 0 }}
@@ -909,7 +610,7 @@ jobs:
       behaviorName: ${{ "ansible-role-prometheus-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prometheus
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags prometheus
           "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
     guard: ${{ inputs.intent.prometheus == null }}
@@ -928,11 +629,29 @@ jobs:
       behaviorName: ${{ "ansible-role-role-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
         env: *id001
   dependsOn:
   - job: prometheus
     condition: {type: succeeded}
+- name: analytics_cleanup
+  labels: {role: swamp}
+  dependsOn:
+  - {job: analytics, condition: &analytics_settled {type: or, conditions: [{type: completed}, {type: skipped}]}}
+  - {job: readiness, condition: *analytics_settled}
+  steps:
+  - name: Remove init containers
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.kind == "node.role_converge" || inputs.intent.runtime.analytics == null }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ansible-role-init-cleanup-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" -e "@$ORBIT_RUN/composed.yml" --tags cleanup "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
 - name: cleanup
   labels: {role: swamp}
   dependsOn:
@@ -945,20 +664,17 @@ jobs:
   - {job: "phase_1", condition: *settled}
   - {job: "ansible", condition: *settled}
   - {job: "prerequisites", condition: *settled}
+  - {job: "tools_read", condition: *settled}
+  - {job: "tools_plan", condition: *settled}
   - {job: "phase_13", condition: *settled}
   - {job: "node", condition: *settled}
   - {job: "analytics_storage", condition: *settled}
-  - {job: "phase_46", condition: *settled}
-  - {job: "phase_47", condition: *settled}
-  - {job: "analytics_migrate", condition: *settled}
-  - {job: "phase_48", condition: *settled}
+  - {job: "analytics", condition: *settled}
   - {job: "readiness", condition: *settled}
   - {job: "swamp_runtime_job", condition: *settled}
-  - {job: "swamp_workers_job", condition: *settled}
-  - {job: "swamp_worker_renewal_job", condition: *settled}
-  - {job: "swamp_check_job", condition: *settled}
-  - {job: "Check Swamp runtime_job", condition: *settled}
   - {job: "phase_51", condition: *settled}
+  - {job: "publication_read", condition: *settled}
+  - {job: "publication_plan", condition: *settled}
   - {job: "phase_52", condition: *settled}
   - {job: "publication", condition: *settled}
   - {job: "firewall", condition: *settled}
@@ -966,6 +682,7 @@ jobs:
   - {job: "exporters", condition: *settled}
   - {job: "prometheus", condition: *settled}
   - {job: "role", condition: *settled}
+  - {job: "analytics_cleanup", condition: *settled}
   steps:
   - name: Remove the playbook input
     labels: {role: swamp}
@@ -978,21 +695,3 @@ jobs:
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"
         env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
-  - name: Remove init containers
-    concurrency: 1
-    guard: ${{ inputs.kind == "node.role_converge" }}
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    forEach: {item: initialization, in: '${{ inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'}
-    dataOutputOverrides:
-    - {specName: state, vaultName: orbit-control-inputs}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/docker_container'
-      behaviorName: ${{ "role-add-analytics-init-cleanup-"+string(inputs.node_id) + "-"+string(self._index) }}
-      methodName: apply
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.initialization.name }}', image: '${{
-          self.initialization.image }}', ensure: absent}
-      inputs: {}

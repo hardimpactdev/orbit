@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
+import { roleAddPlans } from "./role_add_plans.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -28,6 +29,38 @@ export const behavior = {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        composeRole: {
+            description:
+                "Compose role resources from Ansible observations in the private run folder",
+            arguments: z.object({
+                path: Path,
+                phase: z.enum(["tools", "publication"]),
+            }).strict(),
+            async execute(
+                raw: { path: string; phase: "tools" | "publication" },
+            ) {
+                const path = Path.parse(raw.path);
+                const folder = path.slice(0, path.lastIndexOf("/"));
+                const intent = z.record(z.string(), z.unknown()).parse(
+                    JSON.parse(await Deno.readTextFile(path)),
+                );
+                const previous = JSON.parse(
+                    await Deno.readTextFile(folder + "/composed.json"),
+                );
+                const plans = JSON.parse(
+                    await Deno.readTextFile(folder + "/plans.json"),
+                );
+                const composed = await roleAddPlans(intent, folder, raw.phase);
+                await Deno.writeTextFile(
+                    folder + "/composed.json",
+                    JSON.stringify({
+                        plans: { ...plans, ...previous.plans, ...composed },
+                    }),
+                    { mode: 0o600 },
+                );
+                return {};
+            },
+        },
         write: {
             description:
                 "Write the admitted intent and locate shipped playbooks",
@@ -46,6 +79,12 @@ export const behavior = {
                     JSON.stringify({ ci, clickhouse: clickhouseFiles }),
                     { mode: 0o600 },
                 );
+                await Deno.writeTextFile(folder + "/composed.json", "{}", {
+                    mode: 0o600,
+                });
+                await Deno.writeTextFile(folder + "/composed.yml", "{}", {
+                    mode: 0o600,
+                });
                 const requirementsPath = ctx.extensionFile(
                     "ansible/requirements.txt",
                 );

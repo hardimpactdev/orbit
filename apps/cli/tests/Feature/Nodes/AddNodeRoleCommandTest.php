@@ -46,6 +46,18 @@ it('registers the exact node role add command signature surface', function (): v
         ]);
 });
 
+it('rejects missing selectors in non-interactive modes before connector io', function (array $arguments, string $code): void {
+    MockClient::global([]);
+    $this->artisan('node:role:add', $arguments)->expectsOutputToContain($code)->assertFailed();
+    MockClient::getGlobal()->assertNothingSent();
+})->with([
+    [['--json' => true], 'node_role.role_required'],
+    [['--json' => true, 'node' => '4'], 'node_role.role_required'],
+    [['--json' => true, 'role' => 'app-dev'], 'node.id_invalid'],
+    [['--no-interaction' => true], 'node_role.role_required'],
+    [['--no-interaction' => true, 'node' => '4'], 'node_role.role_required'],
+]);
+
 it('rejects an invalid node id before connector io', function (string $nodeId): void {
     $mockClient = MockClient::global();
 

@@ -106,6 +106,10 @@ def build_node_add(folder):
 
 def build(folder, kind):
     os.umask(0o077)
+    if kind == 'node.role_add.composed':
+        folder = Path(folder)
+        (folder / 'composed.yml').write_text(unsafe(json.loads((folder / 'composed.json').read_text())) + '\n')
+        return
     if kind == 'node.add':
         return build_node_add(folder)
     if kind in TASK_VM_KINDS:
