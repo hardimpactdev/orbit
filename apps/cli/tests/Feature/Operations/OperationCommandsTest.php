@@ -451,7 +451,7 @@ describe('task:check', function (): void {
     })->with([
         [[], 'task.task_required'],
         [['task' => 'bad'], 'task.task_invalid'],
-                [['task' => 'bad'], 'task.task_invalid'],
+        [['task' => 'bad'], 'task.task_invalid'],
         [['task' => '21'], 'task.phase_required'],
         [['task' => '21', '--phase' => 'bad'], 'task.phase_invalid'],
     ]);

@@ -95,16 +95,16 @@ final readonly class TaskBuildIntent
         ];
     }
 
-    /** The implementation subtask after the spec subtask, with the fixed brief and the two deliverables of the build. */
+    /** The implementation subtask after the spec subtask; handoff already runs the configured Project check. */
     private function appendSubtask(Task $group, TaskPrepPrompts $prompts, string $head, string $branch): Task
     {
         $check = $group->project->task_check;
         $deliverables = [
             new TaskDeliverable('runner-plan', TaskDeliverableType::Command, 'The runner plan of the cases file passes.', command: $prompts->plan()),
-            is_string($check) && $check !== ''
-                ? new TaskDeliverable('project-check', TaskDeliverableType::Command, 'The Project check passes.', command: $check)
-                : new TaskDeliverable('project-check', TaskDeliverableType::Review, 'The Project check passes.'),
         ];
+        if (! is_string($check) || $check === '') {
+            $deliverables[] = new TaskDeliverable('project-check', TaskDeliverableType::Review, 'The Project check passes.');
+        }
 
         return Task::query()->create([
             'parent_id' => $group->id, 'position' => StoredInteger::fromOrZero($group->tasks()->max('position')) + 1, 'status' => TaskStatus::Todo,
