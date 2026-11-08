@@ -1287,7 +1287,9 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 
 Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or a task VM. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
 
-After GitHub deleted the branch of a merged pull request, that pull request's head stands in for the branch. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. A failed GitHub read refuses the same way. Uncommitted changes and work that no review approved go with the VM.
+Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
+
+A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. Uncommitted changes and work that no review approved go with the VM.
 
 When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 

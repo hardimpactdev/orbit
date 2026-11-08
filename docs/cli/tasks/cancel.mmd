@@ -14,16 +14,24 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant H as Task VM host<br/>Incus over ssh
   participant HUB as VPN hub<br/>over ssh
+  Note over GW: Check before any change<br/>VM free · cancellable
+  %%> Requirements:
+  %%> - no Operation is open on the group's task VM, such as a resume or an earlier release; otherwise HTTP 409 `operation.target_busy`, naming it
+  %%> - the group is cancellable; otherwise `tasks.not_cancellable`
+  %%> - every refusal here and in the next step comes before the cancel stops running work, so a refused cancel changes nothing
   GW->>GH: Compare the task branch<br/>approved...task-42
   %%> What it does:
   %%> - resolves the group's latest approved commit: the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval
-  %%> - asks GitHub, read-only, whether origin's task branch reaches it; after GitHub deleted the branch of a merged pull request, that pull request's head stands in for it
+  %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
+  %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
   %%> - skipped when the group has no approval, or holds no workspace and no task VM
   GH-->>GW: Branch reaches it
   %%> Result:
   %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `tasks:publish` first, which resumes a parked VM
-  %%> - a GitHub read that fails refuses the same way
-  Note over GW: Admit the release
+  %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
+  Note over GW: Admit the release<br/>stop work · VM reserved
+  %%> What it does:
+  %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
   %%> Result:
   %%> - the run carries only the release; it pushes nothing and never starts a parked VM
   GW->>SW: Start run, full intent<br/>operation-tasks-cancel

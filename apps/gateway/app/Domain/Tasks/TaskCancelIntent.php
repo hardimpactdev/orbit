@@ -11,7 +11,6 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -56,29 +55,23 @@ final readonly class TaskCancelIntent
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
             }
-            // A release of the group's slot that is still running, such as after a failed start, ends with the workspace; the cancel follows it.
+            // Every refusal comes before the cancel changes anything. An Operation still open on the group's VM, such as a release after a
+            // failed start or a resume, refuses it; approved work that origin does not have refuses it too: tasks:publish comes first.
             $slot = TaskVm::forGroup($group);
-            $release = $slot === null ? null : Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')
-                ->where('target_id', $slot->id)->whereNotIn('status', OperationStatus::terminalValues())->value('id');
-            if ($release !== null) {
-                throw new ResourceOperationException('operation.target_busy', 'The release of the group\'s task VM is still running; cancel again when it ends.', 409,
-                    details: ['operation_id' => $release]);
+            if ($slot instanceof TaskVm) {
+                TaskVmSlotRuns::assertReleasable($slot);
             }
             if ($kind === 'tasks.cancel') {
+                self::eligible($group->refresh(), $kind);
+                $this->review->assertOnOrigin($group);
                 $this->operations->cancelOpen($group);
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }
 
-            // Approved work that origin does not have refuses the cancel before it changes anything: tasks:publish comes first.
-            if ($kind === 'tasks.cancel') {
-                self::eligible($group->refresh(), $kind);
-                $this->review->assertOnOrigin($group);
-            }
-
             return DB::transaction(function () use ($group, $caller, $request, $kind): Operation {
-                $input = $this->capture($group, $kind);
+                $input = $this->capture($group, $kind, reserve: true);
 
                 return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
@@ -93,16 +86,17 @@ final readonly class TaskCancelIntent
      */
     public function captureForProof(Task $group): array
     {
-        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel'));
+        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel', reserve: false));
     }
 
     /**
      * The release of the group's slot. Nothing else ends: the claim ran no setup and published no Route, origin already has the approved
-     * work, and the delete of the task VM removes the task's files.
+     * work, and the delete of the task VM removes the task's files. An admitted cancel reserves the VM as a release does; a proof's capture
+     * runs before its VM exists and reserves nothing.
      *
      * @return array<string,mixed>
      */
-    private function capture(Task $group, string $kind): array
+    private function capture(Task $group, string $kind, bool $reserve): array
     {
         $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
         self::eligible($group, $kind);
@@ -112,7 +106,7 @@ final readonly class TaskCancelIntent
             || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
             throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned slot workspace.', 409);
         }
-        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? $this->slots->release($slot) : null;
+        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
             ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'release' => $release];

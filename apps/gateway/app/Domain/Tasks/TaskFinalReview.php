@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -28,8 +29,8 @@ final readonly class TaskFinalReview
 
     /**
      * Refuses with `tasks.approved_work_unpublished` and changes nothing while the group holds a workspace or a task VM and origin's task
-     * branch does not reach its latest approved commit. After GitHub deleted the branch of a merged pull request, the head of that pull
-     * request stands in for it. A GitHub read that fails refuses too.
+     * branch does not reach its latest approved commit. Only when GitHub answers that the branch does not exist and the group's pull
+     * request merged does that pull request's head stand in for it. Every failed GitHub read refuses too.
      */
     public function assertOnOrigin(Task $group): void
     {
@@ -57,21 +58,19 @@ final readonly class TaskFinalReview
         return is_string($sha) && $sha !== '' ? $sha : null;
     }
 
+    /** Reads refs and comparisons with a `contents: read` token, and the pull request with a `pull_requests: read` one. */
     private function reaches(GitHubRepository $repository, Task $group, string $commit, string $branch): bool
     {
         try {
-            $token = $this->access->cachedReadToken($repository);
-            try {
-                return $this->contains($token, $repository, $commit, $branch);
-            } catch (GitHubApiException $missing) {
+            $contents = $this->access->contentsReadToken($repository);
+            $head = $this->github->branchHead($contents, $repository, $branch);
+            if ($head === null) {
                 $number = is_string($group->pr_url) ? $repository->pullRequestNumber($group->pr_url) : null;
-                $head = $number === null ? null : $this->github->pullRequest($token, $repository, $number)->headSha;
-                if ($head === null) {
-                    throw $missing;
-                }
-
-                return $this->contains($token, $repository, $commit, $head);
+                $pull = $number === null ? null : $this->github->pullRequest($this->access->cachedReadToken($repository), $repository, $number);
+                $head = $pull?->state === GitHubPullRequestState::Merged ? $pull->headSha : null;
             }
+
+            return $head !== null && $this->contains($contents, $repository, $commit, $head);
         } catch (GitHubApiException) {
             return false;
         }

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\TaskVms\StartTaskVmResumeAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
@@ -18,6 +20,14 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupEnding;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -32,14 +42,6 @@ use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupEnding;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -573,35 +575,50 @@ it('refuses the removal of a workspace on a task VM that has no slot, which no r
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });
 
-
 /**
- * A group whose workspace sits on its parked task VM, with subtask approvals of `$approved` in order, and a GitHub where each head in
- * `$origin` reaches the commits it lists: `branch` is the group's task branch, any other key a commit. A head that is not there reads as
- * missing, as a deleted branch does. The test may change `$origin` later. The watched pull request merged at `$merged`, when given.
+ * A group whose workspace sits on its parked task VM, with subtask approvals of `$approved` in order, and a GitHub where `$origin['branch']`
+ * lists the commits the group's task branch reaches, its head first; without that key the branch does not exist, and `unreadable` fails
+ * the read. Any other key is a commit and the commits it reaches. The test may change `$origin` later. The group's pull request has the head
+ * `$merged` and the state `$state`, when given. `$reads` records each read with the token it used.
  *
  * @param  list<string>  $approved
- * @param  array<string,list<string>>  $origin
+ * @param  array<string,list<string>|string>  $origin
+ * @param  list<string>  $reads
  * @return array{0:Task,1:TaskVm,2:Node}
  */
-function preservationWorld(array $approved, array &$origin, ?string $merged = null, TaskGroupStatus $status = TaskGroupStatus::Settling): array
+function preservationWorld(array $approved, array &$origin, ?string $merged = null, TaskGroupStatus $status = TaskGroupStatus::Settling,
+    GitHubPullRequestState $state = GitHubPullRequestState::Merged, array &$reads = []): array
 {
     [, $project] = slotPoolHost();
     slotPoolSweepWorld();
     app(TaskExtensionState::class)->enable();
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use (&$origin, $merged): void {
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use (&$origin, &$reads, $merged, $state): void {
         $github->shouldReceive('repositoryInstallation')->andReturn(7);
-        $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('read-token');
-        $github->shouldReceive('compareCommits')->andReturnUsing(function (string $token, GitHubRepository $repository, string $base, string $head) use (&$origin): GitHubCommitComparison {
-            $reached = $origin[str_starts_with($head, 'task-') ? 'branch' : $head] ?? throw GitHubApiException::unavailable();
+        // Each token names the permission it carries, so a read with the wrong token shows in `$reads`.
+        $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('pull-requests-read');
+        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->andReturnUsing(function (string $token, GitHubRepository $repository, string $branch) use (&$origin, &$reads): ?string {
+            $reads[] = "branch:{$token}";
+            $listed = $origin['branch'] ?? null;
+
+            return $listed === 'unreadable' ? throw GitHubApiException::unavailable() : (is_array($listed) ? $listed[0] : null);
+        });
+        $github->shouldReceive('compareCommits')->andReturnUsing(function (string $token, GitHubRepository $repository, string $base, string $head) use (&$origin, &$reads): GitHubCommitComparison {
+            $reads[] = "compare:{$token}";
+            $reached = collect($origin)->first(static fn ($listed): bool => is_array($listed) && ($listed[0] ?? null) === $head) ?? throw GitHubApiException::unavailable();
 
             return match (true) {
-                ($reached[0] ?? null) === $base => new GitHubCommitComparison(GitHubComparisonStatus::Identical, $base, $base),
+                $reached[0] === $base => new GitHubCommitComparison(GitHubComparisonStatus::Identical, $base, $base),
                 in_array($base, $reached, true) => new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $base, $base),
                 default => new GitHubCommitComparison(GitHubComparisonStatus::Diverged, $base, str_repeat('0', 40)),
             };
         });
-        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Merged, null, null, $merged, 'main', mergedAt: '2026-11-08T08:00:00Z'));
+        $github->shouldReceive('pullRequest')->andReturnUsing(function (string $token) use (&$reads, $merged, $state): GitHubPullRequest {
+            $reads[] = "pull:{$token}";
+
+            return new GitHubPullRequest($state, null, null, $merged, 'main', mergedAt: $state === GitHubPullRequestState::Merged ? '2026-11-08T08:00:00Z' : null);
+        });
     }));
     $url = $merged === null ? null : 'https://github.com/hardimpactdev/orbit/pull/77';
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => $status, 'pr_url' => $url, 'watched_pr_url' => $url]);
@@ -692,4 +709,88 @@ it('refuses the release of a resuming task VM, completes the group with the reas
 
     expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
         ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('reads the task branch and compares with a contents:read token, and the pull request with a pull_requests:read token', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => [$a]];
+    $reads = [];
+    [$group, , $gateway] = preservationWorld([$a], $origin, reads: $reads);
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    expect($reads)->toBe(['branch:contents-read', 'compare:contents-read']);
+});
+
+it('reads a merged pull request with its own token when its branch is gone, and compares its head with the contents token', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    $reads = [];
+    [$merged, , $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running, reads: $reads);
+    preservationCall($gateway, $merged, 'complete')->assertOk();
+    expect($reads)->toContain('branch:contents-read', 'pull:pull-requests-read', 'compare:contents-read')
+        ->and($reads)->not->toContain('compare:pull-requests-read', 'branch:pull-requests-read');
+});
+
+it('refuses when the task branch cannot be read, though the merged pull request\'s head is the approved commit', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => 'unreadable', $a => [$a]];
+    $reads = [];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running, reads: $reads);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+    // The completion reads its watched pull request first; the failed branch read ends the check before any compare.
+    expect($reads)->toBe(['pull:pull-requests-read', 'branch:contents-read'])->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('refuses when the task branch is gone and its pull request closed without a merge, though the head is the approved commit', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, state: GitHubPullRequestState::Closed);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Settling)->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('leaves the group\'s open operations untouched when a complete or a cancel refuses', function (string $command): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    $origin = ['branch' => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin);
+    $turn = Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+    preservationCall($gateway, $group, $command)->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+
+    expect($turn->refresh()->status)->toBe(OperationStatus::Running)->and($turn->cancel_requested_at)->toBeNull()
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Settling)->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+})->with(['complete', 'cancel']);
+
+it('refuses a cancel while a resume of the group\'s VM is open, cancelling nothing, and admits it after the resume', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    $resume = Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+    $turn = Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy')
+        ->assertJsonPath('error.details.operation_id', $resume->id);
+    expect($turn->refresh()->cancel_requested_at)->toBeNull()->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $resume->update(['status' => OperationStatus::Succeeded]);
+    $turn->update(['status' => OperationStatus::Succeeded]);
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('reserves the VM at cancel admission, so a resume asked for later starts nothing', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and(app(StartTaskVmResumeAction::class)->execute($slot->id))->toBeNull()
+        ->and(app(WakeTaskVmAction::class)->forGroup($group->refresh()))->toBeTrue()
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
 });

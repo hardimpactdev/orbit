@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -73,24 +74,44 @@ final readonly class TaskVmSlotRuns
         ];
     }
 
-    /**
-     * The release as its own run, for a task start that failed or a group that ended without a cancel run. Admission locks and re-reads the
-     * VM: an open release is returned as it is, and any other open Operation on the VM, such as a resume that boots it, refuses the release.
-     */
+    /** The release as its own run, for a task start that failed or a group that ended without a cancel run. An open release is returned as it is. */
     public function startRelease(TaskVm $slot, string $caller): Operation
     {
         return DB::transaction(function () use ($slot, $caller): Operation {
             $slot = TaskVm::query()->lockForUpdate()->findOrFail($slot->id);
-            $open = Operation::query()->where('target_type', 'task_vm')->where('target_id', $slot->id)
+            $open = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')->where('target_id', $slot->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->first();
-            if ($open !== null) {
-                return $open->kind === TaskVmSlotPool::ReleaseKind ? $open : throw new ResourceOperationException('operation.target_busy',
-                    "Task VM [{$slot->name}] has an open {$open->kind} Operation; release it when that ends.", 409, details: ['operation_id' => $open->id]);
-            }
-            $slot->update(['state' => TaskVmState::Releasing]);
 
-            return $this->start->execute(TaskVmSlotPool::ReleaseKind, 'task_vm', $slot->id, (int) $slot->host_node_id, $this->release($slot), $caller, null);
+            return $open ?? $this->start->execute(TaskVmSlotPool::ReleaseKind, 'task_vm', $slot->id, (int) $slot->host_node_id, $this->reserveRelease($slot), $caller, null);
         });
+    }
+
+    /**
+     * The one admission of a release, for its own run and for a cancel run: it locks and re-reads the VM, refuses while any Operation is open
+     * on it, such as a resume that boots it, and marks it releasing, so no later resume starts it ({@see StartTaskVmResumeAction}). Call it in
+     * the transaction that admits the release.
+     *
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
+     */
+    public function reserveRelease(TaskVm $slot): array
+    {
+        $slot = TaskVm::query()->lockForUpdate()->findOrFail($slot->id);
+        self::assertReleasable($slot);
+        $release = $this->release($slot);
+        $slot->update(['state' => TaskVmState::Releasing]);
+
+        return $release;
+    }
+
+    /** Refuses with `operation.target_busy` while an Operation, a release or a resume, is open on the VM. Reads without a lock. */
+    public static function assertReleasable(TaskVm $slot): void
+    {
+        $open = Operation::query()->where('target_type', 'task_vm')->where('target_id', $slot->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->first();
+        if ($open !== null) {
+            throw new ResourceOperationException('operation.target_busy', "The {$open->kind} Operation of task VM [{$slot->name}] is still running; try again when it ends.", 409,
+                details: ['operation_id' => $open->id]);
+        }
     }
 
     /**
