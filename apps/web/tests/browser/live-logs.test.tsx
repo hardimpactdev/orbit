@@ -36,7 +36,7 @@ function fakeSocket() {
 
 /** The demo Gateway, plus the log stream routes, with the realtime discovery held so the test owns the liveness. */
 const withLogStreams =
-    (calls: string[]) =>
+    (calls: string[], record = "processes/2") =>
     (inner: Transport): Transport =>
     (method, path, body) => {
         calls.push(`${method} ${path}`);
@@ -45,7 +45,7 @@ const withLogStreams =
             return new Promise(() => undefined);
         }
 
-        if (method === "POST" && path === "/api/v1/processes/2/log-streams") {
+        if (method === "POST" && path === `/api/v1/${record}/log-streams`) {
             return Promise.resolve({
                 status: 201,
                 payload: {
@@ -61,7 +61,7 @@ const withLogStreams =
             });
         }
 
-        if (path === `/api/v1/processes/2/log-streams/${STREAM}`) {
+        if (path === `/api/v1/${record}/log-streams/${STREAM}`) {
             return Promise.resolve({ status: 200, payload: { data: { id: STREAM } } });
         }
 
@@ -130,4 +130,39 @@ it("polls when the Gateway refuses the stream", async () => {
 
     await expect.element(pane("Log")).toMatchTextContent("is ready.");
     expect(calls).toContain("GET /api/v1/processes/2/logs");
+});
+
+it("follows a Schedule UUID journal through the shared live log pane", async () => {
+    const id = "019afe6b-1d79-71e3-bf02-5ad5d28026b4";
+    const calls: string[] = [];
+    const { socket, channels, emit } = fakeSocket();
+    setLiveness("live");
+    setRealtimeSocket(socket);
+
+    await openApp(`/schedules/${id}`, {
+        wrapTransport: (inner) => {
+            const wrapped = withLogStreams(calls, `schedules/${id}`)(inner);
+            return async (method, path, body) => {
+                const response = await wrapped(method, path, body);
+                if (path !== "/api/v1/schedules") return response;
+                const payload = response.payload as { data: { id: string }[] };
+                return {
+                    ...response,
+                    payload: {
+                        ...payload,
+                        data: payload.data.map((schedule, index) =>
+                            index === 0 ? { ...schedule, id } : schedule,
+                        ),
+                    },
+                };
+            };
+        },
+    });
+    await expect.poll(() => channels.has(CHANNEL)).toBe(true);
+    emit("pusher:subscription_succeeded", {});
+    expect(calls).toContain(`PUT /api/v1/schedules/${id}/log-streams/${STREAM}`);
+    emit("log.lines", { sequence: 1, lines: ["backup completed"], dropped: 0, skipped: 0 });
+    await expect.element(pane("Log")).toMatchTextContent("backup completed");
+    await expect.element(pane("Log")).toMatchTextContent("live");
+    expect(calls.filter((call) => call.endsWith("/logs"))).toEqual([]);
 });

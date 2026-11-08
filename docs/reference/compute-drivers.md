@@ -14,6 +14,8 @@ covers:
 
 # Compute drivers
 
+Schedule log viewers use the owning Node and the fixed Schedule journal unit. Opening a [live log stream](/reference/live-logs) does not provision a task VM or run a workflow.
+
 Every task group runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
 Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start.

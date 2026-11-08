@@ -7,7 +7,7 @@ namespace App\Domain\Logs;
 use App\Models\Instance;
 
 /**
- * One open live log stream: one viewer following one Instance or Process log (ADR 0153).
+ * One open live log stream: one viewer following one Instance, Process or Schedule log (ADR 0153).
  *
  * `nodeId` is the Node that serves the record and whose agent reads the source. `viewerNodeId` is
  * the WireGuard peer that opened the stream; only that peer may renew or close it.
@@ -23,7 +23,7 @@ final readonly class LogStream
     public function __construct(
         public string $id,
         public LogStreamRecordType $recordType,
-        public int $recordId,
+        public int|string $recordId,
         public int $nodeId,
         public int $viewerNodeId,
         public LogStreamSource $source,
@@ -61,7 +61,9 @@ final readonly class LogStream
 
         if (
             ! is_string($id) || preg_match(self::ID, $id) !== 1 || $type === null || $source === null
-            || ! is_int($stored['record_id'] ?? null) || ! is_int($stored['node_id'] ?? null)
+            || ! ($type === LogStreamRecordType::Schedule
+                ? is_string($stored['record_id'] ?? null) && preg_match('/\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/D', $stored['record_id']) === 1
+                : is_int($stored['record_id'] ?? null)) || ! is_int($stored['node_id'] ?? null)
             || ! is_int($stored['viewer_node_id'] ?? null) || ! is_int($stored['lines'] ?? null)
             || ! is_numeric($stored['expires_at'] ?? null)
         ) {

@@ -10,7 +10,7 @@
           "pages": [
             "cli/realtime/index",
             "cli/realtime/show",
-            "cli/realtime/tail"
+            "cli/realtime/logs"
           ]
         }
       ]

@@ -185,7 +185,7 @@ PHPacker reads the `php-bin` release list from GitHub. The builder requires `GIT
 
 `bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>` turns the two downloaded artifacts into the release assets and `SHA256SUMS`. It refuses a version that is not `0.N.0`, a missing or empty binary, and a binary built for another platform.
 
-The CLI requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` itself. `realtime:tail` uses Laravel's HTTP client to authorize the Reverb channel after the WebSocket connects. A binary without that package fails there with `Target class [Illuminate\Http\Client\Factory] does not exist`.
+The CLI requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` itself. `realtime:logs` uses Laravel's HTTP client to authorize the Reverb channel after the WebSocket connects. A binary without that package fails there with `Target class [Illuminate\Http\Client\Factory] does not exist`.
 
 ## Limits
 

@@ -5,14 +5,17 @@ description: "Return the newest complete lines of the Schedule's service journal
 ---
 
 ```bash
-orbit schedule:logs <schedule> [--lines=COUNT] [--json]
+orbit schedule:logs <schedule> [--lines=COUNT] [--follow] [--json]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--lines=COUNT` | `100` | 1 through 1,000 lines. |
+| `--follow` | off | Reserved; refuses until the fixed Agent is pinned. |
 
-The Gateway answers from the Node agent's log stream, not over SSH. It returns at most 256 KiB and sets `truncated` when that limit removed older lines. It redacts the lines as it does for a Process. When the Gateway cannot answer it returns `logs.live_unavailable` (409), or `logs.stream_limit` (429) when the Node already has 16 open tails.
+Orbit returns a bounded snapshot of the service journal. It redacts the owning Instance's stored environment values.
+
+`--follow` currently refuses with `schedule.follow_unavailable`: Schedule follow needs orbit-agent 0.14.0. The fixed Agent must be released, pinned and installed before follow is enabled. See [Agent releases](/reference/node-agent#releases).
 
 ## How it works
 
