@@ -49,16 +49,31 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# The Node family. node:list and node:role:add have cases; the remaining commands are reported as uncovered.
+swamp/proof/node/list.cases.yaml                          node:list
+apps/cli/app/Commands/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/cli/app/Support/CommandVocabulary/node.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Actions/Nodes/**                            node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Data/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Domain/Nodes/**                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Domain/Nodes/SwampRoleUnits.php             none: service unit definitions, not a command request
+apps/gateway/app/Http/Controllers/Api/Node*.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Http/Requests/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Infrastructure/Nodes/**                     node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Models/Node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Models/NodeRole.php                         node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/routes/api/node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+packages/php-sdk/src/Requests/Nodes/**                       node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+packages/php-sdk/src/Responses/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+
 # Role addition and explicit role convergence share one native workflow and cases file.
 apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php          node:role:add
 apps/cli/app/Commands/Nodes/FollowsNodeRoleOperations.php   node:role:add
 apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php  node:role:add
-apps/gateway/app/Http/Controllers/Api/NodeRolesController.php  node:role:add
 apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
 apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php     node:role:add
 apps/gateway/app/Domain/Nodes/NativeNodeRoleRuntimeInput.php  node:role:add
 apps/gateway/app/Domain/Nodes/NodeRoleDirectProjection.php   node:role:add
-apps/gateway/app/Models/NodeRole.php                        node:role:add
 packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
 swamp/workflows/workflow-operation-node-role-add.yaml       node:role:add
 swamp/ansible/operation-node-role-add.yml                   node:role:add

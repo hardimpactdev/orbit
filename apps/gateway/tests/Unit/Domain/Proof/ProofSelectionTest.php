@@ -259,13 +259,30 @@ it('selects role addition for its implementation in the checked-in list', functi
 })->with([
     'apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php',
     'apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php',
-    'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
     'apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php',
     'apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php',
     'packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php',
     'swamp/workflows/workflow-operation-node-role-add.yaml',
     'swamp/ansible/operation-node-role-add.yml',
     'swamp/proof/node/role-add.cases.yaml',
+]);
+
+it('selects both approved Node proofs for their shared projection and role controller', function (string $path): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $result = ProofSelection::select(
+        (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ['swamp/proof/node/list.cases.yaml', 'swamp/proof/node/role-add.cases.yaml'],
+    );
+
+    expect($result->everythingBecause)->toBeNull()->and($result->cases)->toBe([
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml'],
+        ['command' => 'node:role:add', 'file' => 'swamp/proof/node/role-add.cases.yaml'],
+    ]);
+})->with([
+    'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
+    'apps/gateway/app/Models/NodeRole.php',
+    'apps/gateway/app/Data/Nodes/NodeData.php',
+    'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
 ]);
 
 it('selects every case for shared proof entry and human failure rendering', function (string $path): void {
@@ -369,6 +386,23 @@ it('selects every case for every tracked file of the shared directories', functi
     $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
     expect($unselected)->toBe([]);
 });
+
+it('selects the recorded Node list proof for its implementation and cases', function (string $path): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $result = ProofSelection::select(
+        (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ['swamp/proof/node/list.cases.yaml'],
+    );
+
+    expect($result->everythingBecause)->toBeNull()->and($result->cases)->toBe([
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml'],
+    ]);
+})->with([
+    'apps/cli/app/Commands/Nodes/ListNodesCommand.php',
+    'apps/gateway/app/Data/Nodes/NodeData.php',
+    'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
+    'swamp/proof/node/list.cases.yaml',
+]);
 
 /** The two file sets that started a proof of every case, with the helper of OperationRunBudgets (`longestFixedSeconds`) at the place where it lives now, in OperationBudgetTable. */
 dataset('swamp unit changes that touch no command', [

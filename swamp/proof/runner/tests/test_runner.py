@@ -207,6 +207,7 @@ class FleetCliTest(unittest.TestCase):
         with patch.object(fleet_module.subprocess, 'run', return_value=done) as run:
             found.cli(['firewall:list'])
         self.assertEqual(run.call_args_list[0].args[0][:2], ['php', str(Path(fleet_module.__file__).resolve().parents[3] / 'apps/cli/orbit')])
+        self.assertEqual(run.call_args.kwargs['env']['COLUMNS'], '240')
 
 
 class NodeCliTest(unittest.TestCase):
@@ -236,7 +237,7 @@ class NodeCliTest(unittest.TestCase):
     def test_runs_the_checkout_cli_as_the_managed_user_of_the_node_and_never_a_bare_orbit(self):
         with patch.object(fleet_module.subprocess, 'run', self.script()):
             result = self.fleet.cli(['firewall:list', '--node=211'], node='app-prod')
-        self.assertEqual(self.last(), ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--',
+        self.assertEqual(self.last(), ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'COLUMNS=240', '--',
                                         'php', '/home/orbit/orbit/apps/cli/orbit', 'firewall:list', '--node=211', '--json'])
         self.assertEqual(result['rc'], 0)
         self.assertNotIn('orbit', [call[call.index('--') + 1] for call in self.calls if '--' in call])

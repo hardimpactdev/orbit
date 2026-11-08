@@ -53,7 +53,7 @@ function role_add_prompt(array $keys, array $arguments = []): array
 function role_add_prompt_gateway(array $processes = [], array $servers = []): MockClient
 {
     return MockClient::global([
-        ListNodesRequest::class => MockResponse::make(['data' => [['id' => 4, 'name' => 'app-dev']]]),
+        ...gateway_fixture_mock('nodes/node-list/default'),
         ListProcessesRequest::class => MockResponse::make(['data' => $processes]),
         ListDatabaseServersRequest::class => MockResponse::make(['data' => $servers]),
         AddNodeRoleRequest::class => MockResponse::make(['error' => ['code' => 'node_role.test', 'message' => 'Admission reached.']], 422),
@@ -67,7 +67,7 @@ it('selects an omitted role and Node before sending the typed admission request'
     expect($status)->toBe(1)->and($display)->toContain('Role', 'Node', 'Admission reached.');
     $mock->assertSentCount(1, ListNodesRequest::class);
     $mock->assertSentCount(1, AddNodeRoleRequest::class);
-    $mock->assertSent(fn ($request): bool => $request instanceof AddNodeRoleRequest && $request->resolveEndpoint() === '/api/v1/nodes/4/roles' && $request->body()->all() === ['role' => 'gateway', 'converge_existing' => false]);
+    $mock->assertSent(fn ($request): bool => $request instanceof AddNodeRoleRequest && $request->resolveEndpoint() === '/api/v1/nodes/2/roles' && $request->body()->all() === ['role' => 'gateway', 'converge_existing' => false]);
 });
 
 it('selects only the omitted role for an explicit numeric Node', function (): void {
@@ -85,6 +85,27 @@ it('selects only the omitted Node for an explicit role', function (): void {
     $mock->assertSentCount(1, ListNodesRequest::class);
     $mock->assertSent(fn ($request): bool => $request instanceof AddNodeRoleRequest && $request->body()->all()['role'] === 'app-dev');
 });
+
+it('selects a Node with a recorded native assignment failure without deciding convergence locally', function (string $step): void {
+    $fixture = gateway_fixture('nodes/node-list/default');
+    $body = json_decode($fixture['body'], true, flags: JSON_THROW_ON_ERROR);
+    $body['data'][0]['assignments'][0]['status'] = 'failed';
+    $body['data'][0]['assignments'][0]['failed_step'] = $step;
+    $body['data'][0]['assignments'][0]['error_code'] = 'node_role.convergence_failed';
+    $mock = MockClient::global([
+        ListNodesRequest::class => MockResponse::make($body),
+        AddNodeRoleRequest::class => MockResponse::make(['error' => ['code' => 'node_role.test', 'message' => 'Admission reached.']], 422),
+    ]);
+
+    [$status, $display] = role_add_prompt([Key::ENTER], ['role' => 'app-dev', '--converge' => true]);
+
+    expect($status)->toBe(1)->and($display)->toContain('app-dev', 'Admission reached.');
+    $mock->assertSentCount(1, ListNodesRequest::class);
+    $mock->assertSentCount(1, AddNodeRoleRequest::class);
+    $mock->assertSent(fn ($request): bool => $request instanceof AddNodeRoleRequest
+        && $request->resolveEndpoint() === '/api/v1/nodes/2/roles'
+        && $request->body()->all() === ['role' => 'app-dev', 'converge_existing' => true]);
+})->with(['converge:Require supported Ubuntu', 'converge:Check the role']);
 
 it('sends no admission on cancellation or an empty Node list', function (bool $empty): void {
     $mock = $empty ? MockClient::global([ListNodesRequest::class => MockResponse::make(['data' => []])]) : role_add_prompt_gateway();

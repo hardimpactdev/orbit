@@ -9,7 +9,10 @@ use SensitiveParameter;
 
 final readonly class NodeResponse
 {
-    /** @param list<string> $roles */
+    /**
+     * @param  list<string>  $roles
+     * @param  list<NodeRoleAssignmentResponse>  $assignments
+     */
     public function __construct(
         public int $id,
         public string $name,
@@ -35,6 +38,8 @@ final readonly class NodeResponse
         public ?NodeSettings $settings = null,
         public ?NodeUpdatingResponse $updating = null,
         public ?NodeAgentResponse $agent = null,
+        public ?string $clusterName = null,
+        public array $assignments = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -77,6 +82,8 @@ final readonly class NodeResponse
             settings: self::settings($data['settings'] ?? null),
             updating: NodeUpdatingResponse::tryFromGatewayData($data['updating'] ?? null),
             agent: NodeAgentResponse::tryFromGatewayData($data['agent'] ?? null),
+            clusterName: is_string($data['cluster_name'] ?? null) ? $data['cluster_name'] : null,
+            assignments: self::assignmentList($data['assignments'] ?? [], $requestId),
         );
     }
 
@@ -108,6 +115,11 @@ final readonly class NodeResponse
             'settings' => $this->settings?->toArray(),
             'updating' => $this->updating?->toArray(),
             'agent' => $this->agent?->toArray(),
+            'cluster_name' => $this->clusterName,
+            'assignments' => array_map(
+                static fn (NodeRoleAssignmentResponse $assignment): array => $assignment->toArray(),
+                $this->assignments,
+            ),
             'request_id' => $this->requestId,
         ];
 
@@ -116,6 +128,31 @@ final readonly class NodeResponse
         }
 
         return $data;
+    }
+
+    /** @return list<NodeRoleAssignmentResponse> */
+    private static function assignmentList(mixed $value, string $requestId): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $assignments = [];
+        foreach ($value as $assignment) {
+            if (! is_array($assignment)) {
+                continue;
+            }
+
+            $fields = [];
+            foreach ($assignment as $key => $field) {
+                if (is_string($key)) {
+                    $fields[$key] = $field;
+                }
+            }
+            $assignments[] = NodeRoleAssignmentResponse::fromGatewayData($fields, $requestId);
+        }
+
+        return $assignments;
     }
 
     private static function settings(mixed $value): ?NodeSettings

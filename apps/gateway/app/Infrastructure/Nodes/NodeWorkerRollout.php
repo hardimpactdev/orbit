@@ -6,7 +6,6 @@ namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Models\Node;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\Config;
 
 /** Explicit operator rollout; task workers have their own lifecycle. */
@@ -17,6 +16,6 @@ final readonly class NodeWorkerRollout
         return in_array($node->id, Config::array('swamp_workers.nodes'), true)
             && app(ManagedNodeEligibility::class)->allows($node)
             && in_array($node->architecture, ['x86_64', 'amd64'], true)
-            && TaskVm::query()->where('node_id', $node->id)->doesntExist();
+            && $node->taskVms->isEmpty();
     }
 }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Nodes\NodeData;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -89,4 +90,11 @@ it('marks a role failed when its first add or a non-active convergence fails', f
 
     expect($assignment->refresh()->status)->toBe(LifecycleStatus::Failed);
     expect($assignment->failed_step)->toBe('converge:Check the role');
+
+    $data = NodeData::fromModel($node->refresh())->toArray();
+    expect($data['roles'])->toBe(['database'])
+        ->and($data['assignments'])->toBe([[
+            'id' => $assignment->id, 'role' => 'database', 'status' => 'failed',
+            'failed_step' => 'converge:Check the role', 'error_code' => 'node_role.convergence_failed',
+        ]]);
 })->with(['first add' => ['provisioning'], 'failed earlier' => ['failed']]);

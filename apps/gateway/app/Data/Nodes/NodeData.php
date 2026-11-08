@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Nodes;
 
+use App\Actions\Nodes\ListNodeRolesAction;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\Nodes\NodeUpdates;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
@@ -18,7 +18,10 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class NodeData extends Data
 {
-    /** @param list<string> $roles */
+    /**
+     * @param  list<string>  $roles
+     * @param  list<NodeRoleAssignmentData>  $assignments
+     */
     public function __construct(
         public int $id,
         public ?int $clusterId,
@@ -43,6 +46,8 @@ final class NodeData extends Data
         public ?NodeUpdatingData $updating = null,
         public bool $swampWorkerSelected = false,
         public ?NodeAgentData $agent = null,
+        public ?string $clusterName = null,
+        public array $assignments = [],
     ) {}
 
     /**
@@ -64,6 +69,10 @@ final class NodeData extends Data
         $failedStep = $node->getAttribute('failed_step');
         $errorCode = $node->getAttribute('error_code');
 
+        $assignments = array_values(app(ListNodeRolesAction::class)->execute($node)
+            ->map(static fn ($assignment): NodeRoleAssignmentData => NodeRoleAssignmentData::fromModel($assignment))
+            ->all());
+
         return new self(
             id: $node->id,
             clusterId: $node->cluster_id,
@@ -83,32 +92,13 @@ final class NodeData extends Data
             sshHostFingerprint: ValidatedData::nullableString($sshHostFingerprint),
             failedStep: ValidatedData::nullableString($failedStep),
             errorCode: ValidatedData::nullableString($errorCode),
-            roles: self::roles($node),
+            roles: array_map(static fn (NodeRoleAssignmentData $assignment): string => $assignment->role, $assignments),
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
             updating: $updating,
             swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
             agent: app(NodeAgentLiveness::class)->for($node),
+            clusterName: $node->cluster?->name,
+            assignments: $assignments,
         );
-    }
-
-    /** @return list<string> */
-    private static function roles(Node $node): array
-    {
-
-        $roleOrder = array_flip(array_map(
-            static fn (RoleName $role): string => $role->value,
-            RoleName::cases(),
-        ));
-        $roles = [];
-        foreach ($node->roles as $nodeRole) {
-            $roles[] = $nodeRole->role;
-        }
-        usort(
-            $roles,
-            static fn (RoleName $left, RoleName $right): int => $roleOrder[$left->value]
-                <=> $roleOrder[$right->value],
-        );
-
-        return array_map(static fn (RoleName $role): string => $role->value, $roles);
     }
 }
