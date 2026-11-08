@@ -51,7 +51,7 @@ Checked with dnsmasq 2.92 on scratch ports. Nothing live was touched.
 | Add or remove an exact Route | `SIGHUP` re-reads both files | No restart. The answer, NODATA and the child forward all change on SIGHUP alone. |
 | Add, change or remove a TLD | A new `orbit.conf` and a restart | A regression: every name stops during the restart. A TLD changes rarely. |
 | TTL of 30 seconds, which the 31-second Route grace wait relies on | `local-ttl=30` in `orbit.conf` | Same |
-| Uplink resolvers, bind address, the `ubuntu-fan` snippet, the Node's own resolver, `domain-needed`, `bogus-priv`, `local=/orbit/`, `vpn.orbit` | The phase reads the uplink resolvers, binds with `listen-address` and `bind-dynamic`, also on `127.0.0.55` where the vpn Node's own resolver points, and moves the snippet away. `orbit.conf` keeps the three options of the old backend, and the Gateway renders `vpn.orbit` | Same, as [Private DNS](/reference/private-dns#upstream-resolvers) describes |
+| Uplink resolvers, bind address, the `ubuntu-fan` snippet, the Node's own resolver, `vpn.orbit` | The phase reads the uplink resolvers, binds with `listen-address` and `bind-dynamic` (also on `127.0.0.55`, the Node's own resolver), and moves the snippet away. `orbit.conf` keeps `domain-needed`, `bogus-priv` and `local=/orbit/`; the Gateway renders `vpn.orbit` | Same, as [Private DNS](/reference/private-dns#upstream-resolvers) describes |
 | Peers send only Orbit names to private DNS | The Gateway renders the routing domains and `fleet.peer_dns` applies them | Unchanged |
 | **Answers per caller** | dnsmasq cannot. `localise-queries` keys on the receiving interface, and every WireGuard query arrives on `orbit`. | **Lost on the vpn Node** |
 
@@ -121,7 +121,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - AAAA for an exact Route gives NODATA. It no longer leaks a public IPv6 address.
 - A TLD change restarts dnsmasq, so every name stops for the length of the restart. The measured gap goes into this section after the rehearsal.
 - Parallel publications are safe because each one writes a whole state and the newest revision wins. A failed run leaves its rows in the database, and the next publication renders them.
-- A restore keeps the revision it took at admission, and a later publication takes a newer one, so the Node skips the restore. After a failed `cluster.router_set`, `cluster.router_unset` or `instance.transfer` is stored, the Gateway queues one fresh `dns.publish` (`PublishPrivateDns`).
+- A restore keeps the revision it took at admission, and a publication admitted after it takes a newer one, so the Node skips the restore. After a failed `cluster.router_set`, `cluster.router_unset` or `instance.transfer` is stored, the Gateway queues one fresh `dns.publish` (`PublishPrivateDns`).
 - The first snapshot is the state to go back to until a publication commits. A killed first cutover followed by a failed retry restores the original old listener setup, not the candidate.
 - A failed recovery keeps the snapshot and says `dns.rollback_failed` with `recovered: false`. The next run starts from the snapshot. The recovery checks that the restored resolvers answer over UDP and TCP, not what they answer.
 - The stop of the old listener and the restart of dnsmasq are one detached command. A phase that is killed meanwhile (the 300-second step timeout, a worker crash) leaves a running dnsmasq, and the next publication finds no `orbit.conf.loaded` and restarts.

@@ -125,7 +125,8 @@ The phase first prepares the change:
 
 1. It skips a revision that is not newer than `orbit.revision`, and succeeds with `dns.revision_superseded`.
 2. It renders the files in a temporary folder and runs `dnsmasq --test` on them. A refusal fails with `dns.config_invalid` and installs nothing.
-3. It takes a snapshot of the files, the unit states and the holders of the listen addresses, unless one exists. It writes `reload.pending`, then installs the files whose content changed, each in one rename.
+3. It takes a snapshot of the files, the unit states and the listen address holders. A snapshot that exists stays as it is.
+4. It writes `reload.pending`, then installs the files whose content changed, each in one rename.
 
 Then it applies the change. It compares `orbit.conf` with `orbit.conf.loaded`, the copy dnsmasq last started with:
 
