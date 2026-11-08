@@ -99,6 +99,37 @@ describe('node role assignment response transport', function (): void {
             ->toBe('remove:firewall');
     });
 
+    it('rejects unbounded blank non-string and control-bearing failed-step labels', function (mixed $failedStep): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
+                'id' => 34,
+                'role' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => $failedStep,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role assignment failed_step.',
+        );
+    })->with([
+        'integer' => [1],
+        'boolean' => [false],
+        'array' => [[]],
+        'empty string' => [''],
+        'spaces only' => ['   '],
+        'Unicode spaces only' => ["\u{00A0}\u{2003}"],
+        'over maximum length' => [str_repeat('a', 129)],
+        'NUL' => ["converge:Check\0the role"],
+        'tab' => ["converge:Check\tthe role"],
+        'line feed' => ["converge:Check\nthe role"],
+        'carriage return' => ["converge:Check\rthe role"],
+        'terminal escape' => ["converge:Check\e[31mthe role"],
+        'DEL' => ["converge:Check\x7fthe role"],
+        'Unicode control' => ["converge:Check\u{0085}the role"],
+        'Unicode format control' => ["converge:Check\u{202E}the role"],
+        'Unicode line separator' => ["converge:Check\u{2028}the role"],
+        'Unicode paragraph separator' => ["converge:Check\u{2029}the role"],
+        'invalid UTF-8' => ["converge:Check\xffthe role"],
+    ]);
+
     it('rejects malformed ids unsafe roles unsupported statuses and invalid failure fields', function (): void {
         assert_node_role_boundary_exception(
             fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([

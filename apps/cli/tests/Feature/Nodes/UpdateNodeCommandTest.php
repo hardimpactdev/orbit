@@ -42,6 +42,7 @@ it('sends the apps folder, including a colon in the path', function (): void {
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
                 'roles' => ['app-dev'],
+                'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
                 'settings' => [
                     'apps' => ['path' => '/srv/orbit:data/apps'],
                 ],
@@ -57,6 +58,7 @@ it('sends the apps folder, including a colon in the path', function (): void {
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
                 'roles' => ['app-dev'],
+                'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
             ]],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
         ]),

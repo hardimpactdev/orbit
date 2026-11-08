@@ -23,6 +23,7 @@ it('sends a partial settings patch and preserves omitted members', function (): 
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
                 'roles' => ['app-dev'],
+                'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
                 'settings' => [
                     'apps' => ['path' => '/srv/orbit/apps'],
                 ],
