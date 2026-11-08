@@ -24,6 +24,8 @@ The steps are:
 
 `Withdraw task host input` runs when a task host is removed or its bridge changes. The shared Ansible phase deletes rows with the admitted catalog comments and checks that none remain. Reachable Node removal uses the same phase.
 
+When no apps folder needs preparation, the withdrawal step is the terminal check. Its successful result lets Orbit save the settings even though the folder check is skipped.
+
 The apps-folder steps run only when the patch needs folder preparation:
 - `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
 - `Check owner and mode` reads the folder with one `stat`. It is the end check.
