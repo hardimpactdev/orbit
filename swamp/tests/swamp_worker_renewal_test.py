@@ -37,6 +37,22 @@ cmd = Path(sys.argv[0]).name
 if cmd == 'getent':
     user = pwd.getpwnam(sys.argv[2])
     print(':'.join([user.pw_name, 'x', str(user.pw_uid), str(user.pw_gid), user.pw_gecos, user.pw_dir, user.pw_shell]))
+elif cmd == 'journalctl':
+    slot = next(a for a in sys.argv if a.startswith('--unit=')).split('@')[1][0]
+    print(s.get('receipts', {}).get(slot, '2026-11-08T01:00:00Z [INF] worker: Enrolled as "' + s['workers'][slot]['name'] + '"'))
+elif cmd == 'queued-dispatch':
+    event('queued-follow-on')
+    deadline = time.monotonic() + 30
+    while True:
+        s = json.loads(path.read_text())
+        accepting = [slot for slot, worker in s['workers'].items()
+                     if worker['status'] in ('idle', 'busy')
+                     and len(worker['activeDispatchIds']) < worker['capacity']]
+        if accepting:
+            event('follow-on-success-' + accepting[0])
+            break
+        assert time.monotonic() < deadline, 'follow-on exceeded queueTimeout: 30'
+        time.sleep(.02)
 elif cmd == 'busctl':
     print('t ' + str(s.get('stop_usec', 4500000000)))
 elif cmd == 'systemctl':
@@ -72,11 +88,14 @@ elif cmd == 'swamp':
                     save()
         print(json.dumps({'workers': list(s['workers'].values())}))
     elif sys.argv[2] == 'verify':
-        slot = sys.argv[3][-1]
+        slot = next(slot for slot, worker in s['workers'].items() if worker['name'] == sys.argv[3])
         event('verify-' + slot)
         error = s.get('probe_error', {}).get(slot)
         if s.get('drain_on_probe') == slot:
             s['workers'][slot]['status'] = 'draining'
+            save()
+        if s.get('fill_on_probe') == slot:
+            s['workers'][slot]['activeDispatchIds'] = ['one', 'two', 'three', 'four']
             save()
         if error == 'empty':
             print(json.dumps({'workers': [], 'total': 0, 'passed': 0, 'failed': 0}))
@@ -102,9 +121,10 @@ class RenewalTest(unittest.TestCase):
         for slot in ('a', 'b'):
             self.state['workers'][slot] = {
                 'name': f'swamp-role-209-{slot}', 'status': 'idle', 'instanceUuid': f'old-{slot}',
+                'capacity': 4, 'activeDispatchIds': [],
                 'enrolledAt': (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=4))
                 .isoformat(timespec='milliseconds').replace('+00:00', 'Z')}
-        for name in ('swamp', 'systemctl', 'busctl', 'getent'):
+        for name in ('swamp', 'systemctl', 'busctl', 'getent', 'journalctl', 'queued-dispatch'):
             path = self.folder / name
             path.write_text(f'#!{sys.executable}\n' + FAKE)
             path.chmod(0o755)
@@ -181,16 +201,72 @@ class RenewalTest(unittest.TestCase):
         self.start()
         self.assertEqual(self.result(success=False), ['verify-b'])
 
-    def test_connected_full_peer_does_not_starve_renewal(self):
+    def test_full_survivor_defers_round_without_draining_either_worker(self):
+        self.state['workers']['b']['activeDispatchIds'] = ['one', 'two', 'three', 'four']
+        self.start()
+        self.assertEqual(self.result(success=False), [])
+
+    def test_live_capacity_refusal_defers_round_without_draining(self):
         self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is at capacity"}
         self.start()
-        self.assertIn('drain-b', self.result())
+        self.assertEqual(self.result(success=False), ['verify-b'])
 
     def test_capacity_refusal_cannot_hide_a_peer_that_started_draining(self):
         self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is at capacity"}
         self.state['drain_on_probe'] = 'b'
         self.start()
         self.assertEqual(self.result(success=False), ['verify-b'])
+
+    def test_survivor_filling_during_probe_defers_without_draining(self):
+        self.state['fill_on_probe'] = 'b'
+        self.start()
+        self.assertEqual(self.result(success=False), ['verify-b'])
+
+    def test_queued_follow_on_finishes_on_survivor_while_a_is_draining(self):
+        (self.folder / 'hold-drain').touch()
+        self.state['workers']['b']['activeDispatchIds'] = ['one', 'two', 'three']
+        self.start()
+        self.wait_for('drain-a')
+        # Model a short burst after the admission check, then release one slot.
+        path = self.folder / 'state.json'
+        live = json.loads(path.read_text())
+        live['workers']['b']['activeDispatchIds'].append('four')
+        path.write_text(json.dumps(live))
+        queued = subprocess.Popen([str(self.folder / 'queued-dispatch')],
+                                  env=dict(os.environ, RENEWAL_TEST_DIR=str(self.folder)))
+        self.addCleanup(lambda: queued.kill() if queued.poll() is None else None)
+        self.wait_for('queued-follow-on')
+        self.assertNotIn('follow-on-success-b', self.events())
+        live['workers']['b']['activeDispatchIds'].pop()
+        path.write_text(json.dumps(live))
+        self.assertEqual(queued.wait(timeout=5), 0)
+        self.assertIn('follow-on-success-b', self.events())
+        self.assertNotIn('drain-b', self.events())
+        self.assertEqual(json.loads(path.read_text())['workers']['a']['status'], 'draining')
+        (self.folder / 'hold-drain').unlink()
+        self.result()
+
+    def test_bootstrap_names_are_resolved_from_their_unit_receipts(self):
+        for slot in ('a', 'b'):
+            self.state['workers'][slot]['name'] = f'orbit-worker-{slot}'
+        self.start()
+        events = self.result()
+        self.assertLess(events.index('enrolled-a'), events.index('drain-b'))
+
+    def test_reminted_names_and_ansi_receipts_are_resolved_consistently(self):
+        self.state['receipts'] = {}
+        for slot in ('a', 'b'):
+            name = f'orbit-worker-{slot}-1794096000'
+            self.state['workers'][slot]['name'] = name
+            self.state['receipts'][slot] = f'\x1b[32m✓ Enrolled as {name}\x1b[0m'
+        self.start()
+        events = self.result()
+        self.assertLess(events.index('enrolled-a'), events.index('drain-b'))
+
+    def test_missing_enrollment_receipt_leaves_both_untouched(self):
+        self.state['receipts'] = {'a': ''}
+        self.start()
+        self.assertEqual(self.result(success=False), [])
 
     def test_other_probe_error_prevents_drain(self):
         self.state['probe_error'] = {'b': "Worker 'swamp-role-209-b' is draining"}

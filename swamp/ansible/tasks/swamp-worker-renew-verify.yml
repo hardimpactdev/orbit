@@ -1,7 +1,7 @@
 ---
 - name: Probe the live connected worker
   ansible.builtin.command:
-    argv: "{{ ['timeout', '125', renewal_swamp_binary, 'worker', 'verify', 'swamp-role-' ~ orbit_node_id ~ '-' ~ renewal_verify_slot] + renewal_remote }}"
+    argv: "{{ ['timeout', '125', renewal_swamp_binary, 'worker', 'verify', renewal_names[renewal_verify_slot]] + renewal_remote }}"
   become: true
   become_user: "{{ orbit_user }}"
   environment: "{{ renewal_environment }}"
@@ -17,16 +17,14 @@
     that:
       - renewal_check.total == 1
       - renewal_check.workers | length == 1
-      - renewal_check.workers[0].name == 'swamp-role-' ~ orbit_node_id ~ '-' ~ renewal_verify_slot
+      - renewal_check.workers[0].name == renewal_names[renewal_verify_slot]
     fail_msg: "Worker {{ renewal_verify_slot }} is not connected"
-# The pinned native verify selects connected workers. An exact at_capacity refusal
-# proves a live connection is full. The caller separately checks fresh admission
-# status: capacity is checked before draining. Requiring a free slot could starve renewal.
-- name: Require a successful probe or the native full capacity refusal
+# A full survivor cannot take follow-on work within the workflows' 30s queue budget.
+# Exit this round without draining; the service retries after five minutes.
+- name: Require the live probe to pass with spare dispatch capacity
   ansible.builtin.assert:
     that:
-      - >-
-        (renewal_check.passed == 1 and renewal_check.failed == 0 and renewal_check.workers[0].status == 'pass') or
-        (renewal_check.passed == 0 and renewal_check.failed == 1 and renewal_check.workers[0].status == 'error' and
-        renewal_check.workers[0].error | default('') == "Worker 'swamp-role-" ~ orbit_node_id ~ "-" ~ renewal_verify_slot ~ "' is at capacity")
-    fail_msg: "Worker {{ renewal_verify_slot }} failed its native live check"
+      - renewal_check.passed == 1
+      - renewal_check.failed == 0
+      - renewal_check.workers[0].status == 'pass'
+    fail_msg: "Deferring renewal: {{ renewal_verify_slot }} failed its live probe or is full; no further drain, retry in five minutes"

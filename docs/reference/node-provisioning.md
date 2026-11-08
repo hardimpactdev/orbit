@@ -593,7 +593,9 @@ Swamp ends authenticated WebSockets after eight hours, even while a worker refre
 
 The service renews `a` only while `b` accepts work, waits for a different enrolled instance of `a` and a native `worker verify` check, then renews `b`. systemd serializes starts of the single service; use that service for manual renewal too.
 
-The live check accepts a passed probe or Swamp's exact connected-but-full result. A fresh status check must then show the same peer instance still accepting: Swamp checks capacity before drain status. Other probe failures or failed re-enrollment stop the sequence. A retry after five minutes skips freshly renewed connections.
+Before draining, the survivor must have spare dispatch capacity and pass its live probe. A fresh pool check must show the same instance still accepting with a free slot. A full survivor defers the round without draining either worker; the service retries after five minutes. Other probe failures or failed re-enrollment stop the sequence. Retries skip freshly renewed connections.
+
+The service reads each unit's latest enrollment receipt from the journal and uses that name for both pool selection and verification. This covers bootstrap names (`orbit-worker-a/b`), timestamped remint names and existing swamp-role names. A missing receipt stops maintenance without touching either worker. Peer failure during a blocking drain is detected after the restart returns; the service logs this limit before draining.
 
 Each worker has `TimeoutStopSec=4500` and `KillMode=mixed`: only the main process receives SIGTERM, leaving its dispatch children to finish. The 75-minute allowance gives headroom over the observed cold refresh step of about 50 minutes. It is not a bound on arbitrary hung work; systemd can kill work beyond that allowance.
 

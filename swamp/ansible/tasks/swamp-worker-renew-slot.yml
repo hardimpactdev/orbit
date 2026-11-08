@@ -35,6 +35,11 @@
           - renewal_other.status | default('') in renewal_accepting
           - renewal_other.instanceUuid | default('') | length > 0
         fail_msg: "Cannot renew {{ renewal_slot }} because {{ renewal_peer }} is unavailable"
+    - name: Require spare dispatch capacity on the survivor
+      ansible.builtin.assert:
+        that:
+          - renewal_other.activeDispatchIds | length < renewal_other.capacity | int
+        fail_msg: "Deferring renewal: survivor {{ renewal_peer }} is full; leave both workers accepting and retry in five minutes"
     - name: Check the connected peer through the native dispatch path
       ansible.builtin.import_tasks: swamp-worker-renew-verify.yml
       vars:
@@ -68,18 +73,22 @@
       register: renewal_peer_check
       changed_when: false
       no_log: true
-    # Swamp checks capacity BEFORE drain status. A capacity refusal alone is not
-    # evidence of admission: require this same instance still to be accepting.
-    - name: Require the checked peer still to accept work
+    - name: Select the peer after its live probe
+      ansible.builtin.set_fact:
+        renewal_fresh_peer: >-
+          {{ (renewal_peer_check.stdout | from_json).workers
+            | selectattr('name', 'equalto', renewal_peer_name) | first | default({}) }}
+    - name: Require the same peer still to have spare capacity
       ansible.builtin.assert:
         that:
-          - >-
-            (renewal_peer_check.stdout | from_json).workers
-            | selectattr('name', 'equalto', renewal_peer_name)
-            | selectattr('instanceUuid', 'equalto', renewal_other.instanceUuid)
-            | selectattr('status', 'in', renewal_accepting) | list | length == 1
-        fail_msg: "Peer {{ renewal_peer }} changed during its live check; no worker will be stopped"
+          - renewal_fresh_peer.instanceUuid | default('') == renewal_other.instanceUuid
+          - renewal_fresh_peer.status | default('') in renewal_accepting
+          - renewal_fresh_peer.activeDispatchIds | default([]) | length < renewal_fresh_peer.capacity | default(0) | int
+        fail_msg: "Deferring renewal: survivor {{ renewal_peer }} changed or filled during its probe; no drain, retry in five minutes"
     # KillMode=mixed sends SIGTERM to the CLI only. The pinned CLI drains its runners.
+    - name: Record the drain and its monitoring limit
+      ansible.builtin.debug:
+        msg: "Draining {{ renewal_slot }} with spare capacity on {{ renewal_peer }}; peer failure during the blocking restart is checked after restart returns"
     - name: Drain active dispatches and restart this worker
       ansible.builtin.systemd_service:
         name: "orbit-swamp-worker@{{ renewal_slot }}.service"
@@ -112,7 +121,9 @@
             (renewal_wait.stdout | from_json).workers
             | selectattr('name', 'equalto', renewal_peer_name)
             | selectattr('status', 'in', renewal_accepting) | list | length == 1
-        fail_msg: "Peer {{ renewal_peer }} became unavailable; no further worker will be stopped"
+        fail_msg: >-
+          Peer {{ renewal_peer }} failed during the blocking drain/restart of
+          {{ renewal_slot }}; detected after restart, no further drain
     - name: Prove the new worker accepts dispatches before proceeding
       ansible.builtin.import_tasks: swamp-worker-renew-verify.yml
       vars:

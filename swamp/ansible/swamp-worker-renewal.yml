@@ -6,8 +6,8 @@
   vars:
     renewal_swamp_binary: /usr/local/bin/swamp
     renewal_accepting: [idle, busy]
-    renewal_name: "swamp-role-{{ orbit_node_id }}-{{ renewal_slot }}"
-    renewal_peer_name: "swamp-role-{{ orbit_node_id }}-{{ renewal_peer }}"
+    renewal_name: "{{ renewal_names[renewal_slot] }}"
+    renewal_peer_name: "{{ renewal_names[renewal_peer] }}"
   tasks:
     - name: Find the worker account home
       ansible.builtin.getent:
@@ -31,6 +31,40 @@
           SWAMP_API_KEY_FILE: "{{ renewal_home }}/.config/swamp/api-key"
           SWAMP_NO_UPDATE_CHECK: '1'
           SWAMP_NO_TELEMETRY: '1'
+    # Swamp names the worker from its enrollment token. Bootstrap, remint and
+    # existing swamp Nodes use different token names. Read each unit's own receipt.
+    - name: Read the latest enrollment receipt of each worker unit
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - '10'
+          - journalctl
+          - "--unit=orbit-swamp-worker@{{ item }}.service"
+          - '--grep=Enrolled as '
+          - --lines=1
+          - --output=cat
+          - --no-pager
+          - --quiet
+      loop: [a, b]
+      register: renewal_receipts
+      changed_when: false
+      failed_when: renewal_receipts.rc not in [0, 1]
+      no_log: true
+    - name: Resolve the real pool names from the enrollment receipts
+      ansible.builtin.set_fact:
+        renewal_names: >-
+          {{ renewal_names | default({}) | combine({item.item:
+            (item.stdout | regex_replace('\x1b\[[0-9;]*m', '')
+            | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default(''))}) }}
+      loop: "{{ renewal_receipts.results }}"
+      loop_control: {label: "{{ item.item }}"}
+    - name: Require two distinct enrollment names before maintenance
+      ansible.builtin.assert:
+        that:
+          - renewal_names.a | length > 0
+          - renewal_names.b | length > 0
+          - renewal_names.a != renewal_names.b
+        fail_msg: Cannot resolve both worker unit names; leaving both workers untouched and retrying in five minutes
     - name: Renew a before touching b
       ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
       vars: {renewal_slot: a, renewal_peer: b}
