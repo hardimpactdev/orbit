@@ -48,14 +48,16 @@
       loop: [a, b]
       register: renewal_receipts
       changed_when: false
-      failed_when: renewal_receipts.rc not in [0, 1]
+      # Report read failures through the public assertion below, without raw journal output.
+      failed_when: false
       no_log: true
     - name: Resolve the real pool names from the enrollment receipts
       ansible.builtin.set_fact:
         renewal_names: >-
           {{ renewal_names | default({}) | combine({item.item:
-            (item.stdout | regex_replace('\x1b\[[0-9;]*m', '')
-            | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default(''))}) }}
+            (item.stdout | default('') | regex_replace('\x1b\[[0-9;]*m', '')
+            | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default(''))
+            if item.rc | default(-1) in [0, 1] else ''}) }}
       loop: "{{ renewal_receipts.results }}"
       loop_control: {label: "{{ item.item }}"}
     - name: Require two distinct enrollment names before maintenance
@@ -64,7 +66,10 @@
           - renewal_names.a | length > 0
           - renewal_names.b | length > 0
           - renewal_names.a != renewal_names.b
-        fail_msg: Cannot resolve both worker unit names; leaving both workers untouched and retrying in five minutes
+        fail_msg: >-
+          Worker renewal stopped: cannot resolve both unit names from enrollment journals.
+          The eight-hour session cap can still abort active dispatches.
+          No worker was drained; retry in five minutes
     - name: Renew a before touching b
       ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
       vars: {renewal_slot: a, renewal_peer: b}
