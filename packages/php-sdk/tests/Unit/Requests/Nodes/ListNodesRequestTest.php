@@ -109,7 +109,7 @@ function list_nodes_gateway_data(): array
             ],
             'agent' => ['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'],
             'cluster_name' => 'development',
-            'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => 'converge:roles', 'error_code' => 'role.converge_failed']],
+            'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => 'converge:Require supported Ubuntu', 'error_code' => 'role.converge_failed']],
         ],
         [
             'id' => 7,

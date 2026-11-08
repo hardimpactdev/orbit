@@ -53,6 +53,21 @@ describe('node:list', function (): void {
             ->toBe('https://10.44.0.1/api/v1/nodes');
     });
 
+    it('lists recorded native failure labels without losing the Node or assignment', function (): void {
+        $payload = list_node_payload();
+        $payload['assignments'][0]['status'] = 'failed';
+        $payload['assignments'][0]['failed_step'] = 'converge:Require supported Ubuntu';
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload], 'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:list', ['--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['nodes' => [$payload], 'request_id' => request_id()]);
+    });
+
     it('shows a concise node table', function (): void {
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([

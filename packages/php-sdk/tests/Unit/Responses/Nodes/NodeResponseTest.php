@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
@@ -77,6 +78,47 @@ it('preserves the original named constructor contract', function (): void {
         ->and($response->errorCode)
         ->toBeNull();
 });
+
+it('preserves recorded native failure labels in the shared Node projection', function (string $step): void {
+    $assignment = [
+        'id' => 12,
+        'role' => 'app-dev',
+        'status' => 'failed',
+        'failed_step' => $step,
+        'error_code' => 'node_role.convergence_failed',
+    ];
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'failed_step' => $step,
+        'assignments' => [$assignment],
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->failedStep)->toBe($step)
+        ->and($response->assignments[0]->failedStep)->toBe($step)
+        ->and($response->toArray()['assignments'])->toBe([$assignment]);
+})->with(['converge:Require supported Ubuntu', 'converge:Check the role']);
+
+it('still rejects unsafe assignment failure labels without exposing them', function (mixed $step): void {
+    try {
+        NodeResponse::fromGatewayData(node_response_gateway_data([
+            'assignments' => [[
+                'id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => $step,
+            ]],
+        ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        test()->fail('Unsafe assignment failure label was accepted.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->getMessage())
+            ->toBe('Gateway response contains an invalid node role assignment failed_step.')
+            ->not->toContain('step-secret-sentinel');
+    }
+})->with([
+    'wrong type' => [['bad']],
+    'empty' => '',
+    'overlong' => str_repeat('a', 129),
+    'control' => "converge:Require Ubuntu\nstep-secret-sentinel",
+    'credential assignment' => 'converge:password=step-secret-sentinel',
+    'credential header' => 'converge:Authorization:step-secret-sentinel',
+    'bearer credential' => 'converge:Bearer step-secret-sentinel',
+]);
 
 it('does not invent an SSH port for malformed gateway data', function (): void {
     $response = NodeResponse::fromGatewayData(

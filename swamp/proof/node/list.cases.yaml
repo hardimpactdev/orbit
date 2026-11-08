@@ -1,7 +1,8 @@
-# Stage 1 spec. Format: docs/reference/verification-cases.
-# No node:list cases file exists on the default branch; no baseline case IDs or batches change.
-# Only supported runner steps are used. `record` cannot read node:list rows, and
-# CLI expectations cannot inspect arbitrary JSON fields; those checks stay in uncovered.
+# Format: docs/reference/verification-cases.
+# Only supported runner steps are used. `record` cannot read node:list rows.
+# The human text matcher can check serialized JSON: explicitly pass --json with
+# forms: [human] so expect.human sees the JSON text. It checks envelope/row fragments,
+# not parsed field equality, exact membership, ordering or cross-command parity.
 # CLI calls default to the outer VM's operator; `as: gateway` is that same caller,
 # not the nested Gateway Node. app-dev and app-prod select actual nested callers.
 # `request: none` checks Operation creation, not HTTP traffic; Node/contact and
@@ -12,13 +13,36 @@ target: app-dev
 sources: [gateway, app-prod]
 baseline: [operations]
 
+fixtures:
+  recorded-json:
+    summary: Check the JSON envelope, recorded Node identities and active assignment values with the existing text matcher.
+    steps:
+      - cli:
+          run: [node:list, --json]
+          forms: [human]
+          expect:
+            exit: 0
+            request: none
+            human:
+              - '{"nodes":['
+              - '{"id":${app-dev.id},"cluster_id":null,"name":"app-dev","status":"active"'
+              - '{"id":${app-prod.id},"cluster_id":null,"name":"app-prod","status":"active"'
+              - '{"id":${gateway.id},"cluster_id":null,"name":"gateway","status":"active"'
+              - '"roles":["app-dev"]'
+              - '"roles":["app-prod"]'
+              - '"cluster_name":null,"assignments":[{"id":'
+              - '"role":"app-dev","status":"active","failed_step":null,"error_code":null}'
+              - '"role":"app-prod","status":"active","failed_step":null,"error_code":null}'
+              - '"role":"gateway","status":"active","failed_step":null,"error_code":null}'
+              - '],"request_id":"'
+
 uncovered:
-  "rows-and-order": "Add node:list row assertions for exact membership and name-then-ID order. Check recorded fields, IDs and Node-level failure fields against the fixture; CLI exit and text checks cannot prove row contents."
-  "shared-role-projection": "Add fixtures with active, provisioning, failed and removing assignments, including non-null failed_step and error_code, and nested JSON assertions comparing assignments across node:list, node:show and node:role:list. This requires the shared projection in Node responses and SDK parsing; today list/show expose only role names."
-  "cluster-name": "Add a named-Cluster fixture with attached and unattached Nodes and row assertions for the human Cluster name and JSON cluster_name, preserving cluster_id. Node responses, the SDK and the human list currently expose only the Cluster ID."
+  "rows-and-order": "The runnable cases check JSON envelope and recorded ID/name/status and active-role fragments. Add parsed row assertions for exact membership, name-then-ID order, every recorded field and Node-level failure fields; text fragments cannot prove completeness or ordering."
+  "shared-role-projection": "Gateway and SDK tests verify the shared assignment projection, including native failure labels; the runnable fleet checks active assignments only. Add lifecycle fixtures and parsed nested assertions comparing non-null failure fields across node:list, node:show and node:role:list."
+  "cluster-name": "The Gateway, SDK and human list expose Cluster names alongside IDs and have focused tests. The base fleet has no attached Cluster; live attached/unattached parity needs a named-Cluster fixture and parsed row assertions."
   "path:empty": "Add an authorized empty-collection fixture and assert No nodes. plus nodes: [] in JSON. The restored fleet always contains Nodes, and removing a grant alone cannot empty a Gateway-authorized caller's view."
   "path:agent-missing": "Add fixtures for an enrolled agent that has never reported and a Node with no observing agent, plus per-Node JSON assertions for not_seen and agent: null. Assert both Nodes remain in the list with their recorded fields."
-  "path:agent-offline": "Add per-Node JSON assertions binding the stopped app-dev Node to offline, its last-seen agent.since and its unchanged recorded fields. The runnable offline case checks retained human output but cannot bind the offline label to a JSON row."
+  "path:agent-offline": "Add per-Node JSON assertions binding the stopped app-dev Node to offline, its last-seen agent.since and its unchanged recorded fields. The runnable case checks recorded JSON identity/active-role fragments and an offline marker, but cannot bind that marker to a JSON row."
   "path:agent-unknown": "Add a fixture that makes the Gateway agent view missing or stale while preserving Node records, and row assertions for unknown rather than offline. Verify that other recorded fields remain visible and the list succeeds."
   "gateway-authority-without-direct-grant": "Add a separately restored access fixture/batch where app-prod has a Gateway grant but no direct app-dev grant, without changing grants shared with any other case. Run node:list as app-prod in human and JSON forms and assert gateway, app-dev and app-prod remain visible with no new Operation."
   "grant-only-access": "Add a different separately restored access fixture/batch where the ordinary app-prod caller has only a direct app-dev grant and no Gateway authority. Run node:list as app-prod in human and JSON forms and assert exactly app-dev is visible with no new Operation."
@@ -36,6 +60,7 @@ cases:
           run: [node:list]
           forms: [json, human]
           expect: {exit: 0, request: none, human: [ID, NAME, STATUS, AGENT, ROLES, PLATFORM, TLD, USER, CLUSTER, WIREGUARD, LAN, gateway, app-dev, app-prod]}
+      - use: recorded-json
     expect:
       - unchanged: {since: act, what: [operations]}
 
@@ -46,10 +71,12 @@ cases:
     stages:
       - act:
           - cli: {run: [node:list], forms: [json, human], expect: {exit: 0, request: none, human: [gateway, app-dev, app-prod]}}
+          - use: recorded-json
         expect:
           - unchanged: {since: act, what: [operations]}
       - act:
           - cli: {run: [node:list], forms: [json, human], expect: {exit: 0, request: none, human: [gateway, app-dev, app-prod]}}
+          - use: recorded-json
         expect:
           - unchanged: {since: act, what: [operations]}
 
@@ -57,9 +84,9 @@ cases:
     batch: fresh-fleet
     covers: [authorized, recorded]
     summary: The human Roles cell distinguishes the Gateway assignment's active status from the Node status.
-    fails_today: ListNodesCommand joins role names without assignment states; the Roles cell does not contain gateway (active).
     act:
-      - cli: {run: [node:list], forms: [human], expect: {exit: 0, request: none, human: "gateway (active)"}}
+      - cli: {run: [node:list], forms: [json, human], expect: {exit: 0, request: none, human: "gateway (active)"}}
+      - use: recorded-json
     expect:
       - unchanged: {since: act, what: [operations]}
 
@@ -86,5 +113,6 @@ cases:
       - node_down: {node: app-dev}
     act:
       - cli: {run: [node:list], forms: [json, human], expect: {exit: 0, request: none, human: [gateway, app-dev, app-prod, offline]}}
+      - use: recorded-json
     expect:
       - unchanged: {since: act, what: [operations]}

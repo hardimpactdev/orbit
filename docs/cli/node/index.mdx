@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Actions/Nodes/{UpdateNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
   - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
+  - apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php
   - packages/php-sdk/src/Requests/Nodes/**
   - packages/php-sdk/src/Responses/Nodes/**
 ---
@@ -21,6 +22,12 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
+
+## Authority
+
+`NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
+
+A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
 ## Commands
 
