@@ -277,7 +277,7 @@ export const instanceLogsQuery = (id: number) =>
     });
 
 export const scheduleLogsQuery = (id: string) =>
-    queryOptions({
+    queryOptions<string[], Error, string[], (string | number)[]>({
         queryKey: ["schedule-logs", id],
         queryFn: async () =>
             logLines(

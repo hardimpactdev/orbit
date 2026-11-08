@@ -15,7 +15,7 @@ final class RenewLogStreamRequest extends GatewayRequest
     protected Method $method = Method::PUT;
 
     public function __construct(
-        private readonly InstanceLogStreamTarget|ProcessLogStreamTarget $target,
+        private readonly LogStreamTarget $target,
         private readonly string $streamId,
     ) {}
 

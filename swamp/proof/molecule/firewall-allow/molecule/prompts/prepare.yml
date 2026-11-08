@@ -1,0 +1,27 @@
+---
+# Fixtures: the setup step `listener` of the cases (a listener on the ports that the cases open), on the target only. These cases need no test
+# deny: they have no `blocked-port` fixture and their expect steps read records, not traffic.
+- ansible.builtin.import_playbook: target.yml
+
+- name: Listeners on the target
+  hosts: nodes
+  gather_facts: false
+  vars:
+    node_short: "{{ inventory_hostname | regex_replace('^nested-', '') }}"
+  tasks:
+    - name: Start a listener on each port, one exec each
+      ansible.builtin.command:
+        cmd: python3 -m http.server {{ item }} --bind 0.0.0.0 --directory /tmp
+      async: 3600
+      poll: 0
+      loop: "{{ listener_ports }}"
+      changed_when: true
+      when: node_short == hostvars['localhost'].target_node
+
+    - name: Each one answers on the Node itself (the runner's listener step fails when a port does not)
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ item | int }}"
+        timeout: 15
+      loop: "{{ listener_ports }}"
+      when: node_short == hostvars['localhost'].target_node

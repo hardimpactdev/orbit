@@ -25,7 +25,7 @@ final readonly class RenewLogStreamAction
         private LogStreamBroadcaster $broadcaster,
     ) {}
 
-    public function execute(LogStreamRecordType $recordType, int $recordId, string $streamId, Node $viewer): LogStream
+    public function execute(LogStreamRecordType $recordType, int|string $recordId, string $streamId, Node $viewer): LogStream
     {
         $stream = $this->streams->find($streamId);
 
@@ -43,7 +43,7 @@ final readonly class RenewLogStreamAction
     }
 
     /** @phpstan-assert-if-true LogStream $stream */
-    public static function owns(?LogStream $stream, LogStreamRecordType $recordType, int $recordId, Node $viewer): bool
+    public static function owns(?LogStream $stream, LogStreamRecordType $recordType, int|string $recordId, Node $viewer): bool
     {
         return $stream !== null
             && $stream->recordType === $recordType

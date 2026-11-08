@@ -15,6 +15,8 @@ use tokio::{
 
 /// systemd's `journalctl`, present on every supported Ubuntu Node.
 pub const JOURNALCTL: &str = "/usr/bin/journalctl";
+/// One text format for bounded journal reads and live streams.
+pub const TEXT_FORMAT: [&str; 2] = ["--output=short-iso", "--utc"];
 /// The most bytes of lines one entry makes, indent included. The one-shot read cuts at the same place.
 pub const MAX_ENTRY_TEXT_BYTES: usize = 256 * 1024;
 pub const MESSAGE_CUT: &str = "[orbit] message cut at 256 KiB";
@@ -128,8 +130,8 @@ async fn first_lines(
             "--reverse",
             &format!("--lines={lines}"),
             &format!("--cursor={cursor}"),
-            "--output=short-iso",
-            "--utc",
+            TEXT_FORMAT[0],
+            TEXT_FORMAT[1],
         ],
     )?;
     let mut reader = LineReader(stdout);
@@ -171,7 +173,7 @@ async fn follow(
     let (child, stdout) = start(
         program,
         unit,
-        &["--follow", &from, "--output=short-iso", "--utc"],
+        &["--follow", &from, TEXT_FORMAT[0], TEXT_FORMAT[1]],
     )?;
     let mut reader = LineReader(stdout);
     let mut cut = EntryCut::default();
@@ -279,8 +281,8 @@ pub fn read_newest(
         .args([
             "--reverse",
             &format!("--lines={lines}"),
-            "--output=short-iso",
-            "--utc",
+            TEXT_FORMAT[0],
+            TEXT_FORMAT[1],
         ])
         .env_clear()
         .stdin(Stdio::null())

@@ -12,7 +12,7 @@
             "cli/vault/setup",
             "cli/vault/status",
             "cli/vault/sync",
-            "cli/vault/teardown"
+            "cli/vault/destroy"
           ]
         }
       ]

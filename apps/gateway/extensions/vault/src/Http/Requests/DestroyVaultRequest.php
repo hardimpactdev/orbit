@@ -9,7 +9,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
-final class TeardownVaultRequest extends FormRequest
+final class DestroyVaultRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array

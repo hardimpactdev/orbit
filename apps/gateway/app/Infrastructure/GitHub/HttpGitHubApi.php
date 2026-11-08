@@ -600,6 +600,21 @@ final readonly class HttpGitHubApi implements GitHubApi
     }
 
     /** One commit per page keeps the response small; the relation fields do not depend on paging. */
+    public function branchHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): ?string
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/git/ref/heads/'.implode('/', array_map(rawurlencode(...), explode('/', $branch)))));
+        if ($response->status() === 404) {
+            return null;
+        }
+        $sha = $this->sha($response->json('object.sha'));
+        if (! $response->successful() || $response->json('ref') !== 'refs/heads/'.$branch || $response->json('object.type') !== 'commit' || $sha === null) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return $sha;
+    }
+
     public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->get(

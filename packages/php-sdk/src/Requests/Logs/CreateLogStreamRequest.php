@@ -19,7 +19,7 @@ final class CreateLogStreamRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly InstanceLogStreamTarget|ProcessLogStreamTarget $target,
+        private readonly LogStreamTarget $target,
         private readonly string $socketId,
         private readonly int $lines = 100,
     ) {}

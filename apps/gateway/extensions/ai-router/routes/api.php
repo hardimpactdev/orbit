@@ -10,7 +10,7 @@ use Orbit\Extensions\AiRouter\Http\Controllers\AiRouterController;
 
 Route::middleware(['api', RequireActiveWireGuardPeer::class, RequireNodeAccess::class, RequireEnabledExtension::class.':ai-router'])->prefix('api/v1')->group(function (): void {
     Route::post('ai-router', [AiRouterController::class, 'store'])->name('ai-router:setup');
-    Route::delete('ai-router', [AiRouterController::class, 'destroy'])->name('ai-router:teardown');
+    Route::delete('ai-router', [AiRouterController::class, 'destroy'])->name('ai-router:destroy');
     Route::get('ai-router', [AiRouterController::class, 'status'])->name('ai-router:status');
     Route::get('ai-router/providers', [AiRouterController::class, 'index'])->name('ai-router:provider:list');
     Route::get('ai-router/providers/{provider}', [AiRouterController::class, 'show'])

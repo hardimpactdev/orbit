@@ -78,7 +78,7 @@ function realtime_test_connection_config(): RealtimeConnectionConfig
 /**
  * Wraps a fixture transport so the first time receive() finds nothing left (a real socket
  * settling to idle once every recorded message has been delivered), it records a pending SIGINT
- * the same way a real Ctrl-C would. This lets a `realtime:tail` contract test run the command's
+ * the same way a real Ctrl-C would. This lets a `realtime:logs` contract test run the command's
  * watch loop to a deterministic, fast stop once the fixture is exhausted, without sending the
  * test process an actual signal.
  */

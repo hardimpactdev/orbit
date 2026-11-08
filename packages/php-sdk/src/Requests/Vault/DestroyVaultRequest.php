@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-final class TeardownVaultRequest extends GatewayRequest implements HasBody
+final class DestroyVaultRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 

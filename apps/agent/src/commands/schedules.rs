@@ -414,21 +414,25 @@ pub struct Logs {
 }
 
 pub fn logs(input: &LogsInput) -> Result<Logs, ScheduleError> {
+    logs_with(Path::new(crate::logs::journalctl::JOURNALCTL), input)
+}
+
+fn logs_with(program: &Path, input: &LogsInput) -> Result<Logs, ScheduleError> {
     let paths = paths(&input.id)?;
     if !(1..=1000).contains(&input.lines) {
         return Err(failed("logs-validation"));
     }
-    let output = Process::new("journalctl")
+    let output = Process::new(program)
         .args([
             "--unit",
             &paths.service_unit,
             "--lines",
             &input.lines.to_string(),
             "--no-pager",
-            "--output",
-            "cat",
+            "--quiet",
             "--reverse",
         ])
+        .args(crate::logs::journalctl::TEXT_FORMAT)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
@@ -446,16 +450,18 @@ pub fn logs(input: &LogsInput) -> Result<Logs, ScheduleError> {
         text.truncate(end);
         text.truncate(text.rfind('\n').map_or(0, |index| index + 1));
     }
-    let entries: Vec<&str> = text
-        .trim_end_matches('\n')
-        .split('\n')
-        .filter(|_| !text.is_empty())
-        .collect();
-    let output = if entries.is_empty() {
-        String::new()
-    } else {
-        entries.into_iter().rev().collect::<Vec<_>>().join("\n") + "\n"
-    };
+    let mut entries: Vec<String> = Vec::new();
+    for line in text.split_inclusive('\n') {
+        if line.starts_with(' ') && !entries.is_empty() {
+            entries.last_mut().unwrap().push_str(line);
+        } else {
+            entries.push(line.to_owned());
+        }
+    }
+    let mut output = entries.into_iter().rev().collect::<String>();
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push('\n');
+    }
     Ok(Logs { output, truncated })
 }
 

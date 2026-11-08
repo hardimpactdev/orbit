@@ -1,0 +1,35 @@
+# One wave of probes over IPv6: every probe of the wave starts as an async job in its container, then one status read per job, every
+# `poll_delay` seconds until it ends. A TCP connection that fails within the timeout is told from a refused one by its exit code, as the
+# runner does (steps.py probe_result): 0 connected, 124 the timeout of a dropped packet (blocked), anything else refused, which fits neither
+# expectation. The address is an IPv6 literal without brackets: bash takes `/dev/tcp/fd42:232:2::2/PORT`, and refuses `[fd42:232:2::2]`.
+- name: Start the probes of the wave
+  ansible.builtin.command: timeout 3 bash -c 'echo > /dev/tcp/{{ item.tip }}/{{ item.port }}'
+  delegate_to: "{{ item.from }}"
+  loop: "{{ wave }}"
+  loop_control: {label: "{{ item.case }} {{ item.from }} {{ item.port }}"}
+  async: 30
+  poll: 0
+  register: started
+  changed_when: false
+
+- name: Wait for the probes of the wave
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ started.results }}"
+  loop_control: {label: "{{ item.item.case }} {{ item.item.from }} {{ item.item.port }}"}
+  delegate_to: "{{ item.item.from }}"
+  register: finished
+  until: finished.finished
+  retries: 30
+  delay: "{{ poll_delay | int }}"
+  failed_when: false
+
+- name: Keep what each probe saw
+  vars:
+    observed: "{{ 'connect' if item.1.rc | default(-1) == 0 else ('blocked' if item.1.rc | default(-1) == 124 else 'refused') }}"
+  ansible.builtin.set_fact:
+    probe_obs: >-
+      {{ probe_obs + [item.0 | combine({'observed': observed, 'ok': observed == item.0.expect,
+         'text': item.0.from ~ ' to [' ~ item.0.tip ~ ']:' ~ item.0.port ~ ' ' ~ observed ~ ', expected ' ~ item.0.expect})] }}
+  loop: "{{ wave | zip(finished.results) | list }}"
+  loop_control: {label: "{{ item.0.case }} {{ item.0.port }}"}

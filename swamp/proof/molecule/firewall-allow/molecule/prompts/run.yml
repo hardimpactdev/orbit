@@ -1,0 +1,109 @@
+---
+# One run of the CLI for the host's case (`run` is one item of d.runs, cases.yml), then the asserts on what it printed and on the Operations it
+# created. A run with `tty: true` goes through ansible.builtin.expect (a pseudo-terminal, so the CLI prompts); the other one through
+# ansible.builtin.command, whose stdin is a pipe (given text), so the CLI sees no terminal.
+- name: "{{ inventory_hostname }}: {{ run.argv | join(' ') }}, in a terminal, answering its prompts"
+  ansible.builtin.expect:
+    command: "{{ (orbit + run.argv) | join(' ') }}"
+    chdir: /
+    responses: "{{ dict(run.answers | map(attribute='prompt') | map('extract', prompt_regex) | zip(run.answers | map(attribute='send'))) }}"
+    # No echo of the answers: the terminal only echoes before the CLI switches it to -echo, and a repeated byte would break the `once` check.
+    # Seconds without a match, not for the whole run: the CLI follows the Operation to its end after the last prompt.
+    timeout: 120
+  environment: "{{ tty_env }}"
+  vars:
+    # pexpect lives in the venv of Molecule; the interpreter chosen for localhost would be the system python.
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  register: tty_run
+  # expect fails the task on a non-zero exit status, and a cancelled prompt must be able to end with 1: the assert below reads rc.
+  failed_when: false
+  changed_when: false
+  # A busy refusal prints the detail line `operation_id: N` (GatewayFailureRenderer::safeDetails), never the code, in the human form.
+  until: tty_run.rc | default(none) == 0 or (tty_run.stdout | default('')) is not search('operation_id: [0-9]+')
+  retries: 60
+  delay: 1
+  when: run.tty
+
+- name: "{{ inventory_hostname }}: {{ run.argv | join(' ') }}, without a terminal"
+  ansible.builtin.command:
+    argv: "{{ orbit + run.argv }}"
+    chdir: /
+    # Data on stdin makes it a pipe: a CLI started from a terminal would otherwise inherit that terminal and prompt.
+    stdin: no terminal
+  environment: "{{ cli_env }}"
+  register: plain_run
+  failed_when: false
+  changed_when: false
+  until: plain_run.rc == 0 or (plain_run.stdout ~ plain_run.stderr) is not search('operation_id: [0-9]+')
+  retries: 60
+  delay: 1
+  when: not run.tty
+
+- name: "{{ inventory_hostname }}: the result of the run that ran"
+  ansible.builtin.set_fact:
+    last_run: "{{ tty_run if run.tty else plain_run }}"
+
+- name: "{{ inventory_hostname }}: what it printed, stdout and stderr, without carriage returns"
+  ansible.builtin.set_fact:
+    run_text: '{{ ((last_run.stdout | default("")) ~ "\n" ~ (last_run.stderr | default(""))) | replace("\r", "") }}'
+
+- name: "{{ inventory_hostname }}: the run ended with the exit status the contract promises"
+  ansible.builtin.assert:
+    that:
+      - last_run.rc is defined and last_run.rc is not none
+      - last_run.rc == run.expect.rc
+    fail_msg: "exit {{ last_run.rc | default('-') }}, expected {{ run.expect.rc }}; {{ last_run.msg | default('') }}; the output ends with {{ run_text[-800:] }}"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: the output holds what it must"
+  ansible.builtin.assert:
+    that: run_text is search(item)
+    fail_msg: "no match for {{ item }}; the output is {{ run_text[-1500:] }}"
+    quiet: true
+  loop: "{{ run.expect.text | default([]) }}"
+  loop_control: {label: "{{ item }}"}
+
+- name: "{{ inventory_hostname }}: the output holds nothing it must not"
+  ansible.builtin.assert:
+    that: run_text is not search(item)
+    fail_msg: "{{ item }} is in the output: {{ run_text[-1500:] }}"
+    quiet: true
+  loop: "{{ run.expect.absent | default([]) }}"
+  loop_control: {label: "{{ item }}"}
+
+- name: "{{ inventory_hostname }}: the output holds one of each of these"
+  ansible.builtin.assert:
+    that: (run_text | regex_findall(item)) | length == 1
+    fail_msg: "{{ item }} is in the output {{ run_text | regex_findall(item) | length }} times"
+    quiet: true
+  loop: "{{ run.expect.once | default([]) }}"
+  loop_control: {label: "{{ item }}"}
+
+- name: "{{ inventory_hostname }}: Operations after the run"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/operations?kind=firewall.allow"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: ops_run
+
+- name: "{{ inventory_hostname }}: the Operations of the Gateway now"
+  ansible.builtin.set_fact:
+    ops_now: "{{ ((ops_run.json | default({})).data | default([])) | map(attribute='id') | sort | list }}"
+
+- name: "{{ inventory_hostname }}: the run created as many Operations as the contract promises (none for request: none)"
+  ansible.builtin.assert:
+    that: (ops_now | difference(ops_prev)) | length == run.expect.ops
+    fail_msg: "the run created Operations {{ ops_now | difference(ops_prev) }}, expected {{ run.expect.ops }}"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: keep the run"
+  vars:
+    delta: "{{ last_run.delta | default('0:00:00') }}"
+  ansible.builtin.set_fact:
+    ops_prev: "{{ ops_now }}"
+    cli_runs: >-
+      {{ cli_runs + [{'argv': run.argv, 'rc': last_run.rc | default(none), 'busy': (last_run.attempts | default(1) | int) - 1,
+         'secs': ((delta.split(':')[0] | int * 3600 + delta.split(':')[1] | int * 60 + delta.split(':')[2] | float) | round(1)),
+         'start': ((last_run.start | default('1970-01-01 00:00:00.000000')) | to_datetime('%Y-%m-%d %H:%M:%S.%f')).timestamp(),
+         'end': ((last_run.end | default('1970-01-01 00:00:00.000000')) | to_datetime('%Y-%m-%d %H:%M:%S.%f')).timestamp()}] }}

@@ -6,25 +6,25 @@ namespace App\Commands\AiRouter;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
+use Orbit\Sdk\Requests\AiRouter\DestroyAiRouterRequest;
 use Orbit\Sdk\Responses\AiRouter\AiRouterStatusResponse;
 
-final class TeardownAiRouterCommand extends AiRouterCommand
+final class DestroyAiRouterCommand extends AiRouterCommand
 {
     #[\Override]
-    protected $signature = 'ai-router:teardown
-        {--yes : Confirm the fleet teardown without a prompt}
+    protected $signature = 'ai-router:destroy
+        {--yes : Confirm the fleet destruction without a prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Tear down the collector and withdraw collector.ai-router.orbit.';
+    protected $description = 'Destroy the collector and withdraw collector.ai-router.orbit.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
         if (! $this->confirmAction(
-            'Tear down the AiRouter fleet feature? This stops the collector, withdraws collector.ai-router.orbit and its certificate, and deletes the stored management key and tokens.',
-            'AiRouter teardown cancelled.',
-            requiredMessage: 'Non-interactive AiRouter teardown requires --yes.',
+            'Destroy the AiRouter fleet feature? This stops the collector, withdraws collector.ai-router.orbit and its certificate, and deletes the stored management key and tokens.',
+            'AiRouter destruction cancelled.',
+            requiredMessage: 'Non-interactive AiRouter destruction requires --yes.',
         )) {
             return self::FAILURE;
         }
@@ -37,13 +37,13 @@ final class TeardownAiRouterCommand extends AiRouterCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new TeardownAiRouterRequest,
+            new DestroyAiRouterRequest,
             AiRouterStatusResponse::class,
-            ['Teardown ai-router', 'Stopping the collector', 'Tore down ai-router'],
+            ['Destroy ai-router', 'Stopping the collector', 'Destroyed ai-router'],
         );
 
         return $response instanceof AiRouterStatusResponse
-            ? $this->renderStatus($response, 'ai-router fleet feature is torn down.')
+            ? $this->renderStatus($response, 'ai-router fleet feature is destroyed.')
             : self::FAILURE;
     }
 }

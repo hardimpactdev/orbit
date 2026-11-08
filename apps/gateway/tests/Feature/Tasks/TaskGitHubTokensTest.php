@@ -327,16 +327,14 @@ it('refuses a dependency merge token for another kind or purpose, and for an int
         ->and($socket->frames)->toBe([]);
 });
 
-it('mints the approved push of a cancel with the token only, for the remote the group publishes to', function (): void {
+it('mints no push token for a cancel: origin has the approved work before a cancel is admitted', function (): void {
     $socket = tokenWorld();
-    [$operation, $names] = pushOperation('tasks.cancel', ['push' => ['remote' => 'https://github.com/hardimpactdev/orbit.git',
+    [$operation] = pushOperation('tasks.cancel', ['push' => ['remote' => 'https://github.com/hardimpactdev/orbit.git',
         'github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()]]]);
-    $key = $operation->input['push']['github_token']['key'];
 
-    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
-
-    expect(array_keys($copies))->toBe(['github_token'])
-        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $key, 'push-token-value']]);
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish'))
+        ->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and($socket->frames)->toBe([]);
 });
 
 it('refuses a pull request token for a kind that holds no pull request step, and a step token for another repository', function (): void {
@@ -367,11 +365,11 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish and a prep run ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.cancel', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round', 'proof.command']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round', 'proof.command']);
 
-it('gives a sync run, a build run and a task start no token mint: the Gateway writes the read tokens of the first two, and a task start reads the public repository', function (string $kind): void {
+it('gives a sync run, a build run, a task start and a cancel no token mint: the Gateway writes the read tokens of the first two, a task start reads the public repository, and origin has a cancel\'s approved work', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');
-})->with(['tasks.sync', 'tasks.build', 'tasks.provision']);
+})->with(['tasks.sync', 'tasks.build', 'tasks.provision', 'tasks.cancel']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();

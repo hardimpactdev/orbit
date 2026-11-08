@@ -13,14 +13,14 @@ The family belongs to the `ai-router` extension. It is visible and usable only w
 orbit extension:enable ai-router
 ```
 
-Enabling the extension deploys nothing, and disabling it removes nothing. `ai-router:setup` and `ai-router:teardown` own the collector. See [ai-router](/reference/ai-router).
+Enabling the extension deploys nothing, and disabling it removes nothing. `ai-router:setup` and `ai-router:destroy` own the collector. See [ai-router](/reference/ai-router).
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`ai-router:setup`](/cli/ai-router/setup) | Deploy the collector and publish `collector.ai-router.orbit`. |
-| [`ai-router:teardown`](/cli/ai-router/teardown) | Stop the collector and withdraw `collector.ai-router.orbit`. |
+| [`ai-router:destroy`](/cli/ai-router/destroy) | Stop the collector and withdraw `collector.ai-router.orbit`. |
 | [`ai-router:status`](/cli/ai-router/status) | Show whether the collector is set up. |
 | [`ai-router:provider:list`](/cli/ai-router/provider-list) | List provider pools from the Valkey snapshot. |
 | [`ai-router:provider:show`](/cli/ai-router/provider-show) | Show one provider and its accounts. |
@@ -38,9 +38,9 @@ Every command accepts `--json`.
 | --- | --- |
 | `extension.disabled` | The `ai-router` extension is disabled at the Gateway. |
 | `extension.state_unknown` | The CLI could not read the extension state from the Gateway. |
-| `input.confirmation_required` | `ai-router:teardown` ran without `--yes` where it cannot ask. |
-| `input.cancelled` | The operator declined the `ai-router:teardown` question. |
-| `extension.required` | `ai-router:teardown` ran while the `tasks` extension is enabled. |
+| `input.confirmation_required` | `ai-router:destroy` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `ai-router:destroy` question. |
+| `extension.required` | `ai-router:destroy` ran while the `tasks` extension is enabled. |
 | `ai_router.key_required` | `ai-router:setup` has no `--cliproxy-management-key-file`. |
 | `ai_router.key_invalid` | The key file is unreadable or empty. |
 | `ai_router.url_invalid` | `--cliproxy-url` is not a URL. |
