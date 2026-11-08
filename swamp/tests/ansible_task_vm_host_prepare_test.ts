@@ -254,6 +254,14 @@ Deno.test({
         assertEquals(result.ok, false, `${conflict}: ${result.output}`);
         assertStringIncludes(result.output, "task_vm.setup_failed");
         assert(!/"create"|"edit"|"set"|"copy"/.test(f.calls()), f.calls());
+        if (conflict.startsWith("backing")) {
+          assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
+          assert(
+            !Array.from(Deno.readDirSync(f.folder)).some((entry) =>
+              entry.name === "arc.conf"
+            ),
+          );
+        }
         if (conflict === "backing-file") {
           assertEquals(Deno.readTextFileSync(backing), "leftover pool bytes");
         }
