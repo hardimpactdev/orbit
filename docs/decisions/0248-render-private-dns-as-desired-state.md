@@ -46,8 +46,8 @@ Checked with dnsmasq 2.92 on scratch ports. Nothing live was touched.
 | Cluster and Node TLD names | `address=/.tld/ADDRESS` with `local=/tld/` | Same A answer. Other types give NODATA. |
 | Nested TLD | dnsmasq picks the more specific one | The listener picks the first listed suffix. They differ only for a Node TLD inside a Cluster TLD. |
 | Exact Route outside any TLD, A | A line in `orbit.hosts` | Same |
-| Same name, other types (AAAA, MX) | `server=/name/` with no address, in `orbit.servers` | NODATA. Today the backend forwards AAAA upstream, so a public IPv6 address can leak. |
-| Names below an exact Route use the public resolver | `server=/*.name/#` in `orbit.servers` | Same |
+| Same name, other types (AAAA, MX) | `server=/name/` with no address, in `orbit.servers`; none for a name under `.orbit`, where `local=/orbit/` gives the same NODATA | NODATA. Today the backend forwards AAAA upstream, so a public IPv6 address can leak. |
+| Names below an exact Route use the public resolver | `server=/*.name/#` in `orbit.servers`, except below `.orbit`: a forward rule would override `local=/orbit/` | Same. Below `.orbit` a child is NXDOMAIN at once, not forwarded. |
 | Add or remove an exact Route | `SIGHUP` re-reads both files | No restart. The answer, NODATA and the child forward all change on SIGHUP alone. |
 | Add, change or remove a TLD | A new `orbit.conf` and a restart | A regression: every name stops during the restart. A TLD changes rarely. |
 | TTL of 30 seconds, which the 31-second Route grace wait relies on | `local-ttl=30` in `orbit.conf` | Same |
@@ -127,6 +127,12 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - The stop of the old listener and the restart of dnsmasq are one detached command. A phase that is killed meanwhile (the 300-second step timeout, a worker crash) leaves a running dnsmasq, and the next publication finds no `orbit.conf.loaded` and restarts.
 - The lock holder expires after 420 seconds: the step timeout, the 90-second cutover budget and a margin. The next publication waits 150 seconds, longer than a killed phase's holder has left. DNS can be down until a killed run's successor ends.
 - `reload.pending` makes the retry of a killed record publication reload dnsmasq although the files match.
+- The answers per caller go, and these A answers change. Whether the first is wanted is Nick's decision. Per-caller answers are not built, so both outcomes stay possible.
+  - Beast, sabre and shark: 120 names change from `192.168.6.20` to `10.44.0.7`. They are the apex `test` and 119 exact `*.test` records. Any new name under `test` changes the same way.
+  - Five exact `.test` records already give `10.44.0.7` today, because they bypass the override: `flow-viewer.orbit.test`, `gateway-feedback.orbit.test`, `operator.test`, `reverb.sync-engine.mealou.test` and `team.test`.
+  - App-prod (`10.44.0.4`): 13 names change from `10.0.0.4` to `10.44.0.4`. They are `hauzer.app`, `mealou.app`, `nckrtl.com`, `nckrtl.com.prod` and the `sync.`, `analytics.`, `horizon.` and `treadmill.` hosts of them. That address is app-prod's own, so no traffic path changes.
+  - The round trip from shark to beast takes 0.18 ms over the LAN and 8.9 ms over WireGuard through the hub. Both Nodes have one WireGuard peer, the hub.
+  - All other callers (Mac, iPad, mini, task VMs, services, swamp) already get the WireGuard answer, so nothing changes for them.
 - The vpn Node's own resolver points at `127.0.0.55`, which the new dnsmasq also serves. The end check asks it and the Node's normal resolver, so a Node that resolves nothing fails the phase.
 - The rollback is the last committed set. The cutover keeps the old listener's files in `previous/legacy/` and deletes its release in `/var/lib/orbit/private-dns`, so a rollback after a successful cutover cannot restart the old listener. A failed cutover still can. This is intended: the listener code is deleted.
 - The handover gap of the first cutover is measured by the Molecule dig loop (bound 3,000 ms). On Ubuntu 26.04, with a fake old listener that answers, 685 queries every ~50 ms during the cutover all got an answer. The real listener holds its sockets until it exits, which is at most 5 seconds, so a query that arrives meanwhile is still answered by it. The live gap is checked again at the cutover.

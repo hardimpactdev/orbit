@@ -11,7 +11,8 @@ use InvalidArgumentException;
  *
  * `tlds` answer every name below them. A record below a TLD is listed only when its answer differs from
  * its TLD; it needs no NODATA pair. A record outside every TLD, such as a Route on its own domain or a
- * reserved name, carries `pair`: the phase gives it local NODATA for other types and forwards its children.
+ * reserved name, carries `pair`: the phase gives it local NODATA for other types and forwards its children. A name under a local
+ * zone (`.orbit`) keeps `pair` in the data, but the phase renders no forward rule for it: dnsmasq answers its children NXDOMAIN itself.
  */
 final readonly class PrivateDnsState
 {

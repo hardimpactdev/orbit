@@ -45,7 +45,22 @@
         upstream: [192.0.2.53]
         conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
         hosts: "{{ header }}10.44.0.2 gateway.orbit\n10.44.0.2 metrics.orbit\n10.44.0.4 reverb.orbit\n"
-        servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\nserver=/metrics.orbit/\nserver=/*.metrics.orbit/#\nserver=/reverb.orbit/\nserver=/*.reverb.orbit/#\n"
+        # The names below .orbit are in a local zone: no pair, or the forward rule of their children would send them upstream.
+        servers: "{{ header }}"
+      # A reserved name and a Route on its own domain: only the Route gets the pair.
+      - name: a local zone name beside a public name
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: collector.ai-router.orbit, address: 10.44.0.5, pair: true}
+        upstream: [192.0.2.53]
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
+        hosts: "{{ header }}10.44.0.3 app.example.com\n10.44.0.5 collector.ai-router.orbit\n10.44.0.2 gateway.orbit\n"
+        servers: "{{ header }}server=/app.example.com/\nserver=/*.app.example.com/#\n"
       # A TLD answers every name under it with one wildcard line and is local: other types give NODATA.
       - name: TLD only
         dns:
@@ -97,7 +112,7 @@
         upstream: [192.0.2.53]
         conf: "{{ header }}listen-address=10.44.0.1\nlisten-address=10.45.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.dev.local/10.44.0.9\nlocal=/dev.local/\naddress=/.prod/10.44.0.8\nlocal=/prod/\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
         hosts: "{{ header }}10.44.0.8 a.prod\n10.44.0.2 gateway.orbit\n10.44.0.9 x.test\n"
-        servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\n"
+        servers: "{{ header }}"
       # Nothing to answer: still a valid file set, so a Node whose last name went is repaired like any other.
       - name: empty records and no TLD
         dns: *empty
@@ -212,8 +227,18 @@
           records:
             - {name: gateway.orbit, address: 10.44.0.2, pair: true}
             - {name: x.test, address: 10.44.0.9, pair: false}
-        records: [gateway.orbit, A, gateway.orbit, AAAA, x.test, A, orbit-check.test, A, orbit-check.prod, A]
-        children: [orbit-check.gateway.orbit, A]
+        records: [gateway.orbit, A, gateway.orbit, AAAA, orbit-check.gateway.orbit, A, x.test, A, orbit-check.test, A, orbit-check.prod, A]
+        children: []
+      - name: a pair outside the local zones has a forwarded child
+        dns:
+          revision: *revision
+          listen: *listen
+          tlds: []
+          records:
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+        records: [app.example.com, A, app.example.com, AAAA, gateway.orbit, A, gateway.orbit, AAAA, orbit-check.gateway.orbit, A]
+        children: [orbit-check.app.example.com, A]
       - name: nothing to ask
         dns: *empty
         records: []
@@ -233,16 +258,37 @@
       - {name: x.test, type: A, status: NOERROR, answers: [10.44.0.9]}
       - {name: orbit-check.test, type: A, status: NOERROR, answers: [10.44.0.7]}
       - {name: orbit-check.gateway.orbit, type: A, status: NXDOMAIN, answers: []}
+    verify_pair_dns: &verify_pair_dns
+      revision: *revision
+      listen: *listen
+      tlds: []
+      records:
+        - {name: app.example.com, address: 10.44.0.3, pair: true}
+    good_pair_blocks:
+      - {name: app.example.com, type: A, status: NOERROR, answers: [10.44.0.3]}
+      - {name: app.example.com, type: AAAA, status: NOERROR, answers: []}
     verify_cases:
       - {name: every answer is as rendered, dns: *verify_dns, blocks: *good_blocks, errors: []}
-      - name: a child that the upstream never answered is no answer
+      - name: a child inside a local zone that nobody answered is an error
         dns: *verify_dns
         blocks: "{{ good_blocks[:4] }}"
-        errors: []
-      - name: a child answered by the upstream with another address
+        errors: ["orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got no answer"]
+      - name: a child inside a local zone that went upstream and got an address is an error
         dns: *verify_dns
         blocks: "{{ good_blocks[:4] + [{'name': 'orbit-check.gateway.orbit', 'type': 'A', 'status': 'NOERROR', 'answers': ['198.51.100.7']}] }}"
+        errors: ["orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got NOERROR 198.51.100.7"]
+      - name: a child that the upstream never answered is no answer
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks }}"
         errors: []
+      - name: a child answered by the upstream with another address
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks + [{'name': 'orbit-check.app.example.com', 'type': 'A', 'status': 'NOERROR', 'answers': ['198.51.100.7']}] }}"
+        errors: []
+      - name: a child answered with the address of its parent is an error
+        dns: *verify_pair_dns
+        blocks: "{{ good_pair_blocks + [{'name': 'orbit-check.app.example.com', 'type': 'A', 'status': 'NOERROR', 'answers': ['10.44.0.3']}] }}"
+        errors: ["orbit-check.app.example.com A: a child of the name was answered with 10.44.0.3"]
       - name: the AAAA of a pair leaks an address
         dns: *verify_dns
         blocks: "{{ [good_blocks[0], {'name': 'gateway.orbit', 'type': 'AAAA', 'status': 'NOERROR', 'answers': ['2001:db8::2']}] + good_blocks[2:] }}"
@@ -269,6 +315,7 @@
         errors:
           - "gateway.orbit A: expected 10.44.0.2, got no answer"
           - "gateway.orbit AAAA: expected NOERROR without an answer, got no answer"
+          - "orbit-check.gateway.orbit A: a child of a name in a local zone should be NXDOMAIN, got no answer"
           - "x.test A: expected 10.44.0.9, got no answer"
           - "orbit-check.test A: expected 10.44.0.7, got no answer"
       - name: a name of another case does not count
@@ -300,12 +347,11 @@
       ;gateway.orbit.			IN	AAAA
 
       ;; Got answer:
-      ;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 5645
-      ;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
+      ;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 5645
+      ;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
 
       ;; OPT PSEUDOSECTION:
       ; EDNS: version: 0, flags:; udp: 1232
-      ; OPT=15: 00 0e ("..")
       ;; QUESTION SECTION:
       ;orbit-check.gateway.orbit.	IN	A
 
@@ -572,6 +618,7 @@
             - {name: gateway.orbit, address: 10.44.0.2, pair: true}
             - {name: vpn.orbit, address: 10.44.0.1, pair: true}
             - {name: app.example.com, address: 10.44.0.3, pair: true}
+            - {name: collector.ai-router.orbit, address: 10.44.0.5, pair: true}
         # name, type, the status dnsmasq gives, the answers it gives. An upstream that is dead (127.0.0.1#59999) turns a forwarded query into a timeout.
         live_cases:
           - {name: gateway.orbit, type: A, status: NOERROR, data: [10.44.0.2]}
@@ -587,8 +634,14 @@
           - {name: onelabel, type: A, status: NXDOMAIN, data: []}
           # A reverse lookup of a private address that no record owns is answered locally (bogus-priv).
           - {name: 99.0.44.10.in-addr.arpa, type: PTR, status: NXDOMAIN, data: []}
-          # A child of a record, and a public name, are forwarded: the dead upstream gives no answer.
-          - {name: child.gateway.orbit, type: A, status: none, data: []}
+          # A descendant of an exact .orbit name never goes upstream either: NXDOMAIN at once, not a timeout, with a dead upstream.
+          - {name: child.gateway.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: deep.child.gateway.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: x.collector.ai-router.orbit, type: A, status: NXDOMAIN, data: [], within_ms: 1000}
+          - {name: collector.ai-router.orbit, type: A, status: NOERROR, data: [10.44.0.5]}
+          - {name: collector.ai-router.orbit, type: AAAA, status: NOERROR, data: []}
+          # A child of a Route outside the local zones, and a public name, are forwarded: the dead upstream gives no answer.
+          - {name: child.app.example.com, type: A, status: none, data: []}
           - {name: example.org, type: A, status: none, data: []}
       block:
         - name: Make a folder for dnsmasq
@@ -636,7 +689,7 @@
           changed_when: true
         - name: Ask dnsmasq
           ansible.builtin.command:
-            argv: ["{{ dig_bin }}", "@127.0.0.1", -p, "{{ live_port }}", +noall, +comments, +answer, +tries=1, +time=2, "{{ item.name }}", "{{ item.type }}"]
+            argv: ["{{ dig_bin }}", "@127.0.0.1", -p, "{{ live_port }}", +noall, +comments, +answer, +stats, +tries=1, +time=2, "{{ item.name }}", "{{ item.type }}"]
           register: live_answers
           changed_when: false
           failed_when: false
@@ -646,10 +699,12 @@
           vars:
             got_status: "{{ item.stdout | regex_findall('status: ([A-Z]+)') | first | default('none') }}"
             got_data: "{{ item.stdout | regex_findall('(?m)^\\S+\\s+[0-9]+\\s+IN\\s+(?:A|AAAA|PTR)\\s+(\\S+)') }}"
+            got_ms: "{{ (item.stdout | regex_findall('Query time: ([0-9]+) msec') | first | default('999999')) | int }}"
           ansible.builtin.assert:
             that:
               - got_status == item.item.status
               - got_data == item.item.data
+              - got_ms | int <= (item.item.within_ms | default(999999))
             fail_msg: "{{ item.item.name }} {{ item.item.type }}: {{ item.stdout }}"
             quiet: true
           loop: "{{ live_answers.results }}"

@@ -107,7 +107,7 @@ The vpn Node runs the stock `dnsmasq.service`. It binds the VPN DNS address with
 
 ### What the Gateway renders
 
-The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
+The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver. A name under `.orbit` is the exception. `orbit.conf` has `local=/orbit/`, and a forward rule for children would override it. So dnsmasq answers a child of an exact `.orbit` name with NXDOMAIN itself, at once. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
 
 The render reads stored rows only. A change stores its state before it asks for a render. A Cluster change that publishes before it commits stores its pending TLD, state or Router on the Cluster row. Each source of change (`cluster:update`, a Router selection) keeps its own hold and releases only that one when it ends. A hold that nothing cleared expires after an hour.
 
@@ -174,6 +174,13 @@ In both cases, publication still finds the `vpn` Node and publishes there. The r
 Private DNS answers select an address. They do not change how application traffic is routed. [Routes](/reference/routes#set-up-private-traffic) explains how a resolved Route reaches its workload.
 
 Every caller gets the same answer. A Cluster name resolves to the Router's WireGuard address, also for a Cluster member that shares the Router's LAN. Such a member reaches the Router through the WireGuard hub. The Router's LAN address is never published.
+
+This changed the A answers of two groups of callers, as [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#consequences) lists:
+
+- Beast, sabre and shark: `test` and 119 exact `*.test` names go from `192.168.6.20` to `10.44.0.7`. The round trip from shark to beast grows from 0.18 ms over the LAN to 8.9 ms through the WireGuard hub.
+- App-prod: 13 public names go from `10.0.0.4` to its own WireGuard address `10.44.0.4`. No traffic path changes.
+
+Whether the first change is wanted is Nick's decision. The phase and the renderer data keep both outcomes possible.
 
 A Route change stores its rows, and the render follows them: a Route that is retiring or removed leaves the next render, and a failed Route keeps its record until an operator removes it. A domain inside a TLD needs no record when the TLD already gives its address.
 

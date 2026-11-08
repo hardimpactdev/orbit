@@ -17,7 +17,9 @@ local-ttl=30
 domain-needed
 bogus-priv
 # Nothing under .orbit leaves the Node: a name that is no exact record is NXDOMAIN.
-local=/orbit/
+{% for zone in dns_local_zones %}
+local=/{{ zone }}/
+{% endfor %}
 {% for server in dns_upstream %}
 server={{ server }}
 {% endfor %}

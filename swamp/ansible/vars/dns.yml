@@ -9,6 +9,13 @@ dns_pattern_ipv4: '{{ dns_pattern_octet }}(?:\.{{ dns_pattern_octet }}){3}'
 # The Node's own resolver (/etc/systemd/resolved.conf.d/30-orbit-local-dns.conf names it: DNS=127.0.0.55, Domains=~.). dnsmasq listens on it
 # next to the VPN addresses, so the vpn Node resolves apt, the agent and every other name through the same dnsmasq.
 dns_local_resolver: 127.0.0.55
+# The zones that dnsmasq answers from its own data only (`local=/zone/` in orbit.conf). A name below such a zone never goes to an upstream
+# resolver: an exact name gets its hosts line, and anything below it is NXDOMAIN. A forward rule for a child (`server=/*.name/#`) would
+# override `local=`, so the NODATA/forward pair is for the names outside these zones only (dns_pair_names).
+dns_local_zones: [orbit]
+dns_pair_names: >-
+  {{ dns.records | selectattr('pair') | map(attribute='name')
+  | reject('match', '(?:.*[.])?(?:' ~ (dns_local_zones | map('regex_escape') | join('|')) ~ ')\Z') | unique | sort | list }}
 dns_pattern_interface: '[A-Za-z0-9][A-Za-z0-9._-]{0,14}'
 
 # Every line of a file the phase writes must match one of these, or the phase refuses the render before it installs anything.

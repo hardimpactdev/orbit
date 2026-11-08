@@ -19,7 +19,7 @@ sequenceDiagram
   %%> - `orbit.conf`, `orbit.hosts` and `orbit.servers` as text, and the revision
   %%> Why:
   %%> - each publication is a whole state, so two parallel publications cannot lose each other's change
-  %%> - every caller gets the same answer
+  %%> - every caller gets the same answer; ADR 0248 lists the A answers that this changes for beast, sabre, shark and app-prod
   GW->>SW: Start run with the render<br/>child workflow dns-publish
   %%> What it does:
   %%> - the owning kind (Route, Node, Cluster or role change) starts this step in its own run
