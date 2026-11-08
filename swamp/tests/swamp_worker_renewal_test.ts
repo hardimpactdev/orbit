@@ -21,16 +21,26 @@ interface Worker {
   activeDispatchIds: string[];
   enrolledAt: string;
 }
+type CredentialKind = "enrollment" | "server";
+interface Credential {
+  name: string;
+  effectiveState: string;
+  expiresAt: string;
+}
 interface State {
   workers: Record<Slot, Worker>;
   receipts?: Partial<Record<Slot, string>>;
   probe_error?: Partial<Record<Slot, string>>;
   drain_on_probe?: Slot;
   fill_on_probe?: Slot;
+  shrink_on_probe?: Slot;
   stop_usec?: number;
   journal_error?: Slot;
   starting?: Slot[];
   lose_on_restart?: Slot;
+  age_peer_on_probe?: boolean;
+  tokens: Partial<Record<CredentialKind, Credential>>;
+  mint_fail?: CredentialKind;
 }
 
 // All boundary executables use this Deno stub. No Python test or fixture code.
@@ -72,19 +82,26 @@ if (name === "getent") {
     const slot = args[1]?.split("@")[1]?.[0];
     const current = state.workers[slot];
     if (args[0] === "show") {
-        console.log("LoadState=loaded\nActiveState=" + (current.status === "disconnected" ? "inactive" : "active") + "\nUnitFileState=" + (slot === "c" ? "disabled" : "enabled"));
+        const active = current.status === "disconnected" ? "inactive" : "active";
+        console.log(args.includes("--value") ? active : "LoadState=loaded\nActiveState=" + active + "\nUnitFileState=" + (slot === "c" ? "disabled" : "enabled"));
     } else if (args[0] === "is-enabled") {
         console.log(slot === "c" ? "disabled" : "enabled");
         Deno.exit(slot === "c" ? 1 : 0);
     } else if (args[0] === "start") {
+        if (slot === "c" && Object.values(state.tokens).some(token =>
+            !["unused", "enrolled", "active"].includes(token.effectiveState) || Date.parse(token.expiresAt) <= Date.now())) {
+            throw new Error("expired credential prevents c enrollment");
+        }
         event("start-" + slot);
         state.starting = [...(state.starting ?? []), slot]; save();
     } else if (["restart", "stop"].includes(args[0])) {
+        event("attempt-" + args[0] + "-" + slot);
         const others = Object.entries(state.workers).filter(([key,worker]) => key !== slot && accepting(worker));
-        if (others.length !== 2 || others.reduce((total,[,worker]) => total + worker.capacity,0) < 8) {
+        if ((accepting(current) || args[0] === "stop") &&
+            (others.length !== 2 || others.reduce((total,[,worker]) => total + worker.capacity,0) < 8)) {
             throw new Error("renewal reduced original eight-slot accepting capacity");
         }
-        event("drain-" + slot);
+        event((accepting(current) ? "drain-" : "recover-") + slot);
         current.status = "draining"; save();
         if (exists("hold-drain-" + slot)) {
             const deadline = Date.now() + 40_000;
@@ -102,12 +119,30 @@ if (name === "getent") {
         save(); event("stopped-" + slot);
     } else throw new Error(JSON.stringify(args));
 } else if (name === "swamp") {
-    if (args[0] === "worker" && args[1] === "token" && args[2] === "create") {
-        event("mint-enrollment-" + args[3]);
-        console.log(JSON.stringify({token: "synthetic-enrollment-test-only"}));
-    } else if (args[0] === "access" && args[1] === "token" && args[2] === "mint") {
-        event("mint-server-" + args[3]);
-        console.log(JSON.stringify({token: "synthetic-server-test-only"}));
+    if (args[1] === "token") {
+        const kind = args[0] === "worker" ? "enrollment" : "server";
+        const record = state.tokens[kind];
+        if (args[2] === "list") console.log(JSON.stringify(record ? [record] : []));
+        else if (args[2] === "revoke") {
+            if (state.workers.c.status !== "disconnected") throw new Error("rotating under a running c");
+            event("revoke-" + kind); record.effectiveState = "revoked"; save(); console.log("{}");
+        } else if (["create", "mint"].includes(args[2])) {
+            if (state.workers.c.status !== "disconnected") throw new Error("minting under a running c");
+            if (state.mint_fail === kind) { event("mint-failed-" + kind); Deno.exit(1); }
+            if (record && ["unused", "enrolled", "active"].includes(record.effectiveState) && Date.parse(record.expiresAt) > Date.now()) {
+                throw new Error("credential already exists");
+            }
+            event("mint-" + kind + "-" + args[3]);
+            state.tokens[kind] = {name: args[3], effectiveState: kind === "enrollment" ? "unused" : "active", expiresAt: new Date(Date.now() + 30*86400_000).toISOString()}; save();
+            // Official access mint returns a vaultRef, never a plaintext token.
+            console.log(JSON.stringify({name: args[3], ...(kind === "enrollment" ? {token: args[3] + ".synthetic-enrollment-test-only"} : {}),
+                expiresAt: state.tokens[kind].expiresAt, vaultRef: {vaultName: "_token-secrets", secretKey: (kind === "enrollment" ? "worker-token-" : "server-token-") + args[3]}}));
+        } else throw new Error(JSON.stringify(args));
+    } else if (args[0] === "vault" && args[1] === "read-secret") {
+        const kind = args[3].startsWith("worker-token-") ? "enrollment" : "server";
+        if (args[2] !== "_token-secrets" || !state.tokens[kind]) throw new Error("unknown token vault reference");
+        event("read-secret-" + kind);
+        console.log(JSON.stringify({value: "synthetic-" + kind + "-test-only"}));
     } else if (args[1] === "list") {
         for (const slot of state.starting ?? []) {
             if (exists("hold-enrollment-" + slot)) event("waiting-" + slot);
@@ -123,8 +158,12 @@ if (name === "getent") {
         const slot = Object.keys(state.workers).find(slot => state.workers[slot].name === args[2]);
         if (!slot) throw new Error("verification used an unknown worker name: " + args[2]);
         event("verify-" + slot);
+        if (slot === "c" && state.age_peer_on_probe) {
+            state.workers.b.enrolledAt = new Date(Date.now() - (7*60+50)*60_000).toISOString(); save();
+        }
         const error = state.probe_error?.[slot] ?? (state.workers[slot].activeDispatchIds.length >= state.workers[slot].capacity ? "at capacity" : undefined);
         if (state.drain_on_probe === slot) { state.workers[slot].status = "draining"; save(); }
+        if (state.shrink_on_probe === slot) { state.workers[slot].capacity = 2; save(); }
         if (state.fill_on_probe === slot) {
             state.workers[slot].activeDispatchIds = ["one", "two", "three", "four"]; save();
         }
@@ -155,6 +194,18 @@ class Fixture {
       a: worker("a"),
       b: worker("b"),
       c: { ...worker("c"), status: "disconnected" },
+    },
+    tokens: {
+      enrollment: {
+        name: "swamp-role-209-c",
+        effectiveState: "enrolled",
+        expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(),
+      },
+      server: {
+        name: "swamp-role-209-c-access",
+        effectiveState: "active",
+        expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(),
+      },
     },
   };
   child?: Deno.ChildProcess;
@@ -229,10 +280,11 @@ class Fixture {
     }
   }
   start() {
+    this.completed = false;
     this.write();
     this.child = new Deno.Command("timeout", {
       args: [
-        "60",
+        "90",
         "ansible-playbook",
         "-i",
         "localhost,",
@@ -376,10 +428,13 @@ test("long dispatch on c finishes while a and b accept", async (f) => {
   const events = await f.result();
   assert(events.includes("dispatch-c-success"));
 });
-test("unavailable peer prevents all starts and drains", async (f) => {
+test("unavailable b recovers before the due a can drain", async (f) => {
   f.state.workers.b.status = "draining";
   f.start();
-  assertEquals(await f.result(false), []);
+  const events = await f.result();
+  assert(events.includes("recover-b"));
+  assert(!events.includes("attempt-restart-a"));
+  assert(!events.includes("start-c"));
 });
 for (const error of ["empty", "at capacity", "data plane failed"]) {
   test(`replacement probe ${error} prevents base drain`, async (f) => {
@@ -463,6 +518,7 @@ test("retry retires retained overlap and ends the recovery round", async (f) => 
   assert(!events.includes("drain-a"));
 });
 test("overlap credentials are minted privately once and reused", async (f) => {
+  f.state.tokens = {};
   for (const name of ["enrollment", "server"]) {
     Deno.removeSync(`${f.root}/credentials/${name}.token`);
   }
@@ -527,4 +583,94 @@ test("old stop allowance prevents any drain", async (f) => {
   f.state.stop_usec = 300000000;
   f.start();
   assert(!(await f.result(false)).some((event) => event.startsWith("drain-")));
+});
+test("peer nearing its eight-hour cap during the probe prevents a drain", async (f) => {
+  f.state.age_peer_on_probe = true;
+  f.start();
+  const events = await f.result(false);
+  assert(events.includes("verify-c"));
+  assert(!events.includes("attempt-restart-a"));
+  assertStringIncludes(f.output, "Session headroom is too short");
+});
+test("retained c older than three hours does not block base recovery", async (f) => {
+  f.state.workers.a.status = "disconnected";
+  Object.assign(f.state.workers.c, {
+    status: "busy",
+    enrolledAt: new Date(Date.now() - 5 * 3600_000).toISOString(),
+    activeDispatchIds: ["long-retained-dispatch"],
+  });
+  f.start();
+  const events = await f.result();
+  assert(events.includes("start-a")); // systemd starts an already inactive base without draining it.
+  assert(events.indexOf("enrolled-a") < events.indexOf("drain-c"));
+  assert(!events.includes("start-c"));
+  assert(!events.some((event) => event.startsWith("mint-")));
+});
+test("six restored base slots cannot retire a four-slot overlap worker", async (f) => {
+  f.state.workers.a.capacity = 2;
+  f.state.workers.c.status = "idle";
+  f.start();
+  const events = await f.result(false);
+  assert(!events.includes("attempt-stop-c"));
+  assertEquals(f.read().workers.c.status, "idle");
+});
+test("base capacity shrinking during verification cannot retire c", async (f) => {
+  f.state.workers.c.status = "idle";
+  f.state.workers.c.enrolledAt = fresh();
+  f.state.shrink_on_probe = "a";
+  f.start();
+  const events = await f.result(false);
+  assert(events.includes("verify-a"));
+  assert(!events.includes("attempt-stop-c"));
+});
+test("second credential mint failure preserves the first for the retry", async (f) => {
+  f.state.tokens = {};
+  f.state.mint_fail = "server";
+  for (const kind of ["enrollment", "server"]) {
+    f.release(`credentials/${kind}.token`);
+  }
+  f.start();
+  await f.result(false);
+  assertEquals(
+    Deno.readTextFileSync(`${f.root}/credentials/enrollment.token`),
+    "swamp-role-209-c.synthetic-enrollment-test-only",
+  );
+  f.state = f.read();
+  delete f.state.mint_fail;
+  f.start();
+  const events = await f.result();
+  assertEquals(
+    events.filter((event) => event === "mint-enrollment-swamp-role-209-c")
+      .length,
+    1,
+  );
+  assert(
+    events.indexOf("read-secret-enrollment") <
+      events.indexOf("mint-failed-server"),
+  );
+  assert(!f.output.includes("synthetic-server-test-only"));
+});
+test("expired credentials rotate before c starts even when files exist", async (f) => {
+  for (const token of Object.values(f.state.tokens)) {
+    token.effectiveState = "expired";
+    token.expiresAt = new Date(Date.now() - 1).toISOString();
+  }
+  f.start();
+  const events = await f.result();
+  for (const kind of ["enrollment", "server"] as const) {
+    assert(events.includes(`read-secret-${kind}`));
+    assert(Date.parse(f.read().tokens[kind]!.expiresAt) > Date.now());
+    assert(events.indexOf(`read-secret-${kind}`) < events.indexOf("start-c"));
+  }
+});
+test("credential near expiry rotates while stopped with enough life for both drains", async (f) => {
+  f.state.tokens.server!.expiresAt = new Date(Date.now() + 3600_000)
+    .toISOString();
+  f.start();
+  const events = await f.result();
+  assert(
+    events.indexOf("revoke-server") <
+      events.indexOf("mint-server-swamp-role-209-c-access"),
+  );
+  assert(events.indexOf("read-secret-server") < events.indexOf("start-c"));
 });

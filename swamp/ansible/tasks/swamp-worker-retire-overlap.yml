@@ -8,24 +8,46 @@
   register: renewal_retire_pool
   changed_when: false
   no_log: true
+- name: Read the time before considering overlap retirement
+  ansible.builtin.setup:
+    gather_subset: ["!all", "!min", date_time]
+    filter: ansible_date_time
+- name: Select the restored base pool and overlap capacity
+  ansible.builtin.set_fact:
+    renewal_retire_bases: >-
+      {{ (renewal_retire_pool.stdout | from_json).workers
+      | selectattr('name', 'in', [renewal_names.a, renewal_names.b])
+      | selectattr('status', 'in', renewal_accepting) | list }}
+    renewal_retire_overlap: >-
+      {{ (renewal_retire_pool.stdout | from_json).workers
+      | selectattr('name', 'equalto', renewal_names.c) | first | default({}) }}
+# All instances use the same auto-concurrency template: each restored base must
+# provide at least c's proven capacity, including after an interrupted round.
+- name: Check full restored capacity and session headroom before a recovery retirement
+  ansible.builtin.set_fact:
+    renewal_retire_ready: >-
+      {{ renewal_retire_bases | length == 2 and
+      renewal_retire_bases | map(attribute='capacity') | min >= renewal_retire_overlap.capacity | default(1) | int and
+      renewal_session_seconds - ((ansible_date_time.epoch | int) -
+      ((renewal_retire_bases | sort(attribute='enrolledAt') | first).enrolledAt
+      | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp())
+      > renewal_drain_seconds + renewal_margin_seconds }}
 - name: Retire overlap only if it is connected
   when: >-
     (renewal_retire_pool.stdout | from_json).workers
     | selectattr('name', 'equalto', renewal_names.c)
     | rejectattr('status', 'equalto', 'disconnected') | list | length > 0 and
-    (not renewal_retire_if_ready | default(false) or
-    ((renewal_retire_pool.stdout | from_json).workers
-    | selectattr('name', 'in', [renewal_names.a, renewal_names.b])
-    | selectattr('status', 'in', renewal_accepting) | list | length == 2))
+    (not renewal_retire_if_ready | default(false) or renewal_retire_ready)
   block:
     - name: Require both base workers accepting before retiring c
       ansible.builtin.assert:
         that:
+          - renewal_retire_ready
           - >-
             (renewal_retire_pool.stdout | from_json).workers
             | selectattr('name', 'in', [renewal_names.a, renewal_names.b])
             | selectattr('status', 'in', renewal_accepting) | list | length == 2
-        fail_msg: Cannot retire c while a base worker is unavailable; overlap capacity stays running
+        fail_msg: Cannot retire c without full base capacity and session headroom; overlap capacity stays running
     - name: Probe base workers that have spare slots before draining c
       ansible.builtin.include_tasks: swamp-worker-renew-verify.yml
       loop: [a, b]
@@ -69,6 +91,10 @@
         renewal_retire_bases: >-
           {{ (renewal_retire_fresh.stdout | from_json).workers
           | selectattr('name', 'in', [renewal_names.a, renewal_names.b]) | list }}
+    - name: Read the time after live probes
+      ansible.builtin.setup:
+        gather_subset: ["!all", "!min", date_time]
+        filter: ansible_date_time
     - name: Require the same two base instances still accepting
       ansible.builtin.assert:
         that:
@@ -82,7 +108,18 @@
           - >-
             (renewal_retire_bases | map(attribute='capacity') | sum) -
             (renewal_retire_bases | map(attribute='activeDispatchIds') | map('length') | sum) > 0
+          - renewal_retire_bases | map(attribute='capacity') | min >= renewal_retire_overlap.capacity | int
         fail_msg: Base capacity changed or filled after probing; c stays running and no further drain starts
+    - name: Reserve session life for every worker throughout overlap retirement
+      ansible.builtin.assert:
+        that:
+          - >-
+            renewal_session_seconds - ((ansible_date_time.epoch | int) -
+            (item.enrolledAt | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp())
+            > renewal_drain_seconds + renewal_margin_seconds
+        fail_msg: Session headroom is too short for overlap retirement; no further drain, eight-hour cap risk remains
+      loop: "{{ renewal_retire_bases + [renewal_retire_overlap] }}"
+      loop_control: {label: "{{ item.name }}"}
     - name: Log the overlap drain and monitoring limit
       ansible.builtin.debug:
         msg: Retiring c with a and b accepting; peer failure during blocking drain is detected after stop returns

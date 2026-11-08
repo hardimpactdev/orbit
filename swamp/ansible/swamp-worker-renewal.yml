@@ -9,6 +9,10 @@
     renewal_credentials_dir: /etc/orbit/swamp-role-worker/c
     renewal_swamp_binary: /usr/local/bin/swamp
     renewal_accepting: [idle, busy]
+    renewal_session_seconds: 28800
+    renewal_drain_seconds: 4500
+    renewal_margin_seconds: 300
+    renewal_round_seconds: 10800
     renewal_name: "{{ renewal_names[renewal_slot] }}"
     renewal_peer_name: "{{ renewal_names[renewal_peer] }}"
     renewal_overlap_name: "swamp-role-{{ orbit_node_id }}-c"

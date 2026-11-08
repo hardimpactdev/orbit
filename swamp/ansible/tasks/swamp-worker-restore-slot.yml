@@ -1,0 +1,69 @@
+---
+- name: Check the base worker drain allowance
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - '10'
+      - busctl
+      - get-property
+      - org.freedesktop.systemd1
+      - "/org/freedesktop/systemd1/unit/orbit_2dswamp_2dworker_40{{ renewal_slot }}_2eservice"
+      - org.freedesktop.systemd1.Service
+      - TimeoutStopUSec
+  register: renewal_restore_stop
+  changed_when: false
+- name: Require the base worker to have 75 minutes to finish active work
+  ansible.builtin.assert:
+    that:
+      - renewal_restore_stop.stdout.split() | length == 2
+      - renewal_restore_stop.stdout.split()[0] == 't'
+      - renewal_restore_stop.stdout.split()[1] | int >= 4500000000
+    fail_msg: The base worker must converge its drain allowance before recovery or renewal
+- name: Restart only this base worker
+  ansible.builtin.systemd_service:
+    name: "orbit-swamp-worker@{{ renewal_slot }}.service"
+    state: restarted
+- name: Wait for a different accepting base instance
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '3', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
+  become: true
+  become_user: "{{ orbit_user }}"
+  environment: "{{ renewal_environment }}"
+  register: renewal_wait
+  changed_when: false
+  no_log: true
+  retries: 20
+  delay: 2
+  until: >-
+    renewal_wait.rc == 0 and
+    ((renewal_guard_peers and ((renewal_wait.stdout | from_json).workers
+    | selectattr('name', 'in', [renewal_peer_name, renewal_names.c])
+    | selectattr('status', 'in', renewal_accepting) | list | length != 2)) or
+    ((renewal_wait.stdout | from_json).workers
+    | selectattr('name', 'equalto', renewal_name)
+    | selectattr('status', 'in', renewal_accepting)
+    | rejectattr('instanceUuid', 'equalto', renewal_current.instanceUuid | default(''))
+    | selectattr('instanceUuid') | list | length == 1))
+- name: Require both survivors still accepting after a controlled drain
+  ansible.builtin.assert:
+    that:
+      - >-
+        (renewal_wait.stdout | from_json).workers
+        | selectattr('name', 'in', [renewal_peer_name, renewal_names.c])
+        | selectattr('status', 'in', renewal_accepting) | list | length == 2
+    fail_msg: Peer failed during the blocking drain; detected after restart, no further drain
+  when: renewal_guard_peers
+- name: Prove the restored base accepts dispatches
+  ansible.builtin.import_tasks: swamp-worker-renew-verify.yml
+  vars: {renewal_verify_slot: "{{ renewal_slot }}"}
+- name: Require the restored base capacity
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((renewal_wait.stdout | from_json).workers
+        | selectattr('name', 'equalto', renewal_name) | first).capacity | int >=
+        renewal_current.capacity | default(renewal_other.capacity) | int
+    fail_msg: Restored base lost capacity; c stays running and no further drain starts
+- name: Finish this round before considering another base worker
+  ansible.builtin.set_fact:
+    renewal_completed: true
