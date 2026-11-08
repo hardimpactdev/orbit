@@ -1,6 +1,9 @@
 ---
 title: "Verification cases"
 description: "How the cases that prove an Orbit command are written, checked and run: a short YAML specification built from a fixed set of steps, one shared runner, a coverage check against the command chart, and batches that each start from one restore of the task's base snapshot."
+covers:
+  - swamp/proof/runner/**
+  - tools/swamp-proof-guest/**
 ---
 
 # Verification cases
@@ -100,8 +103,10 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 | `agent_report` | setup | Wait until the agent of each listed Node has reported again, so the Gateway holds the state the case built. |
 | `node_down` | setup | Stop the agent and the SSH of a Node, then wait 20 seconds until the Gateway counts the agent as offline. A case that stops a Node needs its own batch. |
 | `node_access_remove` | batch setup | Remove the access grant of one Node to another. |
+| `node_fixture` | setup | Create a recorded Node fixture in the nested Gateway and bind its identity. Runs alone. |
+| `recorded_request` | act | Read a Node through the candidate Gateway HTTP kernel with a request-local agent view and outbound guards. Runs alone. |
 | `ipv6_addresses` | batch setup | Give Nodes an IPv6 address on the proof bridge. |
-| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`, and `as` (the Node that runs the CLI; default `gateway`). On another Node the runner mounts the tested checkout there, gives it a CLI profile for the nested Gateway, and runs `php apps/cli/orbit` as the managed user: no `orbit` binary is installed on a nested Node. |
+| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`, `save`, and `as` (the Node that runs the CLI; default `gateway`). On another Node the runner mounts the tested checkout there, gives it a CLI profile for the nested Gateway, and runs `php apps/cli/orbit` as the managed user: no `orbit` binary is installed on a nested Node. |
 | `probe` | any | Open a connection from a Node to a port and expect `connect` or `blocked`. |
 | `ufw` | expect | Read `ufw status numbered` on a Node and check rows. |
 | `record` | expect | Run a read command and count the rows that match. |
@@ -112,7 +117,7 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 Details that a case author needs:
 
 - **`listener`** starts listeners on free ports and binds each name in `ports`. `proto` is `tcp`, `udp` or a list of both: a list uses the same port for each protocol. `family` is 4 or 6; an IPv6 listener takes IPv6 only. `block: {as: range, size: 5}` starts `size` consecutive ports (2 to 50) and binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}`. The step fails if a port does not answer on the Node itself.
-- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer VM and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
+- **`cli`** adds `--json` before an option terminator (`--`), or at the end when there is none. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer VM and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
   - `exit`: the exit code.
   - `status`: the status of the Operation. In the JSON form it is the `status` of the document; in a human run it is read from the Operation named on the `Operation:` line.
   - `code`: an error code, read from the JSON form. A human run that has no JSON form takes the text instead: the output must contain the code.
@@ -120,12 +125,14 @@ Details that a case author needs:
   - `steps: {name: "Change the rules", count: 1}`: read `operation:show` for the returned Operation ID and require exactly that many executed steps with exactly this name or its forEach-indexed form, such as `Change the rules-0-0` (two matching numeric indices). Skipped steps do not count. Missing step data fails the check. It needs the JSON form.
   - `request: none`: the call created no Operation. The runner lists the Operations before and after the call.
   - `human`: a text, or a list of texts, that the output must contain. Escape codes are removed first.
+  - `json`: a list of `{path: assignments[0].status, equals: active}` or `{path: skipped, absent: true}` assertions. Paths use dotted object fields, zero-based indexes, or a unique row selector such as `nodes[id=2].roles`. Equality compares the complete typed value. A missing path does not equal null. These assertions require the JSON form.
+  - The step's `save` maps paths to names, for example `save: {roles: recorded-roles}`. Later `${recorded-roles}` values retain the full JSON value, including lists and null, for cross-command comparisons. Saving also requires the JSON form.
 - **`tty`** is a list of steps. `see` waits for text in the output that came after the previous step. A `see` alone only waits, and the next step looks after that text, so several of them can follow one screen: the title, the search line, then the header of a table. `send` types a text and Enter, and `^C` sends Ctrl-C. `choose` picks an item by its label and presses Enter. In a list prompt (Laravel Prompts) it moves the highlight, the line with `›`. In a searchable table, such as the Node prompt (a `/ Search` line above the rows), it types the label, which filters the rows, and moves down to the row with a cell that equals the label. A label that no row has fails the case with the rows that were left. A command that never shows the text, or ends before it, fails the case with the end of its output: that is a finding about the command, not about the runner. The driver is `tools/swamp-proof-guest/terminal.py`, built on the standard `pty` module.
 - **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`. A TCP probe connects. A UDP probe sends one datagram and waits for the listener's answer, so `connect` means the answer came and `blocked` means nothing came in 3 seconds. A refusal (an ICMP error, or a closed TCP port) is neither: it is reported as `refused`. An IPv6 probe needs `ipv6_addresses` in the batch.
 - **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
 - **`record`** runs `list`, for one `node` or for every Node when `node` is left out, then matches `where` against each row. Each row carries the name of its Node under `node`. A list as a value matches any of its items, and the word `present` matches any value that is not null. A `record` needs `count`, `min` or `order`. `count` is exact; `min` is a lower bound. `args` adds options to the list call. `section` names the part of the JSON to read: `rules` (default), `managed`, `unmatched` or `live`. `order` lists rows that must appear in that sequence, not necessarily next to each other.
 - **`doctor`** waits until 65 seconds after `act` ended, so that a report of the Node agent follows the change, then runs Doctor for the Node. The agent's tick has no fixed phase after a restore of `base`, so the wait does not use it. Use it in the main success case, not in every case.
-- **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider.
+- **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider. `node_records` compares all rows and columns of `nodes`, `node_roles`, `node_access`, and `clusters`, ordered by ID. Use both providers for a read that must change neither recorded detail nor Operations.
 - **`fault`** puts a shim in place of `/usr/sbin/ufw` on the Node (the real program stays as `ufw.real`; a shell script of 20 lines, `tools/swamp-proof-guest/ufw-shim.sh`). `fail_after: {match: delete, count: 1}` lets the calls through until the 1st call whose arguments contain the word has run; every later call that writes then exits 1 with `ufw: injected fault`. Calls that read (`status`, `show`, `version`, `help`) always pass, so the runner's own reads and the Node's reports keep working. `fault: {clear: true}` removes the fault on every Node where the case set one. Only `command: ufw` exists.
 - **`busy_node`** holds a firewall write on the Node. It puts the same shim in place, holds a lock that the shim's writes wait on (`flock`), and starts a real `firewall:allow` of a spare port in the background. The step ends when the CLI prints its first line, which it does after the Gateway admitted the request, so the Gateway holds the Node's firewall for that Operation. `seconds` (default 120) bounds the lock. When the case ends, the runner releases the lock, waits for the held write to finish, and puts the real `ufw` back, so the next case does not meet an Operation that still runs. `command` is `firewall:allow` (the default) or `firewall:deny`.
 - **`ipv6_addresses`** gives each listed Node an address `fd42:232:2::<last octet of its IPv4 address>/64` on the interface of its bridge address, then pings every Node from every other over IPv6; a failed ping makes the case `unrun`. It binds `${<node>.src6}` and the IPv6 address that `probe` uses. It stands in the `setup` of a batch.
@@ -140,9 +147,32 @@ Placeholders:
 | `${gateway.src}`, `${gateway.src6}` | The IPv4 or IPv6 address that the Node uses to reach the target. |
 | `${port}`, `${control}` | Names that `listener` bound. A `block` binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}` (`lo:hi`). |
 | `${sources}` | The `sources` list of the file. |
+| `${retained.id}`, `${retained.name}`, `${retained.cluster_name}`, `${retained.tld}` | Values bound by `node_fixture: {kind: retained, as: retained, consumer: app-prod, serving: app-dev}`. |
+| `${recorded-roles}` | A typed value bound by `cli.save`. |
 | `${proto}` | A fixture parameter or a variant variable. |
 
 A placeholder that holds a list expands the step or row that uses it, once per item. `"@name"` in a command line splices a `vars` list.
+
+### Recorded Node reads
+
+`node_fixture` writes test-owned records through `tools/swamp-proof-guest/recorded-read.php` in the mounted candidate Gateway. `kind` is `retained`, `sparse`, `unmanaged`, or `managed`; `as` names the bound fixture. `retained` also needs `consumer` and `serving` Nodes for named access relations. It retains a failed Node, a named Cluster, non-default network/settings detail, and active, provisioning, failed, and removing role assignments. Fixture writes suppress provisioning observers. They are test setup, not command behaviour. They run only in the disposable nested Gateway; restore the fleet before and after the batch.
+
+`recorded_request` takes `node`, `caller`, `agent`, `age` (seconds), and `expect` (the JSON assertions above). The helper boots the actual candidate HTTP kernel and its authorization middleware with the caller's recorded WireGuard address. `agent` is `online`, `offline`, `not_seen`, or `unknown`. The request-local cache and clock exercise the 15-second freshness boundary, expired event data with retained last-seen time, and subscriber unavailability without changing the running subscriber. Assertions read `{status, body}`; evidence is saved as `recorded-request.json`.
+
+For this isolated kernel request, Laravel HTTP/process fakes refuse and count attempted outbound calls, and PHP disables native curl, socket, and process entry points. It cannot obtain a live Node or external service answer. This is a guarded request, not a network trace of PHP-FPM. The same cases also call the real CLI over HTTPS for transport and rendering; Gateway feature tests check the no-contact rule independently. Neither fixture nor helper is shipped as a production route.
+
+Node list and show keep role names under `roles` and complete assignment records under `assignments`. Save and compare `assignments` to check shared lifecycle and failure detail against `node:role:list`. The checked-in proof-selection rules select the list and show cases for shared Node code, while reporting Node-family commands without cases as uncovered. A change to the show cases file selects the show proof.
+
+All `node:show` cases, including the retained-detail and recorded-agent cases, live in `swamp/proof/node/show.cases.yaml`. On a fresh task-owned nested fleet, validate the file and run its batches:
+
+```bash
+python3 swamp/proof/runner/runner.py plan --file swamp/proof/node/show.cases.yaml
+python3 swamp/proof/runner/runner.py batch fresh-fleet --file swamp/proof/node/show.cases.yaml
+python3 swamp/proof/runner/runner.py batch node-down --file swamp/proof/node/show.cases.yaml
+python3 swamp/proof/runner/runner.py batch no-grant --file swamp/proof/node/show.cases.yaml
+```
+
+Restore before each batch and after the last batch, especially after `node-down` or `no-grant`. A plan validates the cases; it is not proof that they passed on the fleet.
 
 ## Fixtures
 

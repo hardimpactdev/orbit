@@ -23,6 +23,8 @@ A Node's `updating` field is set only while a Gateway release runs on the Gatewa
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
 
+Node list and detail responses keep `roles` as a list of role names. Their shared `assignments` projection retains every assignment with its ID, role, lifecycle status, failed step and error code, using the same fields as `node:role:list`. Human show output adds non-active statuses and retained failure detail to each role name. Both reads include the recorded Cluster name and do not contact the Node.
+
 ## Authority
 
 `NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
@@ -63,6 +65,12 @@ Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-
 [`node:converge`](/cli/node/converge) repairs an active, managed Linux Node, including one that owns Instances. With no scope flag it applies Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units; `--roles=a,b` selects the base plus those existing assignments. The flags are mutually exclusive, and neither adds or removes a role. There is no `--force` or `--full` option.
 
 An ordinary repeat starts a new Operation and checks every phase again; matching state is not an admission skip. A retry with the same idempotency key reuses its Operation under the [keyed-start contract](/reference/operations#retry-a-start-with-a-key). [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint) owns the phase order and failure behavior.
+
+## Recorded role assignments
+
+[`node:role:list`](/cli/node/role-list) reads every assignment, including `active`, `provisioning`, `failed`, and `removing` records. It starts no Operation and contacts no Node or external service. Missing or stale agent facts do not change the result.
+
+The JSON field `assignments` on [`node:list`](/cli/node/list), [`node:show`](/cli/node/show), and the role list uses one shared projection: `id`, `role`, `status`, `failed_step`, and `error_code`. Unset failure fields are `null`; recorded failure details stay visible even on an active assignment. Native step labels, such as `converge:Check the role`, keep their original case and spaces. All three lists use role-registry order, then assignment ID. The Node's `roles` field remains the role-name summary in that order.
 
 ## Why it works this way
 

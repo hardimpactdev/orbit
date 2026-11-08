@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Metrics;
 
 use App\Commands\Concerns\FollowsOperations;
+use App\Commands\Nodes\NodeOutput;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayConnector;
@@ -98,7 +99,7 @@ final class EnableMetricsCommand extends MetricsCommand
             $rows[$node->id] = [
                 (string) $node->id,
                 $node->name,
-                $node->roles === [] ? '—' : implode(', ', $node->roles),
+                NodeOutput::roles($node->assignments) ?? '—',
             ];
         }
 

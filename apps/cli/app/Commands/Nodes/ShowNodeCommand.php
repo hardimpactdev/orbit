@@ -7,14 +7,18 @@ namespace App\Commands\Nodes;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class ShowNodeCommand extends NodeCommand
 {
+    private const string INVALID_ID = 'node.id_invalid';
+
     #[\Override]
     protected $signature = 'node:show
-        {node : Numeric node ID}
+        {node? : Numeric node ID}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,9 +34,29 @@ final class ShowNodeCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+        if ($this->argument('node') === null && $this->consoleMode()->mayPrompt) {
+            $nodes = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class,
+                ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
+
+            if (! $nodes instanceof NodesResponse) {
+                return self::FAILURE;
+            }
+
+            $rows = [];
+            foreach ($nodes->nodes as $candidate) {
+                $rows[$candidate->id] = [(string) $candidate->id, $candidate->name];
+            }
+
+            $this->input->setArgument('node', (string) $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows));
+        }
+
+        $nodeId = $this->positiveId('node', 'Node', self::INVALID_ID);
 
         if ($nodeId === null) {
+            if ($this->option('json') !== true) {
+                $this->writeHumanMessage('Code: '.self::INVALID_ID);
+            }
+
             return self::FAILURE;
         }
 
@@ -53,9 +77,9 @@ final class ShowNodeCommand extends NodeCommand
             'ID' => $node->id,
             'Status' => $node->status,
             'Agent' => $node->agent?->label(),
-            'Roles' => $node->roles,
+            'Roles' => NodeOutput::roles($node->assignments),
             'SSH' => NodeOutput::sshEndpoint($node),
-            'Cluster' => $node->clusterId,
+            'Cluster' => $node->clusterName,
             'WireGuard' => $node->wireguardIp,
             'LAN' => $node->lanIp,
             'WireGuard public key' => $node->wireguardPublicKey,
@@ -63,7 +87,7 @@ final class ShowNodeCommand extends NodeCommand
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),
             'Platform' => $platform,
-            'Projects path' => $node->settings?->apps?->path,
+            'Apps folder' => $node->settings?->apps?->path,
             'Access to' => NodeOutput::accessList($node->access->canAccess ?? []),
             'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),
         ];
