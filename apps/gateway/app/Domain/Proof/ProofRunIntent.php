@@ -113,7 +113,7 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted.
             $fresh = $this->freshHosts($selection->mergeBase);
-            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
                 // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
                 if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
@@ -124,7 +124,7 @@ final readonly class ProofRunIntent
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, keepFree: $reportOnly ? 1 : 0));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -134,7 +134,10 @@ final readonly class ProofRunIntent
                 return $runs;
             }));
         } catch (Throwable $exception) {
-            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForRoom($proof, $reportOnly || ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
+            $hasFreshHosts = $fresh?->hosts !== [] && app(TaskVmCapacity::class)->activeHosts() !== [];
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable'
+                && ($reportOnly ? $hasFreshHosts : ! ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))
+                && $this->waitForRoom($proof, $reportOnly)) {
                 return;
             }
             $this->fail($proof, $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
@@ -160,20 +163,19 @@ final readonly class ProofRunIntent
 
     /**
      * A proof that cannot be placed takes the room back from the VMs that yield to it, and tries again in a few seconds: the VMs that failed
-     * runs kept (`--keep-failed`), and the running report-only proofs, which are cancelled. A report-only proof does neither: it yields
-     * capacity, and the report-only job of every pull request would destroy the VM somebody is reading. Nor does a proof for which hosts
-     * exist but none has fresh enough copies: a freed slot would not help it.
+     * runs kept (`--keep-failed`), and the running report-only proofs, which are cancelled. A report-only proof waits without either action,
+     * so CI can use the reserve when its current proof or refresh ends. Stale copies are refused without preemption.
      *
      * @return bool whether the admission goes on: a VM is on its way out, the proof is young enough to wait, and the new try is queued
      */
     private function waitForRoom(Operation $proof, bool $yields): bool
     {
-        if ($yields || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
+        if ($proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
             return false;
         }
         try {
             // A proof that was cancelled while the job ran is left alone, and nothing is released or cancelled for it.
-            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() + app(ProofReportOnlyProofs::class)->preempt($proof->id) === 0) {
+            if (! $this->whileOpen($proof->id, static fn () => null) || (! $yields && app(ProofKeptVms::class)->releaseAll() + app(ProofReportOnlyProofs::class)->preempt($proof->id) === 0)) {
                 return false;
             }
             $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::WaitStep]));

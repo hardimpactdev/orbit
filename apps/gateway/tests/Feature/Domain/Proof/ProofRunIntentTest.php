@@ -24,7 +24,10 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Cluster;
@@ -33,6 +36,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Env;
@@ -435,7 +439,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
-            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM.')
+            ->and(proofFailureDetail($proof))->toBe('Task VM: no host has room for another task VM (including the shared CI/refresh reserve).')
             ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(0);
     });
@@ -456,16 +460,43 @@ describe('proof:run admission', function (): void {
             ->and($proof->result['cases'])->toBe([])->and(Task::query()->count())->toBe(0);
     });
 
-    it('passes the reserve of a report-only run down to the claim of its slot', function (): void {
+    it('admits report-only CI into the reserved slot instead of leaving it free', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
         $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+        $observed = null;
+        TaskVm::created(static function (TaskVm $vm) use (&$observed): void {
+            $observed = $vm->slot_number;
+            throw new ResourceOperationException('test.slot_observed', 'Stop before preparing execution.', 409);
+        });
 
-        // Room for one task VM: a report-only run leaves it to task and proof work.
         $proof = proofAdmitted(reportOnly: true);
 
         Process::run(['rm', '-rf', $base]);
-        expect($proof->error_code)->toBe('tasks.capacity_unavailable')->and(proofFailureDetail($proof))->toContain('with 1 more left free');
+        expect($observed)->toBe(1)->and($proof->error_code)->toBe('test.slot_observed');
+    });
+
+    it('waits visibly for a busy CI reserve, then reports capacity with the selected commands and no cases', function (): void {
+        $this->freezeTime();
+        $source = proofSource();
+        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
+        $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
+        $host = Node::query()->where('name', 'beast')->sole();
+        TaskVm::query()->create(['host_node_id' => $host->id, 'slot_number' => 1, 'provider' => TaskVmProviderKind::Incus, 'size' => TaskVmSize::Large,
+            'name' => 'beast-tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.150']);
+
+        $proof = proofAdmitted(reportOnly: true);
+
+        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+            ->and($proof->input['runs'])->toBe([])->and(Task::query()->count())->toBe(0);
+        Queue::assertPushed(AdmitProofRun::class, fn (AdmitProofRun $job): bool => $job->operationId === $proof->id && $job->delay === ProofRunIntent::RetrySeconds);
+        Queue::assertNotPushed(CancelProofGroup::class);
+        $this->travel(ProofRunIntent::WaitSeconds + 1)->seconds();
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        Process::run(['rm', '-rf', $base]);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('tasks.capacity_unavailable')
+            ->and($proof->result['selected_commands'])->toBe(['firewall:allow'])->and($proof->result['cases'])->toBe([]);
     });
 
     it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {

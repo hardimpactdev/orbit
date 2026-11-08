@@ -41,21 +41,26 @@ final readonly class TaskVmCapacity
      * is not destroyed or failed, parked ones too. A failed VM holds no slot, so it never blocks placement:
      * its group asks for assistance. The exception is a failed VM that a proof run kept (`--keep-failed`): it holds the CPU and memory of its host, so it counts until
      * it is destroyed. A VM takes the slots of its size
-     * ({@see TaskVmSize::slots()}). A host over its budget has 0. A `$reserve` is kept free on top: a report-only proof
-     * run sees fewer free slots, so it never takes the last ones from task and proof work.
+     * ({@see TaskVmSize::slots()}). A host over its budget has 0. Unless `$proof` is true, the free
+     * reserve (slot number 1) is withheld. An occupied reserve is already counted and is not withheld twice.
      *
      * @param  list<array{TaskVmHost, Node}>  $hosts  from {@see self::activeHosts()}
      * @return array<int, int> host Node id => free slots
      */
-    public function freeSlots(array $hosts, int $reserve = 0): array
+    public function freeSlots(array $hosts, bool $proof = false): array
     {
         $used = [];
-        foreach (TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->get(['host_node_id', 'size']) as $vm) {
+        $reserved = [];
+        foreach (TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->get(['host_node_id', 'size', 'slot_number']) as $vm) {
             $host = (int) $vm->host_node_id;
+            if ($vm->slot_number === 1) {
+                $reserved[$host] = true;
+            }
             $used[$host] = ($used[$host] ?? 0) + $vm->size->slots();
         }
         $free = [];
         foreach ($hosts as [$host]) {
+            $reserve = $proof || isset($reserved[$host->nodeId]) ? 0 : TaskVmSize::Large->slots();
             $free[$host->nodeId] = max(0, $host->maxVms - ($used[$host->nodeId] ?? 0) - $reserve);
         }
 
