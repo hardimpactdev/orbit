@@ -79,7 +79,7 @@ def plan(base, reports, cache, collections):
     steps += [Step('shape', test, ['python3', '-I', test], parallel=True) for test in ANSIBLE_TESTS]
     steps.append(Step('shape', 'ruff', ['ruff', 'check', 'ansible/build_vars.py', 'ansible/library/orbit_artifact.py',
                                         *ANSIBLE_TESTS], parallel=True))
-    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], parallel=True) for arguments in DENO_UNIT_TESTS]
+    steps += [Step('shape', 'deno test ' + ' '.join(arguments[-1:]), ['deno', 'test', *arguments], env=ansible_env, parallel=True) for arguments in DENO_UNIT_TESTS]
     steps += [
         Step('shape', 'check-swamp-shape', ['deno', 'run', '--allow-env', '--allow-read', f'--allow-write={shape_report}', '--allow-run',
                                             'bin/check-swamp-shape.ts', '--base', base, '--report', str(shape_report)]),

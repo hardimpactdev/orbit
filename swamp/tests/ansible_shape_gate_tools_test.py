@@ -81,6 +81,14 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.assertEqual(str(self.gate.SYSTEM_TOOLS), '/opt/orbit-shape-gate')
         self.assertNotRegex((ANSIBLE / 'tasks/task-vm-shape-gate.yml').read_text(), r'\w==\d', 'the playbook names no pin')
 
+    def test_deno_ansible_fixtures_receive_the_installed_pinned_collections(self):
+        collections = self.system / 'collections'
+        steps = self.gate.plan('HEAD', self.system, self.system, collections)
+        deno_tests = [step for step in steps if step.argv[:2] == ['deno', 'test'] and step.group == 'shape']
+        self.assertTrue(deno_tests)
+        for step in deno_tests:
+            self.assertEqual(step.env.get('ANSIBLE_COLLECTIONS_PATH'), str(collections), step.name)
+
 
 if __name__ == '__main__':
     unittest.main()
