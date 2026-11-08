@@ -64,3 +64,14 @@ Within each batch, stock xdist `loadgroup` gives each target Node one queue, wit
 The 4 KB step output contains every original case ID, verdict and JUnit duration, native pytest summaries, pinned dependency install seconds, case-phase wall seconds and return codes. Failure detail is bounded by the remaining output space. Missing, skipped, duplicate and setup/teardown error results fail closed. Local logs/JUnit/receipts also exist in the allocated VM until normal destruction; the durable artifact for this experiment is step output.
 
 The current protocol alternates the spike commit and its merge base with main twice each. Each proof creates its own disposable command VM with the same product lifecycle and CI capacity. “Cold” means the first proof of each engine; later proofs are ordered warm samples, not reuse of the venv or a controlled OS-cache state. Every new pytest VM pays installation cost; its second batch reuses the venv. This protocol supersedes the original same-VM ABBA proposal at Nick's request.
+
+CI diagnostics (#3250, spike only): `spike-install` is a separate native SSH
+step, with pinned dependencies and a `spike-install-BATCH` timing verdict. These
+two rows are overhead, not additional firewall cases. The case entry prints only
+JSON verdict lines. Cause and bounded failure text travel inside those objects;
+non-verdict pytest output is not exposed by the operation API. The final native
+Report has a 4096-byte projection cap. Reserve room for all 50 case identities,
+verdicts, durations, and both install timings before adding distinct diagnostics.
+Many simultaneous failures cannot each carry full diagnostics through that cap;
+the spike preserves complete local JUnit but does not claim a CI stdout reader.
+No Swamp data on Node 209 is read by hand.

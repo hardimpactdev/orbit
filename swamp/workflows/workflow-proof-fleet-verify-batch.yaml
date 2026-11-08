@@ -88,6 +88,43 @@ jobs:
         - ${{ inputs.checkout_path + "/" + inputs.file }}
         - --evidence
         - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
+  # SPIKE ONLY #3250: pinned dependencies are a separately timed CI phase.
+  - name: spike-install
+    labels: {role: swamp}
+    guard: '${{ inputs.file != "swamp/proof/firewall/allow.cases.yaml" }}'
+    allowFailure: true
+    dependsOn:
+    - step: setup
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 400
+        argv:
+        - python3
+        - ${{ inputs.checkout_path + "/swamp/proof/testinfra/ci_entry.py" }}
+        - ${{ inputs.batch }}
+        - --install-only
+        - --evidence
+        - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
 - name: cases
   labels: {role: swamp}
   dependsOn:
@@ -99,7 +136,7 @@ jobs:
   # A case that did not pass triggers no restore: cases use their own resources, and the next batch restores anyway.
   - name: batch
     labels: {role: swamp}
-    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps[?"spike-install"].?outputs.?stdout.orValue("").contains("\"verdict\": \"failed\"") || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") }}'
     allowFailure: true
     writes: true
     task:
@@ -153,4 +190,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'
+          LINES: '${{ steps[?"spike-install"].?outputs.?stdout.orValue("") + "\n" + [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'

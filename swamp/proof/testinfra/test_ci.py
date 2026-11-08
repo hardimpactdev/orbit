@@ -53,12 +53,13 @@ with patch.object(runner.subprocess, 'call', return_value=0) as call:
 def test_all_fresh_fleet_durations_and_failures_fit_ci_output():
     cases = [row for row in metadata() if row['batch'] == 'fresh-fleet']
     rows = [{'id': row['id'], 'verdict': 'failed', 'secs': 1234.56, 'failed': ['broken' * 100]} for row in cases]
-    artifact = output(rows, ['21 failed, 29 deselected in 1000.00s', '26 failed, 24 deselected in 1000.00s'],
-                      {'install_secs': 23.55, 'case_phase_secs': 2001.23, 'returncodes': [1, 1]})
+    artifact = output(rows)
     assert len(artifact.encode()) < 4096
     actual = [json.loads(line) for line in artifact.splitlines() if line.startswith('{"id"')]
     assert len(actual) == 47
     assert all(row['verdict'] == 'failed' for row in actual)
+    assert actual[0]['failed'][0].startswith('broken')
+    assert 'failure details:' not in artifact
 
 
 def test_ci_filter_groups_nodes_before_xdist_collects(tmp_path):
@@ -88,3 +89,43 @@ def test_d(): raise AssertionError('must be deselected')
     assert names == {'firewall:allow[a]', 'firewall:allow[b]', 'firewall:allow[c]'}
     assert (tmp_path / 'a').read_text() == (tmp_path / 'c').read_text()
     assert (tmp_path / 'a').read_text() != (tmp_path / 'b').read_text()
+
+
+def test_install_is_timed_separately_and_uses_existing_ci_credentials_only(tmp_path, monkeypatch, capsys):
+    import ci_entry
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, 'installed', '')
+    monkeypatch.setattr(ci_entry.subprocess, 'run', run)
+    monkeypatch.setattr(sys, 'argv', ['ci_entry.py', 'fresh-fleet', '--install-only', '--evidence', str(tmp_path)])
+    assert ci_entry.main() == 0
+    row = json.loads(capsys.readouterr().out)
+    assert row['id'] == 'spike-install-fresh-fleet' and row['verdict'] == 'passed'
+    assert row['secs'] >= 0
+    assert calls[-1][-2:] == ['-r', str(HERE / 'requirements.txt')]
+    assert all('pytest' not in command for command in calls)
+
+
+def test_install_failure_is_a_failed_verdict(tmp_path, monkeypatch, capsys):
+    import ci_entry
+    monkeypatch.setattr(ci_entry.subprocess, 'run', lambda command, **kw: subprocess.CompletedProcess(command, 1, '', 'pip failed'))
+    monkeypatch.setattr(sys, 'argv', ['ci_entry.py', 'fresh-fleet', '--install-only', '--evidence', str(tmp_path)])
+    assert ci_entry.main() == 1
+    row = json.loads(capsys.readouterr().out)
+    assert row['cause'] == 'infrastructure' and row['failed']
+
+
+def test_full_report_with_install_timings_keeps_all_fifty_ids():
+    cases = list(metadata())
+    lines = []
+    for batch in ('fresh-fleet', 'dual-stack'):
+        rows = [{'id': row['id'], 'verdict': 'failed', 'secs': 1234.56,
+                 'failed': ['same root failure']} for row in cases if row['batch'] == batch]
+        lines.append(json.dumps({'id': 'spike-install-' + batch, 'verdict': 'passed', 'secs': 123.45}))
+        lines.append(output(rows))
+    artifact = '\n'.join(lines)
+    assert len(artifact.encode()) < 4096
+    parsed = [json.loads(line) for line in artifact.splitlines()]
+    assert {row['id'] for row in parsed} == {row['id'] for row in cases} | {'spike-install-fresh-fleet', 'spike-install-dual-stack'}
+    assert any(row.get('failed') == ['same root failure'] for row in parsed)
