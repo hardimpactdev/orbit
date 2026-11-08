@@ -74,7 +74,7 @@ final readonly class GatewayRuntimeFiles
 
     /**
      * The scheduler and Horizon, which record finished runs, where no Process of the Node runs them. The bootstrap of a new
-     * Gateway starts the same units before its first run (docs/cli/tasks/vm-fleet-build.mmd), so that run is recorded before
+     * Gateway starts the same units before its first run (docs/reference/node-provisioning.md, "The Swamp control plane"), so that run is recorded before
      * the role converges; the role then finds them unchanged.
      *
      * @return list<array{name: string, unit: string}>

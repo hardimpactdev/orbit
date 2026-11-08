@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
+use App\Domain\Tasks\TaskAssistance;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -69,10 +70,14 @@ final readonly class TaskVmSlotReleaseProjection implements DirectOperationProje
         // The VM and its hub peer are gone: its workspace Instance, its Node and the identity go with them, and the slot is free.
         $node = $slot->node;
         if ($node instanceof Node) {
-            // A group whose workspace goes no longer points at it, so its cancel finds nothing to own and only closes it.
+            // A group whose workspace goes no longer points at it, so its cancel finds nothing to own and only closes it. A removal failure
+            // it asked for assistance about has no cause left: a group owns one workspace, and this was it. Only that kind of request ends.
             Instance::query()->where('node_id', $node->id)->get()->each(static function (Instance $instance): void {
+                $groups = Task::topLevel()->whereMorphedTo('taskable', $instance)->pluck('id')->push($instance->task_workspace_owner_id)->filter()->unique();
                 Task::topLevel()->whereMorphedTo('taskable', $instance)->update(['taskable_type' => null, 'taskable_id' => null]);
                 $instance->delete();
+                Task::topLevel()->whereKey($groups)->removalFailure()->get()
+                    ->each(static fn (Task $group): bool => TaskAssistance::apply($group));
             });
             app(NodeRemovalRecords::class)->remove(['node_id' => $node->id, 'name' => $node->name, 'task_vm_id' => $slot->id, 'route_ids' => []], []);
         }

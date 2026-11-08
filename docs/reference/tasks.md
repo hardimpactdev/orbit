@@ -1279,7 +1279,7 @@ Teardown steps run before the workspace and task VM are destroyed, and only whil
 
 Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown while the VM is `ready` and retains recorded agent transcripts, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
 
-Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A VM of the old pool, without a slot number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
+Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a slot number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
 
 
 ### Direct lifecycle acknowledgement

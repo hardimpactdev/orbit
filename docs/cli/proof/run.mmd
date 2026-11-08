@@ -79,7 +79,7 @@ sequenceDiagram
   %%> - pushes the proof Swamp Club key from its vault into the nested Gateway; the nested Gateway runs its own Swamp as part of the Orbit under test
   %%> - the nested Gateway and app-dev have the VM's checkout of the commit as a disk device (stage 2); `composer install` and `bun install` ran in the VM's checkout; then the apply step: migrations and a restart of the long-running services
   %%> Built, not yet passed live:
-  %%> - the reset is the child `proof-fleet-restore` (restore the three containers, apply, readiness); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch (`task_vm.fleet_build`) has not succeeded yet
+  %%> - the reset is the child `proof-fleet-restore` (restore the three containers, apply, readiness); the old direct reset was removed. By 2026-11-06, 12 of 22 fleet starts succeeded; the build of a fleet from scratch is the fleet phase of the common converge, and the standalone kind that built it is gone
   opt the commit changes playbooks or pins
     SW->>VM: Converge once<br/>outer VM · nested Nodes
     %%> What it does:
