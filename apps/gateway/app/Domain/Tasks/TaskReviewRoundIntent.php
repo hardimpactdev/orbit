@@ -23,7 +23,7 @@ use Illuminate\Support\Str;
 
 /**
  * Admits `tasks.review_round`: one run for one review round of the automatic mode. The shared task admission holds the lock, the busy
- * check and the replay; this class checks the head and captures the whole intent: the resume of the VM, the reviewer turn in a new
+ * check and the replay; this class checks the head and captures the whole intent: resume when the VM is parked, the reviewer turn in a new
  * thread, and in rounds 1 and 2 the fix (the author turn, the local check and the push). Only vault key names are admitted: the run
  * writes the Pi token when it starts, and the comment and the push mint their tokens when they run. See docs/cli/tasks/review-round.mmd.
  */
@@ -75,7 +75,7 @@ final readonly class TaskReviewRoundIntent
             throw new ResourceOperationException('tasks_pr.vm_unavailable', 'The round needs the task VM of the group parked or running.', 409);
         }
         $author = $round < TaskReviewRound::Limit ? ($subtask->implementer_agent_thread_id ?? throw new ResourceOperationException('tasks_pr.no_author_thread', 'The current subtask has no author thread.', 409)) : null;
-        $resume = TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm));
+        $resume = $vm->state === TaskVmState::Parked ? TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm)) : null;
         $turn = fn (TaskTurnData $data): array => array_diff_key($this->turns->capture($group, $data, static fn (): string => $head), ['execution_secrets' => true]);
         $fix = $author === null ? [] : [
             'fix' => $turn(new TaskTurnData($subtask->id, 'implementer', TaskReviewFixPrompt::for($round, $head), (string) $author, null, null)),
@@ -84,7 +84,8 @@ final readonly class TaskReviewRoundIntent
 
         return [
             ...$target->intent($group), 'node_id' => $instance->node_id, 'round' => $round, 'head' => $head,
-            'resume' => $resume['intent'],
+            'task_vm_id' => $vm->id,
+            ...($resume === null ? [] : ['resume' => $resume['intent']]),
             'review' => $turn(new TaskTurnData($subtask->id, 'reviewer', TaskReviewRoundPrompt::for($head, $round), 'new', null, null)),
             ...$fix,
             'publish' => TaskPublishIntent::destination($group, $instance, $repository, app(SwampSshExecutionInput::class)->forNode($instance->node)),
@@ -92,7 +93,7 @@ final readonly class TaskReviewRoundIntent
             // and the comment and the push mint their tokens when they run ({@see TaskGitHubTokens}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id],
                 'write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-comment-write-'.Str::uuid()]],
-            'resume_secrets' => $resume['execution_secrets'],
+            'resume_secrets' => $resume['execution_secrets'] ?? [],
             'publish_secrets' => ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()],
                 'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()]],
         ];
