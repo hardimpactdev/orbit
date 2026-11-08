@@ -29,7 +29,7 @@ The list shows what Orbit has recorded. It does not read the Node, so it works w
 
 Rules are listed in the order UFW checks them, so the first matching row wins. A narrower rule comes before a broader one, as [rule ordering](/cli/firewall#order-on-the-node) describes. Other rules are in the order they were created. A rule for both protocols shows `any`. The table has the columns PORT, PROTOCOL, SOURCE, ACTION, LABEL and STATUS. With several Nodes it also has a NODE column. A rule without a label shows `—`. An empty result says `No firewall rules.`. Long values wrap inside their cells; below the minimum width, each rule shows as labeled fields.
 
-A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has `failed_step` and `error_code`; repeat the command that created it once the cause is fixed.
+A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a failed rule also has the failed Operation's `failed_step` and `error_code`, even if only part of the rule was applied. Repeat the command that created it once the cause is fixed. A retry clears those failure fields while the rule is `provisioning`.
 
 ## Orbit's own rules
 
@@ -42,10 +42,12 @@ A rule's status is `provisioning`, `active`, `failed`, or `removing`. In JSON, a
 | Match | Meaning |
 | --- | --- |
 | `exact` | The Node has the rule as recorded. |
-| `drift` | The Node has a rule with the same label, but it differs. |
+| `drift` | The Node lacks the exact tuple but has a different rule with the same label. |
 | `missing` | The Node lacks the rule. A rule counts as missing on a Node whose UFW is inactive or not installed. |
 | `unmanaged` | The Node has a rule that no recorded rule explains. It shows as a row with the status `live only`. |
 | `unverifiable` | The agent has not reported UFW, or reported a rule Orbit cannot compare. |
+
+Exact tuples match before labels. Reusing a label on another rule does not turn an exact rule into drift.
 
 For each Node, the list prints the backend status (`active`, `inactive` or `absent`) and when the agent observed it. The agent reports on change and every 10 minutes, so a new rule can take up to a minute to show.
 

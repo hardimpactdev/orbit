@@ -43,7 +43,7 @@ final readonly class FirewallIntentProjection implements DirectOperationProjecti
                     $this->broadcaster->broadcast(RecordEventType::FirewallDeleted, $rule->id, ['id' => $rule->id, 'port' => $rule->port, 'protocol' => $rule->protocol, 'source' => $rule->source]);
                 } else {
                     $rule->update(['status' => $status === OperationStatus::Succeeded ? LifecycleStatus::Active : LifecycleStatus::Failed,
-                        'failed_step' => null, 'error_code' => $projected->error_code]);
+                        'failed_step' => $projected->failed_step, 'error_code' => $projected->error_code]);
                     if ($status === OperationStatus::Succeeded) {
                         $this->broadcaster->broadcast(RecordEventType::FirewallCreated, $rule->id,
                             FirewallRuleData::fromModel($rule->load('node'), FirewallBackendStatus::Active)->toArray());

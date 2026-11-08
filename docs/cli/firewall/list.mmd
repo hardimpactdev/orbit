@@ -49,6 +49,7 @@ sequenceDiagram
     Note over GW: Compare with the agent<br/>exact · drift · missing
     %%> What it does:
     %%> - matches the agent's last `ufw` fact against the intended rules: each live rule is `exact`, `drift` or `unmanaged`, and an intended rule the Node lacks is `missing` (replaces `GET /nodes/{node}/live-firewall-rules`)
+    %%> - exact tuples win before label-based drift; a label reused on another live line cannot make an exact operator rule drift
     %%> - shows the backend status (`active`, `inactive`, `absent`) and the fact's `observed_at`
     %%> - `unverifiable` until the agent reports UFW, or for a rule Orbit cannot compare
     %%> - with `--managed`, the managed rules are matched too
@@ -59,7 +60,7 @@ sequenceDiagram
     GW-->>CLI: Rules<br/>table or JSON
     %%> Result:
     %%> - columns PORT, PROTOCOL, SOURCE, ACTION, LABEL, STATUS; with `--live` also MATCH; with several Nodes also NODE
-    %%> - a failed rule has `failed_step` and `error_code` in JSON
+    %%> - a failed rule has the failed Operation's `failed_step` and `error_code` in JSON, including a native change that fails before verification; a retry clears both fields while provisioning
   else --live and an agent offline
     %% path: agent-offline
     GW-->>CLI: Rules<br/>some possibly outdated
