@@ -1,6 +1,6 @@
 # pytest + Testinfra command proof spike
 
-Owner: Nick. Research only. This does not change the product proof runner.
+Owner: Nick. Research only. On this unmerged branch, a clearly marked override in `runner.py batch` routes only the canonical firewall:allow cases file to `ci_entry.py`. Other commands, plan and setup use the existing runner.
 
 Each of the 50 expanded `firewall:allow` cases is a native pytest test. `--negative` runs the 13 declared effect-breaking checks. The test module imports no runner code and does not interpret the YAML cases. The offline parity tests compare every ordered setup, action, expectation, baseline, stage, placement and negative with the original spec. They are a port check, not a live command proof.
 
@@ -54,3 +54,13 @@ The script runs ABBA twice: two cold and two warm runs for each engine on the sa
 A CI job can execute the same pytest command directly in an already provisioned task VM. It needs Python, the pinned packages, PHP and checkout dependencies, the candidate Orbit CLI, Incus access to the three nested Nodes, and the nested operator's WireGuard identity, Gateway access grants and CA profile. Incus access effectively gives root in that disposable fleet. Fault injection needs that access. The fixtures do not need a standing key to the live fleet.
 
 CI must still acquire, provision and release a task VM through Orbit, or independently supply an equivalent isolated nested fleet and snapshot lifecycle. Current product provision and command execution use Swamp: direct pytest removes the worker around test invocation, not Swamp from the product under test. The nested Gateway's Swamp and its bootstrap credentials remain necessary for real firewall Operations. JUnit and the session evidence must be uploaded before releasing the VM. A GitHub-hosted job would also need network reachability to the private task VM; running the job inside that VM avoids exposing nested management endpoints.
+
+## Spike-only CI entry (#3250)
+
+Nick authorized the smallest CI-path integration on this branch only. `proof:run COMMIT --all` from Beast (Node 9, ci-runner) uses existing CI admission and credentials. The product provisions and restores the commit-specific nested fleet and runs batch setup; `ci_entry.py` adds no lifecycle operations. It creates a venv in the proof evidence directory, installs the pinned requirements, and runs native pytest cases instead of the YAML engine. pytest 8.4.2 is pinned because xdist 3.8.0 loadgroup writes `_nodeid`, which pytest 9.2.0 no longer reads. A real subprocess test verifies grouping.
+
+Within each batch, stock xdist `loadgroup` gives each target Node one queue, with at most four workers. Node cases complete before a second pytest invocation runs the fleet-exclusive group. This reproduces main's exclusive Node/fleet placement without worker starvation on file locks. It retains the same case order on each Node and the same exclusive-case order. Starting pytest twice is a measured framework cost; the fixtures keep their locks as a second isolation layer. CI owns restore/setup, so the direct-run barrier and final restore are disabled in CI mode. The broader direct benchmark limitations above still apply to `benchmark.py`, which is not used in this CI comparison.
+
+The 4 KB step output contains every original case ID, verdict and JUnit duration, native pytest summaries, pinned dependency install seconds, case-phase wall seconds and return codes. Failure detail is bounded by the remaining output space. Missing, skipped, duplicate and setup/teardown error results fail closed. Local logs/JUnit/receipts also exist in the allocated VM until normal destruction; the durable artifact for this experiment is step output.
+
+The current protocol alternates the spike commit and its merge base with main twice each. Each proof creates its own disposable command VM with the same product lifecycle and CI capacity. “Cold” means the first proof of each engine; later proofs are ordered warm samples, not reuse of the venv or a controlled OS-cache state. Every new pytest VM pays installation cost; its second batch reuses the venv. This protocol supersedes the original same-VM ABBA proposal at Nick's request.

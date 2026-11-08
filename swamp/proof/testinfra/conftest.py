@@ -18,6 +18,9 @@ ORDER = ('fresh-fleet', 'dual-stack', 'full-list', 'ufw-fault', 'node-down', 'no
 def pytest_addoption(parser):
     parser.addoption('--negative', action='store_true', help='Run the 13 declared effect-breaking proofs')
     parser.addoption('--proof-results', default=str(ROOT / 'results'), help='Evidence, times and JUnit output directory')
+    parser.addoption('--proof-ci-batch', help='SPIKE ONLY: outer CI owns restore and batch setup')
+    parser.addoption('--proof-only', default='', help='Space-separated original case IDs')
+    parser.addoption('--proof-phase', choices=['node', 'all'], help='CI node groups before exclusive fleet cases')
 
 
 def pytest_configure(config):
@@ -43,8 +46,23 @@ def pytest_pycollect_makeitem(collector, name, obj):
                                                callobj=obj)
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
     proof_items = [item for item in items if item.get_closest_marker('proof')]
+    batch = config.getoption('--proof-ci-batch')
+    if batch:
+        wanted = config.getoption('--proof-only').split()
+        phase = config.getoption('--proof-phase')
+        removed = [item for item in proof_items if
+                   item.get_closest_marker('proof').kwargs['batch'] != batch or
+                   item.get_closest_marker('proof').kwargs['id'] not in wanted or
+                   item.get_closest_marker('proof').kwargs['lock'] != phase]
+        items[:] = [item for item in items if item not in removed]
+        config.hook.pytest_deselected(items=removed)
+        for item in items:
+            marker = item.get_closest_marker('proof')
+            if marker:
+                item.add_marker(pytest.mark.xdist_group(marker.kwargs['node'] if phase == 'node' else 'fleet'))
     if config.getoption('--negative'):
         removed = [item for item in proof_items if not item.get_closest_marker('negative')]
         items[:] = [item for item in items if item not in removed]
@@ -82,7 +100,15 @@ def proof(request):
     began = time.monotonic()
     evidence = root / case_id
     try:
-        nodes = batch_ready(root, metadata['batch'], prior, fleet_module.from_environment, prepare)
+        if config.getoption('--proof-ci-batch'):
+            # The product workflow has restored and prepared this batch already.
+            with lock(root / 'batch.lock'):
+                ready = root / 'ci-nodes.json'
+                if not ready.exists():
+                    ready.write_text(json.dumps(fleet_module.from_environment().nodes))
+                nodes = json.loads(ready.read_text())
+        else:
+            nodes = batch_ready(root, metadata['batch'], prior, fleet_module.from_environment, prepare)
         fleet = fleet_module.Fleet(nodes)
         negative = request.node.get_closest_marker('negative')
         negative = negative.kwargs if config.getoption('--negative') and negative else None
@@ -101,7 +127,8 @@ def proof(request):
     finally:
         (root / 'done' / case_id).touch()
         with lock(root / 'finish.lock'):
-            if all((root / 'done' / case['id']).exists() for case in config.proof_cases) and not (root / 'final.json').exists():
+            if (not config.getoption('--proof-ci-batch') and
+                    all((root / 'done' / case['id']).exists() for case in config.proof_cases) and not (root / 'final.json').exists()):
                 try:
                     seconds = restore(fleet_module.from_environment())
                 except Exception as error:
@@ -111,7 +138,7 @@ def proof(request):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    if hasattr(session.config, 'workerinput') or session.config.option.collectonly:
+    if hasattr(session.config, 'workerinput') or session.config.option.collectonly or session.config.getoption('--proof-ci-batch'):
         return
     root = session.config.proof_state
     if list(root.glob('*.json')) and not (root / 'final.json').exists():

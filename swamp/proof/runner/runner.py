@@ -9,6 +9,7 @@ import argparse
 import concurrent.futures
 import datetime
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -292,6 +293,12 @@ def command_batch(args):
         cases = [case for case in cases if case.id in wanted]
     root = Path(args.evidence or fleet_module.evidence_root())
     limit = args.parallel or spec.parallel
+    # SPIKE ONLY (#3250): the normal CI proof entry exercises native pytest for
+    # firewall:allow. Other commands, planning and batch setup remain unchanged.
+    if spec.command == 'firewall:allow' and Path(args.file).resolve() == Path(__file__).resolve().parents[1] / 'firewall/allow.cases.yaml':
+        return subprocess.call([sys.executable, str(Path(__file__).resolve().parents[1] / 'testinfra/ci_entry.py'),
+                                args.batch, '--evidence', str(root), '--only', ' '.join(c.id for c in cases),
+                                '--parallel', str(limit)])
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
