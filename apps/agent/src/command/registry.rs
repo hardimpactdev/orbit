@@ -576,7 +576,6 @@ mod tests {
             "firewall.route-lan",
             "firewall.router-lan",
             "firewall.rules",
-            "incus.prepare-host",
             "metrics.publication-firewall",
         ];
         for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {

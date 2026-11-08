@@ -11,13 +11,13 @@ use App\Domain\WireGuard\Ipv4Subnet;
  *
  * `cidr` is the task bridge network, for example `10.251.77.0/24`. The bridge owns the first
  * usable address. Guests get the other usable addresses. `pool` is a ZFS storage pool; when it is
- * missing, `task-vms:prepare-host` creates it from `zfsDataset`. `operatorOwned` lists the
+ * missing, the refresh creates it from `zfsDataset` or a loop file of `poolSize`. `operatorOwned` lists the
  * Incus instances and custom volumes on the host that the operator owns, as `<project>/<name>` or `<project>/*`: the
  * stray report skips them.
  */
 final readonly class TaskVmHost
 {
-    /** The stock Ubuntu cloud image that `incus.prepare-host` copies. The base VM of a host is made from it once. */
+    /** The stock Ubuntu cloud image that host preparation copies. The base VM of a host is made from it once. */
     public const string SourceImage = 'ubuntu-26.04-vm';
 
     /** The alias of the base image of the Incus project. */
@@ -38,9 +38,10 @@ final readonly class TaskVmHost
         public array $operatorOwned = [],
         public string $imageAlias = self::BaseImage,
         public bool $ciOnly = false,
+        public string $poolSize = '640GiB',
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'pool_size', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -54,7 +55,7 @@ final readonly class TaskVmHost
     {
         $key = "incus.hosts.{$index}";
         TaskVmConfig::validate(['entry' => $entry], ['entry' => ['array:'.implode(',', self::Keys)]], ['entry' => "{$key} has unknown keys."]);
-        $entry = ['image_alias' => self::BaseImage, ...$defaults, ...(is_array($entry) ? $entry : [])];
+        $entry = ['image_alias' => self::BaseImage, 'pool_size' => '640GiB', ...$defaults, ...(is_array($entry) ? $entry : [])];
         $int = static fn (int $minimum, int $maximum): array => ['required', 'integer:strict', "between:{$minimum},{$maximum}"];
         $name = static fn (string $pattern): array => ['required', 'string', "regex:{$pattern}"];
         $size = $name('/\A[1-9][0-9]{0,5}(?:MiB|GiB)\z/D');
@@ -67,6 +68,7 @@ final readonly class TaskVmHost
             'cpus' => $int(1, 64),
             'memory' => $size,
             'disk' => $size,
+            'pool_size' => $size,
             'image_alias' => $name('/\A[A-Za-z0-9][A-Za-z0-9._\/-]{0,253}\z/D'),
             'pool' => $name('/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D'),
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
@@ -83,6 +85,7 @@ final readonly class TaskVmHost
             'cpus' => "{$key}.cpus must be an integer from 1 to 64.",
             'memory' => "{$key}.memory is invalid.",
             'disk' => "{$key}.disk is invalid.",
+            'pool_size' => "{$key}.pool_size is invalid.",
             'pool' => "{$key}.pool is invalid.",
             'image_alias' => "{$key}.image_alias is invalid.",
             'zfs_dataset' => "{$key}.zfs_dataset is invalid.",
@@ -107,6 +110,7 @@ final readonly class TaskVmHost
             operatorOwned: array_values(array_unique(TaskVmConfig::strings($entry['operator_owned'] ?? []))),
             imageAlias: $valid->string('image_alias')->value(),
             ciOnly: ($entry['ci_only'] ?? false) === true,
+            poolSize: $valid->string('pool_size')->value(),
         );
     }
 
