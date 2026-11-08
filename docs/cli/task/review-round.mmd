@@ -43,7 +43,9 @@ sequenceDiagram
   SW->>VM: Review the head<br/>operation-task-turn
   %%> What it does:
   %%> - a new reviewer thread, with the role `reviewer`: an agent that took no part in the spec, the code or an earlier round
-  %%> - it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the review rules; it changes no file
+  %%> - admission supplies sanitized handoff result and hosted Required-check conclusions read with the Gateway App token, bound to the reviewed head and checked tree; no GitHub token reaches the VM
+  %%> - before sending the prompt, Swamp rejects evidence for another candidate head or workspace tree
+  %%> - the reviewer reads this evidence with the chart, page and cases and judges them against the review rules; it changes no file
   VM-->>SW: Pass<br/>or findings
   Note over SW: Settle the review<br/>verdict · findings
   %%> What it does:

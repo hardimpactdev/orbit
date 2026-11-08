@@ -30,10 +30,11 @@ inputs:
         task_vm_id: {type: integer, minimum: 1}
         resume: {type: object}
         review: {type: object}
+        review_evidence: {type: object}
         fix: {type: object}
         check: {type: object}
         publish: {type: object}
-      required: [project_id, group_id, repository, pr_number, round, head, task_vm_id, review, publish]
+      required: [project_id, group_id, repository, pr_number, round, head, task_vm_id, review, review_evidence, publish]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -118,6 +119,7 @@ jobs:
         intent: '${{ inputs.intent.review }}'
         execution_secrets: '${{ {"pi_token": inputs.execution_secrets.pi_token} }}'
         candidate: '${{ inputs.intent.head }}'
+        review_evidence: '${{ inputs.intent.review_evidence }}'
   - name: Settle the review
     labels: {role: swamp}
     dependsOn:

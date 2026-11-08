@@ -1130,6 +1130,8 @@ A round is one Swamp run, `tasks.review_round`, with the workflow `operation-tas
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
+Admission captures the passed handoff check result (including the local check of an earlier pushed fix) and the hosted Required-check conclusions read with the Gateway App token. Only check identities and result fields reach the reviewer, never logs or GitHub credentials. The evidence names the reviewed head and checked tree. Before sending the reviewer prompt, Swamp rejects evidence for another candidate head or workspace tree.
+
 The run resumes the VM and lets the reviewer judge the head. It posts the verdict and the findings as a comment of the Orbit App, so the owner can read them. The comment mints its own token when it runs. A comment that GitHub refuses does not fail the run.
 
 When the reviewer ends with `approved`, the Gateway records a pass for that head from the end of the run. The next tick admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. A run that ends in error never records a pass.
