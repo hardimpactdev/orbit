@@ -112,7 +112,7 @@ final readonly class NodeSettingOptions
     /** @param array<string, mixed> $value */
     private static function validTaskVms(array $value): bool
     {
-        $strings = ['cidr', 'project', 'network', 'pool', 'image_alias', 'memory', 'disk'];
+        $strings = ['cidr', 'project', 'network', 'pool', 'pool_size', 'image_alias', 'memory', 'disk'];
         $integers = ['max_vms', 'cpus'];
         if (! is_string($value['cidr'] ?? null) || ! is_int($value['max_vms'] ?? null)) {
             return false;
