@@ -85,6 +85,8 @@ The job follows these rules for pull requests:
 
 **What it does**
 
+The authenticated caller Node needs an active `ci-runner` role to use CI capacity. Orbit records this eligibility before queueing admission and binds idempotency to the caller. CI prefers `ci_only` hosts, then shared hosts with a CI/refresh reserve. Task work and operator proofs cannot use either. Busy CI admission retries every 20 seconds for up to 200 seconds. Another proof cannot preempt CI.
+
 - The job checks out only `bin/ci-proof-run`.
 - The script passes the full SHA of the pull request head to `orbit proof:run --json`. It also passes the idempotency key `ci-proof.<run id>.<attempt>`. It chooses no cases.
 - The script follows the operation until it ends.

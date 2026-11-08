@@ -21,12 +21,14 @@ use Illuminate\Http\JsonResponse;
 final class ProofRunsController extends Controller
 {
     /** Check the commit, select its cases, and start the run; a commit with nothing to prove answers a succeeded run at once. */
-    #[StartsOperation(OperationKinds::ProofRun, requiresKey: true)]
+    #[StartsOperation(OperationKinds::ProofRun, requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function store(StartProofRunRequest $request, StartProofRunAction $action): JsonResponse
     {
+        $caller = $request->user();
+        assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->execute($request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId, $caller);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $requestId]], 202);
     }
