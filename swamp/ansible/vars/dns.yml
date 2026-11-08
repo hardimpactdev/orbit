@@ -6,10 +6,13 @@ dns_pattern_label: '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
 dns_pattern_name: '{{ dns_pattern_label }}(?:\.{{ dns_pattern_label }})*'
 dns_pattern_octet: '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
 dns_pattern_ipv4: '{{ dns_pattern_octet }}(?:\.{{ dns_pattern_octet }}){3}'
+# The Node's own resolver (/etc/systemd/resolved.conf.d/30-orbit-local-dns.conf names it: DNS=127.0.0.55, Domains=~.). dnsmasq listens on it
+# next to the VPN addresses, so the vpn Node resolves apt, the agent and every other name through the same dnsmasq.
+dns_local_resolver: 127.0.0.55
 dns_pattern_interface: '[A-Za-z0-9][A-Za-z0-9._-]{0,14}'
 
 # Every line of a file the phase writes must match one of these, or the phase refuses the render before it installs anything.
 dns_line_hosts: '^(?:#.*|{{ dns_pattern_ipv4 }} {{ dns_pattern_name }})\Z'
 dns_line_servers: '^(?:#.*|server=/{{ dns_pattern_name }}/|server=/\*\.{{ dns_pattern_name }}/#)\Z'
 dns_line_conf: >-
-  ^(?:#.*|listen-address={{ dns_pattern_ipv4 }}|bind-dynamic|no-resolv|no-hosts|local-ttl=30|server={{ dns_pattern_ipv4 }}|address=/\.{{ dns_pattern_name }}/{{ dns_pattern_ipv4 }}|local=/{{ dns_pattern_name }}/|addn-hosts=/[A-Za-z0-9/._-]+|servers-file=/[A-Za-z0-9/._-]+)\Z
+  ^(?:#.*|listen-address={{ dns_pattern_ipv4 }}|domain-needed|bogus-priv|bind-dynamic|no-resolv|no-hosts|local-ttl=30|server={{ dns_pattern_ipv4 }}|address=/\.{{ dns_pattern_name }}/{{ dns_pattern_ipv4 }}|local=/{{ dns_pattern_name }}/|addn-hosts=/[A-Za-z0-9/._-]+|servers-file=/[A-Za-z0-9/._-]+)\Z

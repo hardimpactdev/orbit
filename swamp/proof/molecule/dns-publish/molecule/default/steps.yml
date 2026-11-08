@@ -10,7 +10,8 @@
 #   loaded                      `present` or `absent`: orbit.conf.loaded, the copy dnsmasq last started with
 #   legacy_present              files of the old listener setup that must be back in place after the step
 #   leak                        a stray config makes dnsmasq answer an AAAA for gateway.orbit during the step
-#   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata
+#   queries                     what dnsmasq answers afterwards: status, the addresses it must give (data) or must not (not_data), nodata;
+#                               a query may name `server`, default the VPN address (the Node's own resolver is 127.0.0.55)
 tld_test: &tld_test {name: test, address: 10.99.99.7}
 tld_prod: &tld_prod {name: prod, address: 10.99.99.8}
 tld_dev: &tld_dev {name: dev, address: 10.99.99.14}
@@ -32,6 +33,14 @@ answers_base: &answers_base
   - {name: app.example.com, type: A, data: [10.99.99.3]}
   - {name: app.example.com, type: AAAA, nodata: true}
   - {name: www.app.example.com, type: A, not_data: [10.99.99.3], any_status: true}
+  # The Node's own resolver (systemd-resolved sends every name of the vpn Node to 127.0.0.55): the same dnsmasq answers there after the cutover.
+  - {name: gateway.orbit, type: A, data: [10.99.99.2], server: 127.0.0.55}
+  - {name: x.test, type: A, data: [10.99.99.9], server: 127.0.0.55}
+  - {name: app.example.com, type: AAAA, nodata: true, server: 127.0.0.55}
+  # local=/orbit/ and domain-needed: an unknown name under .orbit and a single-label name never leave the Node.
+  - {name: unknown.orbit, type: A, status: NXDOMAIN}
+  - {name: unknown.orbit, type: A, status: NXDOMAIN, server: 127.0.0.55}
+  - {name: onelabel, type: A, status: NXDOMAIN}
 
 steps:
   # The old listener holds the address; the phase stops it, restarts dnsmasq onto the address, and retires the old setup.

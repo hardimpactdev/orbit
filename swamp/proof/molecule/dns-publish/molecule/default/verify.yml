@@ -18,6 +18,18 @@
           - owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^tcp') | list | length == 1
         fail_msg: "{{ owners.stdout }}"
         quiet: true
+    - name: Read the owners of the Node's own resolver address
+      ansible.builtin.command:
+        argv: [ss, -H, -tulpn, src, "127.0.0.55:53"]
+      register: local_owners
+      changed_when: false
+    - name: dnsmasq owns 127.0.0.55 on UDP and TCP port 53, where systemd-resolved sends the vpn Node's own queries
+      ansible.builtin.assert:
+        that:
+          - local_owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^udp') | list | length == 1
+          - local_owners.stdout_lines | select('search', 'dnsmasq') | select('match', '^tcp') | list | length == 1
+        fail_msg: "{{ local_owners.stdout }}"
+        quiet: true
     - name: Read whether systemd-resolved runs
       ansible.builtin.command:
         argv: [systemctl, is-active, --quiet, systemd-resolved]

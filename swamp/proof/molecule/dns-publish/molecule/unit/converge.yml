@@ -4,6 +4,7 @@
 #   validate: dns -> dns.config_invalid or none (names, addresses, revision, pair)
 #   uplink:   resolver files of the Node -> the upstream resolvers (and whether the DHCP lease must be read next)
 #   queries:  dns -> the dig questions
+#   dnsmasq:  the rendered files run in a real dnsmasq on a high port (skipped where dnsmasq or dig is missing)
 #   verify:   dns + the answers of dig (blocks, rendered like dig prints them by dig.j2) -> the errors of the end check
 # The expected texts are written here by hand, never produced by the template, so a change of the template shows as a failed case.
 - name: Render, validate, probe and check the private DNS against fixed data
@@ -15,7 +16,8 @@
   vars:
     templates: "{{ playbook_dir }}/../../../../../ansible/templates"
     header: "# Managed by Orbit (dns-publish). Do not edit: the next publication rewrites this file.\n"
-    middle: "bind-dynamic\nno-resolv\nno-hosts\nlocal-ttl=30\n"
+    local_resolver: "listen-address=127.0.0.55\n"
+    middle: "bind-dynamic\nno-resolv\nno-hosts\nlocal-ttl=30\n# A single-label name and a reverse lookup of a private address are answered here, never forwarded upstream.\ndomain-needed\nbogus-priv\n# Nothing under .orbit leaves the Node: a name that is no exact record is NXDOMAIN.\nlocal=/orbit/\n"
     tail: "addn-hosts=/var/lib/orbit/dnsmasq/orbit.hosts\nservers-file=/var/lib/orbit/dnsmasq/orbit.servers\n"
     # The valid parts that every case starts from: one revision and one listen address.
     revision: &revision "1762540000000123"
@@ -40,7 +42,7 @@
             - {name: gateway.orbit, address: 10.44.0.2, pair: true}
             - {name: metrics.orbit, address: 10.44.0.2, pair: true}
         upstream: [192.0.2.53]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
         hosts: "{{ header }}10.44.0.2 gateway.orbit\n10.44.0.2 metrics.orbit\n10.44.0.4 reverb.orbit\n"
         servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\nserver=/metrics.orbit/\nserver=/*.metrics.orbit/#\nserver=/reverb.orbit/\nserver=/*.reverb.orbit/#\n"
       # A TLD answers every name under it with one wildcard line and is local: other types give NODATA.
@@ -51,7 +53,7 @@
           records: []
           tlds: [{name: test, address: 10.44.0.7}]
         upstream: [192.0.2.53, 192.0.2.54]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\nserver=192.0.2.54\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\nserver=192.0.2.54\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
         hosts: "{{ header }}"
         servers: "{{ header }}"
       # A custom proxy name inside the TLD whose answer differs from the wildcard: the hosts line only, no pair.
@@ -63,7 +65,7 @@
           records:
             - {name: x.test, address: 10.44.0.9, pair: false}
         upstream: [192.0.2.53]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
         hosts: "{{ header }}10.44.0.9 x.test\n"
         servers: "{{ header }}"
       # An exact Route outside any TLD: its own name only; names below it keep the public resolvers.
@@ -75,7 +77,7 @@
           records:
             - {name: app.example.com, address: 10.44.0.3, pair: true}
         upstream: [192.0.2.53]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
         hosts: "{{ header }}10.44.0.3 app.example.com\n"
         servers: "{{ header }}server=/app.example.com/\nserver=/*.app.example.com/#\n"
       # Several TLDs and several listen addresses: sorted by name, one block each, in the order given for the listen addresses.
@@ -92,14 +94,14 @@
             - {name: x.test, address: 10.44.0.9, pair: false}
             - {name: a.prod, address: 10.44.0.8, pair: false}
         upstream: [192.0.2.53]
-        conf: "{{ header }}listen-address=10.44.0.1\nlisten-address=10.45.0.1\n{{ middle }}server=192.0.2.53\naddress=/.dev.local/10.44.0.9\nlocal=/dev.local/\naddress=/.prod/10.44.0.8\nlocal=/prod/\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\nlisten-address=10.45.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\naddress=/.dev.local/10.44.0.9\nlocal=/dev.local/\naddress=/.prod/10.44.0.8\nlocal=/prod/\naddress=/.test/10.44.0.7\nlocal=/test/\n{{ tail }}"
         hosts: "{{ header }}10.44.0.8 a.prod\n10.44.0.2 gateway.orbit\n10.44.0.9 x.test\n"
         servers: "{{ header }}server=/gateway.orbit/\nserver=/*.gateway.orbit/#\n"
       # Nothing to answer: still a valid file set, so a Node whose last name went is repaired like any other.
       - name: empty records and no TLD
         dns: *empty
         upstream: [1.1.1.1, 8.8.8.8]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=1.1.1.1\nserver=8.8.8.8\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=1.1.1.1\nserver=8.8.8.8\n{{ tail }}"
         hosts: "{{ header }}"
         servers: "{{ header }}"
       # The same render in another order is the same text: the compare of a rerun finds no change.
@@ -113,7 +115,7 @@
             - {name: a.example.com, address: 10.44.0.5, pair: true}
             - {name: a.example.com, address: 10.44.0.4, pair: true}
         upstream: [192.0.2.53]
-        conf: "{{ header }}listen-address=10.44.0.1\n{{ middle }}server=192.0.2.53\n{{ tail }}"
+        conf: "{{ header }}listen-address=10.44.0.1\n{{ local_resolver }}{{ middle }}server=192.0.2.53\n{{ tail }}"
         hosts: "{{ header }}10.44.0.4 a.example.com\n10.44.0.5 a.example.com\n10.44.0.6 b.example.com\n"
         servers: "{{ header }}server=/a.example.com/\nserver=/*.a.example.com/#\nserver=/b.example.com/\nserver=/*.b.example.com/#\n"
 
@@ -489,3 +491,112 @@
           - timeout_verdict.errors == []
         fail_msg: "timeout after the last answer: got {{ timeout_verdict | to_json }}, expected no error"
         quiet: true
+
+    # The rendered files in a real dnsmasq: the lines that dnsmasq 2.92 reads must answer as ADR 0248 says. The listen address is the loopback
+    # address and the port a high one, and bind-dynamic (Linux only) becomes bind-interfaces; nothing else of the render changes.
+    - name: Find dnsmasq and dig
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/opt/homebrew/sbin/dnsmasq, /usr/sbin/dnsmasq, /usr/local/sbin/dnsmasq]
+      register: dnsmasq_binaries
+    - name: Find dig
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/usr/bin/dig, /opt/homebrew/bin/dig, /usr/local/bin/dig]
+      register: dig_binaries
+    - name: Run the rendered files in dnsmasq
+      when: (dnsmasq_binaries.results | selectattr('stat.exists') | list | length) > 0 and (dig_binaries.results | selectattr('stat.exists') | list | length) > 0
+      vars:
+        dnsmasq_bin: "{{ (dnsmasq_binaries.results | selectattr('stat.exists') | first).item }}"
+        dig_bin: "{{ (dig_binaries.results | selectattr('stat.exists') | first).item }}"
+        live_port: 15353
+        live_dns:
+          revision: *revision
+          listen: [127.0.0.1]
+          tlds: [{name: test, address: 10.44.0.7}]
+          records:
+            - {name: gateway.orbit, address: 10.44.0.2, pair: true}
+            - {name: vpn.orbit, address: 10.44.0.1, pair: true}
+            - {name: app.example.com, address: 10.44.0.3, pair: true}
+        # name, type, the status dnsmasq gives, the answers it gives. An upstream that is dead (127.0.0.1#59999) turns a forwarded query into a timeout.
+        live_cases:
+          - {name: gateway.orbit, type: A, status: NOERROR, data: [10.44.0.2]}
+          - {name: vpn.orbit, type: A, status: NOERROR, data: [10.44.0.1]}
+          - {name: gateway.orbit, type: AAAA, status: NOERROR, data: []}
+          - {name: vpn.orbit, type: AAAA, status: NOERROR, data: []}
+          - {name: app.example.com, type: AAAA, status: NOERROR, data: []}
+          - {name: x.test, type: A, status: NOERROR, data: [10.44.0.7]}
+          - {name: x.test, type: AAAA, status: NOERROR, data: []}
+          # An unknown name under .orbit never leaves the Node.
+          - {name: unknown.orbit, type: A, status: NXDOMAIN, data: []}
+          # A single-label name is refused locally (domain-needed).
+          - {name: onelabel, type: A, status: NXDOMAIN, data: []}
+          # A reverse lookup of a private address that no record owns is answered locally (bogus-priv).
+          - {name: 99.0.44.10.in-addr.arpa, type: PTR, status: NXDOMAIN, data: []}
+          # A child of a record, and a public name, are forwarded: the dead upstream gives no answer.
+          - {name: child.gateway.orbit, type: A, status: none, data: []}
+          - {name: example.org, type: A, status: none, data: []}
+      block:
+        - name: Make a folder for dnsmasq
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: orbit-dnsmasq-unit-
+          register: live
+        - name: Write the rendered files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ live.path }}/{{ item.name }}"
+            mode: "0644"
+          vars:
+            dns: "{{ live_dns }}"
+            dns_upstream: ["127.0.0.1#59999"]
+            dns_hosts_path: "{{ live.path }}/orbit.hosts"
+            dns_servers_path: "{{ live.path }}/orbit.servers"
+            live_conf: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.conf.j2') }}"
+          loop:
+            - name: orbit.conf
+              content: "{{ live_conf | regex_replace('(?m)^listen-address=127[.]0[.]0[.]55$', '') | regex_replace('(?m)^bind-dynamic$', 'bind-interfaces') }}"
+            - name: orbit.hosts
+              content: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.hosts.j2') }}"
+            - name: orbit.servers
+              content: "{{ lookup('ansible.builtin.template', templates ~ '/dns-orbit.servers.j2') }}"
+          loop_control: {label: "{{ item.name }}"}
+        - name: Move dnsmasq to the high port
+          ansible.builtin.lineinfile:
+            path: "{{ live.path }}/orbit.conf"
+            line: "{{ item }}"
+          loop: ["port={{ live_port }}", "pid-file={{ live.path }}/pid"]
+        - name: The file is the one dnsmasq accepts
+          ansible.builtin.command:
+            argv: ["{{ dnsmasq_bin }}", --test, "--conf-file={{ live.path }}/orbit.conf"]
+          changed_when: false
+        - name: Start dnsmasq
+          ansible.builtin.command:
+            argv: ["{{ dnsmasq_bin }}", "--conf-file={{ live.path }}/orbit.conf", "--conf-dir="]
+          changed_when: true
+        - name: Ask dnsmasq
+          ansible.builtin.command:
+            argv: ["{{ dig_bin }}", "@127.0.0.1", -p, "{{ live_port }}", +noall, +comments, +answer, +tries=1, +time=2, "{{ item.name }}", "{{ item.type }}"]
+          register: live_answers
+          changed_when: false
+          failed_when: false
+          loop: "{{ live_cases }}"
+          loop_control: {label: "{{ item.name }} {{ item.type }}"}
+        - name: dnsmasq answers as the render says
+          vars:
+            got_status: "{{ item.stdout | regex_findall('status: ([A-Z]+)') | first | default('none') }}"
+            got_data: "{{ item.stdout | regex_findall('(?m)^\\S+\\s+[0-9]+\\s+IN\\s+(?:A|AAAA|PTR)\\s+(\\S+)') }}"
+          ansible.builtin.assert:
+            that:
+              - got_status == item.item.status
+              - got_data == item.item.data
+            fail_msg: "{{ item.item.name }} {{ item.item.type }}: {{ item.stdout }}"
+            quiet: true
+          loop: "{{ live_answers.results }}"
+          loop_control: {label: "{{ item.item.name }} {{ item.item.type }}"}
+      always:
+        - name: Stop dnsmasq
+          ansible.builtin.shell: 'test -f "{{ live.path }}/pid" && kill "$(cat "{{ live.path }}/pid")"; rm -rf "{{ live.path }}"'
+          changed_when: false
+          failed_when: false
+          when: live.path is defined
