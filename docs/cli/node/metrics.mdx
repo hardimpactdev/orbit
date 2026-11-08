@@ -10,45 +10,47 @@ orbit node:metrics <node> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Numeric Node ID; see the [Node family contract](/cli/node). |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the snapshot as JSON. |
+| `--json` | off | See the [CLI standard for output modes, input selection, and prompts](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:metrics 7
+orbit node:metrics 7 --json
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer.
-
-Orbit reads the snapshot from the [Metrics role](/reference/metrics#read-node-metrics) through Grafana. It runs four queries for the Node's exporter: one for memory, swap, load, and uptime, and one each for cores, pressure, and disks. Only the first decides whether the Node has metrics. The command starts no run, changes no Node and stores no sample.
+Orbit reads from the [Metrics role](/reference/metrics#read-node-metrics) through Grafana, not from a stored snapshot. The command changes no Node and stores no sample. A repeat reads again; it does not skip and returns no skip reason code.
 
 | Field | Meaning |
 | --- | --- |
-| `cores` | The busy ratio of each core, from 0 to 1. |
+| `node_id`, `node_name` | The target Node's identity. |
+| `cores` | Busy ratios, from 0 to 1, ordered by core index. |
 | `memory`, `swap` | Used and total bytes. |
 | `load` | The 1, 5, and 15-minute load averages. |
-| `uptime_seconds` | Time since boot. |
-| `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data or its query failed. |
-| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are left out. `/` comes first. |
+| `uptime_seconds` | Time since boot, in seconds. |
+| `pressure` | CPU, memory, and I/O `some` pressure percentages under `some_avg10`, using the [Metrics rate window](/reference/metrics#read-node-metrics). Missing pressure is `0`. |
+| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are excluded; `/` comes first, then other mounts in name order. |
 
-Human output shows bytes and durations in readable units, with the Node's name and ID and the request ID. JSON keeps the raw numbers. A missing value shows `—`. If the query for cores, pressure or disks fails, that field is empty and pressure is `0`, and the command still succeeds.
+Human output shows bytes and durations in readable units. Only the memory, swap, load, and uptime query decides whether a snapshot exists: it must contain total-memory samples. If a cores or disks query fails, its list is empty; if the pressure query fails, its values use the missing-pressure default above. The read still succeeds after an optional-query failure.
+
+## How it works
+
+<div className="flow-at" data-chart="node/metrics"></div>
+
+The [verification cases](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/node/metrics.cases.yaml) list runnable checks and proof capabilities still needed. A failed read leaves no partial changes to repair.
 
 ## Errors
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `node.id_invalid` | n/a | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node.metrics_unavailable` | 422 | The Node is not active or has no WireGuard address. |
-| `metrics.assignment_missing` | 409 | No Node has the Metrics role. |
+| `node.id_invalid` | n/a | The CLI cannot obtain a positive integer Node ID. |
+| `http.404` | 404 | The Node is unknown. |
+| `node_access.required` | 403 | The calling Node has no access grant to the target Node. |
+| `node.metrics_unavailable` | 422 | The target Node is not active or has no WireGuard address. |
+| `metrics.assignment_missing` | 409 | No Node has the Metrics role, or its Node has no WireGuard address. |
 | `metrics.assignment_drift` | 409 | More than one Node has the Metrics role. |
 | `metrics.node_inactive` | 409 | The Metrics Node is not active. |
-| `metrics.credentials_missing` | 422 | The Metrics role has no stored credentials. |
-| `http.404` | 404 | The Node is unknown. |
-| `node.metrics_unreachable` | 502 | Grafana could not answer, or Prometheus has no samples for the Node yet. |
-| `node_access.required` | 403 | The caller has no access grant to the Node. |
-
-## How it works
-
-<div className="flow-at" data-chart="node/metrics"></div>
+| `metrics.credentials_missing` | 422 | The Metrics role has no stored Grafana credential. |
+| `node.metrics_unreachable` | 502 | Grafana or its Prometheus datasource could not answer the required query, or it returned no total-memory sample for the Node. |

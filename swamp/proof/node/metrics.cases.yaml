@@ -1,0 +1,65 @@
+# The cases of node:metrics. Format: docs/reference/verification-cases.
+command: node:metrics
+chart: node/metrics
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+# Unsupported capabilities are requests, not executable steps or fails_today cases.
+uncovered:
+  "case:required-only": "Need a sampled-Metrics batch with one active Metrics owner, stored credentials and an exporter, plus bounded scrape-readiness polling. It enables the required-argument-only read (main, read-admitted, sampled, succeeded) without changing shared fleet state inside a fresh-fleet case."
+  "option:json": "Need the sampled-Metrics batch and assertions on synchronous JSON fields, types and numeric ranges. Check --json returns the target identity and all metric groups, rather than an Operation (read-admitted, sampled, succeeded); generic machine-output rules stay in the CLI standard."
+  "case:repeat": "Need the sampled-Metrics batch and query-count or timestamp observations to prove two ordinary reads fetch again, return no skip reason and create no Operation (main, read-admitted, sampled, succeeded). Do not require metric values to change between calls."
+  "code:http.404": "Need a fixture that binds a guaranteed-absent positive Node ID. Check the unknown target is refused with http.404 before a Grafana query (refused)."
+  "code:node.metrics_unavailable": "Need isolated recorded-Node fixtures for an inactive target and a target without a WireGuard address. Both must return node.metrics_unavailable before any Grafana query (refused)."
+  "code:metrics.assignment_missing": "Need an isolated no-Metrics-assignment batch and a recorded Metrics owner without a WireGuard address. Check metrics.assignment_missing in each state without a Grafana query (refused)."
+  "code:metrics.assignment_drift": "Need an isolated duplicate-Metrics-assignment fixture, which public commands correctly refuse to create. Check metrics.assignment_drift before a Grafana query (refused)."
+  "code:metrics.node_inactive": "Need an isolated inactive-Metrics-owner fixture with an otherwise eligible target. Check metrics.node_inactive before a Grafana query (refused)."
+  "code:metrics.credentials_missing": "Need an isolated Metrics-owner fixture without its stored active credential. Check metrics.credentials_missing before a Grafana query (refused)."
+  "code:node.metrics_unreachable": "Need sampled-Metrics fault fixtures for datasource discovery failure, required-query failure and missing total-memory samples, plus bounded recovery polling. Check node.metrics_unreachable with no partial result, then a successful ordinary repeat after recovery (read-admitted, unreachable, succeeded)."
+  "path:optional-failure": "Need per-metric-group Grafana fault injection with a valid scalar response and synchronous JSON assertions. Fail cores, pressure and disks independently and together; check success with empty failed lists, zero missing pressure and the other groups preserved (read-admitted, optional-failure, succeeded)."
+  "fields:snapshot": "Need controlled Prometheus sample fixtures and synchronous JSON assertions for core order and ratios, byte counts, load, uptime, pressure defaults and disk filtering/order. The sampled-Metrics batch also enables human-output checks for readable units (read-admitted, sampled, succeeded)."
+  "effect:read-only": "Need Node/settings/sample persistence baselines and Swamp-run and Grafana-contact counters. Alongside the existing Operation baseline, check that success and failure write no state or stored sample and that admission refusals never query Grafana (read-admitted, refused)."
+  "negative:assertions": "Need named CLI/JSON assertions and safe response or recorded-state mutations for negative proofs. Current negatives can break firewall traffic, not these read results or refusals."
+
+cases:
+  - id: invalid-numeric-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonpositive numeric Node ID is refused with node.id_invalid.
+    variants:
+      - {name: zero, node: '0'}
+      - {name: negative, node: '-1'}
+    act:
+      - cli:
+          run: [node:metrics, "${node}"]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: numeric-selector-only
+    batch: fresh-fleet
+    covers: []
+    summary: Text is refused as a Node ID, including a registered Node name.
+    fails_today: NodeCommand resolves registered names and returns node.not_found for other text instead of requiring a numeric ID.
+    variants:
+      - {name: registered-name, node: app-dev}
+      - {name: other-text, node: not-a-node-id}
+    act:
+      - cli:
+          run: [node:metrics, "${node}"]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: node-access-required
+    batch: no-grant
+    covers: [main, refused]
+    summary: A caller without an access grant to the target is refused before reading metrics.
+    act:
+      - cli:
+          as: app-prod
+          run: [node:metrics, "${app-dev.id}"]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

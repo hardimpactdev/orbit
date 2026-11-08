@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: a synchronous read of the Metrics role through Grafana; no run, no stored sample. docs/reference/metrics.md#read-node-metrics.
-  %% status: reviewed
+  %% status: draft
   %% command: node:metrics
   %% kind: node.metrics
   autonumber
@@ -11,33 +11,54 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant M as Metrics<br/>Grafana · Prom.
   CLI->>GW: node:metrics NODE
+  %% path: main
   %%> Command:
   %%> - `orbit node:metrics NODE`
-  %%> - syntax: `<node> [--json]`
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate the Node
+  %%> - syntax: `<node>`
+  Note over GW: Validate the read
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
+  %%> - the Node exists (`http.404`), and the calling Node has an access grant to it (`node_access.required`)
   %%> - the target is active and has a WireGuard address (`node.metrics_unavailable`)
-  %%> - exactly one active Node holds the Metrics role and has stored credentials (`metrics.assignment_missing`, `metrics.assignment_drift`, `metrics.node_inactive`, `metrics.credentials_missing`)
+  %%> - exactly one Node holds the Metrics role; it is active and has stored credentials (`metrics.assignment_missing`, `metrics.assignment_drift`, `metrics.node_inactive`, `metrics.credentials_missing`)
   %%> Why no run:
-  %%> - the command only reads; it starts no run, changes no Node and stores no sample
-  GW->>M: Read the exporter<br/>memory · swap · load · uptime
-  %%> What it does:
-  %%> - one query for memory, swap, load and uptime; it alone decides whether the Node has metrics
-  GW->>M: Read cores, pressure<br/>and disks · three queries
-  %%> What it does:
-  %%> - one query each; pseudo filesystems such as `tmpfs` and `proc` are left out, and `/` comes first
-  %%> - if one of them fails, its field is empty (pressure `0`) and the command still succeeds
-  alt Prometheus answered
-    M-->>GW: samples
-    GW-->>CLI: 200 OK<br/>one snapshot
-    %%> Returns:
-    %%> - the snapshot with the Node's name and ID; pressure is `0` when the kernel has no pressure data
-  else Grafana did not answer, or no samples yet
-    M--xGW: no answer or no samples
-    GW--xCLI: 502 Bad Gateway<br/>node.metrics_unreachable
+  %%> - this is a synchronous read through Grafana, not a read of Gateway-recorded metrics; it changes no Node and stores no sample
+  alt read refused
+    %% path: refused
+    GW--xCLI: Refused<br/>error_code
     %%> Result:
-    %%> - nothing is stored or changed; run the command again once the Node's exporter has reported
+    %%> - returns the matching requirement's error before querying Grafana; nothing is changed
+  else read admitted
+    %% path: read-admitted
+    GW->>M: Read exporter snapshot<br/>four metric-group queries
+    %%> What it does:
+    %%> - discovers the Prometheus datasource through Grafana and queries the target's exporter with the stored credential
+    %%> - one query reads memory, swap, load and uptime; one each reads cores, pressure and disks
+    %%> - only the first query decides whether a snapshot exists; it must contain total-memory samples
+    M-->>GW: Samples or query failure
+    %%> Result:
+    %%> - a failed datasource lookup or required query fails the read; each optional query can fail independently
+    alt required read fails
+      %% path: unreachable
+      GW--xCLI: 502 Bad Gateway<br/>node.metrics_unreachable
+      %%> Result:
+      %%> - a required-query failure or absent total-memory sample returns no partial snapshot; nothing is stored or changed
+    else scalar sample exists
+      %% path: sampled
+      Note over GW: Build the snapshot
+      %%> What it does:
+      %%> - excludes pseudo filesystems such as `tmpfs` and `proc`; sorts `/` first and other mounts by name
+      %%> - orders cores by index; missing pressure values are `0`
+      opt an optional query fails
+        %% path: optional-failure
+        Note over GW: Keep available groups
+        %%> Result:
+        %%> - failed cores or disks queries produce empty lists; a failed pressure query uses the missing-pressure default
+      end
+      GW-->>CLI: 200 OK<br/>one snapshot
+      %% path: succeeded
+      %%> Returns:
+      %%> - the Node's name and ID with cores, memory, swap, load, uptime, pressure and disks
+      %%> Repeat:
+      %%> - reads again after success or failure; this is not an already-applied skip and has no skip reason code
+    end
   end
