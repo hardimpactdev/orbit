@@ -19,6 +19,13 @@ final readonly class GatewayRuntimeFiles
 {
     public const string Pool = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
+    /**
+     * Settings of the Gateway environment that no code reads any more. The gateway role's convergence removes them from the shared env
+     * file; a key leaves this list once no Gateway has it (docs/reference/old-paths.md).
+     */
+    public const array RetiredSettings = ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN',
+        'ORBIT_TASK_VMS_UPCLOUD_DISK_GB'];
+
     /** The release unit's files; its timer is stopped before they go. */
     public const array ReleaseUnits = ['orbit-gateway-release.timer', 'orbit-gateway-release.service', 'orbit-gateway-release-run@.service'];
 

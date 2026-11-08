@@ -167,13 +167,13 @@ describe('gateway release contract', function (): void {
     });
 
     it('renders the automatic release state and its changes', function (): void {
-        run_contract('gateway-releases/gateway-release-auto-status/paused', 'gateway:release:auto:status', [], 'gateway-releases/gateway-release-auto-status/paused.human.txt', 0);
-        run_contract('gateway-releases/gateway-release-auto-status/paused', 'gateway:release:auto:status', ['--json' => true], 'gateway-releases/gateway-release-auto-status/paused.json', 0);
-        run_contract('gateway-releases/gateway-release-auto-status/disabled', 'gateway:release:auto:status', [], 'gateway-releases/gateway-release-auto-status/disabled.human.txt', 0);
-        run_contract('gateway-releases/gateway-release-auto-enable/enabled', 'gateway:release:auto:enable', [], 'gateway-releases/gateway-release-auto-enable/enabled.human.txt', 0);
-        run_contract('gateway-releases/gateway-release-auto-disable/disabled', 'gateway:release:auto:disable', ['--json' => true], 'gateway-releases/gateway-release-auto-disable/disabled.json', 0);
-        run_contract('gateway-releases/gateway-release-auto-resume/resumed', 'gateway:release:auto:resume', [], 'gateway-releases/gateway-release-auto-resume/resumed.human.txt', 0);
-        run_contract('gateway-releases/gateway-release-auto-resume/not-paused', 'gateway:release:auto:resume', [], 'gateway-releases/gateway-release-auto-resume/not-paused.human.txt', 1);
-        run_contract('gateway-releases/gateway-release-auto-resume/not-paused', 'gateway:release:auto:resume', ['--json' => true], 'gateway-releases/gateway-release-auto-resume/not-paused.json', 1);
+        run_contract('gateway-releases/gateway-auto-release-status/paused', 'gateway:auto-release:status', [], 'gateway-releases/gateway-auto-release-status/paused.human.txt', 0);
+        run_contract('gateway-releases/gateway-auto-release-status/paused', 'gateway:auto-release:status', ['--json' => true], 'gateway-releases/gateway-auto-release-status/paused.json', 0);
+        run_contract('gateway-releases/gateway-auto-release-status/disabled', 'gateway:auto-release:status', [], 'gateway-releases/gateway-auto-release-status/disabled.human.txt', 0);
+        run_contract('gateway-releases/gateway-auto-release-enable/enabled', 'gateway:auto-release:enable', [], 'gateway-releases/gateway-auto-release-enable/enabled.human.txt', 0);
+        run_contract('gateway-releases/gateway-auto-release-disable/disabled', 'gateway:auto-release:disable', ['--json' => true], 'gateway-releases/gateway-auto-release-disable/disabled.json', 0);
+        run_contract('gateway-releases/gateway-auto-release-resume/resumed', 'gateway:auto-release:resume', [], 'gateway-releases/gateway-auto-release-resume/resumed.human.txt', 0);
+        run_contract('gateway-releases/gateway-auto-release-resume/not-paused', 'gateway:auto-release:resume', [], 'gateway-releases/gateway-auto-release-resume/not-paused.human.txt', 1);
+        run_contract('gateway-releases/gateway-auto-release-resume/not-paused', 'gateway:auto-release:resume', ['--json' => true], 'gateway-releases/gateway-auto-release-resume/not-paused.json', 1);
     });
 });

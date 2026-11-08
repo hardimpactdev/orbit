@@ -8,13 +8,6 @@
       {{ rules | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src) | selectattr('status', 'equalto', 'active')
       | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
   block:
-    - name: The Gateway reaches the port and app-prod does not
-      ansible.builtin.include_tasks: probe.yml
-      tags: [probe]
-      vars: {probe: "{{ item }}"}
-      loop:
-        - {from: nested-gateway,  port: "{{ c.port }}", expect: connect}
-        - {from: nested-app-prod, port: "{{ c.port }}", expect: blocked}
     - name: One active tcp record, and the allow line sits above the deny
       ansible.builtin.assert:
         that: [matching | length == 1, allow_row | length == 1, deny_row | length > 0, allow_row | first < deny_row | first]

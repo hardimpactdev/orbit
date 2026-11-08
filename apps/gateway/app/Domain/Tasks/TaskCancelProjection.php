@@ -6,17 +6,17 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofKeptVms;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** A cancel that pushed approved work and released the slot settles the group; anything less keeps it for another cancel. */
-final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationTimeout
+/** A cancel that released the slot settles the group; anything less keeps it for another cancel. */
+final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout
 {
     public function input(Operation $operation): array
     {
@@ -36,10 +36,6 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
             }
             $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             if ($data['status'] === 'succeeded') {
-                $push = $operation->input['push'] ?? null;
-                if (is_array($push) && is_string($push['commit'] ?? null)) {
-                    TaskFinalReview::recordRemovalPush($group, $push['commit']);
-                }
                 app(TaskCancelIntent::class)->input($operation);
             }
             $result = ['group_id' => $group->id, 'instance_id' => $operation->input['instance_id'] ?? null, 'released' => $data['status'] === 'succeeded'];
@@ -53,6 +49,12 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /** A start that Swamp refused or never took ran nothing: the VM that admission reserved is failed, so another cancel can reserve it again. */
+    public function refused(Operation $operation): void
+    {
+        $this->failed($operation, $operation->error_code);
     }
 
     public function timedOut(Operation $operation): void

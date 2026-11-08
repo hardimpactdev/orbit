@@ -18,7 +18,7 @@
           "pages": [
             "cli/ai-router/index",
             "cli/ai-router/setup",
-            "cli/ai-router/teardown",
+            "cli/ai-router/destroy",
             "cli/ai-router/status",
             "cli/ai-router/provider-list",
             "cli/ai-router/provider-show",

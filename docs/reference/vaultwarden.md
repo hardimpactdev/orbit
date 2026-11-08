@@ -27,7 +27,7 @@ Do these steps in Vaultwarden first:
 
 Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Sync uses the official CLI's TLS verification with the Orbit public root added to its trust store. It never disables verification. Admission limits the destination to that managed HTTPS origin.
 
-Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
+Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:destroy`](#tear-down) first.
 
 The setup run prepares the public intent, invokes the official CLI to verify the account, clears its disposable session, and checks the result. It ships no scripts. Cleanup runs after verification succeeds or fails. A new setup checks the supplied credentials again; a native resume keeps completed verification. The final check does not log in again.
 
@@ -83,7 +83,7 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 | --- | --- |
 | A published cipher that is gone or in the trash | Create the item with a new ID. Do not adopt another cipher for that recorded source. |
 | A published item that someone changed | Rewrite it. |
-| An item for a wanted source for which the ledger has no entry | Adopt it and rewrite it. This covers a create that timed out before its first ledger record, and wanted items left by `vault:teardown --keep-items`. |
+| An item for a wanted source for which the ledger has no entry | Adopt it and rewrite it. This covers a create that timed out before its first ledger record, and wanted items left by `vault:destroy --keep-items`. |
 | A recorded item in the trash or whose source is gone from Orbit, with an ID and decrypted source that match the publishing ledger | Delete it permanently, unless it belongs to another visible collection. |
 | A copy of a recorded source with a different cipher ID, or an unrecorded item for an unwanted source | Leave it, even if the recorded cipher is missing or trashed. A marker alone does not authorize adoption, rewriting, or deletion. |
 | An item without `orbit.source` | Leave it. |
@@ -112,7 +112,7 @@ A failed change fails the native run. The publishing ledger stays unchanged, and
 
 ## Tear down
 
-[`vault:teardown`](/cli/vault/teardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
+[`vault:destroy`](/cli/vault/destroy) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
 Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, the Gateway records a completed Operation, clears its setup and ledger, and starts no Swamp run or Vaultwarden request. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 

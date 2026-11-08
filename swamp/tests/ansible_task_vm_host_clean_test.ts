@@ -83,10 +83,15 @@ const listings: Record<string, unknown> = {
 };
 
 /** Runs the phase `tags` with `host` as its intent; returns the logged incus calls and whether the play passed. */
-function run(tags: string, host: Record<string, unknown>, failing = "") {
+function run(
+  tags: string,
+  host: Record<string, unknown>,
+  failing = "",
+  overrides: Record<string, unknown> = {},
+) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
-  for (const [call, answer] of Object.entries(listings)) {
+  for (const [call, answer] of Object.entries({ ...listings, ...overrides })) {
     Deno.writeTextFileSync(
       `${folder}/${encodeURIComponent(call)}`,
       JSON.stringify(answer),
@@ -313,6 +318,37 @@ Deno.test({
     const refresh = run("base-start", { ...base, rebuild: false });
     assert(refresh.passed, refresh.output);
     assertEquals(refresh.initStdin, base.base.launch_config + "\n");
+    const bootConfig = '[boot-opts]\nmenu = "on"\nsplash-time = "0"\n';
+    const setBoot =
+      `--project orbit-tasks config set beast-base raw.qemu.conf=${bootConfig}`
+        .trimEnd();
+    // Existing bases must be repaired before their next start; an init-only setting leaves the old wait.
+    const readBase = "--project orbit-tasks list --format json -- ^beast-base$";
+    const oldBase = {
+      name: "beast-base",
+      status: "Stopped",
+      config: {},
+      devices: { "topology-seed": {} },
+    };
+    const repaired = run("base-start", { ...base, rebuild: false }, "", {
+      [readBase]: [oldBase],
+    });
+    assert(repaired.passed, repaired.output);
+    assertEquals(repaired.initStdin, null);
+    assertStringIncludes(repaired.log.join("\n"), setBoot);
+    assert(
+      repaired.log.findIndex((call) => call.includes("raw.qemu.conf=")) <
+        repaired.log.indexOf("--project orbit-tasks start -- beast-base"),
+    );
+    const current = run("base-start", { ...base, rebuild: false }, "", {
+      [readBase]: [{ ...oldBase, config: { "raw.qemu.conf": bootConfig } }],
+    });
+    assert(current.passed, current.output);
+    assertEquals(
+      current.log.filter((call) => call.includes("raw.qemu.conf=")),
+      [],
+    );
+
     assertEquals(
       refresh.log.filter((call) => call.includes(" delete --force beast-base")),
       [],

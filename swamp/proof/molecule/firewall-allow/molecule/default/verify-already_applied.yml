@@ -7,8 +7,8 @@
     matching: "{{ rules | selectattr('action', 'equalto', 'allow') | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}"
     own_before: "{{ ufw_before.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', c.port | string) | list }}"
     own_after: "{{ ufw_after.split('\n') | select('search', '^\\[') | map('regex_replace', '^\\[ *[0-9]+\\] *', '') | select('search', c.port | string) | list }}"
-    rec_before: "{{ records_before | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}"
-    rec_after: "{{ records_after | selectattr('node', 'equalto', 'app-dev') | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}"
+    rec_before: "{{ records_before | selectattr('node', 'equalto', tnode) | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}"
+    rec_after: "{{ records_after | selectattr('node', 'equalto', tnode) | map(attribute='rules') | first | default([]) | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}"
   block:
     - name: One record, one allow line above the deny, and its own rows and record did not change
       ansible.builtin.assert:

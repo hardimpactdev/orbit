@@ -1,0 +1,22 @@
+---
+title: "orbit vault:destroy"
+sidebarTitle: "vault:destroy"
+description: "Destroy the Orbit Vault account and its published items."
+---
+
+```bash
+orbit vault:destroy [--keep-items] [--yes] [--idempotency-key=KEY] [--json]
+```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--keep-items` | no | Leave the published items in Vaultwarden. |
+| `--yes` | in noninteractive and JSON modes | Confirm the destruction without a prompt. |
+
+In a terminal the command asks a default-No question. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing.
+
+## How it works
+
+<div className="flow-at" data-chart="vault/destroy"></div>

@@ -173,7 +173,7 @@ A task VM never holds a GitHub credential, neither a token nor a deploy key, exc
 
 - **Clone.** A step on Node 209 asks the Gateway for a read credential (`purpose: clone`). It clones with full history.
 - **Nothing stays on the VM.** The VM receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
-- **Publish, pull request and approved push.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
+- **Publish and pull request.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
 - **No admission token.** Admission mints no token for a later step. An installation token lives one hour. A prep run needs 43 to 90 minutes to reach its publish step.
 - **Private dependencies.** The setup steps install them. A step mints a read token for the setup steps only.
 - **Token removal.** A step deletes the token files after the last setup step.

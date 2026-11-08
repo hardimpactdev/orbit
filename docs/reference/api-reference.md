@@ -7,6 +7,10 @@ covers:
 
 # API reference generation
 
+Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule}/log-streams`. The Schedule selector is a UUID. These viewer leases share the [live log contract](/reference/live-logs) with Instance and Process streams.
+
+`database:server:update` is PATCH `/api/v1/database-servers/{database_server}`. It requires JSON `{"require_password":true}`; the generated schema fixes this field to true. The operation receipt keeps kind `database_server.close`. See [Database servers](/reference/database-servers#close-an-adopted-server).
+
 The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
@@ -144,3 +148,7 @@ Task group and subtask updates expose `status` in the API, MCP, PHP SDK, and gen
 Command text does not. `orbit list` hides extension commands, such as the `tasks`, `ai-router`, and `vault` commands, unless the active Gateway profile reports those extensions as enabled, and the command fails when `apps/cli/vendor` is absent. A machine with the extensions on would add request-field descriptions such as the task title and the ai-router cache connection, and continuous integration would leave them out. Reading the command classes keeps those descriptions in the document on every machine. Framework options such as `--version` are not part of the signature, so they are not copied onto a request field.
 
 After changing an operation description or response, run `bin/mcp-tools` to refresh the Gateway MCP manifest and `bun run types` from `apps/web` to refresh its TypeScript API types. The web app builds its TypeScript API types from `docs/openapi.json`. A stable document keeps those types stable until an input changes. [Web app](/reference/web-app) describes that generation.
+
+The owned-resource deletion commands are `ai-router:destroy` and `vault:destroy`. Their DELETE endpoints remain `/api/v1/ai-router` and `/api/v1/vault`. The API operation IDs and MCP tools use `ai-router-destroy` and `vault-destroy`.
+
+Automatic Gateway release commands use `gateway:auto-release:{status,enable,disable,resume}` and API operation IDs use `gateway-auto-release-*`. The HTTP paths stay under `/api/v1/gateway/release-automation`.

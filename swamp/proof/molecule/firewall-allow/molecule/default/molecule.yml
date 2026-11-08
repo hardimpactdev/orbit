@@ -40,6 +40,18 @@ provisioner:
           checkout: "{{ lookup('ansible.builtin.env', 'ORBIT_CHECKOUT') | default('/home/orbit/apps/orbit/workspace', true) }}"
           orbit: [php, "{{ checkout }}/apps/cli/orbit"]
           cli_env: {PATH: /usr/local/bin:/usr/bin:/bin, HOME: /home/orbit, ORBIT_HOME: /home/orbit/.orbit}
+          # Stages of the parallel spike, read from the environment of scripts/molecule-verify-spike:
+          #   PROOF_SPREAD=1  spread the cases over the containers of PROOF_TARGETS (default app-dev,app-prod,gateway); else all go to app-dev
+          #   PROOF_FAST=1    poll async jobs every 1 s instead of 5 s, read the facts once and share them, start the listeners with one exec
+          # ANSIBLE_FORKS is the limit: cases that run at a time, and probes that run at a time.
+          parallel_limit: "{{ lookup('ansible.builtin.env', 'ANSIBLE_FORKS') | default('1', true) | int }}"
+          spread: "{{ lookup('ansible.builtin.env', 'PROOF_SPREAD') | default('0', true) == '1' }}"
+          fast: "{{ lookup('ansible.builtin.env', 'PROOF_FAST') | default('0', true) == '1' }}"
+          poll_delay: "{{ 1 if fast else 5 }}"
+          spread_nodes: "{{ (lookup('ansible.builtin.env', 'PROOF_TARGETS') | default('app-dev,app-prod,gateway', true)).split(',') if spread else ['app-dev'] }}"
+          # The Node that every other Node is judged against: the one source an allow admits, and the one that stays blocked.
+          allowed_of: {app-dev: gateway, app-prod: gateway, gateway: app-dev}
+          blocked_of: {app-dev: app-prod, app-prod: app-dev, gateway: app-prod}
           port_base: "{{ lookup('ansible.builtin.env', 'PROOF_PORT_BASE') | default(47100, true) | int }}"
           cases:
             new_restricted_allow: {port: "{{ port_base | int + 1 }}", control: "{{ port_base | int + 11 }}"}
@@ -49,17 +61,40 @@ provisioner:
             protocols_tcp:        {port: "{{ port_base | int + 5 }}", control: "{{ port_base | int + 15 }}"}
             # A range of five ports, one port outside it, and one control port for the traffic probes.
             port_range:           {lo: "{{ port_base | int + 20 }}", mid: "{{ port_base | int + 22 }}", hi: "{{ port_base | int + 24 }}", spec: "{{ port_base | int + 20 }}:{{ port_base | int + 24 }}", outside: "{{ port_base | int + 30 }}"}
-          # Every port that gets a listener on app-dev, and every test deny (TCP unless `udp`), placed above the proof-network allowance.
-          listen_ports: "{{ [cases.new_restricted_allow.port, cases.new_restricted_allow.control, cases.already_applied.port, cases.already_applied.control, cases.partial_application.port, cases.partial_application.control, cases.conflict.port, cases.conflict.control, cases.protocols_tcp.port, cases.protocols_tcp.control] + range(cases.port_range.lo | int, (cases.port_range.hi | int) + 1) | list + [cases.port_range.outside] }}"
-          denies:
-            - {name: new_restricted_allow, port: "{{ cases.new_restricted_allow.port }}"}
-            - {name: already_applied, port: "{{ cases.already_applied.port }}"}
-            - {name: partial_application, port: "{{ cases.partial_application.port }}"}
-            - {name: partial_application_udp, port: "{{ cases.partial_application.port }}", proto: udp}
-            - {name: conflict, port: "{{ cases.conflict.port }}"}
-            - {name: protocols_tcp, port: "{{ cases.protocols_tcp.port }}"}
-            - {name: port_range, port: "{{ cases.port_range.spec }}"}
-            - {name: port_range_outside, port: "{{ cases.port_range.outside }}"}
+          # The container each case works on, by the number of firewall writes it makes: the writes of one Node queue on its lock, so they are
+          # spread over the Nodes. Without PROOF_SPREAD every case goes to app-dev, as before.
+          case_target:
+            new_restricted_allow: "{{ spread_nodes[0 % (spread_nodes | length)] }}"
+            already_applied:      "{{ spread_nodes[0 % (spread_nodes | length)] }}"
+            partial_application:  "{{ spread_nodes[1 % (spread_nodes | length)] }}"
+            conflict:             "{{ spread_nodes[1 % (spread_nodes | length)] }}"
+            protected_port:       "{{ spread_nodes[1 % (spread_nodes | length)] }}"
+            failure_code:         "{{ spread_nodes[0 % (spread_nodes | length)] }}"
+            protocols_tcp:        "{{ spread_nodes[2 % (spread_nodes | length)] }}"
+            port_range:           "{{ spread_nodes[2 % (spread_nodes | length)] }}"
+          # Every port that gets a listener, and every test deny (TCP unless `udp`) placed above the proof-network allowance, by case.
+          case_ports:
+            new_restricted_allow: ["{{ cases.new_restricted_allow.port }}", "{{ cases.new_restricted_allow.control }}"]
+            already_applied: ["{{ cases.already_applied.port }}", "{{ cases.already_applied.control }}"]
+            partial_application: ["{{ cases.partial_application.port }}", "{{ cases.partial_application.control }}"]
+            conflict: ["{{ cases.conflict.port }}", "{{ cases.conflict.control }}"]
+            protocols_tcp: ["{{ cases.protocols_tcp.port }}", "{{ cases.protocols_tcp.control }}"]
+            port_range: "{{ (range(cases.port_range.lo | int, (cases.port_range.hi | int) + 1) | list) + [cases.port_range.outside] }}"
+            protected_port: []
+            failure_code: []
+          case_denies:
+            new_restricted_allow: [{name: new_restricted_allow, port: "{{ cases.new_restricted_allow.port }}"}]
+            already_applied: [{name: already_applied, port: "{{ cases.already_applied.port }}"}]
+            partial_application:
+              - {name: partial_application, port: "{{ cases.partial_application.port }}"}
+              - {name: partial_application_udp, port: "{{ cases.partial_application.port }}", proto: udp}
+            conflict: [{name: conflict, port: "{{ cases.conflict.port }}"}]
+            protocols_tcp: [{name: protocols_tcp, port: "{{ cases.protocols_tcp.port }}"}]
+            port_range:
+              - {name: port_range, port: "{{ cases.port_range.spec }}"}
+              - {name: port_range_outside, port: "{{ cases.port_range.outside }}"}
+            protected_port: []
+            failure_code: []
         children:
           control:
             hosts:
@@ -84,6 +119,12 @@ provisioner:
                   new_restricted_allow: {}
                   conflict: {}
                   failure_code: {}
+          # Not a command case: Doctor, which verify runs beside the other checks so that the wait for the agent's report overlaps them.
+          verify_extras:
+            vars:
+              ansible_connection: local
+            hosts:
+              doctor_check: {}
           nodes:
             vars:
               ansible_connection: community.general.incus

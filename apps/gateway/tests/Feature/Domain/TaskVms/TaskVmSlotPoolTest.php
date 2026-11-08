@@ -3,19 +3,34 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\TaskVms\StartTaskVmResumeAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCommitComparison;
+use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubPullRequest;
+use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
@@ -41,10 +56,13 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Testing\TestResponse;
+use Mockery\MockInterface;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 
@@ -276,8 +294,8 @@ it('has the sweep leave a host alone while its refresh is open, and go on past a
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
-    // A row without its keys has no hub peer to remove, so its intent cannot be built.
-    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'wireguard_private_key' => null]);
+    // A row without its Node has no hub peer to remove, so its intent cannot be built.
+    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
     $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
     slotPoolSweepWorld();
     $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -525,19 +543,388 @@ it('has the removal of a group\'s workspace admit the release of its slot and wa
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->count())->toBe(1);
 });
 
-it('refuses the removal of a workspace on a task VM that has no slot, which no release can delete', function (): void {
+it('releases a parked task VM as it is: no start before the removal, and no resume', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $group = slotPoolGroup($project);
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $slot->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('releases a VM of the old pool by its name: its topology seed goes, and the hub peer by the Node\'s public key', function (): void {
     [$host, $project] = slotPoolHost();
     slotPoolSweepWorld();
     $group = slotPoolGroup($project);
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-610', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit']));
-    TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => 'tvm-610', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.140']);
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit', 'wireguard_public_key' => str_repeat('o', 43).'=']));
+    // As tvm-610: no slot number and no private key on the Gateway.
+    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Medium, 'name' => 'tvm-610', 'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
         'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
     $group->taskable()->associate($instance);
     $group->fill(['status' => TaskGroupStatus::Settling])->save();
 
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(ResourceOperationException::class, 'has no slot')
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace');
+    $intent = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $vm->id)->sole()->input['intent'];
+    expect($intent['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($intent['hub_peer']['public_key'])->toBe(str_repeat('o', 43).'=')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+/** A VM of the old pool, as tvm-610: no slot number and no private key on the Gateway, its Node holding the public key. */
+function oldPoolVm(Node $host, ?Task $group = null, string $name = 'tvm-610', TaskVmState $state = TaskVmState::Ready, ?string $publicKey = null): TaskVm
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit', 'wireguard_public_key' => $publicKey ?? str_repeat('o', 43).'=']));
+
+    return TaskVm::query()->create(['group_id' => $group?->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Medium, 'name' => $name, 'state' => $state, 'wireguard_ip' => '10.44.0.140']);
+}
+
+it('has a cancel of an old-pool group carry the release of its VM, so its end deletes the VM and not only its records', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $vm = oldPoolVm($host, $group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $vm->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+
+    expect($cancel->input['release']['intent']['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($cancel->input['release']['intent']['host']['node_id'])->toBe($host->id)
+        ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['release'])->toBe($cancel->input['release']);
+});
+
+it('has the sweep release an old-pool VM again after its release failed', function (): void {
+    [$host, $project] = slotPoolHost();
+    $vm = oldPoolVm($host, slotPoolGroup($project), state: TaskVmState::Releasing);
+    slotPoolSweepWorld();
+
+    // The failed release frees the VM from its group, so only the sweep can release it again.
+    app(TaskVmSlotReleaseProjection::class)->record($vm, false, 'task_vm.slot_release_failed');
+    expect($vm->refresh()->group_id)->toBeNull()->and($vm->state)->toBe(TaskVmState::Failed);
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    $release = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('triggered_by', 'task-vm-sweep')->sole();
+    expect($release->target_id)->toBe($vm->id)->and($release->input['intent']['slot']['seed_clone'])->toBe('tvm-610-topology-seed')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('releases only a task VM name: any other name of a slotless row refuses, whatever base or seed it names', function (string $name): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    // The host was renamed after a refresh recorded beast-base; a release never takes the shape of a name on trust.
+    $host->update(['name' => 'sabre']);
+    $vm = oldPoolVm($host->refresh(), name: $name, state: TaskVmState::Failed);
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no task VM name')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Failed);
+})->with(['beast-base', 'beast-base-seed', 'sabre-base', 'sabre-base-seed', 'tvm-610-seed', 'shark-tvm-3', 'research-vm']);
+
+it('releases tvm-<id> of the old pool and <host>-tvm-<slot> of a slot, under the host name it had, each with its own seed clone', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $old = oldPoolVm($host, name: 'tvm-610', state: TaskVmState::Failed);
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $slot->update(['name' => 'shark-tvm-'.$slot->slot_number, 'group_id' => null, 'state' => TaskVmState::Failed]);
+
+    $runs = app(TaskVmSlotRuns::class);
+    expect($runs->startRelease($old, 'test')->input['intent']['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($runs->startRelease($slot->refresh(), 'test')->input['intent']['slot'])
+        ->toBe(['name' => 'shark-tvm-'.$slot->slot_number, 'seed_clone' => 'shark-tvm-'.$slot->slot_number.'-seed']);
+});
+
+it('never releases a VM whose host is no task VM host', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $elsewhere = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
+    $vm = oldPoolVm($elsewhere, state: TaskVmState::Failed);
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(TaskVmException::class, 'is not a task VM host')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+it('refuses the release of a VM whose Node has no WireGuard public key, which names its hub peer', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $vm = oldPoolVm($host, state: TaskVmState::Failed, publicKey: '');
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no WireGuard public key')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
+    // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
+    $started = false;
+    TaskVm::retrieved(function () use (&$started, $host): void {
+        if (! $started) {
+            $started = true;
+            Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+                'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+        }
+    });
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect($started)->toBeTrue()->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Provisioning);
+});
+
+/**
+ * A group whose workspace sits on its parked task VM, with subtask approvals of `$approved` in order, and a GitHub where `$origin['branch']`
+ * lists the commits the group's task branch reaches, its head first; without that key the branch does not exist, and `unreadable` fails
+ * the read. Any other key is a commit and the commits it reaches. The test may change `$origin` later. The group's pull request has the head
+ * `$merged` and the state `$state`, when given. `$reads` records each read with the token it used.
+ *
+ * @param  list<string>  $approved
+ * @param  array<string,list<string>|string>  $origin
+ * @param  list<string>  $reads
+ * @return array{0:Task,1:TaskVm,2:Node}
+ */
+function preservationWorld(array $approved, array &$origin, ?string $merged = null, TaskGroupStatus $status = TaskGroupStatus::Settling,
+    GitHubPullRequestState $state = GitHubPullRequestState::Merged, array &$reads = []): array
+{
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use (&$origin, &$reads, $merged, $state): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        // Each token names the permission it carries, so a read with the wrong token shows in `$reads`.
+        $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('pull-requests-read');
+        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('branchHead')->andReturnUsing(function (string $token, GitHubRepository $repository, string $branch) use (&$origin, &$reads): ?string {
+            $reads[] = "branch:{$token}";
+            $listed = $origin['branch'] ?? null;
+
+            return $listed === 'unreadable' ? throw GitHubApiException::unavailable() : (is_array($listed) ? $listed[0] : null);
+        });
+        $github->shouldReceive('compareCommits')->andReturnUsing(function (string $token, GitHubRepository $repository, string $base, string $head) use (&$origin, &$reads): GitHubCommitComparison {
+            $reads[] = "compare:{$token}";
+            $reached = collect($origin)->first(static fn ($listed): bool => is_array($listed) && ($listed[0] ?? null) === $head) ?? throw GitHubApiException::unavailable();
+
+            return match (true) {
+                $reached[0] === $base => new GitHubCommitComparison(GitHubComparisonStatus::Identical, $base, $base),
+                in_array($base, $reached, true) => new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $base, $base),
+                default => new GitHubCommitComparison(GitHubComparisonStatus::Diverged, $base, str_repeat('0', 40)),
+            };
+        });
+        $github->shouldReceive('pullRequest')->andReturnUsing(function (string $token) use (&$reads, $merged, $state): GitHubPullRequest {
+            $reads[] = "pull:{$token}";
+
+            return new GitHubPullRequest($state, null, null, $merged, 'main', mergedAt: $state === GitHubPullRequestState::Merged ? '2026-11-08T08:00:00Z' : null);
+        });
+    }));
+    $url = $merged === null ? null : 'https://github.com/hardimpactdev/orbit/pull/77';
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => $status, 'pr_url' => $url, 'watched_pr_url' => $url]);
+    $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Step', 'brief' => 'Brief', 'status' => TaskStatus::Completed]);
+    foreach ($approved as $sha) {
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.',
+            'author' => 'reviewer', 'commit_sha' => $sha, 'posted_at' => now()]);
+    }
+    $slot = app(TaskVmSlotPool::class)->take($group);
+    $slot->update(['state' => TaskVmState::Parked, 'stop_confirmed_at' => now()]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->save();
+
+    return [$group, $slot, Node::query()->where('name', 'gateway')->sole()];
+}
+
+/** One `tasks:complete` or `tasks:cancel` call from the Gateway Node. */
+function preservationCall(Node $gateway, Task $group, string $command): TestResponse
+{
+    return test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->withHeader('Idempotency-Key', 'end-'.fake()->uuid())
+        ->postJson("/api/v1/task-groups/{$group->id}/{$command}");
+}
+
+it('refuses tasks:complete while origin lacks the latest approval, though the approved commit before it merged, and changes nothing', function (): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    // A merged and GitHub deleted the branch; B was approved later and lives only in the parked VM.
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin, merged: $a, status: TaskGroupStatus::Running);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished')
+        ->assertJsonPath('error.details.commit', $b)->assertJsonPath('error.details.branch', 'task-'.$group->id);
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->watched_pr_completion)->toBeNull()->and($group->taskable_id)->not->toBeNull()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked)
+        ->and(Operation::query()->whereIn('kind', [TaskVmSlotPool::ReleaseKind, 'task_vm.resume'])->exists())->toBeFalse();
+
+    // tasks:publish pushed B; now the group completes and its parked VM goes as it is.
+    $origin['branch'] = [$b, $a];
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('takes the merged pull request\'s head for a deleted task branch, so a merged latest approval completes', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running);
+
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('refuses tasks:cancel while origin lacks the latest approval, admitting nothing, and admits a release with no push once it has it', function (): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    $origin = ['branch' => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished')
+        ->assertJsonPath('error.details.commit', $b);
+    expect(Operation::query()->exists())->toBeFalse()->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $origin['branch'] = [$b, $a];
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+
+    $cancel = Operation::query()->where('kind', 'tasks.cancel')->sole();
+    expect($cancel->input)->not->toHaveKey('push')->and($cancel->input['release']['intent']['slot']['name'])->toBe($slot->name)
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('refuses the release of a resuming task VM, completes the group with the reason, and releases it once on retries after the resume', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    $resume = Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->assistance_reason)->toContain('task_vm.resume')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $resume->update(['status' => OperationStatus::Succeeded]);
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    preservationCall($gateway, $group, 'complete')->assertOk();
+
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count())->toBe(1)
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('reads the task branch and compares with a contents:read token, and the pull request with a pull_requests:read token', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => [$a]];
+    $reads = [];
+    [$group, , $gateway] = preservationWorld([$a], $origin, reads: $reads);
+    preservationCall($gateway, $group, 'complete')->assertOk();
+    expect($reads)->toBe(['branch:contents-read', 'compare:contents-read']);
+});
+
+it('reads a merged pull request with its own token when its branch is gone, and compares its head with the contents token', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    $reads = [];
+    [$merged, , $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running, reads: $reads);
+    preservationCall($gateway, $merged, 'complete')->assertOk();
+    expect($reads)->toContain('branch:contents-read', 'pull:pull-requests-read', 'compare:contents-read')
+        ->and($reads)->not->toContain('compare:pull-requests-read', 'branch:pull-requests-read');
+});
+
+it('refuses when the task branch cannot be read, though the merged pull request\'s head is the approved commit', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => 'unreadable', $a => [$a]];
+    $reads = [];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running, reads: $reads);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+    // The completion reads its watched pull request first; the failed branch read ends the check before any compare.
+    expect($reads)->toBe(['pull:pull-requests-read', 'branch:contents-read'])->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('refuses when the task branch is gone and its pull request closed without a merge, though the head is the approved commit', function (): void {
+    $a = str_repeat('a', 40);
+    $origin = [$a => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a], $origin, merged: $a, state: GitHubPullRequestState::Closed);
+
+    preservationCall($gateway, $group, 'complete')->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Settling)->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+});
+
+it('leaves the group\'s open operations untouched when a complete or a cancel refuses', function (string $command): void {
+    [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
+    $origin = ['branch' => [$a]];
+    [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin);
+    $turn = Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+    preservationCall($gateway, $group, $command)->assertStatus(409)->assertJsonPath('error.code', 'tasks.approved_work_unpublished');
+
+    expect($turn->refresh()->status)->toBe(OperationStatus::Running)->and($turn->cancel_requested_at)->toBeNull()
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Settling)->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+})->with(['complete', 'cancel']);
+
+it('refuses a cancel while a resume of the group\'s VM is open, cancelling nothing, and admits it after the resume', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    $resume = Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+    $turn = Operation::query()->create(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy')
+        ->assertJsonPath('error.details.operation_id', $resume->id);
+    expect($turn->refresh()->cancel_requested_at)->toBeNull()->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Parked);
+
+    $resume->update(['status' => OperationStatus::Succeeded]);
+    $turn->update(['status' => OperationStatus::Succeeded]);
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('reserves the VM at cancel admission, so a resume asked for later starts nothing', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and(app(StartTaskVmResumeAction::class)->execute($slot->id))->toBeNull()
+        ->and(app(WakeTaskVmAction::class)->forGroup($group->refresh()))->toBeTrue()
+        ->and(Operation::query()->where('kind', 'task_vm.resume')->exists())->toBeFalse();
+});
+
+it('frees the VM a cancel reserved when its start is refused, so the next cancel reserves it again and runs', function (): void {
+    $origin = [];
+    [$group, $slot, $gateway] = preservationWorld([], $origin);
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    $refused = Operation::query()->where('kind', 'tasks.cancel')->sole();
+    expect($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+
+    // Swamp refused the start: the Operation fails before any run exists.
+    $refused->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused', 'lock_key' => null, 'finished_at' => now()]);
+    app(TaskCancelProjection::class)->refused($refused);
+
+    expect($slot->refresh()->state)->toBe(TaskVmState::Failed)->and($slot->error_code)->toBe('swamp.start_refused')
+        ->and($slot->group_id)->toBe($group->id)->and($group->refresh()->status)->toBe(TaskGroupStatus::Settling);
+
+    preservationCall($gateway, $group, 'cancel')->assertStatus(202);
+    $retry = Operation::query()->where('kind', 'tasks.cancel')->whereKeyNot($refused->id)->sole();
+    expect($retry->input['release']['intent']['slot']['name'])->toBe($slot->name)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });

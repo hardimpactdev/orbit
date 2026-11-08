@@ -28,6 +28,7 @@ sequenceDiagram
   %%> - it runs before the base is touched; only a safety check fails the run (rules that do not load, a bridge with IPv6, an ACL without its drop rule) and starts no rollback; other checks warn
   SW->>H: Start the base VM<br/>incus start
   %%> What it does:
+  %%> - before starting, converges the base VM's `raw.qemu.conf`: `[boot-opts]` with `menu = "on"` and `splash-time = "0"` skips OVMF's 3 s menu wait; every snapshot and task copy inherit it
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
   %%> - a host without a base VM gets it here, once: `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, an empty seed volume, and a first boot that makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge builds everything else
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
@@ -40,6 +41,7 @@ sequenceDiagram
   %%> - the build runs only when the fleet is not complete: a container is missing, or the operator stamp that the join writes last is not recorded; it removes that stamp and any container first and builds whole. A complete fleet skips it and restarts no container
   %%> - no other wait for the nested Gateway and no identity wipe: the base VM never gets an identity, and readiness belongs to a task start
   %%> - the boot phase bakes the Orbit root CA and the firewall into the base, and the `orbit-identity` unit that mounts a copy's identity share and applies it before sshd, WireGuard and the agent; a base VM has no share, so the unit skips
+  %%> - the boot phase also matches the uplink by type and name (`00-orbit-task-vm.network`), never by the base VM's MAC, so every copy gets an address; it waits online for IPv4 only, masks the apt and motd timers, and starts Docker at boot, as its package does
   SW->>H: Stop and snapshot<br/>VM and seed
   %%> What it does:
   %%> - stops the base VM and snapshots it and its seed volume under the run's name; ZFS snapshots, about 1 s
@@ -54,7 +56,7 @@ sequenceDiagram
   %%> - in the task VM project: every image but the stock source image, the volumes of retired image seeds (`orbit-topology-seed-*`) and the slot-pool baseline (`orbit-baseline-*`)
   %%> - the retired projects the Gateway names (`orbit-baselines`, `orbit-measure-nr`), with what they hold, and the old images of `orbit-proto`
   %%> - only where the project keeps its own images and volumes; a project that cannot be emptied is reported after the others had their turn
-  %%> - a failure here fails no refresh: the next refresh removes what is left
+  %%> - a failure here fails no refresh: the next refresh removes what is left, and the Operation's result says `host_clean: failed`
   alt the run passes
     SW-->>GW: Run succeeded<br/>new snapshot
     Note over GW: Promote<br/>record the new snapshot

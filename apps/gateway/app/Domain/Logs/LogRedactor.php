@@ -7,6 +7,7 @@ namespace App\Domain\Logs;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Instance;
 use App\Models\Process;
+use App\Models\Schedule;
 use SensitiveParameter;
 
 /**
@@ -39,13 +40,17 @@ final readonly class LogRedactor
     public function __construct(private CommandActivityInputSanitizer $sanitizer) {}
 
     /**
-     * The values to replace in the log of an Instance or a Process, longest first: each stored
+     * The values to replace in the log of an Instance, a Process or a Schedule, longest first: each stored
      * environment value of eight characters or more, except the values of the exact `SettingKeys`.
      *
      * @return list<string>
      */
-    public function valuesFor(#[SensitiveParameter] Instance|Process $record): array
+    public function valuesFor(#[SensitiveParameter] Instance|Process|Schedule $record): array
     {
+        if ($record instanceof Schedule) {
+            return $record->target instanceof Instance ? $this->valuesFor($record->target) : [];
+        }
+
         $environment = [];
 
         if ($record instanceof Instance) {

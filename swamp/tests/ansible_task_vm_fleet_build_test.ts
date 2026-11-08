@@ -128,6 +128,7 @@ case "$*" in
   *" -- cat /etc/ssh/ssh_host_ed25519_key.pub") echo "ssh-ed25519 AAAAgateway root@nested-gateway" ;;
   *" -- cat /home/orbit/.orbit/ssh/id_ed25519.pub") echo "ssh-ed25519 AAAAgatewaykey orbit@nested-gateway" ;;
   *" -- ssh-keygen -lf "*) echo "256 SHA256:fp-$2 root@$2 (ED25519)" ;;
+  "file push "*) cat >> "${folder}/pushed-input" ;;
   *" php artisan orbit:"*) n=$(($(cat "${folder}/operations" 2>/dev/null || echo 0) + 1)); echo "$n" > "${folder}/operations"; echo "Operation #$n queued." ;;
   *" select status from operations "*) echo succeeded ;;
   *"/api/v1/doctor "*) echo '{"data":{"healthy":true}}' ;;
@@ -185,6 +186,8 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
       "ansible_become=false",
       "-e",
       "ansible_python_interpreter={{ ansible_playbook_python }}",
+      "-e",
+      `incus_seed_disk=${folder}/seed-disk`,
       `${folder}/play.yml`,
     ],
     env: {
@@ -207,11 +210,13 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
   );
   const preseed = read("preseed");
   const stamped = read("stamps/operator") !== "";
+  const pushedInput = read("pushed-input");
   Deno.removeSync(folder, { recursive: true });
   return {
     log,
     preseed,
     stamped,
+    pushedInput,
     passed: done.success,
     output: new TextDecoder().decode(done.stdout) +
       new TextDecoder().decode(done.stderr),
@@ -229,14 +234,14 @@ Deno.test({
     "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
   ignore: !hasAnsible,
   fn() {
-    const { log, preseed, passed, output } = run([], false); // The run stops at the operator join, which needs root and systemd (see the header).
+    const { log, preseed, passed, output, pushedInput } = run([], false); // The run stops at the operator join, which needs root and systemd (see the header).
     assertEquals(passed, false, output);
     // The run stops at the start of the operator join: at the fake `wg`, or one task earlier where `/etc/wireguard` is not readable,
     // as on a CI runner.
     const failed = output.indexOf("FAILED!");
     const stop = output.lastIndexOf("TASK [", failed);
     assert(
-      [
+      failed >= 0 && stop >= 0 && [
         output.indexOf("TASK [Look for the operator key]"),
         output.indexOf("TASK [Make the operator key]"),
       ].includes(stop) &&
@@ -245,6 +250,10 @@ Deno.test({
     );
     assertStringIncludes(preseed, "name: oe-nested");
     assertStringIncludes(preseed, "ipv4.address: 10.232.2.1/24");
+    assertStringIncludes(
+      pushedInput,
+      "ssh-ed25519 AAAAgatewaykey orbit@nested-gateway",
+    );
     const steps = [
       "incus admin init --preseed",
       "incus list --format json",

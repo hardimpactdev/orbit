@@ -428,6 +428,8 @@ The wait for a nested fleet is not a phase of the role: it is the task file `swa
 
 The nested guests are Incus system containers. The role serves them nothing: each gets the checkout of its task as an Incus disk device, and a restore of `base` is a plain restore and a reboot (see [compute drivers](/reference/compute-drivers)).
 
+Before starting a base VM, the host playbook converges its [firmware boot setting](/reference/compute-drivers#size-of-a-task-vm). Task copies inherit it from the base snapshot, so the OVMF menu adds no delay.
+
 On a base snapshot refresh or a template build the role first waits until SSH answers and cloud-init has finished. The `clean` phase leaves the temporary files of Ansible itself alone. The `template` phase checks the firewall of the template that a template build made. A test of the role fails any condition that YAML does not parse as a string, because Ansible refuses it at run time.
 
 The role reads the package indexes of the Ubuntu snapshot with the `apt` module's own retry (`update_cache_retries`: twelve attempts, backing off to 30 seconds, about four minutes). It installs packages with the task keywords `retries`, `until` and `delay`: four retries, 30 seconds apart. The retries also apply to a permanent failure such as a missing pin, which then fails after two more minutes. The snapshot service answers 503 now and then, for an index and for a package. Rule 6 of the Swamp shape allows this tool-native retry and no shell loop.
@@ -586,6 +588,24 @@ Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollba
 Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with one dispatch slot per CPU core each (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (`root` and the group of the swamp account, `0640`, in folders of `0750`) before adding the role.
+
+Swamp ends authenticated WebSockets after eight hours, even while a worker refreshes its separate 15-minute session credential. Workers keep persistent connections and `--concurrency auto`. The swamp role installs one renewal service for the pair. Its timer starts one minute after activation and checks hourly. A worker whose recorded enrollment is at least three hours old is renewed with the first SIGTERM's native drain: active dispatches finish before it disconnects.
+
+The service renews `a` only while `b` accepts work, waits for a different enrolled instance of `a` and a native `worker verify` check, then renews `b`. systemd serializes starts of the single service; use that service for manual renewal too.
+
+Before draining, the survivor must have spare dispatch capacity and pass its live probe. A fresh pool check must show the same instance still accepting with a free slot. A full survivor defers the round without draining either worker; the service retries after five minutes. Other probe failures or failed re-enrollment stop the sequence. Retries skip freshly renewed connections.
+
+The service reads each unit's latest enrollment receipt from the journal and uses that name for both pool selection and verification. This covers bootstrap names (`orbit-worker-a/b`), timestamped remint names and existing swamp-role names. The rendered unit contains token-file paths but no worker name, so renewal uses the journal receipt. A missing receipt stops maintenance without touching either worker and logs that the eight-hour cap can still abort active dispatches. Peer failure during a blocking drain is detected after the restart returns; the service logs this limit before draining.
+
+Each worker has `TimeoutStopSec=4500` and `KillMode=mixed`: only the main process receives SIGTERM, leaving its dispatch children to finish. The 75-minute allowance gives headroom over the observed cold refresh step of about 50 minutes. It is not a bound on arbitrary hung work; systemd can kill work beyond that allowance.
+
+Worker crashes retry after 30 seconds, with at most five starts in five minutes. A permanent startup failure hits that limit; maintenance can retry after five minutes instead of looping every second. An unhealthy peer, failed credentials or a prolonged scheduling failure can prevent safe renewal; the service reports failure rather than intentionally draining both workers.
+
+Orbit uses no worker-affinity groups; later steps can queue on the other worker during a drain. Swamp fails an affinity group when its worker drains, so adding affinity requires a different renewal design.
+
+After the Gateway release and its Swamp load, converge the role with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the local Ansible renewal playbook and tasks and its Gateway-rendered service and timer. The native `@swamp/cfgmgmt/systemd` step applies the worker template and reloads systemd. A dependent native job enables and starts the timer only after both workers are started. Swamp load alone does not apply these host files. Convergence leaves active workers running; the timer then begins safe sequential renewal without a serve restart.
+
+Watch `orbit-swamp-worker-renewal.service`, `orbit-swamp-worker@a`, `@b` and serve. Confirm `Draining`, successful active dispatch completion, `Drain complete`, a new enrolled instance and a successful live check for `a` before `b` drains. Keep a multi-step run active across a renewal and confirm later steps succeed. At the old eight-hour boundary, there should be no code 4002 or write-then-drop failure. Allow time for two drains when activating the first cycle on old connections.
 
 The workers run as that account and read the files themselves. The role sets the folders to `0750` and the files to `0640`, with `chown` and `chmod` in two steps, before it writes the worker unit. The next converge repairs a Node whose tokens were placed as `root` `0600`. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 

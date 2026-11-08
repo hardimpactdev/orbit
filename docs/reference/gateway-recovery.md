@@ -167,15 +167,18 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 
 1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
 2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
-3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-4. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
-5. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
+3. beside them, it compares the commit's `swamp/ansible/requirements.yml` with the pin the swamp role last installed collections from, `/opt/orbit/ansible/requirements.yml`, and installs nothing;
+4. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
 A load-input change must release before a workflow requires its new fields. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
+
+When the two files differ, only the check fails: the load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
@@ -335,9 +338,9 @@ The Gateway scheduler runs `gateway:release:auto` every five minutes through `Ga
 Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", as soon as Swamp has loaded the commit. The refresh runs while the release switches, and it never holds the release: the step is best effort. A refresh that is open on a host keeps running, and the newest commit waits behind it.
 
 ```bash
-orbit gateway:release:auto:enable
-orbit gateway:release:auto:status
-orbit gateway:release:auto:disable
+orbit gateway:auto-release:enable
+orbit gateway:auto-release:status
+orbit gateway:auto-release:disable
 ```
 
 A Gateway that ran the release unit still has `orbit-gateway-release.timer` until its [gateway role convergence](/cli/node/role-add) runs. Until then the timer runs the same tick every minute, more often than the scheduler; the release lock and the admission check make the second tick harmless. Its `ExecStopPost` names the removed `gateway:release:settle`, so the unit reports a failed stop step. The convergence stops and disables the timer, then removes it and the release services. Converge only while the current release runs the tick from the scheduler: a rollback to an older release then has no tick until a newer release goes live.
@@ -392,7 +395,7 @@ When a manual deploy goes live, the Gateway asks GitHub whether a newer green co
 After a failure, decide between a forward fix, a [rollback](#roll-back), and a restore from the snapshot. Then clear a pause that is left:
 
 ```bash
-orbit gateway:release:auto:resume
+orbit gateway:auto-release:resume
 ```
 
 Resume removes the pause and the marker. The next tick releases the newest green commit, also over a manual release from before the resume. Resume refuses with `gateway.release_not_paused` when nothing is paused. A commit that failed is not released again automatically.
@@ -410,7 +413,7 @@ While it is up to date, the runner reads the branch head at most every 5 minutes
 
 ### Read the state
 
-`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
+`orbit gateway:auto-release:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
 
 
 ## Recover a failed update

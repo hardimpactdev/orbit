@@ -70,11 +70,11 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'database:list',
         'database:query',
         'database:schema',
-        'database:server:close',
         'database:server:create',
         'database:server:destroy',
         'database:server:list',
         'database:server:show',
+        'database:server:update',
         'database:show',
         'database:tables',
         'database:update',
@@ -93,10 +93,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'firewall:list',
         'firewall:remove',
         'gateway:add',
-        'gateway:release:auto:disable',
-        'gateway:release:auto:enable',
-        'gateway:release:auto:resume',
-        'gateway:release:auto:status',
+        'gateway:auto-release:disable',
+        'gateway:auto-release:enable',
+        'gateway:auto-release:resume',
+        'gateway:auto-release:status',
         'gateway:release:deploy',
         'gateway:release:list',
         'gateway:release:rollback',
@@ -194,8 +194,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'project:review-and-merge:enable',
         'project:show',
         'project:update',
+        'realtime:logs',
         'realtime:show',
-        'realtime:tail',
         'route:create',
         'route:destroy',
         'route:list',
@@ -639,7 +639,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'database:server:close' => [['slug'], ['idempotency-key' => null, 'json' => false]],
+        'database:server:update' => [['slug'], ['require-password' => false, 'idempotency-key' => null, 'json' => false]],
         'database:server:create' => [
             ['slug'],
             ['node' => null, 'driver' => null, 'tag' => null, 'port' => null, 'idempotency-key' => null, 'json' => false],
@@ -677,10 +677,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'firewall:list' => [[], ['node' => null, 'managed' => false, 'live' => false, 'json' => false]],
         'firewall:remove' => [['port'], ['node' => null, 'from' => null, 'protocol' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'accept-ca-change' => false, 'use' => false, 'json' => false]],
-        'gateway:release:auto:disable' => [[], ['json' => false]],
-        'gateway:release:auto:enable' => [[], ['json' => false]],
-        'gateway:release:auto:resume' => [[], ['json' => false]],
-        'gateway:release:auto:status' => [[], ['json' => false]],
+        'gateway:auto-release:disable' => [[], ['json' => false]],
+        'gateway:auto-release:enable' => [[], ['json' => false]],
+        'gateway:auto-release:resume' => [[], ['json' => false]],
+        'gateway:auto-release:status' => [[], ['json' => false]],
         'gateway:release:deploy' => [['commit'], ['json' => false]],
         'gateway:release:list' => [[], ['json' => false]],
         'gateway:release:rollback' => [['release'], ['yes' => false, 'json' => false]],
@@ -929,7 +929,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'profile' => [['url'], ['instance' => null, 'path' => null, 'as-first-user' => false, 'user' => null, 'json' => false]],
         'realtime:show' => [[], ['json' => false]],
-        'realtime:tail' => [[], ['types' => null, 'json' => false]],
+        'realtime:logs' => [[], ['follow' => false, 'types' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
             ['instance', 'domain'],
@@ -966,7 +966,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'json' => false,
         ]],
         'schedule:list' => [[], ['project' => null, 'json' => false]],
-        'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
+        'schedule:logs' => [['schedule'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'schedule:destroy' => [['schedule'], ['project' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'schedule:run' => [['schedule'], ['idempotency-key' => null, 'json' => false]],
         'schedule:show' => [['schedule'], ['project' => null, 'json' => false]],
@@ -1029,7 +1029,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ]],
         'vault:status' => [[], ['json' => false]],
         'vault:sync' => [[], ['idempotency-key' => null, 'json' => false]],
-        'vault:teardown' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
+        'vault:destroy' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
     ];
     $globalOptions = [
         'help',
@@ -1180,7 +1180,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'database:show' => [['slug' => 'app'], ...$profileMissing],
         'database:tables' => [['slug' => 'app'], ...$profileMissing],
         'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
-        'database:server:close' => [['slug' => 'beast-valkey'], ...$profileMissing],
+        'database:server:update' => [['slug' => 'beast-valkey', '--require-password' => true], ...$profileMissing],
         'database:server:create' => [['slug' => 'beast-mysql', '--node' => '7'], ...$profileMissing],
         'database:server:destroy' => [['slug' => 'beast-mysql', '--force' => true], ...$profileMissing],
         'database:server:list' => [[], ...$profileMissing],
@@ -1213,10 +1213,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_invalid',
             'message' => 'Gateway URL must use HTTPS.',
         ],
-        'gateway:release:auto:disable' => [[], ...$profileMissing],
-        'gateway:release:auto:enable' => [[], ...$profileMissing],
-        'gateway:release:auto:resume' => [[], ...$profileMissing],
-        'gateway:release:auto:status' => [[], ...$profileMissing],
+        'gateway:auto-release:disable' => [[], ...$profileMissing],
+        'gateway:auto-release:enable' => [[], ...$profileMissing],
+        'gateway:auto-release:resume' => [[], ...$profileMissing],
+        'gateway:auto-release:status' => [[], ...$profileMissing],
         'gateway:release:deploy' => [['commit' => 'abcdef1234567890abcdef1234567890abcdef12'], ...$profileMissing],
         'gateway:release:list' => [[], ...$profileMissing],
         'gateway:release:rollback' => [['release' => 'abcdef123456', '--yes' => true], ...$profileMissing],
@@ -1338,7 +1338,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'message' => 'URL to profile must be an absolute HTTP or HTTPS URL.',
         ],
         'realtime:show' => [[], ...$profileMissing],
-        'realtime:tail' => [[], ...$profileMissing],
+        'realtime:logs' => [['--follow' => true], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
         'route:create' => [['instance' => '1', 'domain' => 'app.test'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],
@@ -1545,4 +1545,23 @@ it('does not register removed Instance path proxy commands', function (string $o
 
 it('keeps trusted automatic starts on API and MCP while CLI deploys remain manual', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKey('instance:deploy:automatic');
+});
+
+it('removes retired teardown commands and vocabulary exceptions', function (): void {
+    $commands = $this->app->make(Kernel::class)->all();
+
+    expect(array_keys($commands))->not->toContain('ai-router:teardown', 'vault:teardown')
+        ->and(CommandVocabulary::allowsCommand('ai-router:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('vault:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('ai-router:teardown'))->toBeFalse()
+        ->and(CommandVocabulary::allowsCommand('vault:teardown'))->toBeFalse();
+});
+
+it('registers only the new automatic release family', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    foreach (['status', 'enable', 'disable', 'resume'] as $action) {
+        expect($commands)->toHaveKey('gateway:auto-release:'.$action)
+            ->not->toHaveKey('gateway:release:auto:'.$action);
+    }
 });

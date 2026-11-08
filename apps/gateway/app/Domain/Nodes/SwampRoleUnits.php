@@ -7,8 +7,8 @@ namespace App\Domain\Nodes;
 use App\Domain\Operations\OperationBudgetTable;
 
 /**
- * The swamp role's systemd units, rendered at admission. Official cfgmgmt steps write them on the Node and never
- * restart serve or a running worker, so a changed unit takes effect at its next restart (ADR 0243).
+ * The swamp role's systemd units, rendered at admission. Convergence applies templates without restarting serve or
+ * active workers. The renewal timer then drains and restarts one worker at a time (ADR 0243).
  */
 final class SwampRoleUnits
 {
@@ -18,8 +18,8 @@ final class SwampRoleUnits
     /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
     public const int ScheduledRuns = 4;
 
-    /** The drain a worker gets on stop before systemd kills it: the value of Swamp's own worker daemon unit. */
-    private const int WorkerStopSeconds = 300;
+    /** Cold refresh dispatches take about 50 minutes; leave 25 minutes of drain headroom. */
+    private const int WorkerStopSeconds = 4500;
 
     private const int Port = 9418;
 
@@ -31,11 +31,12 @@ final class SwampRoleUnits
 
     /**
      * @param  string|null  $repository  The `swamp/` folder serve reads; by default the production checkout of the swamp Node.
-     * @return array{serve:string,worker:string}
+     * @return array{serve:string,worker:string,renewal_service:string,renewal_timer:string}
      */
     public static function for(string $user, int $nodeId, ?string $repository = null): array
     {
-        return ['serve' => self::serve($user, $repository), 'worker' => self::worker($user, $nodeId)];
+        return ['serve' => self::serve($user, $repository), 'worker' => self::worker($user, $nodeId),
+            'renewal_service' => self::renewalService($user, $nodeId), 'renewal_timer' => self::renewalTimer()];
     }
 
     /**
@@ -48,7 +49,7 @@ final class SwampRoleUnits
         $home = self::WorkerHome;
 
         return "[Unit]\nDescription=Orbit swamp role worker %i\nAfter=network-online.target\n"
-            ."Wants=network-online.target\nStartLimitIntervalSec=0\n\n"
+            ."Wants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=5\n\n"
             ."[Service]\nType=exec\nUser={$user}\nStateDirectory=orbit-swamp-worker/%i\n"
             ."WorkingDirectory={$home}\n"
             ."Environment=HOME={$home} SWAMP_HOME={$home}/home SWAMP_CONFIG_DIR={$home}/config"
@@ -56,10 +57,26 @@ final class SwampRoleUnits
             .'ExecStart=/usr/local/bin/swamp worker connect ws://127.0.0.1:'.self::Port.' --token-file='.self::Credentials.'/%i/enrollment.token'
             .' --server-token-file='.self::Credentials."/%i/server.token --cache-dir={$home}/cache"
             .' --concurrency '.self::WorkerConcurrency." --label role=swamp --label node={$nodeId}\n"
-            ."Restart=on-failure\nRestartSec=15\nKillMode=mixed\n"
+            ."Restart=on-failure\nRestartSec=30\nKillMode=mixed\n"
             .'TimeoutStopSec='.self::WorkerStopSeconds."\nUMask=0077\n"
             ."StandardOutput=journal\nStandardError=journal\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
+    }
+
+    private static function renewalService(string $user, int $nodeId): string
+    {
+        return "[Unit]\nDescription=Renew Orbit swamp worker connections sequentially\n"
+            ."After=orbit-swamp-serve.service\nStartLimitIntervalSec=0\n\n"
+            ."[Service]\nType=oneshot\n"
+            ."ExecStart=/usr/bin/timeout 10500 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/worker-renewal.yml -e orbit_user={$user} -e orbit_node_id={$nodeId}\n"
+            ."TimeoutStartSec=3h\nRestart=on-failure\nRestartSec=5min\nUMask=0077\n";
+    }
+
+    private static function renewalTimer(): string
+    {
+        return "[Unit]\nDescription=Schedule Orbit swamp worker connection renewal\n\n"
+            ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=1h\nAccuracySec=1s\n\n"
+            ."[Install]\nWantedBy=timers.target\n";
     }
 
     /**

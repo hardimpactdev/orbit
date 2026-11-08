@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Actions\TaskVms\StartTaskVmResumeAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -72,14 +74,44 @@ final readonly class TaskVmSlotRuns
         ];
     }
 
-    /** The release as its own run, for a task start that failed or a group that ended without a cancel run. */
+    /** The release as its own run, for a task start that failed or a group that ended without a cancel run. An open release is returned as it is. */
     public function startRelease(TaskVm $slot, string $caller): Operation
     {
         return DB::transaction(function () use ($slot, $caller): Operation {
-            $slot->update(['state' => TaskVmState::Releasing]);
+            $slot = TaskVm::query()->lockForUpdate()->findOrFail($slot->id);
+            $open = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')->where('target_id', $slot->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->first();
 
-            return $this->start->execute(TaskVmSlotPool::ReleaseKind, 'task_vm', $slot->id, (int) $slot->host_node_id, $this->release($slot), $caller, null);
+            return $open ?? $this->start->execute(TaskVmSlotPool::ReleaseKind, 'task_vm', $slot->id, (int) $slot->host_node_id, $this->reserveRelease($slot), $caller, null);
         });
+    }
+
+    /**
+     * The one admission of a release, for its own run and for a cancel run: it locks and re-reads the VM, refuses while any Operation is open
+     * on it, such as a resume that boots it, and marks it releasing, so no later resume starts it ({@see StartTaskVmResumeAction}). Call it in
+     * the transaction that admits the release.
+     *
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
+     */
+    public function reserveRelease(TaskVm $slot): array
+    {
+        $slot = TaskVm::query()->lockForUpdate()->findOrFail($slot->id);
+        self::assertReleasable($slot);
+        $release = $this->release($slot);
+        $slot->update(['state' => TaskVmState::Releasing]);
+
+        return $release;
+    }
+
+    /** Refuses with `operation.target_busy` while an Operation, a release or a resume, is open on the VM. Reads without a lock. */
+    public static function assertReleasable(TaskVm $slot): void
+    {
+        $open = Operation::query()->where('target_type', 'task_vm')->where('target_id', $slot->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->first();
+        if ($open !== null) {
+            throw new ResourceOperationException('operation.target_busy', "The {$open->kind} Operation of task VM [{$slot->name}] is still running; try again when it ends.", 409,
+                details: ['operation_id' => $open->id]);
+        }
     }
 
     /**
@@ -90,7 +122,23 @@ final readonly class TaskVmSlotRuns
      */
     public function release(TaskVm $slot): array
     {
-        return ['intent' => [...$this->target($slot), 'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
+        // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host. It deletes by name, so
+        // it deletes only a task VM's name: `<host>-tvm-<n>` of slot n, under the host name it had then, or `tvm-<id>` of the old pool. A
+        // name of another shape, such as a base or a seed, refuses. Names are unique, so no task VM name is another VM's or its seed.
+        $shape = $slot->slot_number === null ? '/^tvm-[0-9]+$/' : '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-tvm-'.$slot->slot_number.'$/';
+        if (preg_match($shape, $slot->name) !== 1) {
+            throw new ResourceOperationException('task_vm.release_refused', "Task VM [{$slot->name}] has no task VM name (<host>-tvm-<slot> or tvm-<id>), so no release deletes it.", 409,
+                details: ['task_vm_id' => $slot->id]);
+        }
+
+        return ['intent' => ['host' => $this->host($slot), 'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot)],
+            'hub_peer' => $this->identity->hubPeer($slot)], 'execution_secrets' => []];
+    }
+
+    /** A start's seed clone is `<name>-seed`; a VM of the old pool, which has no slot number, has `<name>-topology-seed`. */
+    public static function seedClone(TaskVm $vm): string
+    {
+        return $vm->name.($vm->slot_number === null ? '-topology-seed' : '-seed');
     }
 
     /** The vault key of the claim's Pi token, which each turn of the group reads. */
@@ -112,17 +160,24 @@ final readonly class TaskVmSlotRuns
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
 
+    /** @return array{node_id:int,ssh:array<string,mixed>,project:string,pool:string} */
+    private function host(TaskVm $slot): array
+    {
+        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
+        $location = $this->settings->host($host->id);
+
+        return ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool];
+    }
+
     /** @return array{host:array<string,mixed>,slot:array<string,mixed>} the host and the VM, as every slot step names them */
     private function target(TaskVm $slot): array
     {
-        $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
         $node = $slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its Node.', 409);
-        $location = $this->settings->host($host->id);
         $pi = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
         return [
-            'host' => ['node_id' => $host->id, 'ssh' => $this->ssh->forNode($host), 'project' => $location->project, 'pool' => $location->pool],
-            'slot' => ['name' => $slot->name, 'seed_clone' => $slot->name.'-seed', 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
+            'host' => $this->host($slot),
+            'slot' => ['name' => $slot->name, 'seed_clone' => self::seedClone($slot), 'checkout' => $this->workspace->checkoutPath((int) $slot->slot_project_id),
                 'pi_unit' => $this->systemd->unitName($pi)],
         ];
     }
