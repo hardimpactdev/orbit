@@ -4,50 +4,66 @@ sidebarTitle: "node:show"
 description: "Show one Node with its status, agent, roles, addresses, apps folder, and access grants."
 ---
 
+## Usage
+
 ```bash
 orbit node:show <node> [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Positive numeric Node ID; see the [Node selector contract](/cli/node). |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the Node as JSON, including its stored `settings`. |
+| `--json` | off | Use the [shared CLI output contract](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:show 7
 ```
 
-The command shows what Orbit has recorded for the Node. It does not contact the Node, so it works while the Node is unreachable. The caller needs an access grant to the Node.
+## How it works
+
+<div className="flow-at" data-chart="node/show"></div>
+
+Orbit reads its recorded Node details without contacting the Node, so the command works while the Node is unreachable. Access follows the [Node grant and Gateway authority rules](/cli/node/access-add). Repeating the command reads the current recorded state again; it changes nothing and has no skip outcome. A failed read leaves the Node unchanged, with no partial change to recover.
+
+The detail tree is headed by the Node's name.
 
 | Field | Meaning |
 | --- | --- |
 | `ID`, `Status` | The Node's ID and recorded status. |
 | `Agent` | The Node agent's liveness, below. |
-| `Roles` | The Node's active roles. |
-| `SSH` | The managed user, public address and port. |
-| `Cluster` | The name of the Cluster the Node belongs to. |
+| `Roles` | The Node's assigned roles. |
+| `SSH` | The managed user, public SSH host and port. |
+| `Cluster` | The Node's recorded Cluster membership. |
 | `WireGuard`, `LAN` | The Node's addresses. |
 | `WireGuard public key`, `WireGuard endpoint override`, `DNS server override` | The Node's network settings. |
 | `TLD` | The Node's development TLD, with a leading dot. |
 | `Platform` | The platform and architecture. |
 | `Apps folder` | The [apps folder](/reference/node-settings#set-the-apps-root) where Instances live. |
 | `Access to`, `Accessible by` | The Nodes this Node has an access grant to, and the Nodes that have one to it, each as name and ID. |
-| `Failure` | The failed step and error code, only when the Node has a recorded failure. |
+| `Failure` | The failed step and error code, only when either has a recorded value. |
 
-A missing value shows `—`.
+The Node response includes stored `settings` and access grants under `access.can_access` and `access.accessible_by`. Each related Node has an `id` and `name`.
 
-The JSON field `agent` has a `state` and a `since`:
+The `agent` field has a `state` and a `since`:
 
 | `state` | Meaning |
 | --- | --- |
 | `online` | An agent event arrived in the last 15 seconds. |
-| `offline` | No event for longer; `since` is the time of the last one. |
-| `not_seen` | The Gateway never received an event from this agent. |
-| `unknown` | The Gateway's [agent view](/reference/node-agent#gateway-view) is down, so it cannot tell. |
+| `offline` | No recent event; `since` is the time of the last one. |
+| `not_seen` | Orbit has never received an event from this agent. |
+| `unknown` | Orbit's [agent view](/reference/node-agent#gateway-view) is unavailable or stale, so it cannot tell. |
 
 Human output shows an offline agent as `offline since <time>`. A Node that runs no observing agent, such as an unmanaged Node, has `agent: null`.
 
-An ID that is not a positive integer is refused with `node.id_invalid`. A Node the caller has no access grant to is refused with `node_access.required`.
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The supplied Node ID is not a positive integer. |
+| `http.404` | No Node has the supplied ID. |
+| `node_access.required` | The calling Node is not authorized to read the target Node. |
+
+These refusals exit 1. Successful reads exit 0, even when the Node's recorded status is failed or its agent is offline.

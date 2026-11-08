@@ -1,0 +1,49 @@
+sequenceDiagram
+  %% Target design: docs/cli/node/show.mdx; read-only Gateway state, per docs/cli/README.md.
+  %% status: draft
+  %% command: node:show
+  %% kind: node.show
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: node:show NODE
+  %%> Command:
+  %%> - orbit node:show NODE
+  %%> - syntax: orbit node:show <node> [--json]
+  %%> Input:
+  %%> - a positive numeric Node ID; the CLI refuses an invalid value locally with node.id_invalid
+  GW->>GW: Resolve the Node
+  %%> What it does:
+  %%> - looks up the recorded Node, without contacting it
+  alt Node not found
+    %% path: not-found
+    GW--xCLI: http.404
+    %%> Result:
+    %%> - no Node has that ID; nothing changes
+  else Node found
+    %% path: found
+    GW->>GW: Check access grant
+    %%> Requirements:
+    %%> - access is authorized under docs/cli/node/access-add.mdx, including Gateway authority
+    alt Access refused
+      %% path: access-refused
+      GW--xCLI: node_access.required
+      %%> Result:
+      %%> - no Node details are returned; nothing changes
+    else Access granted
+      %% path: access-granted
+      GW->>GW: Read recorded details
+      %%> What it does:
+      %%> - loads roles, addresses, settings and access grants from Gateway records
+      %%> - reads agent liveness from the Gateway's agent view
+      %%> Not included:
+      %%> - no Node contact, task or Swamp run
+      GW-->>CLI: Return the Node
+      %%> Result:
+      %%> - an unreachable Node remains readable
+      %%> Retry:
+      %%> - a repeat reads the current recorded state again; there is no mutation or skip
+    end
+  end

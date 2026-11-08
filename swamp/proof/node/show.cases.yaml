@@ -1,0 +1,120 @@
+# The cases of node:show. Format: docs/reference/verification-cases.
+# This read has no partial mutation or rollback path.
+command: node:show
+chart: node/show
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+uncovered:
+  "path:not-found": "Needs a fixture that binds a guaranteed absent positive Node ID; the runner only binds existing fleet IDs. This would check http.404 without a hard-coded ID."
+  "response:fields": "Needs nested JSON assertions and captured response values to check the selected ID, addresses, roles, settings and both access lists against recorded state. The record step only reads list sections, not a Node detail document."
+  "effect:read-only": "Needs a Node-record baseline provider and a no-Node-contact assertion to prove that successful and refused reads leave all Node records unchanged and never contact the target. Existing cases check that no Operation is created."
+  "response:agent-states": "Needs agent-view fixtures and nested JSON assertions for online, not_seen, unknown, agent: null and the exact offline since timestamp. The offline case below checks the existing human label with the target unreachable."
+  "response:failure-details": "Needs a failed-Node record fixture and nested JSON assertions to check failed_step and error_code, the conditional Failure field and a successful read of a failed Node. No partial-change failure case applies to this read-only command."
+  "render:cluster-name": "Needs a Cluster membership fixture that binds its name and an output assertion using that value to check related-record naming under the CLI standard. The current response carries only cluster_id."
+  "render:missing-values": "Needs Node-record fixtures with missing optional fields to check empty access lists and incomplete SSH endpoints against the CLI result standard."
+  "negative:read-only": "Needs named CLI assertions and safe response mutations to prove that the read-only expectations can fail. Only probe assertions have IDs, and deleting a UFW rule cannot invalidate a Node detail read."
+
+cases:
+  - id: recorded-node
+    batch: fresh-fleet
+    covers: [main, found, access-granted]
+    summary: Required arguments alone show the recorded Node and create no Operation.
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [json, human]
+          expect:
+            exit: 0
+            status: active
+            request: none
+            human: ["Node: app-dev", ID, Status, Agent, Roles, SSH, Cluster, WireGuard, LAN, TLD, Platform, Access to, Accessible by]
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: apps-folder-label
+    batch: fresh-fleet
+    covers: [main, found, access-granted]
+    summary: The detail tree labels the Instance root Apps folder.
+    fails_today: The CLI labels settings.apps.path Projects path instead of Apps folder.
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [human]
+          expect: {exit: 0, request: none, human: "Apps folder"}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: repeat-read
+    batch: fresh-fleet
+    covers: [main, found, access-granted]
+    summary: A repeat returns the Node again rather than a mutation or skip outcome.
+    stages:
+      - act:
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect: {exit: 0, status: active, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+      - act:
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect: {exit: 0, status: active, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+
+  - id: invalid-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: Invalid numeric selectors are refused without creating an Operation.
+    variants:
+      - {name: name, value: app-dev}
+      - {name: zero, value: "0"}
+      - {name: fractional, value: "1.5"}
+    act:
+      - cli:
+          run: [node:show, "${value}"]
+          forms: [json, human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: negative-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: A negative ID passed as an argument is refused as an invalid Node ID.
+    act:
+      - cli:
+          # Human form avoids the runner appending --json after the -- delimiter.
+          run: [node:show, "--", "-1"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unreachable-node
+    batch: node-down
+    covers: [main, found, access-granted]
+    summary: An unreachable Node remains readable with offline agent liveness.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, status: active, request: none, human: ["Node: app-dev", "offline since "]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: access-required
+    batch: no-grant
+    covers: [main, found, access-refused]
+    summary: A caller without a grant to the target receives no Node details.
+    act:
+      - cli:
+          as: app-prod
+          run: [node:show, "${app-dev.id}"]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
