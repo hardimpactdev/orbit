@@ -18,7 +18,7 @@ These commands belong to the `vault` [extension](/cli/extension). `list` and `he
 | [`vault:setup`](/cli/vault/setup) | Store the Vaultwarden account, organization, and collection. |
 | [`vault:status`](/cli/vault/status) | Show the setup and the state of the published items. |
 | [`vault:sync`](/cli/vault/sync) | Publish changes now and repair changed or missing items. |
-| [`vault:teardown`](/cli/vault/teardown) | Delete the published items and the stored account. |
+| [`vault:destroy`](/cli/vault/destroy) | Delete the published items and the stored account. |
 
 Every command accepts `--json`.
 
@@ -27,8 +27,8 @@ Every command accepts `--json`.
 | Code | Meaning |
 | --- | --- |
 | `extension.disabled` | The `vault` extension is off on the Gateway. |
-| `input.confirmation_required` | `vault:teardown` ran without `--yes` where it cannot ask. |
-| `input.cancelled` | The operator declined the `vault:teardown` question. |
+| `input.confirmation_required` | `vault:destroy` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `vault:destroy` question. |
 | `input.invalid` | `vault:setup` has no `--client-id`, `--organization`, or `--collection`. |
 | `vault.secret_required` | `vault:setup` has no `--client-secret-file` or `--master-password-file`. |
 | `vault.secret_invalid` | A secret file is unreadable or empty. |

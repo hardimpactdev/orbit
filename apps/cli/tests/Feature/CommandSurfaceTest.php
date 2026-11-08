@@ -194,8 +194,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'project:review-and-merge:enable',
         'project:show',
         'project:update',
+        'realtime:logs',
         'realtime:show',
-        'realtime:tail',
         'route:create',
         'route:destroy',
         'route:list',
@@ -929,7 +929,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'profile' => [['url'], ['instance' => null, 'path' => null, 'as-first-user' => false, 'user' => null, 'json' => false]],
         'realtime:show' => [[], ['json' => false]],
-        'realtime:tail' => [[], ['types' => null, 'json' => false]],
+        'realtime:logs' => [[], ['follow' => false, 'types' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
             ['instance', 'domain'],
@@ -966,7 +966,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'json' => false,
         ]],
         'schedule:list' => [[], ['project' => null, 'json' => false]],
-        'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
+        'schedule:logs' => [['schedule'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'schedule:destroy' => [['schedule'], ['project' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'schedule:run' => [['schedule'], ['idempotency-key' => null, 'json' => false]],
         'schedule:show' => [['schedule'], ['project' => null, 'json' => false]],
@@ -1029,7 +1029,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ]],
         'vault:status' => [[], ['json' => false]],
         'vault:sync' => [[], ['idempotency-key' => null, 'json' => false]],
-        'vault:teardown' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
+        'vault:destroy' => [[], ['keep-items' => false, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
     ];
     $globalOptions = [
         'help',
@@ -1338,7 +1338,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'message' => 'URL to profile must be an absolute HTTP or HTTPS URL.',
         ],
         'realtime:show' => [[], ...$profileMissing],
-        'realtime:tail' => [[], ...$profileMissing],
+        'realtime:logs' => [['--follow' => true], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
         'route:create' => [['instance' => '1', 'domain' => 'app.test'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],
@@ -1545,6 +1545,16 @@ it('does not register removed Instance path proxy commands', function (string $o
 
 it('keeps trusted automatic starts on API and MCP while CLI deploys remain manual', function (): void {
     expect(app(Kernel::class)->all())->not->toHaveKey('instance:deploy:automatic');
+});
+
+it('removes retired teardown commands and vocabulary exceptions', function (): void {
+    $commands = $this->app->make(Kernel::class)->all();
+
+    expect(array_keys($commands))->not->toContain('ai-router:teardown', 'vault:teardown')
+        ->and(CommandVocabulary::allowsCommand('ai-router:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('vault:destroy'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('ai-router:teardown'))->toBeFalse()
+        ->and(CommandVocabulary::allowsCommand('vault:teardown'))->toBeFalse();
 });
 
 it('registers only the new automatic release family', function (): void {

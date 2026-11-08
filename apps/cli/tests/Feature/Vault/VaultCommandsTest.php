@@ -7,10 +7,12 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
+use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
-use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -255,54 +257,60 @@ describe('vault:status and vault:sync', function (): void {
     });
 });
 
-describe('vault:teardown', function (): void {
-    it('tears down with explicit consent', function (array $options, bool $keepItems): void {
+describe('vault:destroy', function (): void {
+    it('destroys with explicit consent', function (array $options, bool $keepItems): void {
         $mock = MockClient::global([
-            TeardownVaultRequest::class => vault_cli_status_response(vault_cli_unconfigured_payload()),
+            DestroyVaultRequest::class => vault_cli_destroy_response(),
+            ShowRealtimeRequest::class => MockResponse::make([], 503),
+            ShowOperationRequest::class => vault_cli_destroy_response(),
         ]);
 
-        [$exit, $output] = vault_cli_display('vault:teardown', [...$options, '--yes' => true, '--json' => true]);
+        [$exit, $output] = vault_cli_display('vault:destroy', [...$options, '--yes' => true, '--json' => true]);
 
         expect($exit)->toBe(0)
-            ->and(json_decode($output, true)['configured'])->toBeFalse()
-            ->and($mock->getLastPendingRequest()->body()->all())->toBe(['keep_items' => $keepItems]);
+            ->and(json_decode($output, true)['kind'])->toBe('vault.teardown');
+        $mock->assertSent(fn ($request): bool => $request instanceof DestroyVaultRequest && $request->body()->all() === ['keep_items' => $keepItems]);
     })->with([
         'delete items' => [[], false],
         'keep items' => [['--keep-items' => true], true],
     ]);
 
-    it('refuses teardown without --yes when it cannot prompt', function (array $options, string $expected): void {
+    it('refuses destruction without --yes when it cannot prompt', function (array $options, string $expected): void {
         $mock = MockClient::global();
 
-        [$exit, $output] = vault_cli_display('vault:teardown', $options);
+        [$exit, $output] = vault_cli_display('vault:destroy', $options);
 
         expect($exit)->toBe(1)
             ->and($output)->toContain($expected)
             ->and($mock->getLastPendingRequest())->toBeNull();
     })->with([
         'json' => [['--json' => true], '"code":"input.confirmation_required"'],
-        'noninteractive human' => [[], 'Non-interactive vault teardown requires --yes.'],
+        'noninteractive human' => [[], 'Non-interactive vault destruction requires --yes.'],
     ]);
 
     it('asks a default-No question and sends nothing unless the operator accepts', function (array $keys, bool $accepted): void {
         $result = vault_cli_consent(
-            ['vault:teardown', '--no-ansi'],
+            ['vault:destroy', '--no-ansi'],
             $keys,
             $accepted ? [[
-                'class' => TeardownVaultRequest::class,
-                'body' => ['data' => vault_cli_unconfigured_payload(), 'meta' => ['request_id' => vault_cli_request_id()]],
+                'class' => DestroyVaultRequest::class,
+                'body' => ['data' => vault_cli_destroy_payload(), 'meta' => ['request_id' => vault_cli_request_id()]],
+            ], [
+                'class' => ShowRealtimeRequest::class,
+                'body' => [],
+                'status' => 503,
             ]] : [],
         );
 
         expect($result['status'])->toBe($accepted ? 0 : 1)
             ->and($result['prompt_seen'])->toBeTrue()
             ->and($result['output'])->toContain('permanently deletes every item Orbit published')
-            ->and($result['requests'])->toHaveCount($accepted ? 1 : 0);
+            ->and($result['requests'])->toHaveCount($accepted ? 2 : 0);
 
         if ($accepted) {
             expect($result['requests'][0]['body'])->toBe(['keep_items' => false]);
         } else {
-            expect($result['output'])->toContain('Vault teardown cancelled.');
+            expect($result['output'])->toContain('Vault destruction cancelled.');
         }
     })->with([
         'default No' => [["\r"], false],
@@ -350,7 +358,7 @@ function vault_cli_consent(array $arguments, array $keys, array $replies): array
         'keys' => array_map(base64_encode(...), $keys),
         'arguments' => $arguments,
         'replies' => $replies,
-        'prompt' => 'Tear down Vaultwarden publishing?',
+        'prompt' => 'Destroy Vaultwarden publishing?',
         'columns' => 200,
     ];
     file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
@@ -433,4 +441,15 @@ function vault_cli_status_response(?array $payload = null): MockResponse
 function vault_cli_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array<string, mixed> */
+function vault_cli_destroy_payload(): array
+{
+    return ['id' => 12, 'kind' => 'vault.teardown', 'target_type' => 'vault', 'target_id' => 7, 'input' => [], 'status' => 'succeeded', 'sequence' => 1];
+}
+
+function vault_cli_destroy_response(): MockResponse
+{
+    return MockResponse::make(['data' => vault_cli_destroy_payload(), 'meta' => ['request_id' => vault_cli_request_id()]], 202);
 }

@@ -19,7 +19,7 @@ final readonly class CloseLogStreamAction
         private LogStreamBroadcaster $broadcaster,
     ) {}
 
-    public function execute(LogStreamRecordType $recordType, int $recordId, string $streamId, Node $viewer): LogStream
+    public function execute(LogStreamRecordType $recordType, int|string $recordId, string $streamId, Node $viewer): LogStream
     {
         $stream = $this->streams->find($streamId);
 

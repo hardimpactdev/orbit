@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, GatewayError } from "../api/client";
-import { instanceLogsQuery, POLL_SECONDS, processLogsQuery } from "../api/queries";
+import {
+    instanceLogsQuery,
+    POLL_SECONDS,
+    processLogsQuery,
+    scheduleLogsQuery,
+} from "../api/queries";
 import { useLiveness } from "./liveness";
 import {
     forgetLogStream,
@@ -16,7 +21,7 @@ import {
 // match `src/api/schema.d.ts`. The events travel over Reverb, so only the reference describes them.
 
 /** The record whose log a stream follows, as its API path segment. */
-export type LogStreamKind = "instances" | "processes";
+export type LogStreamKind = "instances" | "processes" | "schedules";
 
 /** `data` of `POST /api/v1/{instances|processes}/{id}/log-streams` (201). */
 export type LogStreamOpened = {
@@ -103,7 +108,7 @@ export const initialLogTailState: LogTailState = {
     reason: null,
 };
 
-export type LogSource = { kind: LogStreamKind; id: number; lines: number };
+export type LogSource = { kind: LogStreamKind; id: number | string; lines: number };
 
 type Stream = {
     id: string;
@@ -226,7 +231,7 @@ export class LogTail {
     }
 
     private get path(): string {
-        return `/api/v1/${this.source.kind}/${this.source.id}/log-streams`;
+        return `/api/v1/${this.source.kind}/${encodeURIComponent(this.source.id)}/log-streams`;
     }
 
     /** The socket while realtime is live, or null while it is down. A new socket ID opens a new stream. */
@@ -517,7 +522,7 @@ export type LogTailView = {
  * One log pane's lines: a live stream while realtime is live, and the 10-second one-shot poll
  * while realtime is down or the Gateway cannot stream. The pane never polls while a stream runs.
  */
-export function useLogTail(kind: LogStreamKind, id: number, lines: number): LogTailView {
+export function useLogTail(kind: LogStreamKind, id: number | string, lines: number): LogTailView {
     const socket = useRealtimeSocket();
     const liveness = useLiveness();
     const [state, setState] = useState<LogTailState>(initialLogTailState);
@@ -551,7 +556,11 @@ export function useLogTail(kind: LogStreamKind, id: number, lines: number): LogT
             ? !(liveness === "live" && socket !== null)
             : logTailPolls(state.status);
     const query = useQuery({
-        ...(kind === "instances" ? instanceLogsQuery(id) : processLogsQuery(id)),
+        ...(kind === "schedules"
+            ? scheduleLogsQuery(String(id))
+            : kind === "instances"
+              ? instanceLogsQuery(Number(id))
+              : processLogsQuery(Number(id))),
         enabled: polls,
         refetchInterval: polls ? POLL_SECONDS * 1000 : false,
     });

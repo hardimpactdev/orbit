@@ -17,8 +17,8 @@ use Orbit\Extensions\Vault\Actions\ShowVaultStatusAction;
 use Orbit\Extensions\Vault\Actions\SyncVaultAction;
 use Orbit\Extensions\Vault\Actions\TeardownVaultAction;
 use Orbit\Extensions\Vault\Data\VaultStatusData;
+use Orbit\Extensions\Vault\Http\Requests\DestroyVaultRequest;
 use Orbit\Extensions\Vault\Http\Requests\SetupVaultRequest;
-use Orbit\Extensions\Vault\Http\Requests\TeardownVaultRequest;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class VaultController extends Controller
@@ -41,7 +41,7 @@ final class VaultController extends Controller
     }
 
     #[StartsOperation('vault.teardown')]
-    public function teardown(TeardownVaultRequest $request, TeardownVaultAction $action): JsonResponse
+    public function destroy(DestroyVaultRequest $request, TeardownVaultAction $action): JsonResponse
     {
         return $this->operationResponse($request, $action->execute($request->keepItems()));
     }

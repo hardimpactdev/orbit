@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\Requests\AiRouter\DestroyAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterProvidersRequest;
 use Orbit\Sdk\Requests\AiRouter\SetupAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterProviderRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
-use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
 use Saloon\Enums\Method;
 
 it('exposes ai-router read and account routes', function (string $class, Method $method, string $path): void {
@@ -22,7 +22,7 @@ it('exposes ai-router read and account routes', function (string $class, Method 
     expect($request->getMethod())->toBe($method)->and($request->resolveEndpoint())->toBe($path);
 })->with([
     [SetupAiRouterRequest::class, Method::POST, '/api/v1/ai-router'],
-    [TeardownAiRouterRequest::class, Method::DELETE, '/api/v1/ai-router'],
+    [DestroyAiRouterRequest::class, Method::DELETE, '/api/v1/ai-router'],
     [ShowAiRouterStatusRequest::class, Method::GET, '/api/v1/ai-router'],
     [ListAiRouterProvidersRequest::class, Method::GET, '/api/v1/ai-router/providers'],
     [ListAiRouterModelsRequest::class, Method::GET, '/api/v1/ai-router/models'],

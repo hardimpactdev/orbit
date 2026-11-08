@@ -16,7 +16,7 @@ final readonly class LogStreamTarget
 {
     public function __construct(
         public LogStreamRecordType $recordType,
-        public int $recordId,
+        public int|string $recordId,
         public Node $node,
         public LogStreamSource $source,
         public bool $sshOnly = false,
