@@ -64,7 +64,7 @@ def proof_run(paths, selection):
     paths = [path for path in paths if path]
     if not paths:
         return False
-    if selection is None or SELECTION in paths:
+    if selection is None:
         return True
     rules = selection_rules(selection)
     for path in paths:

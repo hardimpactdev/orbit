@@ -197,11 +197,12 @@ class BuildPlanTest(unittest.TestCase):
     def test_proof_run_follows_the_selection_list_the_gateway_reads(self):
         selection = SELECTION
         for path in ('swamp/extensions/behaviors/operations/firewall/x.ts', 'apps/gateway/app/Actions/Firewall/A.php',
-                     'tools/swamp-proof-guest/terminal.py', 'swamp/proof/selection.txt'):
+                     'tools/swamp-proof-guest/terminal.py'):
             with self.subTest(path=path):
                 self.assertTrue(self.proof_run([path], selection))
         for path in ('docs/cli/firewall/allow.mmd', 'docs/cli/firewall/allow.mdx', 'README.md', 'apps/web/src/a.ts',
-                     'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/firewall/README.md', 'bin/ci-build-plan'):
+                     'swamp/workflows/workflow-vault-sync.yaml', 'swamp/proof/firewall/README.md', 'bin/ci-build-plan',
+                     'swamp/proof/selection.txt'):
             with self.subTest(path=path):
                 self.assertFalse(self.proof_run([path], selection))
 
@@ -224,7 +225,8 @@ class BuildPlanTest(unittest.TestCase):
 
     def test_the_real_list_keeps_docs_charts_and_cases_out_and_the_job_outside_the_required_jobs(self):
         self.assertFalse(plan.select(['docs/cli/firewall/allow.mmd', 'docs/reference/ci.md'])['proof_run'])
-        self.assertTrue(plan.select(['swamp/proof/selection.txt'])['proof_run'])
+        self.assertFalse(plan.select(['swamp/proof/selection.txt'])['proof_run'])
+        self.assertFalse(plan.select(['apps/gateway/app/Domain/Operations/OperationIntent.php'])['proof_run'])
         self.assertNotIn('proof_run', plan.select(['swamp/proof/selection.txt'])['jobs'])
         self.assertNotIn('proof-run', plan.JOBS)
 
@@ -241,7 +243,7 @@ swamp/extensions/behaviors/operations/firewall/**   firewall:allow firewall:deny
 swamp/proof/firewall/**            firewall:allow
 swamp/proof/firewall/*.md          skip
 apps/gateway/app/Actions/Firewall/**   firewall:allow
-swamp/proof/selection.txt          *
+swamp/proof/selection.txt          skip
 tools/swamp-proof-guest/**         *
 """
 
