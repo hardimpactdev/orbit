@@ -57,3 +57,10 @@
         ORBIT_RUN: "{{ run_dir }}"
       register: member_phase
       changed_when: "'changed=0 ' not in member_phase.stdout"
+    - name: Report measured preparation times
+      ansible.builtin.debug:
+        msg:
+          vpn_publication: "{{ vpn_phase.delta }}"
+          router_publication: "{{ router_phase.delta }}"
+          router_unchanged: "{{ router_repeat.delta }}"
+          member_selection: "{{ member_phase.delta }}"

@@ -1783,8 +1783,8 @@ export function analyzeYaml(
                         shellControls.slice(start + block[2].length);
                 }
                 const controlsFound = shellControls.match(
-                        /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
-                    ) ?? [];
+                    /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
+                ) ?? [];
                 for (const _ of controlsFound) {
                     add("custom-control");
                     result.loops++;

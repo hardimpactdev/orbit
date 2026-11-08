@@ -225,3 +225,8 @@
         path: /etc/systemd/system/orbit-dns-unowned-proof.service
       register: retired_sentinel
       failed_when: not retired_sentinel.stat.exists
+    - name: Report measured phase times
+      ansible.builtin.debug:
+        msg:
+          member_unchanged: "{{ member_repeat.delta }}"
+          retirement_publication: "{{ retire_phase.delta }}"
