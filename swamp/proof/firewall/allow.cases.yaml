@@ -5,6 +5,10 @@ chart: firewall/allow
 target: app-dev
 sources: [gateway, app-prod]
 baseline: [ufw, firewall_records, operations, listeners]
+# Cases that need the whole fleet to themselves stay on the target and run alone; the others take these Nodes in turn, one case at a time on
+# each Node, up to `parallel` Nodes at once (docs/reference/verification-cases).
+spread: [app-dev, app-prod, gateway]
+parallel: 4
 
 vars:
   main_rule: ["${port}", "--node=${app-dev.id}"]
