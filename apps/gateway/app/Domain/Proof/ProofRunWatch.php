@@ -19,7 +19,7 @@ use Throwable;
  * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
  * `runs: []`. It also closes a proof whose runs have all ended.
  * It also ends the keep of a failed run (`proof:run --keep-failed`) when its 60 minutes are up, by cancelling the group of that run.
- * A run that waits for VM capacity does not exist: capacity is decided at admission (docs/cli/proof/run.mmd).
+ * Operator proof children may wait in task admission; that wait is governed by its own capacity budget.
  */
 final readonly class ProofRunWatch
 {
@@ -145,6 +145,6 @@ final readonly class ProofRunWatch
     private static function neverHandedOver(Operation $child): bool
     {
         return ! $child->status->terminal() && ! isset($child->state['swamp_run_id']) && $child->attempts === 0
-            && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']);
+            && $child->error_code !== 'swamp.start_uncertain' && ! isset($child->state['swamp_start']) && ! isset($child->input['capacity_request']);
     }
 }

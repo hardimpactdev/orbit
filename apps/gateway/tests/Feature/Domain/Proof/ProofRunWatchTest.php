@@ -390,3 +390,16 @@ describe('the released marker of a kept VM', function (): void {
         expect($run->refresh()->result['kept'])->toMatchArray(['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $cancel->id]);
     });
 });
+
+it('leaves an operator proof in task admission to its capacity budget instead of marking its child lost', function (): void {
+    Queue::fake();
+    $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
+    $waiting = watchRun($proof, 'firewall:allow', OperationStatus::Waiting, ageSeconds: 900);
+    $waiting->update(['input' => [...$waiting->input, 'capacity_request' => ['commit' => WATCH_SHA]]]);
+    watchAged($waiting, 900);
+
+    expect(app(ProofRunWatch::class)->sweep())->toBe(0)
+        ->and($proof->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
+    Queue::assertNotPushed(CancelProofGroup::class);
+});
