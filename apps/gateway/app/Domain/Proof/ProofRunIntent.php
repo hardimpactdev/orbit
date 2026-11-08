@@ -282,10 +282,11 @@ final readonly class ProofRunIntent
         }
         $fresh = $this->freshHosts(ValidatedData::string($request['base']));
         $input = ValidatedData::object(app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn (): array => app(TaskProvisionIntent::class)->capture($group, ValidatedData::string($request['commit']))));
+        $assignments = array_values(array_filter(ProofBatchPlan::stored($proof->input['batches']), static fn (array $batch): bool => $batch['command'] === $request['command']));
 
         return $this->runInput($proof, ValidatedData::string($request['commit']), ValidatedData::string($request['base']),
             ['command' => ValidatedData::string($request['command']), 'file' => ValidatedData::string($request['file'])], $input, $group,
-            Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])));
+            Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), $assignments);
     }
 
     private function group(string $commit, string $command): Task

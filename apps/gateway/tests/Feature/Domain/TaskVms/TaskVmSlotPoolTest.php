@@ -25,6 +25,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofRunIntent;
@@ -1082,7 +1083,7 @@ it('claims a fresh VM at the published head for a build or a fix after release',
     Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
         'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
     $head = str_repeat('a', 40);
-    app()->instance(RemoteBranchHeads::class, new class($head) implements RemoteBranchHeads
+    app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
     {
         public function __construct(private string $head) {}
 
@@ -1168,7 +1169,7 @@ it('rebuilds a normal fix turn from the published branch after deletion, waiting
     $group->refresh()->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1']);
     expect(Instance::query()->find($workspace))->toBeNull()->and(Node::query()->find($oldNode))->toBeNull();
     $head = str_repeat('d', 40);
-    app()->instance(RemoteBranchHeads::class, new class($head, $group->id) implements RemoteBranchHeads
+    app()->instance(RemoteBranchHeads::class, new readonly class($head, $group->id) implements RemoteBranchHeads
     {
         public function __construct(private string $head, private int $group) {}
 
@@ -1230,7 +1231,7 @@ it('makes an operator proof join the task queue behind an earlier task even when
 });
 
 /** A trusted four-batch CI proof on the host fixture, without a real Swamp submission. */
-function slotPoolCiProofWorld(int $places): Node
+function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
 {
     Queue::fake();
     [$host, , $build] = slotPoolHost(ciPlaces: $places);
@@ -1244,19 +1245,39 @@ function slotPoolCiProofWorld(int $places): Node
     $source = Mockery::mock(ProofCommitSource::class);
     $source->shouldReceive('commitExists')->andReturn(true);
     $source->shouldReceive('branchesWithHead')->andReturn(['feature']);
-    $source->shouldReceive('changes')->andReturn(new ProofChangedFiles($commit, [new ProofChangedFile('changed.php', 'modified')], true));
+    $source->shouldReceive('changes')->andReturn(new ProofChangedFiles($commit, [new ProofChangedFile($casesOnly ? 'swamp/proof/firewall/allow.cases.yaml' : 'changed.php', 'modified')], true));
     $source->shouldReceive('proofPaths')->andReturn(['swamp/proof/firewall/allow.cases.yaml']);
     $source->shouldReceive('range')->andReturn(new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles($commit, [], true)));
     $source->shouldReceive('file')->andReturnUsing(static fn (string $sha, string $path): string => match ($path) {
-        ProofSelectionList::Path => "changed.php firewall:allow\n",
+        ProofSelectionList::Path => "changed.php firewall:allow\nswamp/proof/firewall/allow.cases.yaml firewall:allow\n",
         'swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n  three: {}\n  four: {}\n",
-        default => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n  - {id: c, batch: three}\n  - {id: d, batch: four}\n",
+        default => "command: firewall:allow\ncases:\n  - {id: a, batch: one".($casesOnly ? ', summary: '.$sha : '')."}\n  - {id: b, batch: two}\n  - {id: c, batch: three}\n  - {id: d, batch: four}\n",
     });
     app()->instance(ProofCommitSource::class, $source);
     $host->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
 
     return $host;
 }
+
+it('keeps selected case ids when an operator proof resumes after waiting for a VM', function (): void {
+    slotPoolCiProofWorld(2, casesOnly: true);
+    $project = Project::query()->firstOrFail();
+    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $intent = app(ProofRunIntent::class);
+    $proof = $intent->start(str_repeat('b', 40), false, 'test', null);
+    $intent->admit($proof->id);
+    $child = ProofRunSettlement::children($proof->id)->sole();
+    expect($child->status)->toBe(OperationStatus::Waiting);
+    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
+
+    app(TaskVmAdmission::class)->admit($child->id);
+
+    expect($child->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($child->input['assignments'][0]['cases'] ?? null)->toBe(['a']);
+    $projected = app(ProofCommandProjection::class)->input($child);
+    expect($projected['intent']['verifications'][0]['case_ids'] ?? null)->toBe(['a']);
+});
 
 it('lets the front CI proof take every free place up to its batch count and records whole assignments once', function (int $places): void {
     $caller = slotPoolCiProofWorld($places);
