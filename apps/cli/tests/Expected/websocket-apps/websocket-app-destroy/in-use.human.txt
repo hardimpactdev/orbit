@@ -1,1 +1,2 @@
 Remove the app from each Instance first.
+Code: websocket.app_in_use

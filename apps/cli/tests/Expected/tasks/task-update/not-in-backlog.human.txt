@@ -7,3 +7,4 @@ Updating task...
 └  Operation failed.
 
 This change is allowed only while the task group is in backlog.
+Code: tasks.not_in_backlog

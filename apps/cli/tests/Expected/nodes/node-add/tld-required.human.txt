@@ -7,3 +7,4 @@ Adding Node...
 └  Operation failed.
 
 An app-dev TLD is required for node [app-dev].
+Code: node.tld_required

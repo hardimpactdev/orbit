@@ -7,3 +7,4 @@ Adding Node...
 └  Operation failed.
 
 macOS enrollment requires user and orbit_user to name the same account.
+Code: node.macos_account_mismatch

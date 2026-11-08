@@ -21,3 +21,4 @@ Queuing release...
 └  Operation failed.
 
 Another Gateway release step is running. Wait for it to finish.
+Code: gateway.release_in_progress

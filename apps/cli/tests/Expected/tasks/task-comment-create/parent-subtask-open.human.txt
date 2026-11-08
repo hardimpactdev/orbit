@@ -7,3 +7,4 @@ Creating comment...
 └  Operation failed.
 
 Group assistance comments require all subtasks to have ended.
+Code: tasks.assistance_subtask_open

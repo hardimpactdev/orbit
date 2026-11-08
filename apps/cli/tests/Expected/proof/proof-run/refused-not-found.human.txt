@@ -1,1 +1,2 @@
 The Orbit repository has no such commit.
+Code: proof.commit_not_found

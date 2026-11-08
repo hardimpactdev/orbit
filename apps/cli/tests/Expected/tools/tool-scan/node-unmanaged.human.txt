@@ -9,3 +9,4 @@ Scanning installed packages...
 Tools can be scanned only on a Gateway-managed node.
 step: scan
 outcome: manager_failed
+Code: tool.node_unmanaged

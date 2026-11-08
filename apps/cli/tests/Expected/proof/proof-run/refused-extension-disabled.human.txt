@@ -1,1 +1,2 @@
 The tasks extension is disabled.
+Code: extension.disabled

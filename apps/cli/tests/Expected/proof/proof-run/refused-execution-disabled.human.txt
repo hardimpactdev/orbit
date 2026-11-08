@@ -2,3 +2,4 @@ Proof execution is switched off. The run was selected but not started.
 commit: 0123456789abcdef0123456789abcdef01234567
 cases: swamp/proof/firewall/allow.cases.yaml
 uncovered: swamp/workflows/workflow-vault-sync.yaml
+Code: proof.execution_disabled

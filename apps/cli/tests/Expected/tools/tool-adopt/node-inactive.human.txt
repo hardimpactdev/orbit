@@ -1,3 +1,4 @@
 The Tool request cannot be admitted.
 step: adopt
 outcome: manager_failed
+Code: tool.node_inactive

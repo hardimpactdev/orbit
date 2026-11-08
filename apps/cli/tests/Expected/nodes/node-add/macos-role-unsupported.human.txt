@@ -7,3 +7,4 @@ Adding Node...
 └  Operation failed.
 
 Node platform [macos] does not support service roles.
+Code: node.platform_unsupported
