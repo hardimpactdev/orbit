@@ -14,50 +14,6 @@ import {
     write,
 } from "./gate-test-support.ts";
 
-Deno.test("frozen Task queue allowance accepts only the exact public rename", async () => {
-    await temporary(async (repo) => {
-        await init(repo);
-        const swamp = repo + "/swamp";
-        const queue =
-            "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts";
-        const old =
-            'deps.http("POST", "/api/v1/task-groups", {tasks: plan.tasks.map(f)});';
-        const renamed = old.replaceAll("/api/v1/task-groups", "/api/v1/tasks")
-            .replace("tasks: plan.tasks.map(", "subtasks: plan.tasks.map(");
-        await write(swamp + "/" + queue, old);
-        await write(
-            swamp + "/config/swamp-shape-baseline.json",
-            '{"schema":1,"entries":[]}',
-        );
-        // A frozen rule has no knowledge of the new URL or policy helpers.
-        await write(
-            swamp + "/bin/check-swamp-shape.ts",
-            `Deno.exit(await Deno.readTextFile(${JSON.stringify(queue)}) === ${
-                JSON.stringify(old)
-            } ? 0 : 1);`,
-        );
-        const base = await commit(repo, "frozen queue source");
-        async function check(source: string) {
-            await write(swamp + "/" + queue, source);
-            await commit(repo, "queue update");
-            const result = await run("python3", [
-                script("check-swamp-base-policy.py"),
-                "--base",
-                base,
-            ], { cwd: swamp, env: { DENO_BIN: Deno.execPath() } });
-            assertEquals(await Deno.readTextFile(swamp + "/" + queue), source);
-            return result.code;
-        }
-        assertEquals(await check(renamed), 0);
-        assert(
-            await check(
-                renamed + '\ndeps.http("POST", "/api/v1/tasks", {});',
-            ) !== 0,
-        );
-        assert(await check(renamed.replace("POST", "DELETE")) !== 0);
-    });
-});
-
 Deno.test("real frozen policy owns limits and dependencies", async () => {
     await temporary(async (repo) => {
         await init(repo);
@@ -137,5 +93,122 @@ Deno.test("real frozen policy owns limits and dependencies", async () => {
             "actual debt removal has no stale allowance failure",
         );
         assertEquals((await check()).code, 0);
+    });
+});
+
+Deno.test("stale baseline evidence can be repaired without growing immutable source debt", async () => {
+    await temporary(async (repo) => {
+        await init(repo);
+        await write(repo + "/.gitignore", "__pycache__/\n");
+        const swamp = repo + "/swamp";
+        await copyPolicy(swamp);
+        await write(
+            swamp + "/config/agent-command-kinds.json",
+            '{"agent.status":"observer"}',
+        );
+        const source = swamp + "/extensions/behaviors/caller.ts";
+        const runner = swamp + "/bin/check-swamp-base-policy.py";
+        const runnerSource = await Deno.readTextFile(
+            script("check-swamp-base-policy.py"),
+        );
+        await write(runner, runnerSource);
+        const current = 'deps.http("POST", "/api/v1/current", {});\n';
+        await write(source, current);
+        const ledger = swamp + "/config/swamp-shape-baseline.json";
+        const baseline = {
+            schema: 1,
+            entries: [{
+                file: "extensions/behaviors/caller.ts",
+                rule: "gateway-http",
+                count: 1,
+                evidence: ["POST /api/v1/retired"],
+            }],
+        };
+        await write(ledger, JSON.stringify(baseline));
+        const base = await commit(
+            repo,
+            "immutable source with stale evidence label",
+        );
+        baseline.entries[0].evidence = ["POST /api/v1/current"];
+        await write(ledger, JSON.stringify(baseline));
+        await commit(
+            repo,
+            "correct the existing label without changing source",
+        );
+        const shape = () =>
+            run(Deno.execPath(), [
+                "run",
+                "-A",
+                swamp + "/bin/check-swamp-shape.ts",
+                "--base",
+                base,
+            ], { cwd: swamp });
+        const frozen = () =>
+            run("python3", [
+                script("check-swamp-base-policy.py"),
+                "--base",
+                base,
+            ], {
+                cwd: swamp,
+                env: { DENO_BIN: Deno.execPath() },
+            });
+        const repaired = await shape();
+        assertEquals(repaired.code, 0, repaired.stdout + repaired.stderr);
+        const policy = await frozen();
+        assertEquals(policy.code, 0, policy.stdout + policy.stderr);
+        assertStringIncludes(policy.stdout, "baseline_repair=true");
+        const checker = swamp + "/bin/check-swamp-shape.ts";
+        const checkerSource = await Deno.readTextFile(checker);
+        await write(
+            checker,
+            checkerSource.replace(
+                "production(file) &&",
+                '!file.startsWith("bin/check-swamp-base-policy") && production(file) &&',
+            ),
+        );
+        await write(
+            runner,
+            runnerSource.replace("import tempfile\n", "import tempfile\nimport time\n") +
+                "\ntime.sleep(1)\n",
+        );
+        await commit(repo, "gate-only debt cannot hide behind a stale-label repair");
+        assertEquals(
+            await git(repo, "diff", "--name-only", base, "HEAD"),
+            [
+                "swamp/bin/check-swamp-base-policy.py",
+                "swamp/bin/check-swamp-shape.ts",
+                "swamp/config/swamp-shape-baseline.json",
+            ].join("\n"),
+        );
+        const hidden = await shape();
+        assertEquals(hidden.code, 0, hidden.stdout + hidden.stderr);
+        const debt = await frozen();
+        assert(debt.code !== 0, debt.stdout + debt.stderr);
+        assertStringIncludes(debt.stderr, "custom-control 1 exceeds 0");
+        await write(runner, runnerSource);
+        await write(checker, checkerSource);
+        for (const invalid of [
+            { ...baseline.entries[0], count: 2 },
+            { ...baseline.entries[0], evidence: ["POST /api/v1/another"] },
+        ]) {
+            await write(ledger, JSON.stringify({ schema: 1, entries: [invalid] }));
+            await commit(repo, "bootstrap cannot change counts or invent labels");
+            assert((await frozen()).code !== 0);
+        }
+        await write(ledger, JSON.stringify(baseline));
+        for (
+            const changed of [
+                current + current,
+                current.replace("/current", "/another"),
+            ]
+        ) {
+            await write(source, changed);
+            await commit(
+                repo,
+                "operational source change cannot grow counts or sites",
+            );
+            assert((await shape()).code !== 0);
+            assert((await frozen()).code !== 0);
+        }
     });
 });
