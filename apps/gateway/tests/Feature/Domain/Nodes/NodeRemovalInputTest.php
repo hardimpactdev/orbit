@@ -26,6 +26,7 @@ it('takes a removed Node off the hub by deleting its own file, also when the Gat
     $intent = app(NodeRemovalInput::class)->capture(['node_id' => $node->id, 'name' => $node->name, 'task_vm_id' => null, 'offline' => true, 'machine_deleted' => true,
         'prior_status' => 'active', 'route_ids' => []]);
 
+    expect($intent['intent']['task_host_input_comments'])->toBe(['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp']);
     $hub = $intent['intent']['hub'];
 
     expect($hub)->toHaveCount(1)

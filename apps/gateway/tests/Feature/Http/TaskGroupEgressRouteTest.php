@@ -83,7 +83,7 @@ describe('POST /api/v1/agent/facts for the egress kind', function (): void {
     ];
 
     it('accepts the report of a task VM host for its own bridge', function () use ($fact): void {
-        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]);
+        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
 
         egress_http_report($host, $fact)->assertNoContent();
     });
@@ -93,7 +93,7 @@ describe('POST /api/v1/agent/facts for the egress kind', function (): void {
     });
 
     it('refuses a report for another bridge than the host\'s', function () use ($fact): void {
-        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]);
+        $host = egress_http_node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
 
         egress_http_report($host, ['network' => 'orbittaskb'] + $fact)->assertStatus(422)->assertJsonPath('error.code', 'agent.fact_not_expected');
     });

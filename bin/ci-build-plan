@@ -64,7 +64,7 @@ def proof_run(paths, selection):
     paths = [path for path in paths if path]
     if not paths:
         return False
-    if selection is None or SELECTION in paths:
+    if selection is None:
         return True
     rules = selection_rules(selection)
     for path in paths:
@@ -72,6 +72,50 @@ def proof_run(paths, selection):
         if match:
             return True
     return False
+
+
+def proof_cases(paths, selection, read, files):
+    """Use the runner to plan every candidate, retaining verified empty selections. None means Gateway must refuse an unmapped path."""
+    import sys
+    sys.path.insert(0, str(ROOT / 'swamp/proof/runner'))
+    from selection import select as select_cases
+    from spec import Loader
+    import yaml
+
+    rules = selection_rules(selection) if selection is not None else []
+    # Keep the parser's validation and glob semantics; retain each value for command ownership.
+    values = [line.strip().split(None, 1)[1].strip() for line in (selection or '').splitlines() if line.strip() and not line.strip().startswith('#')]
+    commands, everything = {}, selection is None
+    batch_path = 'swamp/proof/batches.yaml'
+    for path in paths:
+        matched = next((value for (regex, _), value in reversed(list(zip(rules, values))) if regex.fullmatch(path)), None)
+        if matched is None and selection is not None:
+            return None
+        if matched == '*':
+            everything = True
+        elif matched and matched != 'skip' and not matched.startswith('none:'):
+            for command in matched.split():
+                commands.setdefault(command, []).append(path)
+    candidates = {f"swamp/proof/{c.split(':', 1)[0]}/{c.split(':', 1)[1].replace(':', '-')}.cases.yaml": c for c in sorted(commands)}
+    if everything or batch_path in paths:
+        for file in files:
+            if file not in candidates:
+                try:
+                    candidates[file] = yaml.load(read('head', file), Loader=Loader)['command']
+                except Exception:
+                    candidates[file] = file.removeprefix('swamp/proof/').removesuffix('.cases.yaml').replace('/', ':', 1)
+    if not candidates:
+        return []
+    result = []
+    for file, command in candidates.items():
+        if file not in files:
+            continue
+        code_changed = everything or any(path not in (file, batch_path) for path in commands.get(command, []))
+        chosen = select_cases(read('base', file), read('head', file), code_changed,
+                              read('base', batch_path), read('head', batch_path), changed_paths=paths)
+        # Keep empty entries in the artifact: the Gateway must distinguish verified zero from missing data.
+        result.append({'command': command, 'file': file, **chosen})
+    return sorted(result, key=lambda entry: entry['command'])
 
 
 # Known source roots are explicit even for the desktop app, whose checks remain paused.
@@ -239,11 +283,32 @@ def main():
     p.add_argument('--base', required=True)
     p.add_argument('--head', default='HEAD')
     p.add_argument('--main', action='store_true')
+    p.add_argument('--proof-cases', action='store_true', help='Compare case definitions at the merge base and head')
     p.add_argument('--github-output', type=Path)
+    p.add_argument('--proof-selection-output', type=Path)
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, a.head], timeout=60).decode().rstrip('\0').split('\0')
     result = select(paths, a.main)
+    # Build jobs may use a shallow checkout. Only the full-history changes job needs the case plan.
+    if a.proof_cases:
+        base = subprocess.check_output(['timeout', '60', 'git', 'merge-base', a.base, a.head], text=True).strip()
+        paths = subprocess.check_output(['timeout', '60', 'git', 'diff', '--name-only', '--no-renames', '-z', base, a.head], text=True).rstrip('\0').split('\0')
+        def read(ref, path):
+            process = subprocess.run(['timeout', '60', 'git', 'show', f'{base if ref == "base" else a.head}:{path}'], capture_output=True, text=True)
+            if process.returncode:
+                exists = subprocess.run(['timeout', '60', 'git', 'cat-file', '-e', f'{base if ref == "base" else a.head}:{path}'], capture_output=True)
+                if exists.returncode == 1 or exists.returncode == 128:
+                    return None
+                raise ValueError(process.stderr)
+            return process.stdout
+        files = subprocess.check_output(['timeout', '60', 'git', 'ls-tree', '-r', '--name-only', a.head, '--', 'swamp/proof'], text=True).splitlines()
+        files = [file for file in files if re.fullmatch(r'swamp/proof/[a-z][a-z0-9_]*/[a-z][a-z0-9_-]*\.cases\.yaml', file)]
+        result['proof_cases'] = proof_cases(paths, read('head', SELECTION), read, files)
+        result['proof_run'] = result['proof_cases'] is None or any(entry['only'] is None or entry['only'] for entry in result['proof_cases'])
+        if a.proof_selection_output:
+            head = subprocess.check_output(['timeout', '60', 'git', 'rev-parse', a.head], text=True).strip()
+            a.proof_selection_output.write_text(json.dumps({'version': 1, 'base': base, 'head': head, 'files': result['proof_cases']}))
     if a.swamp_base and result['jobs']['swamp']:
         result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
     print(json.dumps(result))

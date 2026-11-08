@@ -23,15 +23,13 @@ final readonly class TaskVmHost
     /** The alias of the base image of the Incus project. */
     public const string BaseImage = 'orbit-task-base';
 
-    public const string TaskMaxVmsMessage = 'task_max_vms must be null or an integer from 0 to max_vms.';
-
     /** @param  list<string>  $operatorOwned  `<project>/<name>` or `<project>/*` */
     public function __construct(
         public int $nodeId,
         public string $project,
         public string $network,
         public string $cidr,
-        public int $maxVms,
+        public int $taskPlaces,
         public int $cpus,
         public string $memory,
         public string $disk,
@@ -39,12 +37,11 @@ final readonly class TaskVmHost
         public ?string $zfsDataset = null,
         public array $operatorOwned = [],
         public string $imageAlias = self::BaseImage,
-        public bool $ciOnly = false,
         public string $poolSize = '640GiB',
-        public ?int $taskMaxVms = null,
+        public int $ciPlaces = 0,
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'pool_size', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only', 'task_max_vms'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'task_places', 'cpus', 'memory', 'disk', 'pool', 'pool_size', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_places'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -67,8 +64,8 @@ final readonly class TaskVmHost
             'project' => $name('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D'),
             'network' => $name('/\Aorbittask[a-z0-9]{1,6}\z/D'),
             'cidr' => ['required', TaskVmConfig::bridgeRule("{$key}.cidr", $vpnSubnet)],
-            'max_vms' => $int(1, 64),
-            'task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64', 'lte:max_vms'],
+            'task_places' => $int(0, 64),
+            'ci_places' => $int(0, 64),
             'cpus' => $int(1, 64),
             'memory' => $size,
             'disk' => $size,
@@ -77,7 +74,6 @@ final readonly class TaskVmHost
             'pool' => $name('/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D'),
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
             'zfs_dataset' => ($entry['zfs_dataset'] ?? null) === null ? [] : ['required', 'string', 'regex:/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D'],
-            'ci_only' => ['sometimes', 'boolean:strict'],
             'operator_owned' => ['list'],
             'operator_owned.*' => ['required', 'string', 'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\/(?:\*|[A-Za-z0-9][A-Za-z0-9._-]{0,253})\z/D'],
         ], [
@@ -85,8 +81,8 @@ final readonly class TaskVmHost
             'project' => "{$key}.project is invalid.",
             'network' => "{$key}.network is invalid.",
             'cidr.required' => "{$key}.cidr must be an IPv4 network, for example 10.251.77.0/24.",
-            'max_vms' => "{$key}.max_vms must be an integer from 1 to 64.",
-            'task_max_vms' => $key.'.'.self::TaskMaxVmsMessage,
+            'task_places' => "{$key}.task_places must be an integer from 0 to 64.",
+            'ci_places' => "{$key}.ci_places must be an integer from 0 to 64.",
             'cpus' => "{$key}.cpus must be an integer from 1 to 64.",
             'memory' => "{$key}.memory is invalid.",
             'disk' => "{$key}.disk is invalid.",
@@ -94,7 +90,6 @@ final readonly class TaskVmHost
             'pool' => "{$key}.pool is invalid.",
             'image_alias' => "{$key}.image_alias is invalid.",
             'zfs_dataset' => "{$key}.zfs_dataset is invalid.",
-            'ci_only' => "{$key}.ci_only must be a boolean.",
             'operator_owned' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
             'operator_owned.*' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
         ]);
@@ -106,7 +101,7 @@ final readonly class TaskVmHost
             project: $valid->string('project')->value(),
             network: $valid->string('network')->value(),
             cidr: Ipv4Subnet::from($valid->string('cidr')->value())->value(),
-            maxVms: $valid->integer('max_vms'),
+            taskPlaces: $valid->integer('task_places'),
             cpus: $valid->integer('cpus'),
             memory: $valid->string('memory')->value(),
             disk: $valid->string('disk')->value(),
@@ -114,9 +109,8 @@ final readonly class TaskVmHost
             zfsDataset: is_string($zfsDataset) ? $zfsDataset : null,
             operatorOwned: array_values(array_unique(TaskVmConfig::strings($entry['operator_owned'] ?? []))),
             imageAlias: $valid->string('image_alias')->value(),
-            ciOnly: ($entry['ci_only'] ?? false) === true,
             poolSize: $valid->string('pool_size')->value(),
-            taskMaxVms: isset($entry['task_max_vms']) ? $valid->integer('task_max_vms') : null,
+            ciPlaces: $valid->integer('ci_places'),
         );
     }
 

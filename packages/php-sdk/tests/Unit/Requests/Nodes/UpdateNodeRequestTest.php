@@ -56,10 +56,10 @@ it('sends a partial settings patch and preserves omitted members', function (): 
 });
 
 it('sends task host intent and explicit clearing without touching apps', function (): void {
-    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', max_vms: 12, operator_owned: [], task_max_vms: 2);
+    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', task_places: 2, operator_owned: [], ci_places: 2);
     $request = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true, taskVms: $host);
     expect($request->body()->all())->toBe(['task_vms' => [
-        'cidr' => '10.251.77.0/24', 'max_vms' => 12, 'operator_owned' => [], 'task_max_vms' => 2,
+        'cidr' => '10.251.77.0/24', 'task_places' => 2, 'operator_owned' => [], 'ci_places' => 2,
     ]]);
     $clear = new UpdateNodeRequest(nodeId: 9, hasTaskVms: true);
     expect($clear->body()->all())->toBe(['task_vms' => null]);

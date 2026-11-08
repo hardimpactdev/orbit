@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -100,6 +101,9 @@ final class OperationRunBudgets
     {
         if (RoutePublicationHolds::waitsForNodes($operation)) {
             return null;
+        }
+        if ($operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request'])) {
+            return $operation->created_at === null ? null : CarbonImmutable::instance($operation->created_at)->addSeconds(TaskVmAdmission::WaitSeconds);
         }
         $start = $operation->started_at ?? $operation->created_at;
 

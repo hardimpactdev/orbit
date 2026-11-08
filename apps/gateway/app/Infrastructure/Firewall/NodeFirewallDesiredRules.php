@@ -31,6 +31,10 @@ final readonly class NodeFirewallDesiredRules
     {
         $rows = [];
 
+        foreach ($this->catalog->taskHostInput($node) as $rule) {
+            $rows[] = new DesiredFirewallRule($rule->shape->comment, null, $rule->shape);
+        }
+
         try {
             foreach ($this->catalog->desiredBaseline($node) as $rule) {
                 $rows[] = new DesiredFirewallRule($rule->shape->comment, null, $rule->shape);

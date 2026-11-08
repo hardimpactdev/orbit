@@ -58,7 +58,23 @@ inputs:
 jobs:
 - name: turn
   steps:
+  - name: Claim a task place
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.provision) }}'
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-task-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ has(inputs.intent.provision) ? inputs.intent.provision.node_id : inputs.node_id }}'
+        kind: tasks.provision
+        intent: '${{ has(inputs.intent.provision) ? inputs.intent.provision.intent : {} }}'
+        execution_secrets: '${{ has(inputs.intent.provision) ? inputs.intent.provision.execution_secrets : {} }}'
   - name: prepare
+    dependsOn:
+    - step: Claim a task place
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     labels: {role: swamp}
     task:
       type: behavior

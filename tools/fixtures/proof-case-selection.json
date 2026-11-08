@@ -1,0 +1,312 @@
+{
+  "tests": [
+    {
+      "name": "changed case runs alone",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  summary: Changed\n  covers:\n  - main\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "changed"
+      }
+    },
+    {
+      "name": "added case runs alone",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: new\n  batch: fresh\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "new": "added"
+      }
+    },
+    {
+      "name": "deleted case runs nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "command code runs every case",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": true,
+      "expected": {
+        "a": "command code changed",
+        "b": "command code changed",
+        "c": "command code changed",
+        "v[x]": "command code changed",
+        "v[y]": "command code changed"
+      }
+    },
+    {
+      "name": "changed nested fixture runs its users",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - --json\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "uses changed fixture",
+        "v[x]": "uses changed fixture",
+        "v[y]": "uses changed fixture"
+      }
+    },
+    {
+      "name": "unused fixture runs nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\n    summary: Changed\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "changed var runs its user",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  - --quiet\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "b": "uses changed var"
+      }
+    },
+    {
+      "name": "unused var runs nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - changed\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "nested var runs its user",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - '@ports'\n  ports:\n  - --json\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - '@ports'\n  ports:\n  - --quiet\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "b": "uses changed var"
+      }
+    },
+    {
+      "name": "variant change runs all variants",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 443\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "v[x]": "changed",
+        "v[y]": "changed"
+      }
+    },
+    {
+      "name": "changed batch setup runs its users",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh:\n    setup:\n    - ipv6_addresses:\n        nodes:\n        - gateway\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "batch setup changed",
+        "b": "batch setup changed",
+        "v[x]": "batch setup changed",
+        "v[y]": "batch setup changed"
+      }
+    },
+    {
+      "name": "unused batch setup runs nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n  unused: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n  unused:\n    setup:\n    - ipv6_addresses:\n        nodes:\n        - gateway\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "batch summary runs nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh:\n    summary: Old\n  other: {}\n",
+      "after_batches": "batches:\n  fresh:\n    summary: New\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "fleet settings run all users",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-prod\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "file settings changed",
+        "b": "file settings changed",
+        "c": "file settings changed",
+        "v[x]": "file settings changed",
+        "v[y]": "file settings changed"
+      }
+    },
+    {
+      "name": "uncovered and chart metadata run nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nuncovered:\n  gap: More detail\nchart: changed\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "reordered cases run nothing",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {}
+    },
+    {
+      "name": "new cases file runs every case",
+      "before": null,
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "added",
+        "b": "added",
+        "c": "added",
+        "v[x]": "added",
+        "v[y]": "added"
+      }
+    },
+    {
+      "name": "scalar types differ",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - 1\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - true\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "b": "uses changed var"
+      }
+    },
+    {
+      "name": "variant fixture names resolve",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: ${fixture}\n  variants:\n  - name: x\n    fixture: inner\n  - name: y\n    fixture: inner\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - --quiet\n    summary: Changed\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: ${fixture}\n  variants:\n  - name: x\n    fixture: inner\n  - name: y\n    fixture: inner\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "uses changed fixture",
+        "v[x]": "uses changed fixture",
+        "v[y]": "uses changed fixture"
+      }
+    },
+    {
+      "name": "fixture parameters resolve file var uses",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\n  param:\n    params:\n      which: args\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - '@${which}'\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - use: param\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --quiet\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\n  param:\n    params:\n      which: args\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - '@${which}'\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - use: param\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "b": "uses changed var"
+      }
+    },
+    {
+      "name": "nested fixture parameters resolve names",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    params:\n      choice: inner\n    steps:\n    - use:\n        fixture: middle\n        target: ${choice}\n  unused:\n    steps: []\n  middle:\n    params:\n      target: inner\n    steps:\n    - use: ${target}\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - --quiet\n    summary: Changed\n  outer:\n    params:\n      choice: inner\n    steps:\n    - use:\n        fixture: middle\n        target: ${choice}\n  unused:\n    steps: []\n  middle:\n    params:\n      target: inner\n    steps:\n    - use: ${target}\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - '@args'\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "before_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "after_batches": "batches:\n  fresh: {}\n  other: {}\n",
+      "code_changed": false,
+      "expected": {
+        "a": "uses changed fixture",
+        "v[x]": "uses changed fixture",
+        "v[y]": "uses changed fixture"
+      }
+    },
+    {
+      "name": "list fixture parameter expands referenced vars",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\n  more:\n  - --extra\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\n  param:\n    params:\n      which:\n      - args\n      - more\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - '@${which}'\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - use: param\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --quiet\n  unused:\n  - unused\n  more:\n  - --extra\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\n  param:\n    params:\n      which:\n      - args\n      - more\n    steps:\n    - cli:\n        run:\n        - demo:run\n        - '@${which}'\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - use: param\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "expected": {
+        "b": "uses changed var"
+      },
+      "before_batches": "batches: {fresh: {}, other: {}}\n",
+      "after_batches": "batches: {fresh: {}, other: {}}\n"
+    },
+    {
+      "name": "numeric YAML spelling follows runner types",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - 1e3\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - 1000.0\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "expected": {
+        "b": "changed"
+      },
+      "before_batches": "batches: {fresh: {}, other: {}}\n",
+      "after_batches": "batches: {fresh: {}, other: {}}\n"
+    },
+    {
+      "name": "record where is part of the definition",
+      "before": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - 100\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "after": "command: demo:run\ntarget: app-dev\nsources:\n- gateway\nbaseline:\n- operations\nvars:\n  args:\n  - --json\n  unused:\n  - unused\nfixtures:\n  inner:\n    steps:\n    - cli:\n        run:\n        - demo:run\n  outer:\n    steps:\n    - use: inner\n  unused:\n    steps: []\ncases:\n- id: a\n  batch: fresh\n  setup:\n  - use: outer\n  covers:\n  - main\n  summary: A case.\n  act:\n  - cli:\n      run:\n      - demo:run\n  expect: []\n- id: b\n  batch: fresh\n  act:\n  - cli:\n      run:\n      - demo:run\n      - 101\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: c\n  batch: other\n  act:\n  - cli:\n      run:\n      - demo:run\n  covers:\n  - main\n  summary: A case.\n  expect: []\n- id: v\n  batch: fresh\n  act:\n  - use:\n      fixture: inner\n  variants:\n  - name: x\n    port: 80\n  - name: y\n    port: 81\n  covers:\n  - main\n  summary: A case.\n  expect: []\nchart: demo/run\n",
+      "expected": {
+        "b": "changed"
+      },
+      "before_batches": "batches: {fresh: {}, other: {}}\n",
+      "after_batches": "batches: {fresh: {}, other: {}}\n"
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: Changed case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "runner and case edits run the whole selected file",
+      "changed_paths": [
+        "swamp/proof/runner/spec.py"
+      ],
+      "expected": {
+        "a": "proof tooling changed",
+        "b": "proof tooling changed"
+      }
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "selection list disables narrowing even without an effective case change",
+      "changed_paths": [
+        "swamp/proof/selection.txt"
+      ],
+      "expected": {
+        "a": "proof tooling changed",
+        "b": "proof tooling changed"
+      }
+    },
+    {
+      "before": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    typo: true\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "after": "command: demo:run\nchart: demo/run\ntarget: app-dev\nsources: [gateway]\nfixtures:\n  shared:\n    steps: [{cli: {run: [demo:run]}}]\ncases:\n  - id: a\n    batch: fresh\n    summary: First case.\n    covers: [main]\n    act: [{use: shared}]\n    expect: []\n  - id: b\n    batch: fresh\n    summary: Second case.\n    covers: [main]\n    act: [{cli: {run: [demo:run]}}]\n    expect: []\n",
+      "before_batches": "batches: {fresh: {}}",
+      "after_batches": "batches: {fresh: {}}",
+      "name": "unknown fixture key in the base cannot select zero cases",
+      "expected": {
+        "a": "selection uncertain",
+        "b": "selection uncertain"
+      }
+    }
+  ]
+}

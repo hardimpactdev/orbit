@@ -22,6 +22,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -40,7 +41,7 @@ final readonly class UpdateNodeAction
     ) {}
 
     /**
-     * Saves the record fields at once. Only an apps folder change that needs the folder starts a run; its settings
+     * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
      * are stored when the run succeeds, while a new name or platform in the same request is already saved.
      */
     public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation
@@ -70,7 +71,12 @@ final readonly class UpdateNodeAction
             $normalized = $this->normalizer->normalize($merged);
             $this->validateHostBridge($node, $normalized);
             $create = $this->hasActiveAppDevRole($node);
-            if (! $settings->hasApps || (! $create && $normalized?->appsPath() === null)) {
+            $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
+            $retireHostInput = $settings->hasTaskVms && $previousHost !== null
+                && ($normalized?->task_vms === null || $previousHost->network !== $normalized->task_vms->network
+                    || $previousHost->cidr !== $normalized->task_vms->cidr);
+            $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
+            if (! $prepareStorage && ! $retireHostInput) {
                 $this->persist($node, $normalized);
                 $written = true;
 
@@ -78,16 +84,17 @@ final readonly class UpdateNodeAction
             }
 
             if ($node->platform !== 'linux') {
-                throw new ResourceOperationException('node.settings_platform_unsupported', 'Apps-root actions require a Linux Node.');
+                throw new ResourceOperationException('node.settings_platform_unsupported', 'Settings actions require a Linux Node.');
             }
             // Orbit creates each managed account with its own group and home, so the root is checked here, not on the Node.
             $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
-            $root = $this->validator->validateEffective($normalized, $node, $account);
+            $root = $prepareStorage ? $this->validator->validateEffective($normalized, $node, $account) : null;
 
             return $this->operations->execute('node.update', 'node', $node->id, $node->id, [
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-                'root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
+                'root' => $root?->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
+                'task_host_input_comments' => $retireHostInput ? NodeFirewallRuleCatalog::TaskHostInputComments : [],
                 'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });

@@ -37,7 +37,6 @@ final readonly class ProofSelection
         $paths = $changes->paths();
         $everything = match (true) {
             $all => 'all_requested',
-            in_array(ProofSelectionList::Path, $paths, true) => 'selection_list_changed',
             ! $changes->complete => 'file_list_incomplete',
             $list === null => 'selection_list_missing',
             default => null,

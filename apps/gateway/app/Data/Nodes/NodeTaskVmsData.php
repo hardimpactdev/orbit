@@ -15,7 +15,7 @@ final class NodeTaskVmsData extends Data
      */
     public function __construct(
         public string $cidr,
-        public int $max_vms,
+        public int $task_places,
         public string $project = 'orbit-tasks',
         public string $network = 'orbittask0',
         public string $pool = 'orbit-tasks',
@@ -25,9 +25,8 @@ final class NodeTaskVmsData extends Data
         public string $memory = '4GiB',
         public string $disk = '20GiB',
         public array $operator_owned = [],
-        public bool $ci_only = false,
         public string $pool_size = '640GiB',
-        public ?int $task_max_vms = null,
+        public int $ci_places = 0,
     ) {}
 
     /** @param array<string, mixed> $value */
@@ -37,10 +36,10 @@ final class NodeTaskVmsData extends Data
         $host = TaskVmHost::fromConfig([...$value, 'node_id' => 1], 0, $vpnSubnet, is_array($defaults) ? $defaults : []);
 
         return new self(
-            cidr: $host->cidr, max_vms: $host->maxVms, project: $host->project,
+            cidr: $host->cidr, task_places: $host->taskPlaces, project: $host->project,
             network: $host->network, pool: $host->pool, image_alias: $host->imageAlias,
             zfs_dataset: $host->zfsDataset, cpus: $host->cpus, memory: $host->memory,
-            disk: $host->disk, operator_owned: $host->operatorOwned, ci_only: $host->ciOnly, pool_size: $host->poolSize, task_max_vms: $host->taskMaxVms,
+            disk: $host->disk, operator_owned: $host->operatorOwned, pool_size: $host->poolSize, ci_places: $host->ciPlaces,
         );
     }
 }

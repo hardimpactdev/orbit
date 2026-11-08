@@ -91,6 +91,54 @@ Deno.test("missing CI and credential lifetime end through later scheduled observ
     assertEquals(expired.pending, false);
     assertEquals(expired.status, "failed");
 });
+Deno.test("active candidate jobs wait for the aggregate beyond the missing CI window", () => {
+    for (const status of ["queued", "in_progress"]) {
+        const job = {
+            ...run,
+            name: "Swamp / Swamp shape gate",
+            status,
+            conclusion: null,
+        };
+        const active = ciResult(
+            pending,
+            { runs: [job] },
+            "2026-10-31T22:11:00Z",
+        );
+        assertEquals(active.pending, true);
+        assertEquals(active.result.ci.state, "pending");
+        const passed = ciResult(
+            active,
+            { runs: [run] },
+            "2026-10-31T22:12:00Z",
+        );
+        assertEquals(passed.pending, false);
+        assertEquals(passed.result.ci.state, "passed");
+        for (
+            const unrelated of [
+                { ...job, head_sha: "b".repeat(40) },
+                { ...job, app: { slug: "other-app" } },
+            ]
+        ) {
+            const missing = ciResult(
+                pending,
+                { runs: [unrelated] },
+                "2026-10-31T22:11:00Z",
+            );
+            assertEquals(missing.pending, false);
+            assertEquals(
+                missing.result.error_code,
+                "tasks.handoff_ci_unavailable",
+            );
+        }
+        const expired = ciResult(
+            pending,
+            { runs: [job] },
+            "2026-10-31T22:56:00Z",
+        );
+        assertEquals(expired.pending, false);
+        assertEquals(expired.result.error_code, "tasks.handoff_ci_timeout");
+    }
+});
 Deno.test("a committed candidate must keep the checked tree and parent", () => {
     const tree = "b".repeat(40), head = "c".repeat(40);
     const local = { outcome: "passed", tree, head };

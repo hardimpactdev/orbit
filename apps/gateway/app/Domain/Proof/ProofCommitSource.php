@@ -37,6 +37,9 @@ interface ProofCommitSource
     /** The text of one file at the commit, or null when the commit has no such file. */
     public function file(string $sha, string $path): ?string;
 
+    /** @return array<string,mixed>|null runner selection artifact for exactly this comparison; null means run whole files */
+    public function caseSelection(string $base, string $head): ?array;
+
     /** @return list<string> every file path of the commit's `swamp/proof` tree */
     public function proofPaths(string $sha): array;
 }

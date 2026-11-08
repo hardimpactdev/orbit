@@ -76,97 +76,96 @@ apps/gateway/app/Infrastructure/AgentView/**               node:list node:show n
 swamp/proof/node/show.cases.yaml                          node:show node:show-recorded
 swamp/proof/node/show-recorded.cases.yaml                  node:show node:show-recorded
 
-# Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
-# any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
-# commands use (schedules, logs, project definitions) stays out. The table of run budgets (data) and two checks that no request path calls select nothing; the rules that read the table select every case.
-apps/gateway/app/Actions/Operations/**                     *
-apps/gateway/app/Data/Operations/**                        *
-apps/gateway/app/Domain/Operations/**                      *
+# Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A proof runs only when a
+# command's own code or cases change (Nick, 2026-11-08), so shared code selects nothing; the next command change proves it.
+apps/gateway/app/Actions/Operations/**                     none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Data/Operations/**                        none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Domain/Operations/**                      none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Domain/Operations/OperationBudgetTable.php  none: the table of run budgets, one entry per kind, and the serve cap derived from it; a changed budget touches no command
 apps/gateway/app/Domain/Operations/OperationRegistryCheck.php  none: a registry check that no request path calls
 apps/gateway/app/Domain/Operations/GatewayWorkflowGrantCheck.php  none: a registry check that no request path calls
-apps/gateway/app/Domain/Shared/ResourceOperationException.php  *
-apps/gateway/app/Domain/Activity/ActivityInputRedaction.php  *
-apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php     *
-apps/gateway/app/Infrastructure/Activity/ActivityShutdownFinalizer.php  *
-apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php  *
-apps/gateway/app/Infrastructure/Activity/CommandActivityTargetResolver.php  *
-apps/gateway/app/Infrastructure/Logging/GatewayExceptionStatus.php  *
-apps/gateway/app/Infrastructure/Logging/RequestLogContext.php  *
-apps/gateway/app/Infrastructure/Processes/CommandDeadline.php  *
-apps/gateway/app/Http/Controllers/Api/DirectCertificatesController.php  *
-apps/gateway/app/Http/Controllers/Api/DirectGitHubTokenController.php  *
-apps/gateway/app/Http/Controllers/Api/DirectOperationsController.php  *
-apps/gateway/app/Http/Authorization/**                     *
-apps/gateway/app/Http/Controllers/Api/OperationsController.php  *
-apps/gateway/app/Http/Controllers/Controller.php           *
-apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php  *
-apps/gateway/app/Http/Middleware/EnsureRequestId.php       *
-apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php   *
-apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php  *
-apps/gateway/app/Http/Middleware/NormalizeErrorDetails.php  *
-apps/gateway/app/Http/Middleware/RecordCommandActivity.php  *
-apps/gateway/app/Http/Middleware/RequireActiveWireGuardPeer.php  *
-apps/gateway/app/Http/Middleware/RequireNodeAccess.php     *
-apps/gateway/app/Http/Middleware/StartRequestDeadline.php  *
-apps/gateway/app/Http/Middleware/ValidateRequestBodySize.php  *
-apps/gateway/app/Http/Requests/Operations/**               *
-apps/gateway/app/Http/Responses/ApiErrorResponse.php       *
-apps/gateway/app/Http/Responses/RendersApiError.php        *
-apps/gateway/app/Infrastructure/Swamp/CancelSwampRun.php   *
-apps/gateway/app/Infrastructure/Swamp/Native*.php          *
-apps/gateway/app/Infrastructure/Swamp/PendingSshHostKey.php  *
-apps/gateway/app/Infrastructure/Swamp/ReadNativeRunFailure.php  *
-apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php    *
-apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampConnection.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampDispatch.php    *
-apps/gateway/app/Infrastructure/Swamp/SwampReadBudget.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampSshExecutionInput.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampTerminalReadUnavailable.php  *
-apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php  *
-apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php  *
-apps/gateway/app/Models/Operation.php                      *
-apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  *
-apps/gateway/app/Support/StrictJson.php                    *
-apps/gateway/app/Support/ValidatedData.php                 *
-apps/gateway/bootstrap/app.php                             *
-apps/gateway/bootstrap/providers.php                       *
-apps/gateway/routes/api.php                                *
-apps/gateway/routes/api/operation.php                      *
-apps/cli/bootstrap/app.php                                 *
-apps/cli/bootstrap/providers.php                           *
-apps/cli/app/Commands/GatewayCommand.php                   *
-apps/cli/app/Commands/Concerns/FollowsOperations.php       *
-apps/cli/app/Commands/Operations/**                        *
-apps/cli/app/Console/**                                    *
-apps/cli/app/Data/GatewayProfile.php                       *
-apps/cli/app/Exceptions/**                                 *
-apps/cli/app/Providers/AppServiceProvider.php              *
-apps/cli/app/Repositories/**                               *
-apps/cli/app/Services/Extensions/ExtensionDiscoveryResult.php  *
-apps/cli/app/Services/Extensions/GatewayExtensionState.php  *
-apps/cli/app/Services/GatewayConnectorFactory.php          *
-apps/cli/app/Services/SelfUpdate/CliReleaseNotice.php      *
-apps/cli/app/Services/Profile/**                           *
-apps/cli/app/Support/CommandVocabulary.php                 *
-apps/cli/app/Support/Console/**                            *
-apps/cli/app/Support/ExtensionCommandVisibility.php        *
-apps/cli/app/Support/GatedExtensionCommand.php             *
-apps/cli/app/Support/GatewayFailureRenderer.php            *
-apps/cli/app/Support/Operations/**                         *
-packages/php-sdk/src/Gateway*.php                          *
-packages/php-sdk/src/Support/**                            *
-packages/php-sdk/src/Requests/Operations/**                *
-packages/php-sdk/src/Responses/Operations/**               *
+apps/gateway/app/Domain/Shared/ResourceOperationException.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Domain/Activity/ActivityInputRedaction.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php     none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Activity/ActivityShutdownFinalizer.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Activity/CommandActivityTargetResolver.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Logging/GatewayExceptionStatus.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Logging/RequestLogContext.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Processes/CommandDeadline.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Controllers/Api/DirectCertificatesController.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Controllers/Api/DirectGitHubTokenController.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Controllers/Api/DirectOperationsController.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Authorization/**                     none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Controllers/Api/OperationsController.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Controllers/Controller.php           none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/EnsureRequestId.php       none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php   none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/HandleOperationIdempotency.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/NormalizeErrorDetails.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/RecordCommandActivity.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/RequireActiveWireGuardPeer.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/RequireNodeAccess.php     none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/StartRequestDeadline.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Middleware/ValidateRequestBodySize.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Requests/Operations/**               none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Responses/ApiErrorResponse.php       none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Http/Responses/RendersApiError.php        none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/CancelSwampRun.php   none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/Native*.php          none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/PendingSshHostKey.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/ReadNativeRunFailure.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php    none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampConnection.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampDispatch.php    none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampReadBudget.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampSshExecutionInput.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampTerminalReadUnavailable.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Models/Operation.php                      none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Support/StrictJson.php                    none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Support/ValidatedData.php                 none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/bootstrap/app.php                             none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/bootstrap/providers.php                       none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/routes/api.php                                none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/routes/api/operation.php                      none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/bootstrap/app.php                                 none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/bootstrap/providers.php                           none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Commands/GatewayCommand.php                   none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Commands/Concerns/FollowsOperations.php       none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Commands/Operations/**                        none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Console/**                                    none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Data/GatewayProfile.php                       none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Exceptions/**                                 none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Providers/AppServiceProvider.php              none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Repositories/**                               none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Services/Extensions/ExtensionDiscoveryResult.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Services/Extensions/GatewayExtensionState.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Services/GatewayConnectorFactory.php          none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Services/SelfUpdate/CliReleaseNotice.php      none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Services/Profile/**                           none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/CommandVocabulary.php                 none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/Console/**                            none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/ExtensionCommandVisibility.php        none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/GatedExtensionCommand.php             none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/GatewayFailureRenderer.php            none: shared code; a proof runs only when a command's own code or cases change
+apps/cli/app/Support/Operations/**                         none: shared code; a proof runs only when a command's own code or cases change
+packages/php-sdk/src/Gateway*.php                          none: shared code; a proof runs only when a command's own code or cases change
+packages/php-sdk/src/Support/**                            none: shared code; a proof runs only when a command's own code or cases change
+packages/php-sdk/src/Requests/Operations/**                none: shared code; a proof runs only when a command's own code or cases change
+packages/php-sdk/src/Responses/Operations/**               none: shared code; a proof runs only when a command's own code or cases change
 
 # The proof tooling is shared code of every case; its own tests are not a proof.
-swamp/proof/selection.txt                        *
-swamp/proof/batches.yaml                         *
-swamp/proof/runner/**                            *
+swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change
+swamp/proof/batches.yaml                         none: batch setup changes select their users by definition
+swamp/proof/runner/**                            none: shared code; a proof runs only when a command's own code or cases change
 swamp/proof/runner/tests/**                      skip
-tools/swamp-proof-guest/**                       *
+tools/swamp-proof-guest/**                       none: shared code; a proof runs only when a command's own code or cases change
 
 # The firewall extension's tests and fixture prove nothing by themselves.
 swamp/extensions/behaviors/operations/firewall/*_test.ts   skip
