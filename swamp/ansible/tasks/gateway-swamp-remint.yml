@@ -51,6 +51,26 @@
       Provision the three-worker control plane through local bootstrap first
   loop: "{{ swamp_remint_c.results }}"
   loop_control: {label: "{{ item.item }}"}
+- name: Read worker c credentials privately for format validation
+  ansible.builtin.slurp:
+    src: "{{ swamp_credentials }}/c/{{ item }}.token"
+  loop: [enrollment, server]
+  register: swamp_remint_c_contents
+  no_log: true
+- name: Validate worker c token names and secret parts privately
+  ansible.builtin.set_fact:
+    swamp_remint_c_valid: >-
+      {{ (swamp_remint_c_contents.results[0].content | b64decode | trim
+      is match('^orbit-worker-c(-[0-9]+)?\.[^\s.]+$')) and
+      (swamp_remint_c_contents.results[1].content | b64decode | trim
+      is match('^orbit-worker-c-access\.[^\s.]+$')) }}
+  no_log: true
+- name: Require complete worker c credentials with the expected names
+  ansible.builtin.assert:
+    that: swamp_remint_c_valid
+    fail_msg: >-
+      Swamp remint stopped before stopping any service: worker c needs full name.secret tokens
+      named orbit-worker-c (optionally timestamped) and orbit-worker-c-access
 # Serve and the workers hold the token store open, so they stop while the tokens change.
 - name: Stop the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: stopped }

@@ -79,7 +79,8 @@ sequenceDiagram
     %%> - the Ansible node phase installs the renewal program and rendered units first
     %%> - start the timer after all three permanent workers are started; renew the oldest due worker only while its two peers accept dispatches
     %%> - active dispatches finish during each drain; two workers keep accepting work
-    %%> - once the renewed worker accepts work, c drains and stops; only one base worker renews per round
+    %%> - all three workers stay running; only one worker renews per round, after its two peers are accepting
+    %%> - a failed or inactive worker can reset its failure limit and start while its two peers serve
     %%> Why not in place:
     %%> - replacing the running binary breaks every dispatch, so the running serve and workers keep working until they restart
   end

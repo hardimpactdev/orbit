@@ -36,6 +36,8 @@ interface State {
   lose_on_restart?: Slot;
   age_peer_on_probe?: boolean;
   elapse_drain_seconds?: number;
+  unit_states?: Partial<Record<Slot, string>>;
+  start_limited?: Slot[];
 }
 
 // All boundary executables use this Deno stub. No Python test or fixture code.
@@ -83,12 +85,17 @@ if (name === "getent") {
     const slot = args[1]?.split("@")[1]?.[0];
     const current = state.workers[slot];
     if (args[0] === "show") {
-        const active = current.status === "disconnected" ? "inactive" : "active";
+        const active = state.unit_states?.[slot] ?? "active";
         console.log(args.includes("--value") ? active : "LoadState=loaded\nActiveState=" + active + "\nUnitFileState=" + "enabled");
     } else if (args[0] === "is-enabled") {
         console.log("enabled");
+    } else if (args[0] === "reset-failed") {
+        event("reset-failed-" + slot);
+        state.start_limited = (state.start_limited ?? []).filter(value => value !== slot); save();
     } else if (args[0] === "start") {
+        if (state.start_limited?.includes(slot)) throw new Error("start-limit-hit");
         event("start-" + slot);
+        state.unit_states = {...state.unit_states, [slot]: "active"};
         state.starting = [...(state.starting ?? []), slot]; save();
     } else if (["restart", "stop"].includes(args[0])) {
         event("attempt-" + args[0] + "-" + slot);
@@ -601,39 +608,122 @@ for (const missing of ["directory", "enrollment", "server", "empty server"]) {
     );
   });
 }
-test("proof remint preflight accepts an existing three-worker fleet without reading tokens", async (f) => {
-  const config = `${f.root}/.config/swamp`;
-  Deno.mkdirSync(config, { recursive: true });
-  Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
-  const credentials = `${f.root}/credentials`;
-  Deno.mkdirSync(`${credentials}/c`, { recursive: true });
-  for (const kind of ["enrollment", "server"]) {
+for (const suffix of ["", "-1794127800"]) {
+  test(`proof remint preflight accepts c${suffix} without exposing tokens`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+    for (const kind of ["enrollment", "server"]) {
+      Deno.writeTextFileSync(
+        `${credentials}/c/${kind}.token`,
+        `orbit-worker-c${
+          kind === "server" ? "-access" : suffix
+        }.synthetic-test-only`,
+      );
+    }
+    const tasks = parse(Deno.readTextFileSync(remintTasks)) as Array<
+      Record<string, unknown>
+    >;
+    const stop = tasks.findIndex((task) => task.name === "Stop the workers");
+    assert(stop > 0);
+    const testPlaybook = `${f.root}/preflight.yml`;
+    // Execute the actual production prefix, stopping before its first mutation.
     Deno.writeTextFileSync(
-      `${credentials}/c/${kind}.token`,
-      "synthetic-test-only",
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise the production remint preflight",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: tasks.slice(0, stop),
+      }]),
     );
-  }
-  const tasks = parse(Deno.readTextFileSync(remintTasks)) as Array<
-    Record<string, unknown>
-  >;
-  const stop = tasks.findIndex((task) => task.name === "Stop the workers");
-  assert(stop > 0);
-  const testPlaybook = `${f.root}/preflight.yml`;
-  // Execute the actual production prefix, stopping before its first mutation.
-  Deno.writeTextFileSync(
-    testPlaybook,
-    JSON.stringify([{
-      name: "Exercise the production remint preflight",
-      hosts: "localhost",
-      gather_facts: false,
-      tasks: tasks.slice(0, stop),
-    }]),
-  );
-  f.start(testPlaybook, {
-    control: { user: identity("-un"), repository: f.root },
-    swamp_home: f.root,
-    swamp_credentials: credentials,
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(), []);
+    assert(!f.output.includes("synthetic-test-only"));
   });
-  assertEquals(await f.result(), []);
-  assert(!f.output.includes("synthetic-test-only"));
+}
+
+for (const state of ["failed", "inactive"]) {
+  test(`recovers a ${state} unit past its restart limit before voluntary renewal`, async (f) => {
+    f.state.workers.c.status = "disconnected";
+    f.state.unit_states = { c: state };
+    f.state.start_limited = ["c"];
+    f.state.receipts = { c: "" };
+    f.start();
+    const events = await f.result();
+    assert(events.indexOf("reset-failed-c") >= 0);
+    assert(events.indexOf("start-c") > events.indexOf("reset-failed-c"));
+    assert(!events.some((event) => event.startsWith("drain-")));
+    assertStringIncludes(f.output, "connection will be checked next round");
+  });
+}
+test("does not recover a down unit without two serving peers", async (f) => {
+  f.state.workers.c.status = "disconnected";
+  f.state.unit_states = { c: "failed" };
+  f.state.workers.b.status = "disconnected";
+  f.start();
+  assertEquals(await f.result(false), []);
 });
+
+for (
+  const invalid of [
+    "bare enrollment",
+    "wrong enrollment name",
+    "bare server",
+    "wrong server name",
+    "empty secret",
+  ]
+) {
+  test(`proof remint rejects c ${invalid} before any service stops`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+    Deno.writeTextFileSync(
+      `${credentials}/c/enrollment.token`,
+      invalid === "bare enrollment"
+        ? "synthetic-test-only"
+        : invalid === "wrong enrollment name"
+        ? "orbit-worker-b.synthetic-test-only"
+        : "orbit-worker-c.synthetic-test-only",
+    );
+    Deno.writeTextFileSync(
+      `${credentials}/c/server.token`,
+      invalid === "bare server"
+        ? "synthetic-test-only"
+        : invalid === "wrong server name"
+        ? "orbit-worker-b-access.synthetic-test-only"
+        : invalid === "empty secret"
+        ? "orbit-worker-c-access."
+        : "orbit-worker-c-access.synthetic-test-only",
+    );
+    const testPlaybook = `${f.root}/remint.yml`;
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise production remint with malformed c credentials",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: [{ "ansible.builtin.import_tasks": remintTasks }],
+      }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(
+      f.output,
+      "Swamp remint stopped before stopping any service",
+    );
+    assert(!f.output.includes("synthetic-test-only"));
+  });
+}

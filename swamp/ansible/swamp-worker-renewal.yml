@@ -38,8 +38,21 @@
           SWAMP_API_KEY_FILE: "{{ renewal_home }}/.config/swamp/api-key"
           SWAMP_NO_UPDATE_CHECK: '1'
           SWAMP_NO_TELEMETRY: '1'
-    - name: Read the actual connection receipts
+    - name: Read worker unit states before choosing recovery or renewal
+      ansible.builtin.command:
+        argv: [timeout, '10', systemctl, show, "orbit-swamp-worker@{{ item }}.service", --property=ActiveState, --value]
+      loop: "{{ renewal_slots }}"
+      register: renewal_units
+      changed_when: false
+    - name: Select failed or inactive units
+      ansible.builtin.set_fact:
+        renewal_down_slots: >-
+          {{ renewal_units.results | selectattr('stdout', 'in', ['failed', 'inactive']) | map(attribute='item') | list }}
+        renewal_pool: []
+    - name: Read the actual connection receipts of serving units
       ansible.builtin.import_tasks: tasks/swamp-worker-connections.yml
+      vars:
+        renewal_required_slots: "{{ renewal_slots | difference(renewal_down_slots) }}"
     - name: Read the three permanent workers
       ansible.builtin.command:
         argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
@@ -57,6 +70,36 @@
         {{ (renewal_list.stdout | from_json).workers
         | selectattr('name', 'in', renewal_names.values() | list) | list }}
       loop_control: {label: "{{ item.name }}"}
+    # Recovery starts a down unit; it never drains either serving peer. End this
+    # round after start, so voluntary renewal waits for the next pool check.
+    - name: Recover one down worker while its two peers serve
+      when: renewal_down_slots | length > 0
+      vars:
+        renewal_recovery_peers: >-
+          {{ renewal_pool | rejectattr('name', 'equalto', renewal_names[renewal_down_slots | first]) | list }}
+      block:
+        - name: Require two serving peers before recovery
+          ansible.builtin.assert:
+            that:
+              - renewal_down_slots | length == 1
+              - renewal_recovery_peers | length == 2
+              - >-
+                renewal_recovery_peers | selectattr('status', 'in', renewal_accepting)
+                | selectattr('instanceUuid') | selectattr('capacity', 'ge', renewal_capacity | int) | list | length == 2
+            fail_msg: Worker recovery stopped because two full workers are not serving
+        - name: Reset the down worker's systemd failure limit
+          ansible.builtin.command:
+            argv: [timeout, '10', systemctl, reset-failed, "orbit-swamp-worker@{{ renewal_down_slots | first }}.service"]
+          changed_when: true
+        - name: Start only the down worker
+          ansible.builtin.systemd_service:
+            name: "orbit-swamp-worker@{{ renewal_down_slots | first }}.service"
+            state: started
+        - name: Log the recovery attempt
+          ansible.builtin.debug:
+            msg: "Started {{ renewal_down_slots | first }} without a drain; its connection will be checked next round"
+        - name: End the recovery round without voluntary renewal
+          ansible.builtin.meta: end_play
     - name: Require all three workers to be connected before renewal
       ansible.builtin.assert:
         that:
