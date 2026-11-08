@@ -706,6 +706,8 @@ The rollout leaves out the Gateway's own Node. Gateway release runs leave its ag
 
 `agent.install` holds `/run/lock/orbit-self-update.lock` while it replaces and restarts the agent. `agent.configure` and `agent.remove` hold the same lock, after the installation. So no two of them swap or restart the agent at the same time. A CLI self-update that keeps the lock longer than 5 minutes fails `agent.configure` with `agent.update_busy`.
 
+The Ansible `node:converge` agent phase takes the same lock for each atomic replacement of the agent binary, the versioned CLI binary and the CLI selection link. It stages checksum-verified binaries beside their destinations before waiting up to 120 seconds for the lock. If the wait fails, the selected artifact stays unchanged and the staged candidate is removed. Matching artifacts are not replaced.
+
 An installation changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. The fleet verifier reports each Node that runs another binary.
 
 The observer sends its version with each channel authorization: the Cargo version with the first 16 hexadecimal digits of its binary's SHA-256 as build metadata, such as `0.5.0+ad999ffe1ab24dca`. The Gateway derives the same string from the delivery for each Node, so presence proves the exact pinned binary. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The [fleet rollout](/reference/gateway-recovery#which-nodes-a-pass-visits) visits a Node again when its agent reports another version.
