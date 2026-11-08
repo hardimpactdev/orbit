@@ -8,13 +8,13 @@ use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
-it('preserves every typed role assignment and its recorded failure in both Node response forms', function (): void {
+it('preserves every typed role assignment and its recorded failure in both Node response forms', function (string $failedStep, string $errorCode): void {
     $assignments = [];
     foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
         $assignments[] = [
             'id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
-            'failed_step' => $status === 'failed' ? 'converge:Check the role' : null,
-            'error_code' => $status === 'failed' ? 'packages.failed' : null,
+            'failed_step' => $status === 'failed' ? $failedStep : null,
+            'error_code' => $status === 'failed' ? $errorCode : null,
         ];
     }
     $data = node_response_gateway_data(['role_assignments' => $assignments]);
@@ -23,11 +23,15 @@ it('preserves every typed role assignment and its recorded failure in both Node 
     $nodes = new NodesResponse([$node], $requestId);
 
     expect($node->roleAssignments)->toHaveCount(4)
-        ->and($node->roleAssignments[2]->failedStep)->toBe('converge:Check the role')
+        ->and($node->roleAssignments[2]->failedStep)->toBe($failedStep)
+        ->and($node->roleAssignments[2]->errorCode)->toBe($errorCode)
         ->and($node->roleAssignments[2]->requestId)->toBe($requestId)
         ->and($node->toArray()['role_assignments'])->toBe($assignments)
         ->and($nodes->toArray()['nodes'][0]['role_assignments'])->toBe($assignments);
-});
+})->with([
+    'native role check' => ['converge:Check the role', 'packages.failed'],
+    'recorded Ubuntu requirement' => ['converge:Require supported Ubuntu', 'role.os_unsupported'],
+]);
 
 it('rejects malformed nested role assignments', function (mixed $assignments): void {
     NodeResponse::fromGatewayData(node_response_gateway_data(['role_assignments' => $assignments]), 'request-id');

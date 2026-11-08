@@ -112,6 +112,7 @@ describe('node role assignment response transport', function (): void {
             ->and($assignment->toArray()['failed_step'])->toBe($step);
     })->with([
         'native convergence' => 'converge:Check the role',
+        'recorded Ubuntu requirement' => 'converge:Require supported Ubuntu',
         'native removal' => 'remove:Withdraw the role DNS',
         'indexed native step' => 'converge:Sign role certificates-0',
         'maximum length' => 'converge:'.str_repeat('A', 119),

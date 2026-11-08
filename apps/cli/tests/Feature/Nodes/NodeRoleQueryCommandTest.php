@@ -9,6 +9,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -87,6 +89,46 @@ it('retains assignment order and nullable failures in both output forms', functi
     expect($human)->toContain('converge:check', 'check.failed', 'converge:Check the role', 'node_role.convergence_failed', '—');
     $mockClient->assertSentCount(2);
 });
+
+it('preserves the recorded Ubuntu role failure in all Node read commands', function (string $command, array $arguments, string $assignmentPath, string $humanFragment): void {
+    $assignment = [
+        'id' => 12,
+        'role' => 'database',
+        'status' => 'failed',
+        'failed_step' => 'converge:Require supported Ubuntu',
+        'error_code' => 'role.os_unsupported',
+    ];
+    $node = [
+        'id' => 7,
+        'name' => 'database-node',
+        'status' => 'active',
+        'public_ssh_host' => '10.44.0.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'roles' => ['database'],
+        'role_assignments' => [$assignment],
+    ];
+    $meta = ['request_id' => node_role_command_request_id()];
+    $mockClient = MockClient::global([
+        ListNodeRolesRequest::class => MockResponse::make(['data' => [$assignment], 'meta' => $meta]),
+        ListNodesRequest::class => MockResponse::make(['data' => [$node], 'meta' => $meta]),
+        ShowNodeRequest::class => MockResponse::make(['data' => $node, 'meta' => $meta]),
+    ]);
+
+    expect(Artisan::call($command, [...$arguments, '--json' => true]))->toBe(0);
+    $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(data_get($json, $assignmentPath))->toBe([$assignment]);
+    expect($json['request_id'])->toBe(node_role_command_request_id());
+
+    expect(Artisan::call($command, $arguments))->toBe(0);
+    expect(Artisan::output())->toContain($humanFragment, 'Request ID: '.node_role_command_request_id());
+    $mockClient->assertSentCount(2);
+})->with([
+    'node:role:list' => ['node:role:list', ['node' => '7'], 'assignments', 'converge:Require supported Ubuntu'],
+    'node:list' => ['node:list', [], 'nodes.0.role_assignments', 'database'],
+    'node:show' => ['node:show', ['node' => '7'], 'role_assignments', 'database'],
+]);
 
 it('lists node roles from the active gateway as JSON', function (): void {
     $assignment = node_role_assignment_payload();
