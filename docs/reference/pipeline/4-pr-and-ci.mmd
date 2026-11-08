@@ -76,7 +76,7 @@ sequenceDiagram
     %%> - capacity waits for up to two hours; a timeout fails clearly, and no capacity result can turn green with no case verdict
     %%> - it fails on a missing result, an outcome other than `passed` or `nothing_to_prove`, a passed proof with no case that ran, and any case that is not `passed`, such as `unrun`
     %%> Built, not yet passed live:
-    %%> - when the PR adds a case, the same proof VM then switches its checkout to the merge base with the new cases file and must see every new case fail; see `Prove the case can fail` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
+    %%> - when the PR adds or changes a case with `fails_on_base: true`, the same proof VM then switches its checkout to the merge base with the head cases file and must see every selected flagged case fail with cause `assertion`; unflagged and unchanged cases never replay; see `Select replay cases` in the [stage 3 chart](/reference/command-development-pipeline#3-proof)
     %%> Built:
     %%> - the proof CI is part of Required checks: the job `proof-run` calls `proof:run`, requires every selected case verdict and fails on a failed case or missing verdict; no selected command passes
     GW-->>CI: Verdict per case
