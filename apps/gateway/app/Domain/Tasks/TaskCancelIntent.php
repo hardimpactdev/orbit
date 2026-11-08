@@ -106,7 +106,7 @@ final readonly class TaskCancelIntent
             || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
             throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned slot workspace.', 409);
         }
-        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
+        $release = $slot instanceof TaskVm ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
             ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'release' => $release];
