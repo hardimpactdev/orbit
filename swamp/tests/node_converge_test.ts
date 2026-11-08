@@ -184,5 +184,6 @@ Deno.test("the workflow has ordered phase invocations and an always-dependent pr
         assertEquals(run.includes(`${phases[i]}-meta.json`), true);
         if (i) assertEquals(jobs[i].dependsOn, [{ job: phases[i - 1], condition: { type: "succeeded" } }]);
     }
+    assertEquals(jobs.find((job) => job.name === "check")?.steps[0].name, "Check the Node");
     assertEquals(workflow.jobs.find((job) => job.name === "converge")?.dependsOn, [{ job: "check", condition: { type: "always" } }]);
 });

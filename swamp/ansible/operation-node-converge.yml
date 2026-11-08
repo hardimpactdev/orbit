@@ -6,6 +6,8 @@
   become: true
   gather_facts: false
   tags: [network]
+  vars:
+    intent: "{{ converge_intent }}"
   tasks:
     - name: Reconcile the hub
       ansible.builtin.import_tasks: tasks/node-converge-hub.yml
@@ -17,9 +19,12 @@
   module_defaults:
     ansible.builtin.apt: { lock_timeout: 300 }
   vars:
-    recipe: "{{ intent.recipe | from_json }}"
-    orbit_user: "{{ intent.user }}"
-    orbit_home: "{{ '/root' if intent.user == 'root' else '/home/' ~ intent.user }}"
+    intent: "{{ converge_intent }}"
+    secrets: "{{ converge_secrets }}"
+    plans: "{{ converge_plans }}"
+    recipe: "{{ converge_intent.recipe | from_json }}"
+    orbit_user: "{{ converge_intent.user }}"
+    orbit_home: "{{ '/root' if converge_intent.user == 'root' else '/home/' ~ converge_intent.user }}"
     vp_home: /opt/orbit/vite-plus
     apt_directory: /var/tmp/orbit-converge-apt
     apt_retries: 4

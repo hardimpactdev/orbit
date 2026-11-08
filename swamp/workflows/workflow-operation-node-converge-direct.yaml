@@ -354,7 +354,7 @@ jobs:
           type: succeeded
     steps:
       -
-        name: 'Converge check'
+        name: 'Check the Node'
         labels:
           role: swamp
         writes: true

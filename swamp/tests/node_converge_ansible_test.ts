@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // Use the shape-gate Ansible environment to run this suite.
 const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${name}.yml`, import.meta.url));
 const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
-async function localPlay(vars: Record<string, unknown>, tasks: unknown[]) {
+async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchanged = true) {
     const folder = await Deno.makeTempDir();
     try {
         const path = `${folder}/play.json`;
@@ -19,7 +19,7 @@ async function localPlay(vars: Record<string, unknown>, tasks: unknown[]) {
         }).output();
         const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
         assertEquals(result.code, 0, output);
-        assertMatch(output, /changed=0\s/);
+        if (unchanged) assertMatch(output, /changed=0\s/);
     } finally { await Deno.remove(folder, { recursive: true }); }
 }
 for (const state of ["matching", "unavailable", "plan error", "invalid digest"]) {
@@ -96,4 +96,92 @@ Deno.test("repository trust requires exactly one primary fingerprint, not a matc
     const trustIndex = block.indexOf(trust);
     const publishIndex = block.findIndex((task) => task.name === "Publish only the verified repository key");
     assertEquals(publishIndex > trustIndex, true);
+});
+
+Deno.test("role phases accept generated extra vars without shadowing each role's intent", async () => {
+    const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+    const folder = await Deno.makeTempDir();
+    try {
+        const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
+        const runtime = { analytics: null, websocket: null, gateway: null, gateway_dns: null, metrics: null, swamp: null, ci_host: false,
+            groups: [], users: [], directories: [], files: [], secret_files: [], units: [], probes: [] };
+        const roles = [1, 2].map((id) => ({ assignment_id: id, role: `fixture-${id}`, node_id: 7, ssh,
+            publications: [], exporters: [], prometheus: null, runtime, php: [], directories: [], services: [],
+            files: [{ path: `${folder}/role-${id}.txt`, content: `role ${id}\n`, owner: Deno.env.get("USER"), group: "", mode: "0600" }] }));
+        const group = new TextDecoder().decode((await new Deno.Command("id", { args: ["-gn"] }).output()).stdout).trim();
+        for (const role of roles) role.files[0].group = group;
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        await convergeInput(folder, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused");
+        const plays = parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>;
+        const production = plays[1];
+        const tasks = (production.tasks as Array<Record<string, unknown>>).filter((task) => ["Reconcile selected recorded roles", "Check the selected role runtime"].includes(task.name as string));
+        // Run the production includes and play vars through the same -e @vars.yml precedence as Swamp.
+        await Deno.writeTextFile(`${folder}/phase.json`, JSON.stringify([{
+            ...production, hosts: "localhost", connection: "local", become: false, tasks,
+            handlers: [{ name: "Reload units", "ansible.builtin.debug": { msg: "Fixture has no system services" } }],
+        }]));
+        // Relative includes must resolve beside the production playbook.
+        await Deno.symlink(fileURLToPath(new URL("../ansible/tasks", import.meta.url)), `${folder}/tasks`);
+        for (const pass of [1, 2]) {
+            const result = await new Deno.Command("ansible-playbook", {
+                args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, "-e", `orbit_run=${folder}`, "--tags", "roles,check", `${folder}/phase.json`],
+                env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
+            }).output();
+            const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
+            assertEquals(result.code, 0, output);
+            if (pass === 2) assertMatch(output, /changed=0\s/);
+            for (const id of [1, 2]) assertEquals(await Deno.readTextFile(`${folder}/role-${id}.txt`), `role ${id}\n`);
+        }
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("JavaScript repair replaces stale extracted runtimes and then skips matching state", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const allTasks = parse(await Deno.readTextFile(taskPath("task-vm-javascript"))) as Array<Record<string, unknown>>;
+        const install = allTasks.find((task) => task.name === "Install the JavaScript tools")!;
+        const block = install.block as Array<Record<string, unknown>>;
+        const unpack = JSON.parse(JSON.stringify(block.find((task) => task.name === "Unpack the runtimes"))
+            .replaceAll("/var/cache/orbit/js", `${folder}/cache`));
+        const currentUser = Deno.env.get("USER")!;
+        const currentGroup = new TextDecoder().decode((await new Deno.Command("id", { args: ["-gn"] }).output()).stdout).trim();
+        const fixtureRecipe = structuredClone(recipe);
+        const scope = `${folder}/scope`;
+        const nodeHome = `${scope}/js_runtime/node/${recipe.tools.node.version}`;
+        const entries = [
+            { name: "node", dest: nodeHome, member: "node-dist/bin/node", binary: "bin/node" },
+            { name: "vp-cli", dest: `${scope}/recipe/vp-cli`, member: "vp", binary: "vp" },
+            { name: "pnpm", dest: `${scope}/recipe/pnpm`, member: "package/pnpm", binary: "package/pnpm" },
+            { name: "bun", dest: `${scope}/recipe/bun`, member: "bun-linux-x64/bun", binary: "bun-linux-x64/bun" },
+        ];
+        await Deno.mkdir(`${folder}/cache`);
+        for (const entry of entries) {
+            const source = `${folder}/source-${entry.name}`;
+            const candidate = `${source}/${entry.member}`;
+            const extracted = `${entry.dest}/${entry.binary}`;
+            await Deno.mkdir(candidate.slice(0, candidate.lastIndexOf("/")), { recursive: true });
+            await Deno.writeTextFile(candidate, "pinned runtime\n");
+            await Deno.mkdir(extracted.slice(0, extracted.lastIndexOf("/")), { recursive: true });
+            await Deno.writeTextFile(extracted, "stale runtime\n");
+            fixtureRecipe.tools[entry.name].artifacts.amd64.url = `https://fixtures.invalid/${entry.name}.tgz`;
+            const archived = await new Deno.Command("tar", { args: ["-czf", `${folder}/cache/${entry.name}.tgz`, "-C", source, entry.member.split("/")[0]] }).output();
+            assertEquals(archived.code, 0);
+        }
+        const checks = entries.map((entry) => ({
+            name: `Read repaired ${entry.name}`, "ansible.builtin.slurp": { src: `${entry.dest}/${entry.binary}` }, register: "repaired",
+        })).flatMap((read) => [read, {
+            name: "Require the pinned extracted content", "ansible.builtin.assert": { that: "repaired.content | b64decode | trim == 'pinned runtime'", quiet: true },
+        }]);
+        const vars = { recipe: fixtureRecipe, scope, node_home: nodeHome, orbit_user: currentUser };
+        const fixtureUnpack = JSON.parse(JSON.stringify(unpack).replaceAll('"group":"{{ orbit_user }}"', `"group":"${currentGroup}"`));
+        await localPlay(vars, [
+            { name: "Repair mismatched runtimes", when: install.when, vars: { js_current: false }, block: [fixtureUnpack] },
+            ...checks,
+        ], false);
+        await localPlay(vars, [
+            { name: "Skip matching runtimes", when: install.when, vars: { js_current: true }, block: [fixtureUnpack] },
+            ...checks,
+        ]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });

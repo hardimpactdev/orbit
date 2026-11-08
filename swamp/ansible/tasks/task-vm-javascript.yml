@@ -51,14 +51,13 @@
         dest: "{{ item.dest }}"
         remote_src: true
         extra_opts: "{{ item.opts }}"
-        creates: "{{ item.creates }}"
         owner: "{{ orbit_user }}"
         group: "{{ orbit_user }}"
       loop:
-        - { tool: "{{ recipe.tools.node }}", dest: "{{ node_home }}", opts: [--strip-components=1], creates: "{{ node_home }}/bin/node" }
-        - { tool: "{{ recipe.tools['vp-cli'] }}", dest: "{{ scope }}/recipe/vp-cli", opts: [], creates: "{{ scope }}/recipe/vp-cli/vp" }
-        - { tool: "{{ recipe.tools.pnpm }}", dest: "{{ scope }}/recipe/pnpm", opts: [], creates: "{{ scope }}/recipe/pnpm/package/pnpm" }
-        - { tool: "{{ recipe.tools.bun }}", dest: "{{ scope }}/recipe/bun", opts: [], creates: "{{ scope }}/recipe/bun/bun-linux-x64/bun" }
+        - { tool: "{{ recipe.tools.node }}", dest: "{{ node_home }}", opts: [--strip-components=1] }
+        - { tool: "{{ recipe.tools['vp-cli'] }}", dest: "{{ scope }}/recipe/vp-cli", opts: [] }
+        - { tool: "{{ recipe.tools.pnpm }}", dest: "{{ scope }}/recipe/pnpm", opts: [] }
+        - { tool: "{{ recipe.tools.bun }}", dest: "{{ scope }}/recipe/bun", opts: [] }
       loop_control: { label: "{{ item.tool.artifacts.amd64.url | basename }}" }
     - name: Publish the executables
       ansible.builtin.copy:

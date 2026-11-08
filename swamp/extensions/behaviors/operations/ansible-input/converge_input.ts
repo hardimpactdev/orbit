@@ -31,7 +31,7 @@ export async function convergeInput(folder: string, builder: string, toolHelper:
     const plans = JSON.parse(await Deno.readTextFile(`${folder}/plans.json`));
     await Deno.writeTextFile(`${folder}/inventory.json`, JSON.stringify({ all: { hosts } }), { mode: 0o600 });
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
-    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: Deno.execPath(), secrets, plans }), { mode: 0o600 });
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: Deno.execPath(), converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {
