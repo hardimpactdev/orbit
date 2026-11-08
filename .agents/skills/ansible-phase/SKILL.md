@@ -106,3 +106,9 @@ When a phase teaches a new rule or pitfall, add it here in the same PR. Replace 
 Incus boot configuration must converge on an existing base before it starts, not only at `incus init`. Snapshot copies inherit that configuration. Test a stale existing base and an already-current base as well as a new base.
 
 Detect a ZFS loop pool from its actual source file, not only a missing `zfs_dataset` setting: an existing native pool may omit that setting. Apply a loop host's ARC limit both in the running module and its boot configuration; leave native host ARC intent unchanged. Host capacity must include measured VM memory and a separate margin for host services.
+
+An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's first boot. A route allowance affects forwarded traffic only, and Incus's own accept rules cannot override another nftables input chain's drop. Scope DHCP to the bridge and DNS to its host address; keep the rest of host input closed. Give input rules catalog ownership and a shared settings/Node withdrawal phase. Assert the complete rendered input ruleset: a packet matcher that ignores unrestricted rules can miss a blanket allow.
+
+An unpromoted base is a failed build artifact, not a reusable base. Recreate it and its seed from stock on the next refresh. Cloud-init can report completion on a later boot even though a one-shot package module failed earlier and never installed SSH; compare proxy and firewall evidence before changing network policy.
+
+Record a Tool Manager pin and lock only after setup and its checks succeed. Gate both runtime copies and manager commands on that successful configuration; a failed setup must retry, and an unchanged repeat must report zero changes.

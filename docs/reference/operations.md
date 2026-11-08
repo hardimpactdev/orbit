@@ -20,7 +20,7 @@ A long operation, such as an [Instance deploy or rollback](/reference/deployment
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
 
-Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.
+Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. Publication releases the VM; later task work waits for a fresh task place. Every other kind a command starts runs the same way; [Kinds and targets](#kinds-and-targets) lists the task and deploy kinds.
 
 Production deployments include a `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
@@ -90,6 +90,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the former VM destroy bound of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
+
+`proof.run` has a fixed 11,100 seconds: 7,200 seconds for capacity admission, 3,600 seconds for execution and 300 seconds of margin. Its VM children retain their 3,600-second budgets. Waiting for a CI place consumes the admission allowance; it never skips execution or turns an empty report into a success. Admission expiry fails clearly.
 
 `task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The converge of a base from stock builds the nested fleet when the base has none. That takes 5,400 seconds at its bound and about 25 minutes in practice (the standalone fleet build, since removed, took 1,840 seconds as operation 11816). A VM at its pins converges in about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
@@ -242,7 +244,6 @@ Use the kind and target type to start or find the work of a command.
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
-| `task:park` | `tasks.park` | `task_group` | Gateway |
 | `task:start` | `tasks.provision` | `task_group` | Gateway |
 | `POST tasks/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
 | `POST tasks/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |

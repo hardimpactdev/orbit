@@ -49,7 +49,6 @@ When parallelizing CI commands, bound their nested worker pools as well as the o
 
 Before you finish, add what you learned to the skill that owns it (this one, swamp-flow, ansible-phase or flow-tighten), in the same PR. Say what changed.
 
-For CI proof reports, distinguish admission capacity from assertions. Classify only explicit capacity refusals with no case rows and a known selection. Preserve a receipt and skip the assertion check; never label an unrun proof as passed.
 
 A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
 
@@ -61,10 +60,15 @@ Before changing a CI cache, separate hits from misses in job logs. A Cargo lock 
 
 Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
 
-A task VM host has two capacity measures: `max_vms` resource units and `task_max_vms` task claims. Test parked claims and authenticated CI admission together when changing either measure; a VM count must not become a resource-unit count.
 
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.
 
-A per-host proof reserve is a whole Large VM place (three max_vms units). Task admission must exclude it, and an occupied reserve must count once. Keep CI proof capacity separate from its report-only assertion policy. Derive reserve eligibility from the authenticated Node’s active ci-runner role, persist it before queueing, and preserve it in allocation and preemption. A ci_only host exposes no task/operator capacity; prefer it for CI and keep its own refresh pinned there. Bind proof idempotency to caller identity.
+
+
+Each host has separate `task_places` and `ci_places`; one VM holds one place until confirmed deletion. Task publication releases the VM. Later build, fix and review work claims again from the base and task branch. Full pools wait within a two-hour budget; authenticated CI eligibility comes from the caller Node, never reporting flags.
+
+CI capacity is a bounded wait, never a passing no-case outcome. A proof report must account for every admitted case and every selected command. Read full Swamp output artifacts for merged reports; the native history summary keeps only 4 KiB.
+
+Released proof workflows run the runner from each PR head. Check its help for support before calling a new runner command; an older open PR can still use the previous interface.

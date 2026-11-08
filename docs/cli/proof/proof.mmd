@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - the command names a cases file: `firewall:allow` is `swamp/proof/firewall/allow.cases.yaml` in the VM's own checkout, so the cases run against the code the author has now, committed or not
   %%> - nested command names are accepted; colons after the family become hyphens in the file name, so `node:role:add` names `swamp/proof/node/role-add.cases.yaml`, using the same lookup as CI
   %%> What it does:
-  %%> - one command per run; in CI, `proof:run` proves each affected command on a VM of its own
+  %%> - one command per local run; in CI, `proof:run` balances whole batches across the free CI places and merges their reports
   %%> Built, not yet passed live:
   %%> - the command, the admission and the run; the workflow `proof-fleet-verify` and the restore of `base` it uses have not passed a live run yet
   Note over GW: Admit the proof<br/>VM · group · inputs

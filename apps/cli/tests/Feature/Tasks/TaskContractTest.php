@@ -6,7 +6,6 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
 
@@ -54,18 +53,6 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
-    it('renders review parking success and refusal from the Gateway contract', function (): void {
-        Sleep::fake(syncWithCarbon: true);
-        try {
-            foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
-                run_contract(['task-park-queued', 'task-park-succeeded', 'realtime/realtime-show/unconfigured'], 'task:park', ['task' => '1', '--idempotency-key' => 'review.fixture', ...$mode], 'tasks/task-park/succeeded.'.$extension, 0);
-                run_contract('task-park-refused', 'task:park', ['task' => '1', '--idempotency-key' => 'review.refused', ...$mode], 'tasks/task-park/refused.'.$extension, 1);
-            }
-        } finally {
-            Sleep::fake(false);
-        }
-    });
-
     it('renders a refused check', function (): void {
         run_task_contract('tasks/task-publish/not-orchestrated', 'task:publish', ['task' => '1', '--check' => '1'], 1);
         run_task_contract('tasks/task-check/not-orchestrated', 'task:check', ['task' => '2', '--phase' => 'baseline'], 1);

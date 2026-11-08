@@ -191,6 +191,10 @@ Deno.test("JS setup verifies the lock before exposing paths and keeps SHA512 che
         "tar.xz",
     );
     assertEquals(
+        plan.archives.find((a) => String(a.source).includes("node.tar.xz"))?.dest,
+        "/var/cache/orbit/tool-setup/javascript/node-" + pin.digest + "-extracted",
+    );
+    assertEquals(
         plan.commands.some((c) =>
             (c.argv as string[]).includes("--ignore-scripts")
         ),

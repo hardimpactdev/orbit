@@ -6,6 +6,7 @@ namespace App\Domain\Proof;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupEnding;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  * event: the VM and workspace as provision records them, the verdict of each case, and, when the run destroyed its VM, the end
  * of the task group. No step calls the Gateway. See docs/cli/proof/run.mmd.
  */
-final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationTimeout
+final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout
 {
     /** The code of a run whose VM or fleet never got to run its cases. */
     public const string RunFailed = 'proof.run_failed';
@@ -46,9 +47,16 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         $provision = $this->provision->input(self::provisionView($operation));
         $cancel = TaskVmProviderWorkflowInput::envelope(ValidatedData::object($input['cancel']));
 
+        $verifications = [];
+        $assignments = ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]);
+        foreach ($assignments as $index => $assignment) {
+            $verifications[] = [...ValidatedData::object($input['verify']), 'command' => $assignment['command'], 'file' => $assignment['file'],
+                'batch' => $assignment['batch'], ...($assignment['cases'] === [] ? [] : ['case_ids' => $assignment['cases']]), 'step' => 'Prove assigned batches-'.$index, 'restore_first' => true];
+        }
+
         return [
             // The cancel's secrets go nested in the intent, past the submission that turns an empty top-level map into an object.
-            'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'], 'cancel' => ['node_id' => ValidatedData::integer($cancel['intent']['node_id']),
+            'intent' => ['provision' => $provision['intent'], 'verify' => $input['verify'], 'verifications' => $verifications, 'cancel' => ['node_id' => ValidatedData::integer($cancel['intent']['node_id']),
                 'intent' => $cancel['intent'], 'execution_secrets' => $cancel['execution_secrets'] === [] ? (object) [] : $cancel['execution_secrets']]],
             'execution_secrets' => $provision['execution_secrets'],
             ...self::keepFlag($input),
@@ -74,6 +82,13 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         $this->settle($operation);
     }
 
+    /** A definite start refusal has no Node effects, but its claimed identity still needs releasing. */
+    public function refused(Operation $operation): void
+    {
+        $this->provision->refused(self::provisionView($operation));
+        DB::afterCommit(fn () => $this->settle($operation));
+    }
+
     public function apply(Operation $operation, array $data): Operation
     {
         $projected = DB::transaction(function () use ($operation, $data): Operation {
@@ -94,9 +109,8 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
                 $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
 
-            $report = $native['steps'] ?? null;
-            $report = is_array($report) && is_array($report['Report'] ?? null) && is_string($report['Report']['stdout'] ?? null) ? $report['Report']['stdout'] : '';
-            $verdicts = ProofVerdicts::rows(ValidatedData::string($input['command']), ValidatedData::string($input['file']), $report);
+            $report = is_string($native['report'] ?? null) ? $native['report'] : '';
+            $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]), $report);
             if (in_array($status, ['succeeded', 'failed'], true)) {
                 $passed = $status === 'succeeded' && ProofVerdicts::passed($verdicts['cases']);
                 $data['status'] = $passed ? 'succeeded' : 'failed';

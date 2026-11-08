@@ -114,10 +114,10 @@ it('lets the last matching line win', function (): void {
         ->and(proofSelect(['swamp/proof/runner/runner.py'])['because'])->toBe('wildcard');
 });
 
-it('selects every case when the selection list changed, and the change cannot narrow it', function (): void {
+it('treats a changed selection list like any other path: only a command or case change selects a proof', function (): void {
     $selected = proofSelect(['swamp/proof/selection.txt', 'docs/a.md'], list: PROOF_LIST."\nswamp/proof/selection.txt   skip\n");
 
-    expect($selected['because'])->toBe('selection_list_changed')->and($selected['files'])->toBe(PROOF_CASES_FILES);
+    expect($selected['nothing'])->toBeTrue();
 });
 
 it('selects every case when GitHub lists an incomplete file list', function (): void {
@@ -213,6 +213,58 @@ it('carries the merge base of the commit into the selection, for the proof of a 
 
     expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
 });
+
+it('keeps the Node detail proof and shared list coverage for an owning path changed on its own', function (string $path, bool $family = true, bool $list = true): void {
+    $root = dirname(base_path(), 2);
+    if (! is_file($root.'/swamp/proof/selection.txt')) {
+        $this->markTestSkipped('Needs the repository checkout.');
+    }
+    $files = array_map(static fn (string $file): string => substr($file, strlen($root) + 1),
+        glob($root.'/swamp/proof/*/*.cases.yaml'));
+    $selected = ProofSelection::select((string) file_get_contents($root.'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ProofSelection::casesFiles($files));
+
+    expect($selected->files())->toBe([
+        ...($list ? ['swamp/proof/node/list.cases.yaml'] : []),
+        'swamp/proof/node/show.cases.yaml',
+    ])->and(array_column($selected->uncovered, 'reason'))->toBe($family ? array_map(
+        static fn (string $command): string => 'no cases file for '.$command,
+        ['node:access:add', 'node:access:remove', 'node:add', 'node:converge', 'node:metrics', 'node:remove',
+            'node:role:add', 'node:role:list', 'node:role:relocate', 'node:role:remove', 'node:update', 'node:wireguard-key'],
+    ) : [])
+        ->and($selected->everythingBecause)->toBeNull()
+        ->and($selected->nothingToProve())->toBeFalse();
+})->with([
+    'show command' => 'apps/cli/app/Commands/Nodes/ShowNodeCommand.php',
+    'shared Node command' => 'apps/cli/app/Commands/Nodes/NodeCommand.php',
+    'shared Node renderer' => 'apps/cli/app/Commands/Nodes/NodeOutput.php',
+    'list rendering' => 'apps/cli/app/Commands/Nodes/ListNodesCommand.php',
+    'role rendering' => 'apps/cli/app/Commands/Nodes/ListNodeRolesCommand.php',
+    'metrics rendering' => 'apps/cli/app/Commands/Nodes/ShowNodeMetricsCommand.php',
+    'show action' => 'apps/gateway/app/Actions/Nodes/ShowNodeAction.php',
+    'list action' => 'apps/gateway/app/Actions/Nodes/ListNodesAction.php',
+    'role action' => 'apps/gateway/app/Actions/Nodes/ListNodeRolesAction.php',
+    'Node projection' => 'apps/gateway/app/Data/Nodes/NodeData.php',
+    'role projection' => 'apps/gateway/app/Data/Nodes/NodeRoleAssignmentData.php',
+    'agent projection' => 'apps/gateway/app/Data/Nodes/NodeAgentData.php',
+    'Node model' => 'apps/gateway/app/Models/Node.php',
+    'role model' => 'apps/gateway/app/Models/NodeRole.php',
+    'access model' => ['apps/gateway/app/Models/NodeAccess.php', false],
+    'Cluster name' => ['apps/gateway/app/Models/Cluster.php', false],
+    'Node controller' => 'apps/gateway/app/Http/Controllers/Api/NodesController.php',
+    'role controller' => 'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
+    'agent liveness' => ['apps/gateway/app/Domain/NodeFacts/NodeAgentLiveness.php', false],
+    'agent state' => ['apps/gateway/app/Domain/NodeFacts/NodeAgentState.php', false],
+    'agent eligibility' => 'apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php',
+    'recorded agent view' => ['apps/gateway/app/Infrastructure/AgentView/CacheAgentStateView.php', false],
+    'agent view contract' => ['apps/gateway/app/Domain/AgentView/AgentStateView.php', false],
+    'SDK detail request' => 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
+    'SDK list request' => 'packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php',
+    'SDK role request' => 'packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php',
+    'SDK detail projection' => 'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
+    'SDK role projection' => 'packages/php-sdk/src/Responses/Nodes/NodeRoleAssignmentResponse.php',
+    'show cases alone' => ['swamp/proof/node/show.cases.yaml', false, false],
+]);
 
 const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
 
@@ -319,10 +371,10 @@ it('selects the firewall commands for every tracked file of the firewall directo
     expect($unselected)->toBe([]);
 });
 
-it('runs every case for the code that every command runs through', function (string $path): void {
+it('selects no proof for the code that every command runs through', function (string $path): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
 
-    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::None);
 })->with([
     'the start action' => ['apps/gateway/app/Actions/Operations/StartOperationAction.php'],
     'the operation store' => ['apps/gateway/app/Domain/Operations/OperationStore.php'],
@@ -350,18 +402,18 @@ it('keeps documentation and the unit tests of the proof tooling out of the share
     'a firewall extension test' => ['swamp/extensions/behaviors/operations/firewall/firewall_test.ts'],
 ]);
 
-it('runs every case when a shared file changes', function (): void {
+it('runs no proof when only a shared file changes', function (): void {
     firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $selected = proofSelect(['apps/gateway/app/Domain/Operations/OperationStore.php'], list: (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'));
 
-    expect($selected['because'])->not->toBeNull()->and($selected['files'])->toBe(PROOF_CASES_FILES);
+    expect($selected['nothing'])->toBeTrue();
 });
 
-it('names only tracked files in the lines that select every case', function (): void {
+it('names only tracked files in the shared-code lines', function (): void {
     firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $root = dirname(base_path(), 2);
     $tracked = array_flip(array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files'))));
-    preg_match_all('~^(\S+)\s+\*$~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
+    preg_match_all('~^(\S+)\s+none: shared code~m', (string) file_get_contents($root.'/swamp/proof/selection.txt'), $lines);
     $named = array_values(array_filter($lines[1], static fn (string $glob): bool => ! str_contains($glob, '*') && ! str_contains($glob, '?')));
 
     expect($named)->not->toBeEmpty();
@@ -369,7 +421,7 @@ it('names only tracked files in the lines that select every case', function (): 
     expect($missing)->toBe([]);
 });
 
-it('selects every case for every tracked file of the shared directories', function (): void {
+it('selects no proof for every tracked file of the shared directories', function (): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
     $root = dirname(base_path(), 2);
     $tracked = array_filter(explode("\n", (string) shell_exec('git -C '.escapeshellarg($root).' ls-files')));
@@ -383,7 +435,7 @@ it('selects every case for every tracked file of the shared directories', functi
         && array_filter($directories, static fn (string $directory): bool => str_starts_with($path, $directory)) !== []));
 
     expect($files)->not->toBeEmpty();
-    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::Everything));
+    $unselected = array_values(array_filter($files, static fn (string $path): bool => $list->match($path)?->kind !== ProofRuleKind::None));
     expect($unselected)->toBe([]);
 });
 
@@ -441,6 +493,6 @@ it('keeps the budget table out of the shared code but not the rules that read it
     expect($list->match($path)?->kind)->toBe($kind);
 })->with([
     'the budget table' => ['apps/gateway/app/Domain/Operations/OperationBudgetTable.php', ProofRuleKind::None],
-    'the budget rules' => ['apps/gateway/app/Domain/Operations/OperationRunBudgets.php', ProofRuleKind::Everything],
-    'the kinds' => ['apps/gateway/app/Domain/Operations/OperationKinds.php', ProofRuleKind::Everything],
+    'the budget rules' => ['apps/gateway/app/Domain/Operations/OperationRunBudgets.php', ProofRuleKind::None],
+    'the kinds' => ['apps/gateway/app/Domain/Operations/OperationKinds.php', ProofRuleKind::None],
 ]);

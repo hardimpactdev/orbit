@@ -73,15 +73,9 @@ sequenceDiagram
       SW-->>GW: Native terminal result<br/>PR number · URL · commit
       Note over GW: Record the draft PR<br/>PR · subtask done
       %%> Result:
-      %%> - the group keeps its VM; the pull request fields of the group are set for stage 4
+      %%> - the pull request fields are set for stage 4; the group deletes its VM and holds no task place through review
       %%> - the spec subtask of the group is marked completed, so the group has no open subtask
-      %%> - in manual mode (the review mode of the group at admission), the Gateway then admits `task:park` for the group, which stops the VM while the spec waits for the owner; a refused park is kept in the result as `park_refused`
-      %%> - in automatic mode it parks nothing, and the VM keeps running
-      %%> Why:
-      %%> - `task:park` refuses a group with an open subtask; with the subtask completed it can stop the VM while the spec waits for review, and the workspace stays
-      %%> Decided by the orchestrator, for Nick's review:
-      %%> - prep completes its subtask when the App opens the draft PR; park keeps its rule that no subtask is open
-      %%> - the park follows the mode and needs no step in the run, like the park after `task:prep-fix`
+      %%> - automatic mode also releases the VM at publication
     else findings are left
       SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
       %%> Result:

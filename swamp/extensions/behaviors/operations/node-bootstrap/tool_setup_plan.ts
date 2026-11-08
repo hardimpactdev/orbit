@@ -158,7 +158,7 @@ export async function toolSetupPlan(raw: unknown, home: string) {
                 ? "tar.xz"
                 : "tar.gz";
             const source = fetch(name + "." + format, pin),
-                dest = cache + "/" + name + "-extracted";
+                dest = cache + "/" + name + "-" + pin.digest + "-extracted";
             const marker = name === "node"
                 ? "/node-v" + pin.version + "-linux-x64/bin/node"
                 : name === "pnpm"

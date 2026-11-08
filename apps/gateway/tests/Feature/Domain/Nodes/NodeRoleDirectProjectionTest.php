@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Data\Nodes\NodeData;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -70,7 +69,7 @@ it('keeps an active role active when its convergence fails, so the Gateway still
         ->toHaveCount(1);
 });
 
-it('marks a role failed when its first add or a non-active convergence fails', function (string $before): void {
+it('marks a role failed when its first add or a non-active convergence fails', function (string $before, string $step, string $failedStep, string $errorCode): void {
     Http::preventStrayRequests();
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'database', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.4',
@@ -86,15 +85,25 @@ it('marks a role failed when its first add or a non-active convergence fails', f
 
     app(NodeRoleDirectProjection::class)->apply($operation, ['run_id' => 'fixture-native-role', 'status' => 'failed',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => ['Check the role' => ['status' => 'failed']], 'summary' => ['failed_steps' => ['Check the role']]]]);
+        'result' => ['steps' => [$step => ['status' => 'failed']], 'summary' => ['failed_steps' => [$step]]]]);
 
     expect($assignment->refresh()->status)->toBe(LifecycleStatus::Failed);
-    expect($assignment->failed_step)->toBe('converge:Check the role');
+    expect($assignment->failed_step)->toBe($failedStep);
 
-    $data = NodeData::fromModel($node->refresh())->toArray();
-    expect($data['roles'])->toBe(['database'])
-        ->and($data['assignments'])->toBe([[
-            'id' => $assignment->id, 'role' => 'database', 'status' => 'failed',
-            'failed_step' => 'converge:Check the role', 'error_code' => 'node_role.convergence_failed',
-        ]]);
-})->with(['first add' => ['provisioning'], 'failed earlier' => ['failed']]);
+    $node->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $expected = [[
+        'id' => $assignment->id,
+        'role' => 'database',
+        'status' => 'failed',
+        'failed_step' => $failedStep,
+        'error_code' => $errorCode,
+    ]];
+
+    $this->getJson('/api/v1/nodes/'.$node->id.'/roles')->assertOk()->assertJsonPath('data', $expected);
+    $this->getJson('/api/v1/nodes/'.$node->id)->assertOk()->assertJsonPath('data.assignments', $expected);
+    $this->getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.assignments', $expected);
+})->with(['first add' => ['provisioning'], 'failed earlier' => ['failed']])->with([
+    'native role check' => ['Check the role', 'converge:Check the role', 'node_role.convergence_failed'],
+    'recorded Ubuntu requirement' => ['Require supported Ubuntu', 'converge:Require supported Ubuntu', 'role.os_unsupported'],
+]);

@@ -87,6 +87,7 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
             $intent = ValidatedData::object($operation->input);
+            TaskVmReentry::record($operation, $native);
             $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Push the fix' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
 
@@ -118,7 +119,10 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
             $data['result'] = $result;
             $data['error_code'] = $code;
 
-            return app(DirectOperation::class)->project($operation, $data, $result);
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            TaskVmReentry::release($projected);
+
+            return $projected;
         });
     }
 
@@ -131,6 +135,7 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
     /** Swamp refused the start, so no run began: the round ends as failed. */
     public function refused(Operation $operation): void
     {
+        TaskVmReentry::refused($operation);
         $this->abandon($operation);
     }
 

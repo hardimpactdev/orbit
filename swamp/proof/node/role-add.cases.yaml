@@ -1,5 +1,4 @@
 # The target cases of node:role:add. Format: docs/reference/verification-cases.
-# No role-add cases file exists on origin/main; no existing case IDs or batches are replaced.
 # Shared prompts, JSON and keyed replay follow the CLI standard; they need no command-specific cases.
 command: node:role:add
 chart: node/role-add
@@ -19,8 +18,8 @@ uncovered:
   "path:converge-refused": "Need assignment-state and clock fixtures to refuse fresh provisioning, removing and non-converge failures, then accept a provisioning claim at least 11 minutes old only without a live Node Operation."
   "guard:singleton-and-cluster": "Need role-holder and Cluster fixtures to distinguish singleton refusal, ingress without a Cluster, a second Cluster ingress, and a repeated active ingress assignment. CLI status alone cannot distinguish these refusals from an unrelated role precondition."
   "record:role-lifecycle": "Need role-record assertions for active, provisioning, failed and removing with role, status, failed_step and error_code, including retained active status after a failed convergence and unchanged assignments after refusals. Compare node:list, node:show and node:role:list using recorded Gateway state only and named related records."
-  "effect:role-state": "Need role-specific host-state assertions and safe negative mutations to prove packages, units, storage ownership, protected-path safety, ordered owned firewall rules and preservation of unrelated rules. The partial-failure case checks execution and recovery, not these host effects or a rollback."
-  "repeat:no-changes": "Need Ansible change-result or role host-state comparisons to prove a second convergence reports no changes; a second succeeded Operation alone does not prove that result."
+  "effect:role-state": "Database checks its Docker service/package and active assignment; other roles need role-specific host-state assertions and safe negative mutations to prove packages, units, storage ownership, protected-path safety, ordered owned firewall rules and preservation of unrelated rules. The partial-failure case checks execution and recovery, not these host effects or a rollback."
+  "repeat:no-changes": "Database and app-dev repeats read full native Ansible recaps. Other role repeats still need role-specific effects and zero-change proof."
   "failure:role.os_unsupported": "Need an isolated managed non-Ubuntu target to prove role.os_unsupported before host changes while preserving the CLI control path."
   "flow:phase-contract": "Need run/phase and private-file assertions to prove one run, Ansible ownership of idempotent role phases, terminal-only projection and cleanup after either result."
   "path:tools": "Need Tool Manager version and executable assertions on a target receiving an application role to prove conditional tool setup rather than only Operation success."
@@ -34,11 +33,18 @@ cases:
   - id: required-only
     batch: fresh-fleet
     covers: [main, add, succeeded, role-refused, converge-requested, converge-mode, converge, converge-succeeded]
-    summary: Add database with required arguments only, refuse an ordinary repeat, then converge twice successfully.
+    summary: Repair a stopped Docker service when adding database, verify its package and active assignment, refuse an ordinary repeat, then prove convergence changes nothing.
     timeout: 1200
+    setup:
+      - service: {on: app-dev, name: docker.socket, state: stop}
+      - service: {on: app-dev, name: docker.service, state: stop}
     stages:
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 0, status: succeeded}}
+          - cli: {run: [node:role:list, "${app-dev.id}"], expect: {exit: 0, json: [{path: "assignments[role=database].status", equals: active}]}}
+        expect:
+          - service: {on: app-dev, name: docker.service, state: active}
+          - package: {on: app-dev, any: [docker.io, docker-ce]}
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database], expect: {exit: 1, code: validation.failed, request: none}}
         expect:
@@ -46,7 +52,27 @@ cases:
       - act:
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
       - act:
-          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], forms: [human], expect: {exit: 0, status: succeeded}}
+          - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], save: {id: database-repeat}, expect: {exit: 0, status: succeeded}}
+        expect:
+          - service: {on: app-dev, name: docker.service, state: active}
+          - package: {on: app-dev, any: [docker.io, docker-ce]}
+          - ansible_changes: {operation: "${database-repeat}", phases: [Apply role prerequisites, Apply the role on the Node, Open the firewall, Check the role], changed: 0}
+
+  - id: application-repeat
+    batch: fresh-fleet
+    covers: [main, tools, converge-requested, converge-mode, converge, converge-succeeded]
+    summary: Converge app-dev and its Tool Managers, then prove an unchanged repeat changes no role resources or manager installation.
+    timeout: 1800
+    stages:
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], expect: {exit: 0, status: succeeded}}
+      - act:
+          - cli: {run: [node:role:add, "${app-dev.id}", app-dev, --converge], save: {id: application-repeat}, expect: {exit: 0, status: succeeded}}
+          - cli: {run: [node:role:list, "${app-dev.id}"], expect: {exit: 0, json: [{path: "assignments[role=app-dev].status", equals: active}]}}
+        expect:
+          - service: {on: app-dev, name: docker.service, state: active}
+          - service: {on: app-dev, name: caddy.service, state: active}
+          - ansible_changes: {operation: "${application-repeat}", phases: [Apply role prerequisites, Set up Tool Managers, Apply the role on the Node, Open the firewall, Check the role], changed: 0}
 
   - id: invalid-node-id
     batch: fresh-fleet
@@ -64,6 +90,7 @@ cases:
     batch: fresh-fleet
     covers: []
     summary: A recorded name is not an explicit numeric record selector.
+    fails_on_base: true
     fails_today: The CLI resolves Node names and sends the role request instead of refusing a nonnumeric selector with node.id_invalid.
     act:
       - cli: {run: [node:role:add, app-dev, database], expect: {exit: 1, code: node.id_invalid, request: none}}
@@ -134,6 +161,7 @@ cases:
     batch: fresh-fleet
     covers: [main, role-refused]
     summary: Analytics-only storage options cannot be silently ignored on an otherwise valid app-dev convergence.
+    fails_on_base: true
     fails_today: The CLI ignores Analytics storage options for other roles and admits the convergence instead of returning validation.failed.
     variants:
       - {name: postgres, option: --postgres-process=1}
@@ -157,6 +185,10 @@ cases:
       - act:
           - fault: {clear: true}
           - cli: {run: [node:role:add, "${app-dev.id}", database, --converge], expect: {exit: 0, status: succeeded}}
+          - cli: {run: [node:role:list, "${app-dev.id}"], expect: {exit: 0, json: [{path: "assignments[role=database].status", equals: active}]}}
+        expect:
+          - service: {on: app-dev, name: docker.service, state: active}
+          - package: {on: app-dev, any: [docker.io, docker-ce]}
 
   - id: unreachable-node
     batch: node-down
@@ -177,6 +209,7 @@ cases:
     covers: [main, role-refused, access-refused, converge-requested, converge-mode, converge-refused]
     summary: Gateway authority needs no target grant; refusal needs neither authority nor a target grant, and target-only authority also applies to Metrics.
     exclusive: true
+    fails_on_base: true
     fails_today: Metrics role mutation authorizes against the Gateway Node instead of the target, refusing a caller who holds only the target grant.
     setup:
       - cli: {run: [node:access:add, "${app-prod.id}", "${gateway.id}"], expect: {exit: 0}}

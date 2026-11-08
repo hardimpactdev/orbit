@@ -32,12 +32,12 @@ CLEANUP_SECONDS = 60
 REPORT_SECONDS = 65
 # The Gateway counts an agent as offline after 15 s without an event.
 OFFLINE_SECONDS = 20
-CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human', 'steps'}
+CLI_EXPECT = {'exit', 'status', 'code', 'skipped', 'request', 'human', 'steps', 'json'}
 LIST_ROWS = {'firewall:list': 'rules'}
 # The parts of a list answer that `record` reads, per Node: `rules` and `managed` are lists, `unmatched` is the list under `live`,
 # and `live` is the one object that holds the state of the report.
 RECORD_SECTIONS = ('rules', 'managed', 'unmatched', 'live')
-BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners')
+BASELINE_PROVIDERS = ('ufw', 'firewall_records', 'operations', 'listeners', 'node_records')
 
 
 class Infra(Exception):
@@ -253,6 +253,8 @@ def cli(run, args):
             raise Infra('cli expect steps needs a name and a nonnegative integer count')
         if 'json' not in forms:
             raise Infra('cli expect steps is read from the JSON form: add json to forms')
+    if ('json' in expect or args.get('save')) and 'json' not in forms:
+        raise Infra('cli structured expectations and save need the JSON form')
     argv = [str(item) for item in args['run']]
     # The default is the candidate CLI of the outer VM, which acts for the fleet as its operator; `gateway` is that same caller.
     caller = args.get('as')
@@ -273,6 +275,9 @@ def cli(run, args):
         except fleet_module.FleetError as error:  # the tested CLI could not be made ready on the Node: the fleet, not the command
             raise Infra(str(error)) from error
         failures.extend(check_result(run, label, form, forms, result, expect))
+        if form == 'json':
+            for path, name in (args.get('save') or {}).items():
+                run.names[name] = json_value(result['json'], path)
     if before is not None and (created := operation_ids(run) - before):
         failures.append(f'cli {argv[0]}: created Operation {sorted(created)}, expected no request')
     return failures
@@ -294,6 +299,7 @@ def check_result(run, label, form, forms, result, expect):
             failures.append(f"{label}: not skipped with {expect['skipped']}")
         if 'steps' in expect:
             failures.extend(check_operation_steps(run, label, document, expect['steps']))
+        failures.extend(check_json(document, expect.get('json') or []))
         return failures
     # The human form has no JSON: the code and the status are read from the JSON form when the call has one.
     text = terminal.plain(result['stdout'] + result['stderr'])
@@ -308,6 +314,44 @@ def check_result(run, label, form, forms, result, expect):
             status = (run.cli(['operation:show', found[1]])['json'] or {}).get('status') if found else None
             if status != expect['status']:
                 failures.append(f"{label}: status {status}, expected {expect['status']}" + ('' if found else ' (no Operation in the output)'))
+    return failures
+
+
+def json_value(document, path):
+    """A dotted path, with optional array index or unique row selection: nodes[id=7].roles. Missing is not null."""
+    value = document
+    for part in path.split('.'):
+        match = re.fullmatch(r'([^\[\]]+)(?:\[(?:id=)?([0-9]+)\])?', part)
+        if not match or not isinstance(value, dict) or match[1] not in value:
+            raise Infra(f'JSON path {path}: missing {part}')
+        value = value[match[1]]
+        if match[2] is not None:
+            if not isinstance(value, list):
+                raise Infra(f'JSON path {path}: {part} is not a list')
+            selected = [row for row in value if isinstance(row, dict) and row.get('id') == int(match[2])] if '[id=' in part else value[int(match[2]):int(match[2]) + 1]
+            if len(selected) != 1:
+                raise Infra(f'JSON path {path}: {part} selects {len(selected)} rows')
+            value = selected[0]
+    return value
+
+
+def check_json(document, assertions):
+    if not isinstance(assertions, list) or any(not isinstance(item, dict) or not isinstance(item.get('path'), str)
+                                               or set(item) not in ({'path', 'equals'}, {'path', 'absent'})
+                                               or ('absent' in item and item['absent'] is not True) for item in assertions):
+        raise Infra('JSON assertions need path and equals, or path and absent: true')
+    failures = []
+    for assertion in assertions:
+        try:
+            actual = json_value(document, assertion['path'])
+        except Infra as error:
+            if not assertion.get('absent'):
+                failures.append(str(error))
+            continue
+        if assertion.get('absent'):
+            failures.append(f"JSON path {assertion['path']}: expected absent")
+        elif actual != assertion['equals']:
+            failures.append(f"JSON path {assertion['path']}: {actual!r}, expected {assertion['equals']!r}")
     return failures
 
 
@@ -417,6 +461,54 @@ def record(run, args):
     return failures + (in_order(label, found, args['order']) if 'order' in args else [])
 
 
+def service(run, args):
+    node = nodes_of(run, 'service', args['on'])[0]
+    if args['state'] not in ('active', 'inactive', 'stop'):
+        raise Infra('service state is active, inactive or stop')
+    command = ['systemctl', 'stop' if args['state'] == 'stop' else 'is-active', args['name']]
+    done = run.fleet.sh(node, shlex.join(command))
+    run.evidence_text('service-' + args['name'] + '.txt', done.stdout + done.stderr)
+    if args['state'] == 'stop':
+        return [] if done.returncode == 0 else [f'service {node}: stop failed: {done.stderr}']
+    return [] if done.stdout.strip() == args['state'] else [f'service {node} {args["name"]}: {done.stdout.strip()}, expected {args["state"]}']
+
+
+def package(run, args):
+    node = nodes_of(run, 'package', args['on'])[0]
+    for name in args['any']:
+        done = run.fleet.sh(node, shlex.join(['dpkg-query', '-W', '-f=${db:Status-Status}', name]))
+        if done.returncode == 0 and done.stdout.strip() == 'installed':
+            return []
+    return [f'package {node}: none of {args["any"]} is installed']
+
+
+def ansible_changes(run, args):
+    command = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit',
+               'php', fleet_module.NODE_CHECKOUT + '/tools/swamp-proof-guest/ansible-recaps.php']
+    done = run.fleet.sh('gateway', shlex.join(command), timeout=120, stdin_text=json.dumps(args))
+    if done.returncode:
+        raise Infra(f'Ansible recap read: {done.stderr[-500:]}')
+    try:
+        document = json.loads(done.stdout)
+    except ValueError as error:
+        raise Infra('Ansible recap read returned no JSON') from error
+    run.evidence_text('ansible-recaps.json', json.dumps(document, indent=2))
+    return check_ansible_changes(document, args)
+
+
+def check_ansible_changes(document, args):
+    failures = []
+    for phase in args['phases']:
+        observed = document.get(phase, {})
+        hosts = observed.get('hosts', [])
+        if observed.get('status') != 'succeeded' or not hosts:
+            failures.append(f'Ansible {phase}: missing successful phase recap')
+        for host in hosts:
+            if host.get('changed') != args['changed'] or host.get('failed') != 0 or host.get('unreachable') != 0:
+                failures.append(f'Ansible {phase}: {host}')
+    return failures
+
+
 def doctor(run, args):
     node = args['node']
     run.sleep(run.acted + REPORT_SECONDS - time.time())
@@ -466,6 +558,41 @@ def node_access_remove(run, args):
     return []
 
 
+def recorded_guest(run, payload):
+    """Test support on the mounted candidate Gateway, as its managed user. Never a production endpoint."""
+    disabled = 'curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,exec,shell_exec,passthru,system,proc_open,popen'
+    command = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'ORBIT_HOME=/home/orbit/.orbit',
+               'php', '-d', 'disable_functions=' + disabled, fleet_module.NODE_CHECKOUT + '/tools/swamp-proof-guest/recorded-read.php']
+    done = run.fleet.sh('gateway', shlex.join(command), stdin_text=json.dumps(payload))
+    if done.returncode:
+        raise Infra(f'recorded Gateway support: exit {done.returncode}: {(done.stderr or done.stdout)[-500:]}')
+    try:
+        return json.loads(done.stdout)
+    except ValueError as error:
+        raise Infra('recorded Gateway support returned no JSON') from error
+
+
+def node_fixture(run, args):
+    if args['kind'] == 'retained' and not all(key in args for key in ('consumer', 'serving')):
+        raise Infra('a retained Node fixture needs consumer and serving Nodes')
+    payload = {'mode': 'fixture', **{key: value for key, value in args.items() if key != 'as'}}
+    for key in ('consumer', 'serving'):
+        if key in payload:
+            payload[key] = run.fleet.nodes[payload[key]]['node_id']
+    value = recorded_guest(run, payload)
+    run.names.update({f"{args['as']}.{key}": item for key, item in value.items()})
+    return []
+
+
+def recorded_request(run, args):
+    """An audited HTTP-kernel request, with optional request-local agent view and clock for exact boundaries."""
+    payload = {'mode': 'request', **{key: value for key, value in args.items() if key != 'expect'}}
+    payload['caller'] = run.fleet.nodes[args['caller']]['node_id']
+    document = recorded_guest(run, payload)
+    run.evidence_text('recorded-request.json', json.dumps(document, indent=2))
+    return check_json(document, args['expect'])
+
+
 def unchanged_providers(step_args, file_baseline):
     names = step_args.get('what') or [name for name in file_baseline if name != 'operations']
     unknown = [name for name in names if name not in BASELINE_PROVIDERS]
@@ -483,6 +610,8 @@ def snapshot(run, provider):
         return [json.dumps(row, sort_keys=True) for row in record_rows(run, 'firewall:list', node)]
     if provider == 'listeners':
         return [line.split()[-2] for line in run.fleet.sh(node, 'ss -Htlun').stdout.splitlines() if len(line.split()) > 3]
+    if provider == 'node_records':
+        return [json.dumps(recorded_guest(run, {'mode': 'snapshot'}), sort_keys=True)]
     result = run.cli(['operation:list'])
     return [str(item.get('id')) for item in (result['json'] or {}).get('operations', [])]
 
@@ -645,5 +774,5 @@ def unbuilt(name):
 
 FUNCTIONS = {name: unbuilt(name) for name in spec.STEPS}
 FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6_addresses, 'listener': listener, 'ufw_rule': ufw_rule, 'probe': probe, 'cli': cli, 'ufw': ufw, 'record': record, 'doctor': doctor,
-                  'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
-                  'node_access_remove': node_access_remove})
+                  'service': service, 'package': package, 'ansible_changes': ansible_changes, 'unchanged': unchanged, 'ufw_delete': ufw_delete, 'agent_report': agent_report, 'node_down': node_down,
+                  'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request})

@@ -625,7 +625,7 @@ function metrics_cli_node_payload(int $id, string $name, string $status, array $
         'ssh_host_fingerprint' => null,
         'failed_step' => null,
         'error_code' => null,
-        'roles' => $roles,
+        'roles' => array_map(static fn (string $role, int $index): array => ['id' => $index + 1, 'role' => $role, 'status' => 'active', 'failed_step' => null, 'error_code' => null], $roles, array_keys($roles)),
     ];
 }
 

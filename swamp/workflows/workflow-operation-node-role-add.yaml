@@ -339,7 +339,7 @@ jobs:
       behaviorName: ${{ "ansible-role-compose-tools-" + string(inputs.node_id) }}
       methodName: composeRole
       inputs: {path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}', phase: tools}
-  - name: Write literal tools variables
+  - name: Write tool variables
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Compose tools resources, condition: {type: succeeded}}]
@@ -493,7 +493,7 @@ jobs:
   labels: {role: swamp}
   dependsOn: [{job: publication_read, condition: {type: succeeded}}]
   steps:
-  - name: Compose publication resources
+  - name: Compose publications
     labels: {role: swamp}
     task:
       type: behavior
@@ -501,10 +501,10 @@ jobs:
       behaviorName: ${{ "ansible-role-compose-publication-" + string(inputs.node_id) }}
       methodName: composeRole
       inputs: {path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}', phase: publication}
-  - name: Write literal publication variables
+  - name: Write publication vars
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Compose publication resources, condition: {type: succeeded}}]
+    dependsOn: [{step: Compose publications, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: command/shell

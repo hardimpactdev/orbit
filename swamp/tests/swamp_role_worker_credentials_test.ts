@@ -63,3 +63,11 @@ Deno.test("the credentials end as folders 0750 and token files 0640", () => {
         Deno.removeSync(root, { recursive: true });
     }
 });
+
+Deno.test("role convergence leaves live serve and workers to the guarded three-worker renewal path", () => {
+    for (const name of ["Start Swamp runtime", "Start the Swamp workers"]) {
+        assertEquals(named(name)["ansible.builtin.systemd"].state, "started");
+    }
+    assertEquals(named("Install sequential worker renewal")["ansible.builtin.import_tasks"], "swamp-worker-renewal.yml");
+    assertEquals(named("Start worker renewal after all workers")["ansible.builtin.systemd"].state, "started");
+});

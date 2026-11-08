@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Tasks\StartTaskParkAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Models\Operation;
@@ -52,8 +49,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
     /** @param array<string,mixed> $data */
     public function apply(Operation $operation, array $data): Operation
     {
-        $first = false;
-        $projected = DB::transaction(function () use ($operation, $data, &$first): Operation {
+        return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $native = ValidatedData::object($data['result'] ?? []);
             $status = ValidatedData::string($data['status']);
@@ -61,7 +57,6 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
-            $first = true;
             $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? ($step === 'Open a draft PR' ? TaskPrepResults::publishCode($data) : 'tasks.turn_failed')) : null;
             $claimed = is_array($native['provision'] ?? null);
@@ -99,39 +94,15 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             $data['result'] = $result;
             $data['error_code'] = $code;
 
-            return app(DirectOperation::class)->project($operation, $data, $result);
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            TaskVmReentry::release($projected);
+
+            return $projected;
         });
-        // Only the first projection of the end parks the group; a replay of the terminal event admits nothing.
-        if ($first && $projected->status === OperationStatus::Succeeded) {
-            $this->park($projected);
-        }
-
-        return $projected;
     }
 
     /**
-     * In manual mode the spec waits for the owner, so the group stops its VM. A run admitted before the mode was captured takes
-     * the current mode of the group. A refusal is kept in the result.
-     */
-    private function park(Operation $operation): void
-    {
-        $group = Task::topLevel()->find($operation->target_id);
-        if (! $group instanceof Task) {
-            return;
-        }
-        $mode = ValidatedData::object($operation->input)['mode'] ?? $group->review_mode->value;
-        if ($mode !== TaskReviewMode::Manual->value) {
-            return;
-        }
-        try {
-            app(StartTaskParkAction::class)->execute($group, 'prep', null);
-        } catch (ResourceOperationException $exception) {
-            app(OperationStore::class)->change($operation, ['result' => [...ValidatedData::object($operation->result ?? []), 'park_refused' => $exception->errorCode]]);
-        }
-    }
-
-    /**
-     * The spec is done once the App has opened its PR, so the group has no open subtask and `task:park` can stop its VM while the
+     * The spec is done once the App has opened its PR, so the group has no open subtask and the VM is released while the
      * spec waits for review.
      */
     public static function completeSubtasks(int $group, int $pullRequest): void

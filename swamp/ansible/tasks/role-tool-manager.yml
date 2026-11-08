@@ -13,6 +13,14 @@
     owner: "{{ item.owner }}"
     mode: "{{ item.mode }}"
   loop: "{{ manager.files }}"
+- name: Read the last successfully configured manager pin
+  ansible.builtin.stat:
+    path: "/var/cache/orbit/tool-setup/{{ manager.setup.manager }}/configured.json"
+    checksum_algorithm: sha256
+  register: manager_configured
+- name: Select changed manager pins or lock
+  ansible.builtin.set_fact:
+    manager_configuration_changed: "{{ manager_configured.stat.checksum | default('') != (manager.setup.input | to_json | hash('sha256')) }}"
 - name: Read pinned manager packages
   ansible.builtin.command: { argv: [dpkg-query, -W, '-f=${Version}', "{{ item.name }}"] }
   loop: "{{ manager.apt_packages }}"
@@ -86,6 +94,7 @@
 - name: Copy manager runtimes
   ansible.builtin.command: { argv: "{{ item.argv }}" }
   loop: "{{ manager.copies }}"
+  when: manager_configuration_changed
   changed_when: true
 - name: Link manager resources
   ansible.builtin.file:
@@ -99,6 +108,7 @@
 - name: Configure the pinned manager
   ansible.builtin.command: { argv: "{{ item.argv }}" }
   loop: "{{ manager.commands }}"
+  when: manager_configuration_changed
   changed_when: true
 - name: Publish manager launchers
   ansible.builtin.copy:
@@ -119,3 +129,10 @@
   ansible.builtin.command:
     argv: "{{ ['/usr/local/bin/vp', '--version'] if manager.setup.manager == 'javascript' else ['composer', '--version'] }}"
   changed_when: false
+- name: Record the successfully configured manager pin and lock
+  ansible.builtin.copy:
+    dest: "/var/cache/orbit/tool-setup/{{ manager.setup.manager }}/configured.json"
+    content: "{{ manager.setup.input | to_json }}"
+    owner: root
+    group: root
+    mode: '0644'

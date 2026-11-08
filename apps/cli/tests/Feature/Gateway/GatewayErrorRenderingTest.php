@@ -916,10 +916,6 @@ it('renders console input failures through the exact json boundary', function (a
         ],
         'The "--unknown-option" option does not exist.',
     ],
-    'node role list missing required argument' => [
-        ['command' => 'node:role:list', '--json' => true],
-        'Not enough arguments (missing: "node").',
-    ],
     'node role list unknown option' => [
         [
             'command' => 'node:role:list',

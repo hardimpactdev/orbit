@@ -90,14 +90,23 @@ jobs:
       - job: phase_5
         condition: {type: succeeded}
     steps:
+      - name: Withdraw task host input
+        labels: *ref_0
+        forEach: {item: publication, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? [{"ssh":inputs.intent.ssh,"comments":inputs.intent.task_host_input_comments}] : [] }}'}
+        task: {type: workflow, workflowIdOrName: task-host-firewall-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.publication }}', execution_secrets: {}}}
+  - name: phase_7
+    dependsOn:
+      - job: phase_6
+        condition: {type: succeeded}
+    steps:
       - name: Disable the services
         labels: *ref_0
         writes: true
         forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? ["orbit-agent.service","prometheus-node-exporter.service","orbit-cadvisor.service","orbit-fpm-exporter.service"].map(u,{"ssh":inputs.intent.ssh,"input":{"unit":u} }) : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ ("remove-systemd-disable-the-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, service: '${{ self.action.input.unit }}', ensure: stopped, enabled: false}, inputs: {}}
-  - name: phase_7
+  - name: phase_8
     dependsOn:
-      - job: phase_6
+      - job: phase_7
         condition: {type: succeeded}
     steps:
       - name: Stop activating services
@@ -105,9 +114,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? ["orbit-agent.service","prometheus-node-exporter.service","orbit-cadvisor.service","orbit-fpm-exporter.service"].map(u,{"ssh":inputs.intent.ssh,"input":{"unit":u} }) : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("remove-exec-stop-activating-services-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, command: '${{ "timeout 60 systemctl stop " + self.action.input.unit }}', onlyIf: '${{ "test $(systemctl show --property=LoadState --value " + self.action.input.unit + ") = loaded" }}'}, inputs: {}}
-  - name: phase_8
+  - name: phase_9
     dependsOn:
-      - job: phase_7
+      - job: phase_8
         condition: {type: succeeded}
     steps:
       - name: Remove managed files
@@ -126,9 +135,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ ("remove-docker_container-remove-the-containers-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, name: '${{ self.action.input.name }}', image: unused, ensure: absent}, inputs: {}}
-  - name: phase_9
+  - name: phase_10
     dependsOn:
-      - job: phase_8
+      - job: phase_9
         condition: {type: succeeded}
     steps:
       - name: Reload unit catalogue
@@ -136,9 +145,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? [{"ssh": inputs.intent.ssh}] : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-reload-unit-catalogue-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, daemon-reload]}}
-  - name: phase_10
+  - name: phase_11
     dependsOn:
-      - job: phase_9
+      - job: phase_10
         condition: {type: succeeded}
     steps:
       - name: Withdraw firewall rules
@@ -146,9 +155,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ [] }}'}
         task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("remove-withdraw-firewall-rules-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ self.action.ssh.target.user }}', port: '${{ self.action.ssh.target.port }}', identityFile: '${{ self.action.ssh.identity_file }}', hostKeys: '${{ self.action.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ self.action.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.action.input.argv }}', okExitCodes: [0, 1]}}
-  - name: phase_11
+  - name: phase_12
     dependsOn:
-      - job: phase_10
+      - job: phase_11
         condition: {type: succeeded}
     steps:
       - name: Remove hub peer
@@ -168,9 +177,9 @@ jobs:
         labels: *ref_0
         forEach: {item: publication, in: '${{ inputs.intent.dns }}'}
         task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before }}', after: '${{ self.publication.after }}', alternatives: []}, execution_secrets: {}}}
-  - name: phase_12
+  - name: phase_13
     dependsOn:
-      - job: phase_11
+      - job: phase_12
         condition: {type: succeeded}
     steps:
       - name: Check removed files
@@ -181,9 +190,9 @@ jobs:
         labels: *ref_0
         forEach: {item: action, in: '${{ (("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") && inputs.intent.platform == "linux") ? inputs.intent.footprints.directories : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ ("remove-directory-check-removed-directories-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: check, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, path: '${{ self.action.path }}', ensure: absent}, inputs: {}}
-  - name: phase_13
+  - name: phase_14
     dependsOn:
-      - job: phase_12
+      - job: phase_13
         condition: {type: succeeded}
     steps:
       - name: Revoke management keys
@@ -191,9 +200,9 @@ jobs:
         writes: true
         forEach: {item: action, in: '${{ ("Log in to departing Node-0" in steps && steps["Log in to departing Node-0"].status == "succeeded") ? inputs.intent.managed_keys.filter(k,k != inputs.intent.managed_keys[size(inputs.intent.managed_keys)-1]).map(k,{"ssh":inputs.intent.ssh,"key":k}) : [] }}'}
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/authorized_key', behaviorName: '${{ ("remove-authorized_key-revoke-management-keys-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, user: '${{ self.action.ssh.target.user }}', key: '${{ self.action.key }}', ensure: absent}, inputs: {}}
-  - name: phase_14
+  - name: phase_15
     dependsOn:
-      - job: phase_13
+      - job: phase_14
         condition: {type: succeeded}
     steps:
       - name: Revoke control key
@@ -203,7 +212,7 @@ jobs:
         task: {type: behavior, behaviorType: '@swamp/cfgmgmt/authorized_key', behaviorName: '${{ ("remove-authorized_key-revoke-control-key-" + string(self.action.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ self.action.ssh.target.host }}', nodeUser: '${{ self.action.ssh.target.user }}', nodePort: '${{ self.action.ssh.target.port }}', nodeIdentityFile: '${{ self.action.ssh.identity_file }}', become: true, user: '${{ self.action.ssh.target.user }}', key: '${{ self.action.key }}', ensure: absent}, inputs: {}}
   - name: remove
     dependsOn:
-      - job: phase_14
+      - job: phase_15
         condition: {type: succeeded}
     steps:
       - name: Confirm Node removal

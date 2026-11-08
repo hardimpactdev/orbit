@@ -40,7 +40,9 @@ A repeat without `--converge` is refused with `validation.failed`, except for an
 
 Orbit checks recorded preconditions before changing the Node and allows one add or convergence at a time on it. The final check must pass before a new assignment becomes `active`. Role work does not install the Node agent or Orbit CLI; [`node:converge`](/cli/node/converge) owns them.
 
-Application roles apply the configured storage directory's owner and mode. Orbit refuses protected storage paths before changing the Node. For `swamp`, it also repairs an existing compile cache's ownership and readability, then checks it without running a compilation.
+Application roles apply the configured storage directory's owner and mode. Orbit refuses protected storage paths before changing the Node. Tool Manager setup reruns its commands only when the admitted pin or lock changes.
+
+For `swamp`, convergence keeps serve and active workers running. Its renewal timer drains one of three permanent workers at a time while two serve. It also repairs an existing compile cache's ownership and readability, then checks it without running a compilation.
 
 For `gateway`, [Node provisioning](/reference/node-provisioning#add-a-node) lists the runtime this role owns. Converge it only with a release whose scheduler owns the automatic tick. Adding the role grants that Node access to active `vpn` and `metrics` Nodes on other machines.
 

@@ -289,11 +289,12 @@ Deno.test({
 
 Deno.test({
   name:
-    "a rebuild deletes the base VM and its seed before it builds the base; a refresh deletes nothing",
+    "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them",
   ignore: !hasAnsible,
   fn() {
     const base = {
       ...host,
+      current: "beast-base/proved",
       network: "orbittask0",
       image: "ubuntu-26.04-vm",
       base: {

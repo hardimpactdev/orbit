@@ -110,10 +110,13 @@ sequenceDiagram
     %%> What it does:
     %%> - require an admitted Ubuntu release before changing the host, then apply pinned repositories and packages
     %%> - for the swamp role, bootstrap its pinned Ansible and collections before the remaining phases
-    opt role needs Tool Managers
-      %% path: tools
-      SW->>N: Set up Tool Managers<br/>Ansible phase: tools
-    end
+    %% path: tools
+    SW->>N: Read Tool Manager accounts<br/>Ansible phase: tools-read
+    SW->>SW: Compose tools resources
+    SW->>SW: Write tool variables
+    SW->>N: Set up Tool Managers<br/>Ansible phase: tools
+    %%> What it does:
+    %%> - apply only the admitted managers; rerun manager commands only when their pin or lock changes
     SW->>N: Apply the role<br/>Ansible phase: node
     %%> What it does:
     %%> - apply the role's files, units and storage ownership
@@ -131,12 +134,15 @@ sequenceDiagram
       SW->>N: Install Swamp<br/>Ansible phase: swamp
       %%> What it does:
       %%> - publish the binary beside the running one, then apply identity, serve and worker units
-      %%> - enable renewal after both workers start; drain them one at a time so the peer accepts work
+      %%> - start all three permanent workers without restarting live processes; enable renewal to drain one at a time while two serve
     end
     opt role needs certificates
       %% path: certificates
       SW->>GW: Sign role certificates<br/>native child workflow
     end
+    SW->>M: Read role publications<br/>Ansible phase: publication-read
+    SW->>SW: Compose publications
+    SW->>SW: Write publication vars
     opt role changes PHP pools
       %% path: php-pools
       SW->>M: Publish PHP pools<br/>Ansible phase: php

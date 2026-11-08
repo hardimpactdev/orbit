@@ -17,6 +17,7 @@ describe(ShowNodeRequest::class, function (): void {
                 'data' => [
                     'id' => 12,
                     'cluster_id' => 3,
+                    'cluster_name' => 'development',
                     'name' => 'operator',
                     'status' => 'active',
                     'platform' => 'ubuntu',
@@ -34,6 +35,7 @@ describe(ShowNodeRequest::class, function (): void {
                     'failed_step' => null,
                     'error_code' => null,
                     'roles' => ['app-dev'],
+                    'assignments' => [['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
                     'access' => [
                         'can_access' => [
                             ['id' => 3, 'name' => 'app-dev'],
@@ -80,6 +82,8 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('SHA256:operator')
             ->and($response->roles)
             ->toBe(['app-dev'])
+            ->and($response->assignments[0]->role)
+            ->toBe('app-dev')
             ->and($response->access)
             ->not
             ->toBeNull()

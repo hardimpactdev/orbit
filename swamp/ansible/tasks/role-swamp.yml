@@ -61,15 +61,17 @@
   register: swamp_units
 - name: Reload Swamp units
   ansible.builtin.systemd: { daemon_reload: true }
+# Existing serve and workers keep their processes. The renewal timer applies the
+# new binary/worker unit through its guarded one-worker drain, with two peers serving.
 - name: Start Swamp runtime
   ansible.builtin.systemd:
     name: orbit-swamp-serve.service
-    state: "{{ 'restarted' if swamp_binary.changed or swamp_link.changed or swamp_identity.changed or swamp_units.changed else 'started' }}"
+    state: started
     enabled: true
 - name: Start the Swamp workers
   ansible.builtin.systemd:
     name: "orbit-swamp-worker@{{ item }}.service"
-    state: "{{ 'restarted' if swamp_binary.changed or swamp_link.changed or swamp_identity.changed or swamp_units.changed else 'started' }}"
+    state: started
     enabled: true
   loop: "{{ rt.swamp.workers }}"
 - name: Start worker renewal after all workers

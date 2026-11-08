@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\StartTaskCheckAction;
-use App\Actions\Tasks\StartTaskParkAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Data\Tasks\StartTaskCheckData;
@@ -49,12 +48,17 @@ final readonly class TaskMaintenanceContinuation
             return;
         }
         $child = $group->tasks()->orderBy('position')->firstOrFail();
+        if ($operation->kind === 'tasks.publish') {
+            $child->update(['status' => TaskStatus::Completed, 'settled_at' => now()]);
+            $group->update(['maintenance' => [...$state, 'stage' => 'waiting_for_review']]);
+
+            return;
+        }
         $kind = match ($operation->kind) {
             'tasks.provision' => 'tasks.maintenance',
             'tasks.maintenance' => 'tasks.check',
             'tasks.turn' => 'tasks.maintenance',
             'tasks.check' => ($operation->result['outcome'] ?? null) === 'passed' ? (($state['changed'] ?? true) === false ? 'tasks.maintenance_finish' : 'tasks.publish') : 'tasks.turn',
-            'tasks.publish' => 'tasks.park',
         };
         if ($operation->kind === 'tasks.check') {
             $state['check_operation_id'] = $operation->id;
@@ -89,10 +93,6 @@ final readonly class TaskMaintenanceContinuation
                 } elseif ($kind === 'tasks.publish') {
                     $next = app(StartTaskPublishAction::class)->execute($group, new StartTaskPublishData(ValidatedData::integer($operation->input['check_id']),
                         ['title' => $group->title, 'body' => $group->brief]), 'project-maintenance', null);
-                } else {
-                    $child->update(['status' => TaskStatus::Completed, 'settled_at' => now()]);
-                    $group->refresh();
-                    $next = app(StartTaskParkAction::class)->execute($group, 'project-maintenance', null);
                 }
                 if ($next->kind === 'tasks.publish') {
                     $state['publish_operation_id'] = $next->id;

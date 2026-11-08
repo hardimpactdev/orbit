@@ -88,10 +88,32 @@ describe("Instance placement", () => {
         const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id)!;
 
         expect(
-            instancePlacement({ ...fleet, nodes: [{ ...node, roles: ["app-dev"] }] }, instance),
+            instancePlacement(
+                {
+                    ...fleet,
+                    nodes: [
+                        {
+                            ...node,
+                            roles: ["app-dev"],
+                        },
+                    ],
+                },
+                instance,
+            ),
         ).toBe("development");
         expect(
-            instancePlacement({ ...fleet, nodes: [{ ...node, roles: ["app-prod"] }] }, instance),
+            instancePlacement(
+                {
+                    ...fleet,
+                    nodes: [
+                        {
+                            ...node,
+                            roles: ["app-prod"],
+                        },
+                    ],
+                },
+                instance,
+            ),
         ).toBe("production");
         expect(instancePlacement({ ...fleet, nodes: [{ ...node, roles: [] }] }, instance)).toBe(
             "—",

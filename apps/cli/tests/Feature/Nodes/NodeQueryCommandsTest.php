@@ -274,15 +274,47 @@ describe('node:show', function (): void {
         expect($status)->toBe(0);
         foreach ([
             'Node: app-dev', 'Status active', 'Roles app-dev', 'SSH orbit@94.237.40.75:22',
-            'Cluster 3', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
+            'Cluster development', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
             'WireGuard endpoint override 10.0.0.2:51820', 'DNS server override 10.0.0.2',
-            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Projects path —',
+            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps folder —',
             'Access to app-dev (#3), app-prod (#5)', 'Accessible by maintainer (#4)',
             'Request ID: '.request_id(),
         ] as $field) {
             expect($output)->toContain($field);
         }
     });
+
+    it('shows every assignment state with native failure detail and the named Cluster', function (string $failedStep): void {
+        $payload = show_node_payload();
+        $payload['cluster_id'] = 901;
+        $payload['cluster_name'] = 'edge-production';
+        $payload['roles'] = ['app-dev', 'app-prod', 'database', 'vpn'];
+        $payload['assignments'] = [
+            ['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null],
+            ['id' => 2, 'role' => 'app-prod', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null],
+            ['id' => 3, 'role' => 'database', 'status' => 'failed', 'failed_step' => $failedStep, 'error_code' => 'node_role.convergence_failed'],
+            ['id' => 4, 'role' => 'vpn', 'status' => 'removing', 'failed_step' => null, 'error_code' => null],
+        ];
+        $mockClient = MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:show', ['node' => '2']))->toBe(0);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($output)
+            ->toContain('Roles app-dev, app-prod (provisioning), database (failed / '.$failedStep.' / node_role.convergence_failed), vpn (removing)')
+            ->toContain('Cluster edge-production', 'Request ID: '.request_id())
+            ->not->toContain('Cluster 901', 'app-dev (active)');
+        expect($mockClient->getLastPendingRequest()?->getUrl())
+            ->toBe('https://10.44.0.1/api/v1/nodes/2');
+        $mockClient->assertSentCount(1);
+    })->with([
+        'native platform guard' => 'converge:Require supported Ubuntu',
+        'native role check' => 'converge:Check the role',
+    ]);
 
     it('shows empty node access summaries as dashes', function (): void {
         $payload = show_node_payload();
@@ -325,6 +357,7 @@ describe('node:show', function (): void {
         $this
             ->artisan('node:show', ['node' => $nodeId])
             ->expectsOutputToContain('Node ID must be a positive integer.')
+            ->expectsOutputToContain('Code: node.id_invalid')
             ->assertExitCode(1);
 
         expect($mockClient->getLastPendingRequest())->toBeNull();
@@ -332,6 +365,27 @@ describe('node:show', function (): void {
         'non-numeric' => 'app-dev',
         'zero' => '0',
         'negative' => '-1',
+        'fractional' => '1.5',
+        'overflow' => '99999999999999999999999999999999',
+        'option-like' => '--help',
+    ]);
+
+    it('refuses an omitted Node without interactive input before any request', function (array $arguments): void {
+        $mockClient = MockClient::global();
+
+        expect(Artisan::call('node:show', $arguments))->toBe(1);
+        $output = Artisan::output();
+        expect($output)->toContain('node.id_invalid', 'Node ID must be a positive integer.');
+        if ($arguments['--json'] ?? false) {
+            $error = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            expect($error['error']['code'])->toBe('node.id_invalid')
+                ->and($error['error']['request_id'])->toBeNull();
+        }
+        $mockClient->assertNothingSent();
+    })->with([
+        'piped input' => [[]],
+        'explicit noninteractive' => [['--no-interaction' => true]],
+        'machine input' => [['--json' => true]],
     ]);
 
     it('fails clearly when no gateway profile is active', function (): void {

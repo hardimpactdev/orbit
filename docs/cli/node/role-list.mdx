@@ -1,8 +1,10 @@
 ---
 title: "orbit node:role:list"
 sidebarTitle: "node:role:list"
-description: "List the roles of one Node with their status and failed step."
+description: "List every role assigned to one Node, with its recorded state and failure details."
 ---
+
+## Usage
 
 ```bash
 orbit node:role:list <node> [--json]
@@ -10,18 +12,40 @@ orbit node:role:list <node> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Positive numeric Node ID. Names are not accepted. See the [shared input rules](/reference/cli-ux#input-and-output-modes) for omitted input. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the roles as JSON: `assignments`, each with `id`, `role`, `status`, `failed_step` and `error_code`, which are null when unset. |
+| `--json` | off | Use the [standard machine-output mode](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:role:list 7
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request, and so is an ID that is not a positive integer. The caller needs an access grant to the Node (`node_access.required`), and an unknown Node is refused with `http.404`.
+## How it works
 
-The list shows what Orbit has recorded for the Node. It does not contact the Node, so it works while the Node is unreachable. It has one row per role assignment, sorted by role name, with the columns ID, ROLE, STATUS, FAILED STEP and ERROR CODE. A missing value shows `—`. A Node without roles says `No roles.`.
+Orbit reads the Gateway's recorded role assignments. It contacts no Node, Grafana or other system, starts no Operation, and changes nothing. An unreachable Node or missing or stale agent facts do not delay or refuse the read: assignments are records, not agent observations. Running the command again reads the records again; it is not a skipped action and has no skip reason code.
 
-A role's status is `provisioning`, `active`, `failed`, or `removing`. A failed role keeps its failed step and error code. A `converge:` failure is retried with [`node:role:add`](/cli/node/role-add) and `--converge`. A `remove:` failure is retried by running [`node:role:remove`](/cli/node/role-remove) again. A `provisioning` or `removing` role is in progress until its claim goes stale.
+Access uses the [shared Node authority rule](/cli/node#authority) for the [Node family](/cli/node).
+
+Every assigned role is included, with its state: `active`, `provisioning`, `failed`, or `removing`. The shared role projection supplies the same `role`, `status`, `failed_step` and `error_code` values to this command, [`node:list`](/cli/node/list) and [`node:show`](/cli/node/show).
+
+| Column | JSON field | Meaning |
+| --- | --- | --- |
+| `ID` | `id` | Role assignment ID. |
+| `ROLE` | `role` | Assigned role's name. |
+| `STATUS` | `status` | Recorded lifecycle state. |
+| `FAILED STEP` | `failed_step` | Recorded failed step, or `null` when unset. |
+| `ERROR CODE` | `error_code` | Recorded failure code, or `null` when unset. |
+
+Human output uses the columns above and [standard list rendering](/reference/cli-ux#results). With no assignments, it says `No roles.`. The JSON result contains `assignments` and `request_id`; an empty result has `assignments: []`.
+
+<div className="flow-at" data-chart="node/role-list"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `node.id_invalid` | The supplied Node ID is not a positive integer, or required input is missing in a noninteractive call. Orbit refuses locally. |
+| `http.404` | The numeric Node ID is unknown. |
+| `node_access.required` | The shared authority rule refuses this caller for the target Node. |

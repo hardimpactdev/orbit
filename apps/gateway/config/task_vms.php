@@ -9,9 +9,6 @@ declare(strict_types=1);
  * JSON becomes null and fails validation.
  */
 
-/** The environment value, or the default while it is unset or empty. "0" counts as set. */
-$env = static fn (string $key, mixed $default): mixed => filled(env($key)) ? env($key) : $default;
-
 /** A JSON list of Project ids; malformed JSON stays null for validation. */
 $projectIds = static fn (string $key): mixed => json_decode((string) (env($key) ?: '[]'), true);
 
@@ -21,8 +18,6 @@ return [
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',
     // One private HTTPS site for Swamp workers; not a list of admitted sites.
     'swamp_host' => env('ORBIT_TASK_VMS_SWAMP_HOST'),
-    // Minutes a group waits for review before its task VM stops. Its next work starts the VM again.
-    'park_after_minutes' => $env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 30),
     // A JSON list of Project ids whose groups without a declared topology get a medium VM (TaskVmSize::resources()).
     'medium_projects' => $projectIds('ORBIT_TASK_VMS_MEDIUM_PROJECTS'),
     // A JSON list of Project ids whose groups without a declared topology get a large VM (TaskVmSize::resources()).

@@ -2,6 +2,8 @@
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -110,6 +112,12 @@ class RoleAddPhasesTest(unittest.TestCase):
             self.assertIn('node.role_add.composed', steps[1]['task']['inputs']['run'])
             self.assertEqual(steps[1]['dependsOn'][0]['step'], steps[0]['name'])
 
+    def test_chart_exposes_each_observe_compose_variables_and_apply_step(self):
+        chart = (ROOT / 'docs/cli/node/role-add.mmd').read_text()
+        for job in ['tools_read', 'tools_plan', 'phase_13', 'publication_read', 'publication_plan', 'phase_52']:
+            for step in self.jobs[job]['steps']:
+                self.assertTrue(any('->>' in line and ': ' + step['name'] in line for line in chart.splitlines()), step['name'])
+
     def test_removal_waits_for_every_job_including_failed_and_skipped_container_cleanup(self):
         dependencies = {dep['job']: dep['condition'] for dep in self.jobs['cleanup']['dependsOn']}
         self.assertEqual(set(dependencies), set(self.jobs) - {'cleanup'})
@@ -155,10 +163,62 @@ class RoleAddPhasesTest(unittest.TestCase):
         self.assertEqual(link['register'], 'swamp_link')
         for name in ['Start Swamp runtime', 'Start the Swamp workers']:
             start = next(task for task in swamp if task['name'] == name)
-            self.assertIn('swamp_link.changed', start['ansible.builtin.systemd']['state'])
-            self.assertIn('swamp_identity.changed', start['ansible.builtin.systemd']['state'])
+            self.assertEqual(start['ansible.builtin.systemd']['state'], 'started')
         check = next(task for task in swamp if task['name'] == 'Check Swamp version')
         self.assertEqual(check['become_user'], '{{ rt.swamp.user }}')
+
+
+class ManagerConvergenceTest(unittest.TestCase):
+    def test_commands_and_runtime_copies_run_only_for_a_changed_pin_or_lock_and_retry_failure(self):
+        tasks = yaml.safe_load((ANSIBLE / 'tasks/role-tool-manager.yml').read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            cache = folder / 'javascript'
+            (folder / 'ansible.cfg').write_text('[defaults]\n')
+            for task in tasks:
+                for key in ['ansible.builtin.copy', 'ansible.builtin.file']:
+                    if key in task:
+                        task[key].pop('owner', None)
+                        task[key].pop('group', None)
+                if task['name'] == 'Check the Tool Manager':
+                    task['become'] = False
+                    task.pop('become_user')
+                    task['ansible.builtin.command']['argv'] = [sys.executable, '--version']
+            source = json.dumps(tasks).replace('/var/cache/orbit/tool-setup/', str(folder) + '/')
+            (folder / 'tasks.yml').write_text(source)
+            manager = {'setup': {'manager': 'javascript', 'input': {'user': 'fixture', 'pin': '1', 'lock': 'a'}},
+                       'directories': [{'path': str(cache), 'owner': 'fixture', 'mode': '0755'}],
+                       **{key: [] for key in ['files', 'apt_packages', 'sha256_fetches', 'sha512_fetches',
+                                             'apt_artifacts', 'archives', 'links', 'launchers']},
+                       'copies': [{'argv': ['sh', '-c', 'echo copy >> ' + str(folder / 'events')]}],
+                       'commands': [{'argv': ['sh', '-c', 'test ! -e ' + str(folder / 'fail') + ' && echo configure >> ' + str(folder / 'events')]}]}
+            def converge():
+                (folder / 'play.yml').write_text(json.dumps([{'hosts': 'localhost', 'gather_facts': False,
+                    'vars': {'manager': manager}, 'tasks': [{'ansible.builtin.import_tasks': str(folder / 'tasks.yml')}]}]))
+                return subprocess.run([str(Path(sys.executable).with_name('ansible-playbook')), '-i', 'localhost,', '-c', 'local', str(folder / 'play.yml')],
+                    check=False, capture_output=True, text=True, env={**os.environ, 'ANSIBLE_CONFIG': str(folder / 'ansible.cfg'), 'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_LIBRARY': str(ANSIBLE / 'library')})
+            first = converge()
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            events = (folder / 'events').read_text()
+            manager['setup']['apt'] = {'proxy': 'http://changed-index-cache.invalid:3142'}
+            second = converge()
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertRegex(second.stdout, r'changed=0\s')
+            self.assertEqual((folder / 'events').read_text(), events)
+            for key in ['pin', 'lock']:
+                manager['setup']['input'][key] += '-new'
+                changed = converge()
+                self.assertEqual(changed.returncode, 0, changed.stdout + changed.stderr)
+                events += 'copy\nconfigure\n'
+                self.assertEqual((folder / 'events').read_text(), events)
+            manager['setup']['input']['pin'] = 'failed-pin'
+            receipt = (cache / 'configured.json').read_text()
+            (folder / 'fail').touch()
+            self.assertNotEqual(converge().returncode, 0)
+            self.assertEqual((cache / 'configured.json').read_text(), receipt)
+            (folder / 'fail').unlink()
+            self.assertEqual(converge().returncode, 0)
+            self.assertEqual(json.loads((cache / 'configured.json').read_text()), manager['setup']['input'])
 
 
 if __name__ == '__main__':

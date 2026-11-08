@@ -25,25 +25,30 @@ STEPS = {
     'fault': (('setup', 'act'), set(), {'on', 'command', 'fail_after', 'clear'}),
     'busy_node': (('setup',), {'on'}, {'command', 'seconds'}),
     'ipv6_addresses': (('setup',), {'nodes'}, set()),
-    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect', 'as'}),
+    'cli': (('setup', 'act'), {'run'}, {'forms', 'tty', 'expect', 'as', 'save'}),
     'probe': (SECTIONS, {'from', 'to', 'port', 'expect'}, {'id', 'proto', 'family'}),
     'ufw': (('expect',), {'on', 'rows'}, {'family', 'absent'}),
     'record': (('expect',), {'list'}, {'node', 'where', 'count', 'min', 'order', 'args', 'section'}),
+    'service': (('setup', 'act', 'expect'), {'on', 'name', 'state'}, set()),
+    'package': (('expect',), {'on', 'any'}, set()),
+    'ansible_changes': (('expect',), {'operation', 'phases', 'changed'}, set()),
     'doctor': (('expect',), {'node', 'drift'}, set()),
     'unchanged': (('expect',), {'since'}, {'except', 'what', 'request'}),
     'ufw_delete': (('setup', 'negative'), {'on', 'to'}, {'from'}),
     'agent_report': (('setup',), {'node'}, set()),
     'node_down': (('setup',), {'node'}, set()),
     'node_access_remove': (('setup',), {'consumer', 'serving'}, set()),
+    'node_fixture': (('setup',), {'kind', 'as'}, {'consumer', 'serving'}),
+    'recorded_request': (('act',), {'node', 'caller', 'expect'}, {'agent', 'age'}),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
-CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'negative', 'timeout', 'node', 'exclusive'}
+CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive'}
 DEFAULT_PARALLEL = 4
 # Steps that change something every case shares (a Node's `ufw`, the Gateway lock, a Node's agent, the addresses): the case runs alone.
-GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses'}
+GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request'}
 # Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
 # Steps that name the Node they work on under `on` or `node`.
-NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor'}
+NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor', 'service', 'package'}
 # Step keys whose list value means one step per item.
 EXPAND = {'probe': ('from', 'proto', 'port', 'family'), 'ufw_rule': ('proto', 'family')}
 
@@ -79,6 +84,7 @@ class Case:
     node: str | None = None   # the Node that plays the target of the file; set by `load`
     lock: str = 'node'        # `all` runs alone, `node` is the only case on its Node (see `lock_of`)
     exclusive: bool = False   # the case asked to run alone
+    fails_on_base: bool = False
 
 
 @dataclass
@@ -241,6 +247,10 @@ def bound_names(steps, extra):
     """Names the listener steps bind, plus the names the case brings."""
     names = set(extra)
     for step in steps:
+        if step.name == 'node_fixture':
+            names.update(f"{step.args['as']}.{part}" for part in ('id', 'name', 'cluster_name', 'tld'))
+        if step.name == 'cli':
+            names.update((step.args.get('save') or {}).values())
         if step.name == 'listener':
             names.update(step.args.get('ports') or [])
             if step.args.get('block'):
@@ -316,8 +326,10 @@ def build_case(raw, file_vars, fixtures, static, batches):
         raise SpecError(f"{where}: node is one of {NODES}")
     if not isinstance(raw.get('exclusive', False), bool):
         raise SpecError(f'{where}: exclusive is true or false')
+    if not isinstance(raw.get('fails_on_base', False), bool):
+        raise SpecError(f'{where}: fails_on_base is true or false')
     return Case(case_id, raw['batch'], raw['covers'], raw['summary'], setup, stages, negative, int(raw.get('timeout', 180)), raw.get('fails_today'),
-                raw.get('node'), exclusive=raw.get('exclusive', False))
+                raw.get('node'), exclusive=raw.get('exclusive', False), fails_on_base=raw.get('fails_on_base', False))
 
 
 def case_steps(case):

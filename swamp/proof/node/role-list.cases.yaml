@@ -1,0 +1,174 @@
+# Stage 1 spec. Format and step vocabulary: docs/reference/verification-cases.
+# Read-only: failure after a partial change is inapplicable; this command changes nothing.
+# `request: none` checks that no Operation is created, not that no HTTP read occurs.
+# Family-owner follow-up: document NodeAccessAuthorizer in docs/cli/node/index.mdx
+# and replace the source links with that section once it exists; do not duplicate the rule here.
+command: node:role:list
+chart: node/role-list
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+uncovered:
+  no-roles: "Add a recorded-Node fixture with no assignments and arbitrary JSON assertions to check `No roles.` and assignments: [] on path no-roles. The runner cannot seed a role-free Node or inspect assignment arrays."
+  non-active-and-shared-projection: "Add role-lifecycle fixtures and cross-command JSON assertions for active, provisioning, failed and removing assignments, including a failed step and error code. Check that node:list, node:show and node:role:list expose every assignment with identical role, status, failed_step and error_code values from one projection; NodeData currently returns role names only."
+  assignment-schema-and-order: "Extend record assertions beyond firewall:list to inspect node:role:list assignments and compare their order with parsed human rows. Check assignment IDs, role names, status, null failure values and retained failure details, not just headings or exit status."
+  missing-agent-facts: "Add a fixture that clears agent facts without removing Node or role records, then assert unchanged assignments on path recorded-only. The runner can stop an agent but cannot clear its stored facts."
+  no-request-time-contact: "Add request-time outbound-contact and latency assertions while Node, Grafana and other external endpoints are unavailable, and compare Node/role records before and after the read. The existing node_down and Operation checks do not prove absence of outbound calls, bounded response time or unchanged role records."
+  local-refusal-no-http: "Add a CLI-to-Gateway HTTP request counter to prove invalid IDs are refused before any request. The runnable invalid-ID cases check the refusal code and absence of Operations, not absence of HTTP reads."
+
+cases:
+  - id: recorded-roles
+    batch: fresh-fleet
+    covers: [main, roles]
+    summary: Required arguments alone return the recorded app-dev role and state; both output forms succeed without an Operation.
+    act:
+      - cli:
+          run: [node:role:list, "${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 0, request: none, human: [ID, ROLE, STATUS, FAILED STEP, ERROR CODE, app-dev, active]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: repeat-read
+    batch: fresh-fleet
+    covers: [main, roles]
+    summary: A repeat is another successful read, not an already-applied skip or a new Operation.
+    stages:
+      - act:
+          - cli:
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+      - act:
+          - cli:
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+
+  - id: node-id-zero
+    expect: []
+    batch: fresh-fleet
+    covers: []
+    summary: Zero is refused locally as an invalid Node ID.
+    act:
+      - cli:
+          run: [node:role:list, "0"]
+          forms: [human, json]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+
+  - id: node-id-negative
+    expect: []
+    batch: fresh-fleet
+    covers: []
+    summary: A negative ID is passed as an argument, not parsed as an option, and is refused locally.
+    act:
+      - cli:
+          run: [node:role:list, "--", "-1"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+
+  - id: node-name-refused
+    expect: []
+    batch: fresh-fleet
+    covers: []
+    summary: Even a registered Node name is not a numeric Node ID.
+    fails_today: The CLI resolves app-dev by name through NodeCommand instead of refusing it with node.id_invalid.
+    act:
+      - cli:
+          run: [node:role:list, app-dev]
+          forms: [human, json]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+
+  - id: node-id-option-like
+    expect: []
+    batch: fresh-fleet
+    covers: []
+    summary: An option-like value after the argument separator is refused as an invalid Node ID.
+    fails_today: NodeCommand attempts a name lookup and returns node.not_found instead of node.id_invalid.
+    act:
+      - cli:
+          run: [node:role:list, "--", "--not-a-node"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+
+  - id: node-id-missing
+    expect: []
+    batch: fresh-fleet
+    covers: []
+    summary: Noninteractive missing input uses the command's invalid-ID refusal.
+    fails_today: The required Symfony argument currently produces input.invalid, not node.id_invalid.
+    act:
+      - cli:
+          run: [node:role:list]
+          forms: [human, json]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+
+  - id: node-not-found
+    expect: []
+    batch: fresh-fleet
+    covers: [node-not-found]
+    summary: An unknown positive numeric Node ID is refused without creating an Operation.
+    act:
+      - cli:
+          run: [node:role:list, "2147483647"]
+          forms: [human, json]
+          expect: {exit: 1, code: http.404, request: none}
+
+  # This case alone occupies no-grant: its stages change shared access grants.
+  - id: authorization-matrix
+    batch: no-grant
+    covers: [main, roles, access-refused]
+    summary: The caller succeeds through Gateway authority alone and a target grant alone, then is refused with neither.
+    setup:
+      - node_access_remove: {consumer: app-prod, serving: app-dev}
+      - cli:
+          run: [node:access:add, "${app-prod.id}", "${gateway.id}"]
+          expect: {exit: 0}
+    stages:
+      # Gateway authority, no target grant.
+      - act:
+          - cli:
+              as: app-prod
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+        expect: []
+      # Target grant, no Gateway authority. Mutations use the outer operator.
+      - act:
+          - cli:
+              run: [node:access:add, "${app-prod.id}", "${app-dev.id}"]
+              expect: {exit: 0}
+          - cli:
+              run: [node:access:remove, "${app-prod.id}", "${gateway.id}", "--force"]
+              expect: {exit: 0}
+          - cli:
+              as: app-prod
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: [app-dev, active]}
+        expect: []
+      # Neither authority nor a target grant.
+      - act:
+          - cli:
+              run: [node:access:remove, "${app-prod.id}", "${app-dev.id}", "--force"]
+              expect: {exit: 0}
+          - cli:
+              as: app-prod
+              run: [node:role:list, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect: []
+
+  - id: node-down
+    expect: []
+    batch: node-down
+    covers: [main, recorded-only]
+    summary: Recorded roles remain readable after the Node's SSH and agent stop and its observations become stale.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:role:list, "${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 0, request: none, human: [app-dev, active]}

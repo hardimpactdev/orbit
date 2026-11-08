@@ -45,7 +45,6 @@ final readonly class TaskVmSettings
         public ?string $piArtifactPath,
         public ?string $piArtifactSha256,
         public array $piModels,
-        public int $parkAfterMinutes = 30,
         public array $mediumProjectIds = [],
         public array $largeProjectIds = [],
         public array $topologyPaths = [],
@@ -75,7 +74,6 @@ final readonly class TaskVmSettings
         $artifactSha256 = TaskVmConfig::filled($pi['artifact_sha256'] ?? null);
         $values = [
             'pi' => ['artifact_path' => $artifactPath, 'artifact_sha256' => $artifactSha256, 'models' => $pi['models'] ?? null],
-            'park_after_minutes' => $config['park_after_minutes'] ?? null,
             'topology_paths' => $config['topology_paths'] ?? null,
         ];
         $together = 'pi.artifact_path and pi.artifact_sha256 must be set together.';
@@ -85,7 +83,6 @@ final readonly class TaskVmSettings
             'pi.artifact_sha256' => $artifactSha256 === null ? ['required_with:pi.artifact_path'] : ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
             'pi.models' => ['present', 'list'],
             'pi.models.*' => ['required', 'string', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}\z/D'],
-            'park_after_minutes' => ['required', 'integer', 'between:1,10080'],
             'topology_paths' => ['present', static function (string $attribute, mixed $value, Closure $fail) use ($topologyPaths): void {
                 if (! self::validTopologyPaths($value)) {
                     $fail($topologyPaths);
@@ -98,7 +95,6 @@ final readonly class TaskVmSettings
             'pi.artifact_sha256' => 'pi.artifact_sha256 must be a lowercase SHA-256 digest.',
             'pi.models' => 'pi.models must be a JSON list of model names.',
             'pi.models.*' => 'pi.models must contain only model names.',
-            'park_after_minutes' => 'park_after_minutes must be a whole number of minutes from 1 to 10080.',
             'topology_paths' => $topologyPaths,
         ]);
         $topology = [];
@@ -114,7 +110,6 @@ final readonly class TaskVmSettings
             piArtifactPath: is_string($artifactPath) ? $artifactPath : null,
             piArtifactSha256: is_string($artifactSha256) ? $artifactSha256 : null,
             piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
-            parkAfterMinutes: $valid->integer('park_after_minutes'),
             mediumProjectIds: self::projectIds($config, 'medium_projects'),
             largeProjectIds: self::projectIds($config, 'large_projects'),
             topologyPaths: $topology,
@@ -246,7 +241,8 @@ final readonly class TaskVmSettings
         foreach (Node::query()->where('status', LifecycleStatus::Active->value)->orderBy('id')->get() as $node) {
             $settings = $node->settings;
             if (is_array($settings) && is_array($settings['task_vms'] ?? null)) {
-                $entries[] = [...$settings['task_vms'], 'node_id' => $node->id];
+                $entry = array_diff_key($settings['task_vms'], ['max_vms' => true, 'task_max_vms' => true, 'ci_only' => true]);
+                $entries[] = ['task_places' => 0, 'ci_places' => 0, ...$entry, 'node_id' => $node->id];
             }
         }
 
