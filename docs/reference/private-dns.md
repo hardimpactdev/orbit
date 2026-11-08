@@ -107,7 +107,9 @@ The vpn Node runs the stock `dnsmasq.service`. It binds the VPN DNS address with
 
 ### What the Gateway renders
 
-The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver. A name under `.orbit` is the exception. `orbit.conf` has `local=/orbit/`, and a forward rule for children would override it. So dnsmasq answers a child of an exact `.orbit` name with NXDOMAIN itself, at once. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
+The Gateway renders data, not text: the listen address, the TLDs with their addresses, and the records with their addresses. A record below a TLD appears only when its answer differs from the TLD's. A record outside every TLD, such as a Route on its own domain or a reserved name, carries `pair`: the phase gives it local NODATA for other record types and sends queries for its children to the public resolver.
+
+A name under `.orbit` is the exception. `orbit.conf` has `local=/orbit/`, and a forward rule for children would override it. So dnsmasq answers a child of an exact `.orbit` name with NXDOMAIN itself, at once. The renderer checks every name against lowercase DNS labels and every address against IPv4 before it emits them, because `dnsmasq --test` does not check the hosts and servers files.
 
 The render reads stored rows only. A change stores its state before it asks for a render. A Cluster change that publishes before it commits stores its pending TLD, state or Router on the Cluster row. Each source of change (`cluster:update`, a Router selection) keeps its own hold and releases only that one when it ends. A hold that nothing cleared expires after an hour.
 
@@ -133,7 +135,8 @@ Then it applies the change. It compares `orbit.conf` with `orbit.conf.loaded`, t
 - An equal file gets SIGHUP. A `reload.pending` from a run that was killed after the install also gets one.
 - A changed file, a missing copy or a dnsmasq that is not running gets a restart.
 - For a restart, the phase deletes the copy first. Then a script, detached on the Node, stops the old listener and restarts dnsmasq.
-- The script checks that dnsmasq holds every listen address. If not, it restores the snapshot itself and writes `recovered` to `cutover.state`, even when the controller is dead.
+- The script checks that dnsmasq holds every listen address.
+- If it does not, the script restores the snapshot and writes `recovered` to `cutover.state`. A dead controller changes nothing.
 - The next publication waits for a script that is still running before it reads the Node.
 - The phase writes the copy again after the restart succeeded. A failed run deletes it, so the next publication restarts dnsmasq.
 
