@@ -1,43 +1,55 @@
 sequenceDiagram
-  %% Target design: a synchronous read of the Metrics role through Grafana; no run, no stored sample. docs/reference/metrics.md#read-node-metrics.
-  %% status: reviewed
+  %% Target design: a synchronous read of the Node agent's metrics snapshot from Gateway records. Node family read rules and docs/reference/node-agent.md#liveness.
+  %% status: draft
   %% command: node:metrics
   %% kind: node.metrics
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
-  %% lane M icon=server pill=observer tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
-  participant M as Metrics<br/>Grafana · Prom.
   CLI->>GW: node:metrics NODE
   %%> Command:
   %%> - `orbit node:metrics NODE`
   %%> - syntax: `<node> [--json]`
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate the Node
+  Note over GW: Resolve and authorize
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
-  %%> - the target is active and has a WireGuard address (`node.metrics_unavailable`)
-  %%> - exactly one active Node holds the Metrics role and has stored credentials (`metrics.assignment_missing`, `metrics.assignment_drift`, `metrics.node_inactive`, `metrics.credentials_missing`)
-  %%> Why no run:
-  %%> - the command only reads; it starts no run, changes no Node and stores no sample
-  GW->>M: Read the exporter<br/>memory · swap · load · uptime
-  %%> What it does:
-  %%> - one query for memory, swap, load and uptime; it alone decides whether the Node has metrics
-  GW->>M: Read cores, pressure<br/>and disks · three queries
-  %%> What it does:
-  %%> - one query each; pseudo filesystems such as `tmpfs` and `proc` are left out, and `/` comes first
-  %%> - if one of them fails, its field is empty (pressure `0`) and the command still succeeds
-  alt Prometheus answered
-    M-->>GW: samples
-    GW-->>CLI: 200 OK<br/>one snapshot
-    %%> Returns:
-    %%> - the snapshot with the Node's name and ID; pressure is `0` when the kernel has no pressure data
-  else Grafana did not answer, or no samples yet
-    M--xGW: no answer or no samples
-    GW--xCLI: 502 Bad Gateway<br/>node.metrics_unreachable
+  %%> - apply the shared Node authority rule (`NodeAccessAuthorizer`), linked from `docs/cli/node/metrics.mdx` to the Node family page
+  alt unknown Node
+    %% path: unknown-node
+    GW--xCLI: 404 Not Found<br/>http.404
     %%> Result:
-    %%> - nothing is stored or changed; run the command again once the Node's exporter has reported
+    %%> - no Node record matches the ID
+  else refused caller
+    %% path: refused-caller
+    GW--xCLI: 403 Forbidden<br/>node_access.required
+    %%> Result:
+    %%> - the shared Node authority rule refuses the caller
+  else authorized Node
+    %% path: authorized
+    Note over GW: Read recorded snapshot
+    %%> What it does:
+    %%> - reads only the latest metrics snapshot reported by this Node's agent and the recorded agent liveness
+    %%> - contacts no Node or other system, waits for no report and starts no run
+    alt no snapshot yet
+      %% path: no-snapshot
+      GW--xCLI: 422 Unprocessable<br/>node.metrics_unavailable
+      %%> Result:
+      %%> - no metrics snapshot has been recorded for this Node
+    else stale snapshot
+      %% path: stale-snapshot
+      GW-->>CLI: 200 OK<br/>snapshot · possibly outdated
+      %%> Result:
+      %%> - returns the retained snapshot, its observation time and agent state; `possibly_outdated` is true when the agent state is not `online`
+      %%> - offline wording matches `node:show`: `offline since <time>`; `not_seen` and `unknown` keep their shared meanings
+    else current snapshot
+      %% path: current-snapshot
+      GW-->>CLI: 200 OK<br/>snapshot · observation time
+      %%> Result:
+      %%> - returns the snapshot with Node name and ID, observation time and agent state; `possibly_outdated` is false
+    end
   end
+  Note over GW: Leave state unchanged
+  %%> Result:
+  %%> - success and refusal change no records or Node state
+  %%> - a repeat reads the latest recorded snapshot again; it is not a skipped action

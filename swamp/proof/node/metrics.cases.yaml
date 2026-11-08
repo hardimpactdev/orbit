@@ -1,0 +1,135 @@
+# Stage 1 spec. Format and steps: docs/reference/verification-cases.mdx.
+# Refusals compare the Operation list; this does not prove that no HTTP read occurred.
+# This read has no partial mutation to repair and no skipped-action reason code.
+command: node:metrics
+chart: node/metrics
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+uncovered:
+  unknown-node: "Needs an unused-positive-Node-ID fixture, bound as a placeholder, to check http.404 without hard-coding an ID or deleting a fleet Node."
+  no-snapshot: "Needs an agent-metrics fixture that clears only the target's recorded snapshot to check node.metrics_unavailable and distinguish no snapshot yet from a retained stale snapshot."
+  snapshot-values: "Needs a known agent-metrics snapshot fixture and nested-JSON assertions for node_id, node_name, observed_at, agent, possibly_outdated and every metrics field, including pressure without kernel data and disk filtering/order. The current reader maps live query results rather than agent reports."
+  recorded-only: "Needs an outbound-call audit and response-time assertion to prove that current, stale and missing snapshots answer promptly without contacting a Node or any other system. Include recorded snapshots on inactive Nodes and Nodes without WireGuard addresses, which the current action refuses."
+  stale-metadata: "Needs a retained agent-metrics fixture, liveness control and nested-JSON assertions to check the original observation time and possibly_outdated for offline, unknown and absent agent state, including reads after the disposable agent view expires. The current response has no snapshot time or freshness metadata."
+  repeat-values: "Needs snapshot replacement and response-value comparison to prove that a repeat returns the latest recorded values without changing the snapshot or its observation time. The runnable repeat below checks rendering and absence of Operations only."
+  authority-accepted: "Needs an authority/grant fixture with assertions on the caller's recorded access to prove both Gateway authority without a target grant and a target grant without Gateway authority. Both must reach the snapshot outcome, not node_access.required."
+  local-no-http: "Needs a Gateway request counter to prove local invalid IDs send no HTTP request; request: none only checks Operations. The current CLI tries to resolve nonnumeric inputs as Node names."
+
+cases:
+  - id: recorded-snapshot
+    batch: fresh-fleet
+    covers: [main, authorized, current-snapshot]
+    summary: Required arguments alone show the agent-reported snapshot with its observation time and agent state.
+    fails_today: The reader queries another system live and the CLI has no Observed at or Agent fields.
+    setup:
+      - agent_report: {node: app-dev}
+    act:
+      - cli:
+          run: [node:metrics, "${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 0, request: none, human: ["Observed at", "Agent", "Memory", "Uptime"]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: repeat-read
+    batch: fresh-fleet
+    covers: [main, authorized, current-snapshot]
+    summary: Repeating the read shows a snapshot again without starting an Operation or reporting a skipped action.
+    fails_today: The CLI has no observation time or agent state and the reader does not use agent-reported snapshots.
+    setup:
+      - agent_report: {node: app-dev}
+    stages:
+      - act:
+          - cli:
+              run: [node:metrics, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: ["Observed at", "Agent"]}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+      - act:
+          - cli:
+              run: [node:metrics, "${app-dev.id}"]
+              forms: [human, json]
+              expect: {exit: 0, request: none, human: ["Observed at", "Agent"]}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+
+  - id: stale-snapshot
+    batch: node-down
+    covers: [main, authorized, stale-snapshot]
+    summary: An unreachable Node keeps its recorded snapshot and shows possibly outdated with offline since wording.
+    fails_today: The live reader has no retained agent metrics snapshot or stale-snapshot result.
+    setup:
+      - agent_report: {node: app-dev}
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:metrics, "${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 0, request: none, human: ["Observed at", "possibly outdated", "offline since"]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: node-access-required
+    batch: no-grant
+    covers: [main, refused-caller]
+    summary: A caller with neither Gateway authority nor a target grant is refused before reading the snapshot.
+    setup:
+      # The batch removes the target grant; also remove authority obtained through a Gateway grant.
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+    act:
+      - cli:
+          as: app-prod
+          run: [node:metrics, "${app-dev.id}"]
+          forms: [human, json]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: invalid-numeric-id
+    batch: fresh-fleet
+    covers: []
+    summary: Zero, negative and overflowing IDs are refused locally as invalid Node IDs.
+    variants:
+      - {name: zero, invalid: "0"}
+      - {name: negative, invalid: "-1"}
+      - {name: overflow, invalid: "999999999999999999999999999999"}
+    act:
+      - cli:
+          run: [node:metrics, --, "${invalid}"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: nonnumeric-id
+    batch: fresh-fleet
+    covers: []
+    summary: Text, fractional and option-like IDs are invalid selectors rather than Node names.
+    fails_today: NodeCommand resolves nonnumeric inputs as names instead of refusing them with node.id_invalid.
+    variants:
+      - {name: text, invalid: not-a-node-id}
+      - {name: fractional, invalid: "1.5"}
+      - {name: option-like, invalid: --not-a-node-id}
+    act:
+      - cli:
+          run: [node:metrics, --, "${invalid}"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: missing-node-id
+    batch: fresh-fleet
+    covers: []
+    summary: Omitting the required Node ID without a terminal returns node.id_invalid.
+    fails_today: The required framework argument is rejected before the command can return node.id_invalid.
+    act:
+      - cli:
+          run: [node:metrics]
+          forms: [human, json]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
