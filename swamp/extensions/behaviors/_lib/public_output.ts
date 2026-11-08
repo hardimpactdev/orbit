@@ -66,6 +66,9 @@ const SECRET_WORDS = new Set([
     "authorization",
     "cookie",
     "cookies",
+    "session",
+    "sessionid",
+    "phpsessid",
 ]);
 const NON_SECRET_KEYS = new Set([
     "public_key",
@@ -252,8 +255,10 @@ function replacePatterns(raw: string, credentialHex: boolean): string {
         const close = tail.indexOf("-----");
         text = close < 0 ? tail : tail.slice(close + 5);
     }
+    // A scheme starts only where no scheme character precedes it, so each run of
+    // scheme characters is scanned once, not once per word boundary inside it.
     text = text.replace(
-        /(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi,
+        /((?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi,
         "$1[REDACTED]@",
     );
     text = text.replace(/\bBearer\s+[A-Za-z0-9._+/=-]+/gi, "Bearer [REDACTED]");

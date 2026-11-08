@@ -47,6 +47,9 @@ final readonly class CommandActivityInputSanitizer
         'authorization',
         'cookie',
         'cookies',
+        'session',
+        'sessionid',
+        'phpsessid',
     ];
 
     /**

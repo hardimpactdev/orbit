@@ -1244,7 +1244,17 @@ The Agents section lists started threads and their recorded metrics. Any unfinis
 
 Swamp records a bounded transcript on turn finalization after success, failure, disconnect or EOF. It keeps user and assistant message text, redacted before any bound applies. Tool entries keep only the name, status and duration when known. Tool arguments, outputs and raw errors are not kept; a failed tool says `tool failed: <class>`, where the class is one of `timeout`, `aborted`, `exit_nonzero`, `permission`, `not_found` or `error`. Assistant diagnostics are omitted. Structural fields are never redacted. Missing terminal usage stays unknown. Native cancellation skips finalization and keeps the previous recorded transcript.
 
-Redaction replaces known secret values and credential shapes: PEM blocks, JWTs, bearer and GitHub tokens, and URL credentials. It also replaces the value of every secret-named field in JSON-like or key/value text, however nested. HTTP `Authorization` and `Cookie` lines lose their whole value. A field name is secret by the Gateway's secret-word rule. Swamp mirrors that rule in `swamp/extensions/behaviors/_lib/public_output.ts`.
+Redaction of message text is best effort. A model can write a secret in any shape, so no redactor is complete. Tool arguments and outputs are never stored. Message text loses known secret values and credential shapes: PEM blocks, JWTs, bearer and GitHub tokens, and URL credentials. It also loses the value of a secret-named field in common JSON, `key: value`, `key=value` and quoted forms. HTTP `Authorization` and `Cookie` lines lose their whole value. A field name is secret by the Gateway's secret-word rule, which includes session identifiers. Swamp mirrors that rule in `swamp/extensions/behaviors/_lib/public_output.ts`.
+
+These forms are known to pass unredacted:
+
+- JSON with a line break between a key and its value.
+- YAML block scalars, such as `password: |`.
+- TOML and Python triple-quoted strings.
+- Field names inside an escaped container quote.
+- Unicode-escaped or percent-encoded field names.
+- `.env` values `true`, `false` and `null`, such as `PASSWORD=true`.
+
 
 Each child turn records its transcript when it ends, while its parent operation can keep running. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
 
