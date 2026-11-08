@@ -172,7 +172,7 @@ const outputs = (files: Record<string, string> = {}) => {
     return directory;
 };
 const commandDeliverable = {
-    id: "project-check",
+    id: "runner-plan",
     type: "command" as const,
     path: "",
     change: "any",
@@ -194,6 +194,25 @@ Deno.test("a failed handoff preserves the admitted base for its retry", async ()
     assertEquals(value.outcome, "failed");
     assertEquals(value.head, commit);
     assertEquals(value.subtask_start_commit, base);
+});
+
+Deno.test("a build handoff runs the Project check separately from its runner plan", () => {
+    const steps = prepare({
+        ...intent,
+        command: "composer check",
+        deliverables: [{
+            ...commandDeliverable,
+            command: "python3 swamp/proof/runner/runner.py plan --file swamp/proof/firewall/deny.cases.yaml",
+        }],
+    }, 3, "/tmp/run");
+
+    assertEquals(steps.valid, true);
+    assertEquals(steps.project, argv("project", "/srv/check", "composer check"));
+    assertEquals(steps.deliverables, [argv(
+        "deliverable-0",
+        "/srv/check",
+        "python3 swamp/proof/runner/runner.py plan --file swamp/proof/firewall/deny.cases.yaml",
+    )]);
 });
 
 Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", async () => {
@@ -326,7 +345,7 @@ Deno.test("a fails_on_base command records its start-commit run", async () => {
         }),
     );
     if (!("evidence" in value)) throw new Error("Expected evidence");
-    assertEquals(value.evidence?.commands["project-check"], {
+    assertEquals(value.evidence?.commands["runner-plan"], {
         exit_code: 0,
         output: "",
         base_started: true,

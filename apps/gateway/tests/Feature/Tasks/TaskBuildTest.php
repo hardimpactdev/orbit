@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RunTaskPullRequestGateAction;
+use App\Data\Tasks\StartTaskCheckData;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
@@ -18,6 +19,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskBuildProjection;
+use App\Domain\Tasks\TaskCheckIntent;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepPrompts;
@@ -141,18 +144,22 @@ it('appends the build subtask, moves the group to running and records the whole 
         ->and($operation->input['execution_secrets'])->toBe(['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]]);
 });
 
-it('keeps a Project-check review deliverable when the Project has no check command', function (): void {
+it('adds only the runner plan and keeps the Project check in the handoff intent', function (?string $command): void {
     [$group] = buildWorld();
-    $group->project->update(['task_check' => null]);
+    $group->project->update(['task_check' => $command]);
 
     expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
 
     $subtask = Task::query()->where('parent_id', $group->id)->where('position', 2)->sole();
 
-    expect(array_column($subtask->deliverables, 'id'))->toBe(['runner-plan', 'project-check'])
-        ->and($subtask->deliverables[1]['type'])->toBe('review')
-        ->and($subtask->deliverables[1])->not->toHaveKey('command');
-});
+    $handoff = app(TaskCheckIntent::class)->capture($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), hostedCi: false);
+
+    expect(array_column($subtask->deliverables, 'id'))->toBe(['runner-plan'])
+        ->and($subtask->deliverables[0]['type'])->toBe('command')
+        ->and($subtask->deliverables[0]['command'])->toBe(TaskPrepPrompts::for('firewall:deny')->plan())
+        ->and($handoff['command'])->toBe($command)
+        ->and(array_column($handoff['deliverables'], 'id'))->toBe(['runner-plan']);
+})->with(['configured check' => ['composer check'], 'no check' => [null]]);
 
 it('builds a group with a ready slot VM without capturing a resume', function (TaskReviewMode $mode): void {
     [$group, $vm] = buildWorld($mode);
