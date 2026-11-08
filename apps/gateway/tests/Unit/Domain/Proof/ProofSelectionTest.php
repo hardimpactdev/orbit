@@ -226,11 +226,12 @@ it('keeps the Node detail proof and shared list coverage for an owning path chan
 
     expect($selected->files())->toBe([
         ...($list ? ['swamp/proof/node/list.cases.yaml'] : []),
+        ...($family ? ['swamp/proof/node/role-add.cases.yaml', 'swamp/proof/node/role-list.cases.yaml'] : []),
         'swamp/proof/node/show.cases.yaml',
     ])->and(array_column($selected->uncovered, 'reason'))->toBe($family ? array_map(
         static fn (string $command): string => 'no cases file for '.$command,
         ['node:access:add', 'node:access:remove', 'node:add', 'node:converge', 'node:metrics', 'node:remove',
-            'node:role:add', 'node:role:list', 'node:role:relocate', 'node:role:remove', 'node:update', 'node:wireguard-key'],
+            'node:role:relocate', 'node:role:remove', 'node:update', 'node:wireguard-key'],
     ) : [])
         ->and($selected->everythingBecause)->toBeNull()
         ->and($selected->nothingToProve())->toBeFalse();
@@ -337,10 +338,10 @@ it('selects both approved Node proofs for their shared projection and role contr
     'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
 ]);
 
-it('selects every case for shared proof entry and human failure rendering', function (string $path): void {
+it('does not start proofs for shared proof entry and human failure rendering', function (string $path): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
 
-    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+    expect($list->match($path)?->kind)->toBeIn([ProofRuleKind::Skip, ProofRuleKind::None]);
 })->with([
     'apps/cli/app/Commands/Proof/ProofCommand.php',
     'apps/gateway/app/Domain/Proof/ProofVerifyIntent.php',
