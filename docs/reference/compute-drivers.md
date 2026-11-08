@@ -948,6 +948,8 @@ Only the base snapshot refresh makes a base. The recipe image build is gone, wit
 
 A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that host preparation copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
 
+Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. A failed first boot can leave cloud-init's package module marked as run without installing the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
+
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
