@@ -4,15 +4,15 @@
   snap_absent (the paths of the new file set that the Node did not hold), snap_binders (the snippets that bind interfaces),
   snap_dnsmasq (the systemd status of dnsmasq), snap_listeners (the results of the status reads of the old listener units),
   snap_holders (the results of reading who holds each listen address).
-  The files are `present` when the Node held them (then `copy` names the copy in snapshot/files and `sha256` its checksum), `legacy` when
+  The files are `present` when the Node held them (then `saved` names the copy in snapshot/files and `sha256` its checksum), `legacy` when
   they belong to the old listener setup, and `binder` when they are snippets that bind interfaces. A unit is `active` and `enabled`.
 -#}
 {%- set ns = namespace(files=[], units=[], holders=[]) -%}
 {%- for r in snap_copies -%}
-{%- set ns.files = ns.files + [{'path': r.item, 'copy': r.item | replace('/', '%'), 'sha256': r.checksum, 'present': true, 'legacy': r.item not in snap_new, 'binder': r.item in snap_binders}] -%}
+{%- set ns.files = ns.files + [{'path': r.item, 'saved': r.item | replace('/', '%'), 'sha256': r.checksum, 'present': true, 'legacy': r.item not in snap_new, 'binder': r.item in snap_binders}] -%}
 {%- endfor -%}
 {%- for path in snap_absent -%}
-{%- set ns.files = ns.files + [{'path': path, 'copy': none, 'sha256': none, 'present': false, 'legacy': false, 'binder': false}] -%}
+{%- set ns.files = ns.files + [{'path': path, 'saved': none, 'sha256': none, 'present': false, 'legacy': false, 'binder': false}] -%}
 {%- endfor -%}
 {%- set ns.units = [{'name': 'dnsmasq', 'active': snap_dnsmasq.ActiveState | default('') == 'active', 'enabled': snap_dnsmasq.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
 {%- for r in snap_listeners -%}

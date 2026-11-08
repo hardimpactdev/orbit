@@ -596,6 +596,12 @@
             state: directory
             prefix: orbit-dnsmasq-unit-
           register: live
+        # dnsmasq reads the hosts and servers files after it drops to its own account, so the folder must be traversable like /var/lib/orbit.
+        - name: Let the account of dnsmasq read the folder
+          ansible.builtin.file:
+            path: "{{ live.path }}"
+            state: directory
+            mode: "0755"
         - name: Write the rendered files
           ansible.builtin.copy:
             content: "{{ item.content }}"

@@ -299,8 +299,13 @@
                 # states of dnsmasq and the listener units, and who holds the listen addresses. The manifest is written last, so a snapshot
                 # without one is a run that died while it was being taken, before any change, and it is taken again. A snapshot that has a
                 # manifest is reused: it is the state to go back to until a publication commits, so a retry never saves a half-changed Node.
+                # Decided once: `dns_snap_current` turns from none to the new snapshot as soon as the snapshot is described, and a `when` of a
+                # block is checked again for every task in it, which would skip the write of the manifest.
+                - name: Decide whether the snapshot is taken now
+                  ansible.builtin.set_fact:
+                    dns_snap_take: "{{ dns_snap_current is none }}"
                 - name: Take the snapshot of the Node
-                  when: dns_snap_current is none
+                  when: dns_snap_take
                   block:
                     - name: Remove what an unfinished snapshot left
                       ansible.builtin.file:
@@ -652,7 +657,7 @@
               register: dns_r_loaded
             - name: Restore the files that the Node held
               ansible.builtin.copy:
-                src: "{{ dns_snapshot }}/files/{{ item.copy }}"
+                src: "{{ dns_snapshot }}/files/{{ item.saved }}"
                 dest: "{{ item.path }}"
                 remote_src: true
                 mode: preserve
@@ -736,6 +741,10 @@
               changed_when: false
               failed_when: >-
                 dns_r_dig.rc != 0 or (dns_r_dig.stdout | regex_search('status[:] (NOERROR|NXDOMAIN)')) is none
+              # The old listener has only just been started; give it a few seconds to bind before it counts as not recovered.
+              until: dns_r_dig is not failed
+              retries: 8
+              delay: 1
               ignore_errors: true
             - name: Decide whether the Node is recovered
               ansible.builtin.set_fact:
