@@ -233,6 +233,37 @@ describe('node:show', function (): void {
         }
     });
 
+    it('shows every assignment state with native failure detail and the named Cluster', function (string $failedStep): void {
+        $payload = show_node_payload();
+        $payload['cluster_id'] = 901;
+        $payload['cluster_name'] = 'edge-production';
+        $payload['roles'] = [
+            ['id' => 1, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null],
+            ['id' => 2, 'role' => 'app-prod', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null],
+            ['id' => 3, 'role' => 'database', 'status' => 'failed', 'failed_step' => $failedStep, 'error_code' => 'node_role.convergence_failed'],
+            ['id' => 4, 'role' => 'vpn', 'status' => 'removing', 'failed_step' => null, 'error_code' => null],
+        ];
+        $mockClient = MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:show', ['node' => '2']))->toBe(0);
+        $output = preg_replace('/[ \t]+/', ' ', Artisan::output());
+        expect($output)
+            ->toContain('Roles app-dev, app-prod (provisioning), database (failed / '.$failedStep.' / node_role.convergence_failed), vpn (removing)')
+            ->toContain('Cluster edge-production', 'Request ID: '.request_id())
+            ->not->toContain('Cluster 901', 'app-dev (active)');
+        expect($mockClient->getLastPendingRequest()?->getUrl())
+            ->toBe('https://10.44.0.1/api/v1/nodes/2');
+        $mockClient->assertSentCount(1);
+    })->with([
+        'native platform guard' => 'converge:Require supported Ubuntu',
+        'native role check' => 'converge:Check the role',
+    ]);
+
     it('shows empty node access summaries as dashes', function (): void {
         $payload = show_node_payload();
         $payload['access'] = [

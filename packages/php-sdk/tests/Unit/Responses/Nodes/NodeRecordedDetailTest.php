@@ -29,6 +29,26 @@ it('preserves the named Cluster and complete assignment lifecycle in node detail
         ->and($node->toArray()['error_code'])->toBe('node.enrollment_failed');
 });
 
+it('preserves native assignment failed-step labels through node detail and JSON', function (string $failedStep): void {
+    $role = [
+        'id' => 1, 'role' => 'app-dev', 'status' => 'failed',
+        'failed_step' => $failedStep, 'error_code' => 'node_role.convergence_failed',
+    ];
+    $node = NodeResponse::fromGatewayData([
+        'id' => 9, 'name' => 'retained', 'roles' => [$role],
+    ], node_role_request_id());
+
+    expect($node->roles[0]->failedStep)->toBe($failedStep)
+        ->and($node->roles[0]->requestId)->toBe(node_role_request_id())
+        ->and($node->toArray()['roles'])->toBe([$role]);
+})->with([
+    'native platform guard' => 'converge:Require supported Ubuntu',
+    'native role check' => 'converge:Check the role',
+    'native punctuation and Unicode' => 'converge:Vérifier le rôle (app-dev)',
+    'significant surrounding spaces' => ' converge:Check the role ',
+    'maximum length' => str_repeat('a', 128),
+]);
+
 it('does not silently erase a malformed assignment list', function (mixed $roles): void {
     expect(fn (): NodeResponse => NodeResponse::fromGatewayData(['roles' => $roles], 'recorded-request'))
         ->toThrow(GatewayApiException::class);

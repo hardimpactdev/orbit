@@ -1,11 +1,11 @@
 """Recorded-read capabilities use the existing step engine; malformed/missing data must never become a pass."""
-from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fleet
 import runner
