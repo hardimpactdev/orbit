@@ -1050,18 +1050,46 @@ function log_follow_json_lines(string $output): array
     );
 }
 
-it('refuses Schedule follow before opening a connection until the fixed Agent is pinned', function (bool $json): void {
-    $mock = MockClient::global();
-    expect(Artisan::call('schedule:logs', [
-        'schedule' => '123e4567-e89b-42d3-a456-426614174000', '--follow' => true, '--json' => $json,
-    ]))->toBe(1);
-    $output = Artisan::output();
-    expect($output)->toContain('Schedule follow needs orbit-agent 0.14.0.');
-    if ($json) {
-        expect(json_decode($output, true)['error']['code'])->toBe('schedule.follow_unavailable');
-    }
-    $mock->assertNothingSent();
-})->with([true, false]);
+it('follows Schedule journal logs through a viewer lease and closes it on interrupt', function (): void {
+    log_follow_profile();
+    $transport = log_follow_transport(log_follow_handshake('123.456', log_follow_stream_id('a')));
+    $mock = MockClient::global(log_follow_stream_mocks('a'));
+    $this->clock->onTick(function (float $now, int $count) use ($transport): void {
+        if ($count === 1) {
+            $transport->enqueue([log_follow_lines('a', 1, ['schedule output'])]);
+        }
+        if ($count >= 4) {
+            InterruptIntent::record(SIGINT);
+        }
+    });
+    $id = '123e4567-e89b-42d3-a456-426614174000';
+    expect(Artisan::call('schedule:logs', ['schedule' => $id, '--follow' => true, '--json' => true]))->toBe(0)
+        ->and(Artisan::output())->toContain('schedule output')
+        ->and(log_follow_sent($mock, CreateLogStreamRequest::class)[0]->getUrl())->toBe('https://10.44.0.1/api/v1/schedules/'.$id.'/log-streams')
+        ->and(log_follow_sent($mock, RenewLogStreamRequest::class))->not->toBeEmpty()
+        ->and(log_follow_sent($mock, DestroyLogStreamRequest::class))->toHaveCount(1);
+});
+
+it('refuses Schedule follow without polling when the Node has not reached the fixed pin', function (): void {
+    log_follow_profile();
+    log_follow_transport(log_follow_handshake('1.2', log_follow_stream_id('a')));
+    $message = 'Schedule follow needs orbit-agent '.ScheduleLogStreamTarget::MinimumAgentVersion.'.';
+    $mock = MockClient::global([
+        CreateLogStreamRequest::class => MockResponse::make([
+            'error' => ['code' => 'schedule.follow_unavailable', 'message' => $message, 'details' => []],
+        ], 409, ['X-Orbit-Request-Id' => log_follow_request_id()]),
+    ]);
+
+    $exitCode = Artisan::call('schedule:logs', [
+        'schedule' => '123e4567-e89b-42d3-a456-426614174000', '--follow' => true, '--json' => true,
+    ]);
+
+    expect($exitCode)->toBe(1)
+        ->and(log_follow_json_lines(Artisan::output()))->toBe([[
+            'error' => ['code' => 'schedule.follow_unavailable', 'message' => $message, 'request_id' => log_follow_request_id()],
+        ]])
+        ->and(log_follow_sent($mock, ScheduleLogsRequest::class))->toBe([]);
+});
 
 it('keeps multiline journal entries in order across live polling and live recovery', function (): void {
     log_follow_profile();

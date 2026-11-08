@@ -14,7 +14,7 @@ covers:
 
 # Schedules
 
-[`schedule:logs`](/cli/schedule/logs) returns retained journal lines. `--follow` refuses until the fixed Agent release is pinned; see [Schedule logs](/cli/schedule/logs).
+[`schedule:logs`](/cli/schedule/logs) returns retained journal lines. Add `--follow` for a [live log stream](/reference/live-logs); each viewer has its own lease and receives redacted lines with loss markers.
 
 A Schedule runs one command on a calendar for one Node or one Instance. The Gateway stores the Schedule. Swamp serve on Node 209 holds one small workflow per Schedule, `schedule-<uuid>`, with the Schedule's cron trigger and its intent fixed inside. Each fire runs the shared `task-command-run` workflow, which reaches the Node over SSH. Nothing is installed on the Node (ADR 0244). macOS is not a Schedule target. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422).
 

@@ -12,11 +12,9 @@ covers:
 
 # Live logs
 
-Schedule follow is disabled in the CLI and API until orbit-agent 0.14.0 is released and pinned. New Schedule leases refuse with `schedule.follow_unavailable`; web viewers use bounded snapshots.
+A live log stream shows new lines of one Instance, Process, or Schedule log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance, Process, or Schedule.
 
-A live log stream shows new lines of one Instance or Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance, Process, or Schedule.
-
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs), [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs), [`orbit process:logs`](/cli/process/logs), and [`orbit schedule:logs`](/cli/schedule/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
 
 ## How a stream works
 
@@ -115,11 +113,11 @@ Each record has one source, the same one that its one-shot read uses.
 | Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
 | systemd Process | The journal entries that `journalctl --unit orbit-process-{id}-{name}.service` selects: the unit's own entries, systemd's messages about the unit, messages that root services log about it, and its core dumps | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
-| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. Agent 0.14.0 snapshots use this source; Schedule follow stays disabled | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
+| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. Snapshots and live follow use this source | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process also uses. Agent 0.14.0 uses the same format for Schedule snapshots, reversing whole entries while keeping continuation lines in order. The current frozen Agent predates this fix, so Schedule follow stays disabled until the fixed release is pinned. Process snapshots and live streams therefore select and print the same entries. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
+The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process and of a Schedule also uses. Both reads select the same entries and print the same text. Schedule snapshots reverse whole entries while keeping continuation lines in order. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
 
 The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
 
@@ -247,6 +245,8 @@ The subscriber's socket loop only records what arrives. A child process does eve
 ### End a stream instead of dropping old lines
 
 When the relay falls behind, it ends the stream with `relay_behind`. The viewer then falls back to SSH reads, which show the current tail. Dropping the oldest lines silently is rejected, because the viewer would miss lines without knowing it.
+
+Schedule follow requires the fixed Agent version declared by `ScheduleLogStreamTarget::MinimumAgentVersion` and an observer reporting the exact pinned binary. A Gateway that still pins an older Agent, or a Node not yet upgraded to the new pin, refuses with `schedule.follow_unavailable`.
 
 Schedule viewer leases use `/api/v1/schedules/{schedule}/log-streams` and the `schedule:log-stream:{create,renew,destroy}` transport names. The Schedule ID stays a UUID. Orbit resolves only its `orbit-schedule-{uuid}.service` journal source. The same access, lease, redaction, reconnect, and loss rules apply. These transport endpoints are excluded from MCP.
 

@@ -11,6 +11,8 @@ use App\Domain\Logs\LogStreamRecordType;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Logs\LogStreamTarget;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Instance;
 use App\Models\Node;
@@ -29,12 +31,16 @@ final readonly class OpenLogStreamAction
         private LogStreamAvailability $availability,
         private LogStreamStore $streams,
         private RealtimeConnection $realtime,
+        private AgentDelivery $delivery,
+        private AgentReportedVersions $versions,
     ) {}
 
     /** @return array{stream: LogStream, auth: string} */
     public function execute(LogStreamTarget $target, Node $viewer, string $socketId, int $lines): array
     {
-        if ($target->recordType === LogStreamRecordType::Schedule) {
+        if ($target->recordType === LogStreamRecordType::Schedule
+            && (version_compare($this->delivery->version(), ScheduleLogStreamTarget::MinimumAgentVersion, '<')
+                || ($this->versions->get($target->node->id)['version'] ?? null) !== $this->delivery->reportedVersion($target->node))) {
             throw new ResourceOperationException(
                 'schedule.follow_unavailable',
                 'Schedule follow needs orbit-agent '.ScheduleLogStreamTarget::MinimumAgentVersion.'.',

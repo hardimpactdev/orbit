@@ -17,6 +17,8 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
@@ -27,13 +29,14 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
 
 beforeEach(function (): void {
     Event::fake([LogStreamBroadcast::class]);
     $this->node = Node::withoutEvents(fn (): Node => Node::query()->create([
-        'name' => 'logs-host', 'status' => 'active', 'platform' => 'linux',
+        'name' => 'logs-host', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64',
         'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '10.44.0.8', 'user' => 'orbit',
     ]));
     $this->node->accessibleNodes()->attach($this->node->id);
@@ -50,12 +53,25 @@ beforeEach(function (): void {
     $view->shouldReceive('node')->andReturn(new AgentNodeView($this->node->id, AgentViewFreshness::Fresh, logs: true));
     $view->shouldReceive('subscriber')->andReturn(new AgentViewSubscriberHealth(microtime(true), true, true, 1));
     $this->path = '/api/v1/schedules/'.$this->schedule->id.'/log-streams';
+    $this->pinPath = sys_get_temp_dir().'/orbit-schedule-agent-'.Str::uuid().'.json';
+    $delivery = schedule_test_agent_delivery($this->pinPath, '0.14.0');
+    app()->instance(AgentDelivery::class, $delivery);
+    $versions = new AgentReportedVersions(Cache::store('array'));
+    $versions->record($this->node->id, $delivery->reportedVersion($this->node));
+    app()->instance(AgentReportedVersions::class, $versions);
 });
 
-it('renews and closes an existing viewer lease without changing the Schedule UUID', function (): void {
-    $stream = schedule_existing_stream($this->schedule, $this->node);
-    $id = $stream->id;
+afterEach(function (): void {
+    if (isset($this->pinPath) && is_file($this->pinPath)) {
+        unlink($this->pinPath);
+    }
+});
+
+it('opens activates and closes the viewer lease without changing the Schedule UUID', function (): void {
+    $response = $this->postJson($this->path, ['socket_id' => '123.456', 'lines' => 250])->assertCreated();
+    $id = $response->json('data.id');
     $store = app(LogStreamStore::class);
+    $stream = $store->find($id);
     expect($stream->recordId)->toBe($this->schedule->id)
         ->and($stream->recordType)->toBe(LogStreamRecordType::Schedule)
         ->and($stream->source->unit)->toBe('orbit-schedule-'.$this->schedule->id.'.service')
@@ -68,7 +84,7 @@ it('renews and closes an existing viewer lease without changing the Schedule UUI
 });
 
 it('refuses another viewer before renewing or closing the lease', function (): void {
-    $id = schedule_existing_stream($this->schedule, $this->node)->id;
+    $id = $this->postJson($this->path, ['socket_id' => '123.456'])->assertCreated()->json('data.id');
     $other = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'other-viewer', 'status' => 'active', 'platform' => 'linux',
         'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit',
@@ -124,24 +140,55 @@ it('redacts unlabeled stored Instance values from the snapshot used during polli
         ->assertDontSee('synthetic-schedule-value');
 });
 
-it('refuses a new Schedule stream until the fixed Agent release is pinned', function (): void {
-    $this->postJson($this->path, ['socket_id' => '123.456'])
+it('opens only the upgraded Node during a mixed-version rollout', function (): void {
+    $old = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'old-agent', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64',
+        'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '10.44.0.10', 'user' => 'orbit',
+    ]));
+    $this->node->accessibleNodes()->attach($old->id);
+    $schedule = Schedule::query()->create([
+        'target_type' => Node::class, 'target_id' => $old->id, 'host_node_id' => $old->id,
+        'name' => 'old-cleanup', 'calendar' => 'hourly', 'command' => 'true', 'timeout_seconds' => 60,
+        'desired_timer_state' => 'enabled', 'status' => 'active',
+    ]);
+    app(AgentReportedVersions::class)->record($old->id, '0.13.0+'.str_repeat('b', 16));
+
+    $this->postJson('/api/v1/schedules/'.$schedule->id.'/log-streams', ['socket_id' => '123.456'])
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'schedule.follow_unavailable')
         ->assertJsonPath('error.message', 'Schedule follow needs orbit-agent 0.14.0.');
+    $this->postJson($this->path, ['socket_id' => '123.456'])->assertCreated();
 
+    expect(app(LogStreamStore::class)->all())->toHaveCount(1);
+    expect(app(LogStreamStore::class)->all()[0]->nodeId)->toBe($this->node->id);
+});
+
+it('refuses Schedule follow while the Gateway still pins the old Agent', function (): void {
+    app()->instance(AgentDelivery::class, schedule_test_agent_delivery($this->pinPath, '0.13.0'));
+
+    $this->postJson($this->path, ['socket_id' => '123.456'])
+        ->assertStatus(409)->assertJsonPath('error.code', 'schedule.follow_unavailable');
     expect(app(LogStreamStore::class)->all())->toBe([]);
 });
 
-function schedule_existing_stream(Schedule $schedule, Node $viewer): LogStream
-{
-    $stream = new LogStream(
-        str_repeat('a', 32), LogStreamRecordType::Schedule, $schedule->id,
-        $schedule->host_node_id, $viewer->id,
-        LogStreamSource::journal('orbit-schedule-'.$schedule->id.'.service'),
-        250, microtime(true) + LogStreamStore::LeaseSeconds,
-    );
-    app(LogStreamStore::class)->open($stream);
+it('refuses an unknown or different observer binary even when the pin is new', function (?string $version): void {
+    app()->instance(AgentReportedVersions::class, new AgentReportedVersions(Cache::store('array')));
+    Cache::store('array')->forget('agent-view.version.'.$this->node->id);
+    if ($version !== null) {
+        app(AgentReportedVersions::class)->record($this->node->id, $version);
+    }
 
-    return $stream;
+    $this->postJson($this->path, ['socket_id' => '123.456'])
+        ->assertStatus(409)->assertJsonPath('error.code', 'schedule.follow_unavailable');
+    expect(app(LogStreamStore::class)->all())->toBe([]);
+})->with([null, '0.14.0+cccccccccccccccc', '0.15.0+bbbbbbbbbbbbbbbb']);
+
+function schedule_test_agent_delivery(string $path, string $version): AgentDelivery
+{
+    file_put_contents($path, json_encode([
+        'commit' => str_repeat('a', 40), 'version' => $version,
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'path' => 'orbit-agent-linux-x86_64']],
+    ], JSON_THROW_ON_ERROR));
+
+    return new AgentDelivery($path, dirname($path).'/unused-schedule-agent-cache');
 }
