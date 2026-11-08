@@ -20,6 +20,8 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCapacityException;
@@ -927,4 +929,36 @@ it('frees the VM a cancel reserved when its start is refused, so the next cancel
     preservationCall($gateway, $group, 'cancel')->assertStatus(202);
     $retry = Operation::query()->where('kind', 'tasks.cancel')->whereKeyNot($refused->id)->sole();
     expect($retry->input['release']['intent']['slot']['name'])->toBe($slot->name)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('ends a removal failure assistance when the release deletes the group\'s workspace, and leaves other requests alone', function (): void {
+    [, $project] = slotPoolHost();
+    $pool = app(TaskVmSlotPool::class);
+    $workspace = function (Task $group, TaskVm $slot, string $name) use ($project): Instance {
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $slot->node_id, 'name' => $name, 'checkout_path' => '/home/orbit/apps/orbit/'.$name,
+            'task_workspace_owner_id' => $group->id, 'branch_override' => $name]);
+        $group->taskable()->associate($instance);
+        $group->fill(['status' => TaskGroupStatus::Completed])->save();
+
+        return $instance;
+    };
+    // The removal failed while the VM was parked; the release now deletes the workspace.
+    $failed = slotPoolGroup($project);
+    $failedSlot = $pool->take($failed);
+    $workspace($failed, $failedSlot, 'task-1');
+    TaskAssistance::apply($failed, AssistanceKind::RemovalFailure, null, 'Workspace removal failed: the task VM is parked.', replaceFailure: true);
+    // A running group asks about something else; its VM is released too, as after a failed start.
+    $other = slotPoolGroup($project);
+    $otherSlot = $pool->take($other);
+    $workspace($other, $otherSlot, 'task-2');
+    $other->update(['status' => TaskGroupStatus::Running]);
+    TaskAssistance::apply($other, AssistanceKind::Failure, null, 'The check failed.', replaceFailure: true);
+
+    $projection = app(TaskVmSlotReleaseProjection::class);
+    foreach ([$failedSlot, $otherSlot] as $slot) {
+        $projection->record($slot->refresh(), true, null);
+    }
+
+    expect($failed->refresh()->assistance_requested)->toBeFalse()->and($failed->assistance_kind)->toBeNull()->and($failed->taskable_id)->toBeNull()
+        ->and($other->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)->and($other->assistance_requested)->toBeTrue();
 });
