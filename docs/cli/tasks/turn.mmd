@@ -75,7 +75,7 @@ sequenceDiagram
   %%> - Flush each complete event into a bounded private transcript file, including before a disconnect or EOF.
   Note over SW: terminal
   %%> What it does:
-  %%> - Normalize tool activities and redact structured secrets before recording available transcript entries after success, failure, disconnect or EOF.
+  %%> - Record redacted user/assistant text and tool name, status and duration after success, failure, disconnect or EOF. Tool arguments, outputs and raw errors are discarded.
   %%> - Record usage and nullable cost only from a matching terminal event.
   %%> - Native cancellation skips finalization and keeps the previous recorded transcript.
   SW->>N: snapshot_after_index

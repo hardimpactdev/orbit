@@ -77,6 +77,9 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
         ],
     });
     await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Saved answer");
+    await expect
+        .element(page.getByRole("tabpanel"))
+        .toMatchTextContent("Tool arguments and output are not kept.");
     source.readyState = 0;
     source.onerror?.();
     await expect.element(page.getByLabelText("Agent connection")).toMatchTextContent("Recorded");

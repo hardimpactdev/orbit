@@ -883,7 +883,7 @@ for (
     });
 }
 
-Deno.test("the persisted resource normalizes tools and removes structured secrets before writing", async () => {
+Deno.test("the persisted resource keeps messages and tool metadata without arguments outputs or errors", async () => {
     const dir = await Deno.makeTempDir();
     try {
         const path = dir + "/transcript.json";
@@ -903,7 +903,7 @@ Deno.test("the persisted resource normalizes tools and removes structured secret
                         name: "read",
                         arguments: {
                             path: "/app/config.php",
-                            password: "structured-password-value",
+                            password: ["structured-password-value"],
                             cookies: { sid: "private-cookie-value" },
                             nested: { apiKey: "nested-api-key-value" },
                             unused: "private-unused-argument",
@@ -935,7 +935,16 @@ Deno.test("the persisted resource normalizes tools and removes structured secret
                 toolName: "read",
                 content: [{
                     type: "text",
-                    text: "raw-file-contents-without-a-credential-pattern",
+                    text: JSON.stringify({
+                        password: [
+                            "raw-file-contents-without-a-credential-pattern",
+                        ],
+                        nested: { cookies: { sid: "output-cookie-value" } },
+                        authorization: "json-auth-value",
+                        escaped: JSON.stringify({
+                            password: 'escaped-"quote-value',
+                        }),
+                    }),
                 }],
             }),
             entry("bash-result", {
@@ -965,7 +974,27 @@ Deno.test("the persisted resource normalizes tools and removes structured secret
                 toolCallId: "edit-1",
                 toolName: "edit",
                 isError: true,
-                content: "failed error-secret-value",
+                content:
+                    "failed unstructured-tool-failure-value error-secret-value",
+                error: {
+                    message: "raw-tool-error-value",
+                    code: "private-code-value",
+                },
+                details: { password: ["failure-array-value"] },
+            }),
+            entry("assistant-error", {
+                role: "assistant",
+                stopReason: "error",
+                content: [],
+                errorMessage: "raw-assistant-error-value",
+            }),
+            entry("user", {
+                role: "user",
+                content: "password=message-secret-value",
+            }),
+            entry("system", {
+                role: "system",
+                content: "private-system-value",
             }),
         ];
         await Deno.writeTextFile(
@@ -987,6 +1016,18 @@ Deno.test("the persisted resource normalizes tools and removes structured secret
                 "raw-file-contents-without-a-credential-pattern",
                 "unstructured-cookie-value",
                 "error-secret-value",
+                "unstructured-tool-failure-value",
+                "output-cookie-value",
+                "json-auth-value",
+                "escaped-",
+                "raw-tool-error-value",
+                "private-code-value",
+                "failure-array-value",
+                "raw-assistant-error-value",
+                "private-system-value",
+                "message-secret-value",
+                "echo complete",
+                "/app/",
             ]
         ) {
             assertEquals(
@@ -1008,31 +1049,96 @@ Deno.test("the persisted resource normalizes tools and removes structured secret
                 at: "2026-11-08T10:00:00Z",
                 kind: "activity",
                 label: "read",
-                text: "Reading config.php",
+                text: "read · succeeded · 0 ms",
             },
             {
                 id: "assistant:1",
                 at: "2026-11-08T10:00:00Z",
                 kind: "activity",
                 label: "bash",
-                text:
-                    "complete\n[REDACTED] [REDACTED] [REDACTED] [REDACTED]\nCookie: [REDACTED]\n$ echo complete\nexit code 0",
+                text: "bash · succeeded · 0 ms",
             },
             {
                 id: "assistant:2",
                 at: "2026-11-08T10:00:00Z",
                 kind: "activity",
                 label: "write",
-                text: "Writing out.php (stopped without a result)",
+                text: "write · stopped without a result",
             },
             {
                 id: "error-call:0",
                 at: "2026-11-08T10:00:00Z",
                 kind: "activity",
                 label: "edit",
-                text: "Editing out.php failed: failed [REDACTED]",
+                text: "edit · tool failed · 0 ms",
+            },
+            {
+                id: "user",
+                at: "2026-11-08T10:00:00Z",
+                kind: "message",
+                label: "user",
+                text: "password=[REDACTED]",
             },
         ]);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+Deno.test("short secrets redact text without changing structural transcript fields", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        const at = "2026-11-08T10:00:00Z";
+        await Deno.writeTextFile(
+            path,
+            JSON.stringify({
+                kind: "snapshot",
+                entries: [{
+                    id: "assistant-a",
+                    timestamp: at,
+                    message: {
+                        role: "assistant",
+                        content: [
+                            { type: "text", text: "a" },
+                            {
+                                type: "toolCall",
+                                id: "call-a",
+                                name: "edit",
+                                arguments: { password: "a" },
+                            },
+                        ],
+                    },
+                }, {
+                    id: "result-a",
+                    timestamp: "2026-11-08T10:00:01Z",
+                    message: {
+                        role: "toolResult",
+                        toolCallId: "call-a",
+                        isError: true,
+                        content: "a",
+                    },
+                }],
+            }),
+        );
+        const recorded = await recordedTerminal({
+            path,
+            turn: "operation-16",
+            partial: true,
+        });
+        assertEquals(recorded.transcript, [{
+            id: "assistant-a",
+            at,
+            kind: "message",
+            label: "assistant",
+            text: "[REDACTED]",
+        }, {
+            id: "assistant-a:0",
+            at: "2026-11-08T10:00:01Z",
+            kind: "activity",
+            label: "edit",
+            text: "edit · tool failed · 1000 ms",
+        }]);
     } finally {
         await Deno.remove(dir, { recursive: true });
     }

@@ -9,8 +9,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -27,6 +29,8 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
+use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -72,6 +76,8 @@ function recordedTurnSocket(string $root, ?string $child, array $histories): Web
     {
         public array $artifactRows = [];
 
+        public array $artifactReplies = [];
+
         public array $queries = [];
 
         private ?array $frame = null;
@@ -102,7 +108,7 @@ function recordedTurnSocket(string $root, ?string $child, array $histories): Web
             }
             $data = match ($frame['type']) {
                 'workflow.run.search' => ['results' => $this->child === null ? [] : [['runId' => $this->child, 'parentRun' => ['runId' => $this->root]]]],
-                'data.query' => ['results' => $this->artifactRows],
+                'data.query' => ['results' => $this->artifactReplies[$frame['payload']['predicate']] ?? $this->artifactRows],
                 default => $this->histories[$frame['payload']['workflowIdOrName']],
             };
 
@@ -381,6 +387,97 @@ it('loads a root turn capture from its recorded result artifact before projectin
         expect($thread->refresh()->tokens)->toBe(140);
         expect($socket->queries[0]['predicate'])->toBe('id == "'.$dataId.'" && version == 22');
         $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Large recorded result');
+        Http::assertNothingSent();
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+});
+
+it('projects a terminal prep parent with large state settlement evidence', function (string $kind): void {
+    [$group, $thread, $operation] = recordedTaskWorld();
+    $root = '986bc349-54dc-4dea-9f22-76e3353d1cd1';
+    $dataId = '9bbf19aa-d4a5-405e-9a43-901fb585a814';
+    $intent = ['draft' => ['thread_id' => $thread->id], 'author' => ['thread_id' => $thread->id],
+        'reviews' => array_fill(0, 3, ['thread_id' => $thread->id]), 'execution_secrets' => [],
+        'provision' => ['task_vm_id' => TaskVm::query()->where('group_id', $group->id)->sole()->id,
+            'instance_id' => $group->taskable_id, 'workspace' => ['branch' => 'task-fixture', 'start_commit' => str_repeat('1', 40)]]];
+    $operation->update(['kind' => $kind, 'input' => $intent, 'state' => ['swamp_run_id' => $root]]);
+    $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];
+    $findings = str_repeat('Recorded settlement findings. ', 3000);
+    $settlement = ['approved' => false, 'head' => str_repeat('2', 40), 'tree' => str_repeat('3', 40), 'findings' => $findings];
+    $history = ['id' => $root, 'workflowName' => app(DirectOperation::class)->definition($kind)['workflow'], 'status' => 'failed',
+        'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind],
+        'jobs' => [['name' => $selector['job'], 'steps' => [
+            ['name' => 'Claim a slot', 'status' => 'succeeded', 'outputs' => ['ready' => true]],
+            ['name' => $selector['captures']['findings']['step'], 'status' => 'succeeded',
+                'dataArtifacts' => [['dataId' => $dataId, 'name' => 'state', 'version' => 22]]],
+            ['name' => $selector['step'], 'status' => 'failed'],
+        ]]]];
+    $socket = recordedTurnSocket($root, null, [$root => $history]);
+    $socket->artifactRows = [['id' => $dataId, 'name' => 'state', 'version' => 23, 'content' => $settlement]];
+    app()->instance(WebSocketClient::class, $socket);
+    app(SwampConnection::class)->release();
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
+    try {
+        $reader = app(SwampCommandStep::class);
+        expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(ResourceOperationException::class);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+        $socket->artifactRows[0]['version'] = 22;
+        $socket->artifactRows[0]['name'] = 'result';
+        expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(ResourceOperationException::class);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+        $socket->artifactRows[0]['name'] = 'state';
+        $reader->projectTerminal($operation, ['id' => $root], $selector);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Failed);
+        expect($operation->error_code)->toBe('tasks.prep_review_unresolved');
+        expect($operation->result['findings'])->toBe(substr($findings, 0, 4000));
+        expect($socket->queries[0]['predicate'])->toBe('id == "'.$dataId.'" && version == 22');
+        Http::assertNothingSent();
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with(['tasks.prep', 'tasks.prep_fix']);
+
+it('projects a terminal review parent with large verdict and checked fix artifacts', function (): void {
+    [$group, , $operation, , $subtask] = recordedTaskWorld();
+    $root = '986bc349-54dc-4dea-9f22-76e3353d1cd2';
+    $verdictId = '9bbf19aa-d4a5-405e-9a43-901fb585a815';
+    $fixId = '9bbf19aa-d4a5-405e-9a43-901fb585a816';
+    $commit = str_repeat('4', 40);
+    $output = str_repeat('Recorded check output. ', 3000);
+    $checked = ['outcome' => 'passed', 'exit_code' => 0, 'commit' => $commit, 'output' => $output];
+    $operation->update(['kind' => 'tasks.review_round', 'input' => [], 'state' => ['swamp_run_id' => $root]]);
+    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => 'handoff', 'status' => 'running',
+        'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
+    $round = TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => str_repeat('1', 40),
+        'round' => 1, 'operation_id' => $operation->id, 'check_id' => $check->id]);
+    $history = ['id' => $root, 'workflowName' => 'operation-task-review-round', 'status' => 'succeeded',
+        'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.review_round'],
+        'jobs' => [['name' => 'round', 'steps' => [
+            ['name' => 'Settle the review', 'status' => 'succeeded', 'dataArtifacts' => [['dataId' => $verdictId, 'name' => 'verdict', 'version' => 22]]],
+            ['name' => 'Settle the check', 'status' => 'succeeded', 'dataArtifacts' => [['dataId' => $fixId, 'name' => 'fix', 'version' => 24]]],
+            ['name' => 'Push the fix', 'status' => 'succeeded'], ['name' => 'Confirm the round', 'status' => 'succeeded'],
+        ]]]];
+    $socket = recordedTurnSocket($root, null, [$root => $history]);
+    $socket->artifactReplies = [
+        'id == "'.$verdictId.'" && version == 22' => [['id' => $verdictId, 'name' => 'verdict', 'version' => 22,
+            'content' => ['verdict' => 'findings', 'findings' => str_repeat('Review findings. ', 5000), 'body' => str_repeat('Review body. ', 5000)]]],
+        'id == "'.$fixId.'" && version == 24' => [['id' => $fixId, 'name' => 'fix', 'version' => 24,
+            'content' => json_encode(['result_json' => json_encode($checked, JSON_THROW_ON_ERROR), 'commit' => $commit], JSON_THROW_ON_ERROR)]],
+    ];
+    app()->instance(WebSocketClient::class, $socket);
+    app(SwampConnection::class)->release();
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
+    try {
+        app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $root], app(DirectOperation::class)->definition('tasks.review_round')['terminal_result']);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+        expect($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Findings);
+        expect($round->pushed_commit)->toBe($commit);
+        expect($check->refresh()->status)->toBe(TaskCheckStatus::Passed);
+        expect($check->output)->toBe($output);
+        expect(array_values(array_unique(array_column($socket->queries, 'predicate'))))->toBe(array_keys($socket->artifactReplies));
         Http::assertNothingSent();
     } finally {
         app(SwampConnection::class)->release();

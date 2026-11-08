@@ -346,6 +346,7 @@ function SessionViewer({ session }: { session: AgentThread }) {
                                 : ""}
                         </p>
                     )}
+                    <p className="text-dim">Tool arguments and output are not kept.</p>
                     {conversation.error && (
                         <p role="alert" className="text-red">
                             {conversation.error}
