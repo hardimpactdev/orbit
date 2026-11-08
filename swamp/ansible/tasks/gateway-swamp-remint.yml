@@ -30,7 +30,7 @@
 # Serve and the workers hold the token store open, so they stop while the tokens change.
 - name: Stop the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: stopped }
-  loop: [a, b]
+  loop: [a, b, c]
 - name: Stop serve
   ansible.builtin.systemd: { name: orbit-swamp-serve.service, state: stopped }
 # The rotation is its own task with a short command, so a failure shows the CLI's error in the few hundred characters that the run keeps.
@@ -66,7 +66,7 @@
     executable: /bin/bash
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
-  loop: [a, b]
+  loop: [a, b, c]
   changed_when: true
 - name: Place the worker tokens
   ansible.builtin.copy:
@@ -81,11 +81,13 @@
     - { worker: a, kind: server, token: server }
     - { worker: b, kind: enrollment, token: enrollment }
     - { worker: b, kind: server, token: server }
+    - { worker: c, kind: enrollment, token: enrollment }
+    - { worker: c, kind: server, token: server }
   loop_control: { label: "{{ item.worker }} {{ item.kind }}" }
   no_log: true
 - name: Remove the staged worker tokens
   ansible.builtin.file: { path: "{{ swamp_home }}/.config/swamp/worker-{{ item.0 }}.{{ item.1 }}", state: absent }
-  loop: "{{ ['a', 'b'] | product(['enrollment', 'server']) | list }}"
+  loop: "{{ ['a', 'b', 'c'] | product(['enrollment', 'server']) | list }}"
   loop_control: { label: "{{ item.0 }} {{ item.1 }}" }
 # The Gateway starts runs with its run and read tokens.
 - name: Renew the Gateway tokens
@@ -120,4 +122,4 @@
   ansible.builtin.wait_for: { host: 127.0.0.1, port: 9418, timeout: 90 }
 - name: Start the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: started }
-  loop: [a, b]
+  loop: [a, b, c]
