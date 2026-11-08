@@ -45,6 +45,7 @@ sequenceDiagram
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container
+  %%> - a new warm clone checks out the pinned release commit before dependency installs, even when its HEAD already names that commit; an unchanged existing checkout keeps its dependency trees and caches
   %%> - the refresh owns the containers' `base` snapshots and retakes them when the fleet changed; the nested Gateway's services restart only when `apps/gateway` changed, and its agent delivery manifest is placed only when the pinned agent build changed
   %%> - a base VM without a nested fleet builds it here, once, in the fleet phase: three system containers from stock Ubuntu on the nested network, the nested Gateway prepared by one local `gateway-bootstrap` run, its own Node, `gateway` and `websocket` converges, app-dev and app-prod added through its own Orbit, the checkout as their disk device, a Doctor wait, then the operator join
   %%> - the build runs only when the fleet is not complete: a container is missing, or the operator stamp that the join writes last is not recorded; it removes that stamp and any container first and builds whole. A complete fleet skips it and restarts no container
