@@ -100,7 +100,8 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - The last matching line wins.
 - A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
 - A rename or a delete counts for the old path too.
-- A change to the selection list is a path like any other: it selects nothing by itself. A file list that GitHub returns incomplete, and `--all`, select every case.
+- A change to the selection list selects nothing by itself.
+- A file list that GitHub returns incomplete selects every case, and so does `--all`.
 - List a shared workflow, extension or role with every command that consumes it. A change to it then runs the whole affected proof.
 - List a helper that several commands share with every one of them.
 - A cases file selects its own command. Charts and pages are `skip`.
