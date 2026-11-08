@@ -61,9 +61,10 @@ jobs:
             host_keys: '${{ inputs.intent.host_keys }}'
           dns: '${{ inputs.intent.dns }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-    # The phase: take the Node's dnsmasq lock, skip a superseded revision, else validate, save the last good files, install, reload or
+    # The phase: take the Node's dnsmasq lock, skip a superseded revision, else validate, take a snapshot, install, reload or
     # restart dnsmasq, check the answers with dig, record the revision. It writes result.json whether it passes or not.
-    # Budget: the lock wait is at most 45 s and the lock is held at most 100 s; the step is stopped at 300 s, above both; a publication takes a few seconds (measured in the rehearsal).
+    # Budget: the step is stopped at 300 s (dns_phase_timeout in swamp/ansible/vars/dns.yml, kept equal by a test). The lock is held at most 420 s and awaited for 150 s,
+    # so a holder of a killed play expires before the next publication gives up. A publication takes a few seconds (measured in the rehearsal).
   - name: 'Run the DNS phase'
     labels: {role: swamp}
     dependsOn:

@@ -215,7 +215,7 @@ Inspect the files and the daemon on the `vpn` Node. Then query from the Node who
 | `orbit.revision` is older than the last publication | The publication failed or is still queued. Read its `dns.publish` Operation or the owning Operation. |
 | The query source does not matter | Every caller gets the same answer |
 
-To republish the state, run the owning command again, or `node:converge` on the vpn Node. A failed publication leaves the last good files in place.
+To republish the state, run the owning command again, or `node:converge` on the vpn Node. A failed publication restores the snapshot, so the Node keeps the files it had.
 
 ## Repair one peer
 

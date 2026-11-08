@@ -20,7 +20,7 @@ Decisions of 2026-11-07:
 
 - Option A: all Routes in one dnsmasq file on the vpn Node.
 - The AAAA fix is taken: NODATA for exact Routes, no upstream IPv6 leak.
-- Rollback is the previous rendered configuration. The phase keeps the last good files and restores them when a check fails. A rerun with them is the rollback. There is no rollback bridge.
+- Rollback is the previous rendered configuration. The phase takes a snapshot before its first change and restores it when a check fails. A rerun is the rollback. There is no rollback bridge.
 - The render reads only stored rows. Every pending state (Cluster TLD, Router and LAN address changes, a pending Node) is stored before the publication.
 - Answers per caller are gone. A WireGuard member gets the Router's WireGuard address, and a LAN member reaches the Router through the hub.
 

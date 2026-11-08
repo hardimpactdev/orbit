@@ -100,7 +100,9 @@
     dns_reload: "{{ (dns_drift.hosts or dns_drift.servers or dns_marker_present) and not dns_restart }}"
     # The Node changes when a file differs, and also when dnsmasq must be (re)started with files that are already right: it crashed, or an
     # earlier restart failed after the file was installed.
-    dns_changing: "{{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0 or dns_restart or dns_marker_present }}"
+    dns_changing: >-
+      {{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0
+      or dns_restart or dns_marker_present }}
     dns_action: "{{ 'restarted' if dns_restart else ('reloaded' if dns_reload else 'unchanged') }}"
     # What the snapshot holds. The files of the new set keep their names in the committed set; the old listener's go to previous/legacy/.
     dns_new_files: ["{{ dns_conf_file }}", "{{ dns_hosts_file }}", "{{ dns_servers_file }}"]
@@ -491,7 +493,18 @@
                   else ((dns.records | first) if (dns.records | length > 0) else none) }}
             - name: Ask the Node's own resolver address
               ansible.builtin.command:
-                argv: ["timeout", "30", "dig", "@{{ dns_local_resolver }}", "-p", "{{ dns_port }}", "+short", "+tries=1", "+time=3", "{{ dns_probe.name }}", "A"]
+                argv:
+                  - timeout
+                  - "30"
+                  - dig
+                  - "@{{ dns_local_resolver }}"
+                  - -p
+                  - "{{ dns_port }}"
+                  - +short
+                  - +tries=1
+                  - +time=3
+                  - "{{ dns_probe.name }}"
+                  - A
               register: dns_local_answer
               changed_when: false
               failed_when: false
@@ -684,7 +697,9 @@
                 dest: "{{ dns_loaded_file }}"
                 remote_src: true
                 mode: "0644"
-              when: dns_restore_dnsmasq.active and dns_r_dnsmasq is succeeded and dns_conf_file in (dns_restore.files | selectattr('present') | map(attribute='path') | list)
+              when: >-
+                dns_restore_dnsmasq.active and dns_r_dnsmasq is succeeded
+                and dns_conf_file in (dns_restore.files | selectattr('present') | map(attribute='path') | list)
               ignore_errors: true
               register: dns_r_remember
             - name: Put the enabled state of the old listener units back
