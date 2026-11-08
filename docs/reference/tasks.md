@@ -375,15 +375,15 @@ The admission is keyed by group and review, so a repeat tick starts nothing and 
 
 The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
-- the resume of the VM;
+- the task VM identity and a parked VM's resume;
 - the author turn, with the corrections as its prompt;
 - two new review threads and the fix turn;
 - the path of the cases file;
 - the vault key names of the Pi token and the push token.
 
-The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
+The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the author turn directly:
 
-- `Resume the VM` runs `operation-task-vm-resume`.
+- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
 - `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
 - `Plan the cases` and the review follow as in the prep run, for at most two rounds.
   - The reviewer also checks that each correction is applied or has a reason.
@@ -407,11 +407,11 @@ In manual mode it acts when the latest review of the reviewer approves the exact
 
 In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
 
-The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the task VM identity, its resume only when parked, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
 
-The native `operation-task-build` workflow is one parent run, with existing workflows as children:
+The native `operation-task-build` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the sync directly:
 
-- `Resume the VM` runs `operation-task-vm-resume`.
+- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
