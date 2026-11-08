@@ -99,6 +99,48 @@ describe('node role assignment response transport', function (): void {
             ->toBe('remove:firewall');
     });
 
+    it('preserves native failure step labels verbatim', function (string $step): void {
+        $assignment = NodeRoleAssignmentResponse::fromGatewayData([
+            'id' => 34,
+            'role' => 'database',
+            'status' => 'failed',
+            'failed_step' => $step,
+            'error_code' => 'node_role.convergence_failed',
+        ], node_role_request_id());
+
+        expect($assignment->failedStep)->toBe($step)
+            ->and($assignment->toArray()['failed_step'])->toBe($step);
+    })->with([
+        'native convergence' => 'converge:Check the role',
+        'native removal' => 'remove:Withdraw the role DNS',
+        'indexed native step' => 'converge:Sign role certificates-0',
+        'maximum length' => 'converge:'.str_repeat('A', 119),
+    ]);
+
+    it('rejects empty or unsafe native failure labels without exposing them', function (string $step): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
+                'id' => 34,
+                'role' => 'database',
+                'status' => 'failed',
+                'failed_step' => $step,
+                'error_code' => 'node_role.convergence_failed',
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role assignment failed_step.',
+            rejected: trim($step) === '' ? [] : [$step],
+        );
+    })->with([
+        'empty' => '',
+        'only spaces' => '   ',
+        'newline' => "converge:Check\nthe role",
+        'carriage return' => "converge:Check\rthe role",
+        'tab' => "converge:Check\tthe role",
+        'null byte' => "converge:Check\0the role",
+        'terminal escape' => "converge:\x1b[31mCheck the role",
+        'delete control' => "converge:Check\x7fthe role",
+        'C1 control' => "converge:\x9b31mCheck the role",
+    ]);
+
     it('rejects malformed ids unsafe roles unsupported statuses and invalid failure fields', function (): void {
         assert_node_role_boundary_exception(
             fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([

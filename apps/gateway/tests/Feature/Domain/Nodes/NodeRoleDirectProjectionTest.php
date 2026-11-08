@@ -89,4 +89,18 @@ it('marks a role failed when its first add or a non-active convergence fails', f
 
     expect($assignment->refresh()->status)->toBe(LifecycleStatus::Failed);
     expect($assignment->failed_step)->toBe('converge:Check the role');
+
+    $node->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $expected = [[
+        'id' => $assignment->id,
+        'role' => 'database',
+        'status' => 'failed',
+        'failed_step' => 'converge:Check the role',
+        'error_code' => 'node_role.convergence_failed',
+    ]];
+
+    $this->getJson('/api/v1/nodes/'.$node->id.'/roles')->assertOk()->assertJsonPath('data', $expected);
+    $this->getJson('/api/v1/nodes/'.$node->id)->assertOk()->assertJsonPath('data.role_assignments', $expected);
+    $this->getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.role_assignments', $expected);
 })->with(['first add' => ['provisioning'], 'failed earlier' => ['failed']]);

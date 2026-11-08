@@ -111,8 +111,8 @@ final readonly class NodeRoleAssignmentResponse
         return
             $value === null
             || is_string($value)
-            && $value !== ''
+            && trim($value) !== ''
             && strlen($value) <= self::MAX_FAILED_STEP_LENGTH
-            && preg_match('/\A[a-z][a-z0-9]*(?::[a-z0-9]+(?:[._-][a-z0-9]+)*)?\z/D', $value) === 1;
+            && preg_match('/\A[\x20-\x7E]+\z/D', $value) === 1;
     }
 }

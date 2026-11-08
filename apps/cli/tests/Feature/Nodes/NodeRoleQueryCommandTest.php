@@ -64,7 +64,7 @@ it('retains assignment order and nullable failures in both output forms', functi
     $assignments = [
         ['id' => 4, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => 'converge:check', 'error_code' => 'check.failed'],
         ['id' => 3, 'role' => 'app-prod', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null],
-        ['id' => 2, 'role' => 'database', 'status' => 'failed', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed'],
+        ['id' => 2, 'role' => 'database', 'status' => 'failed', 'failed_step' => 'converge:Check the role', 'error_code' => 'node_role.convergence_failed'],
         ['id' => 1, 'role' => 'websocket', 'status' => 'removing', 'failed_step' => null, 'error_code' => null],
     ];
     $mockClient = MockClient::global([
@@ -84,7 +84,7 @@ it('retains assignment order and nullable failures in both output forms', functi
         $offset = $position + strlen($assignment['role']);
         expect($human)->toContain($assignment['status']);
     }
-    expect($human)->toContain('converge:check', 'check.failed', 'converge:packages', 'packages.failed', '—');
+    expect($human)->toContain('converge:check', 'check.failed', 'converge:Check the role', 'node_role.convergence_failed', '—');
     $mockClient->assertSentCount(2);
 });
 

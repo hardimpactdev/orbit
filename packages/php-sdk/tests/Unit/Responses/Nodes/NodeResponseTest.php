@@ -13,7 +13,7 @@ it('preserves every typed role assignment and its recorded failure in both Node 
     foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
         $assignments[] = [
             'id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
-            'failed_step' => $status === 'failed' ? 'converge:packages' : null,
+            'failed_step' => $status === 'failed' ? 'converge:Check the role' : null,
             'error_code' => $status === 'failed' ? 'packages.failed' : null,
         ];
     }
@@ -23,7 +23,7 @@ it('preserves every typed role assignment and its recorded failure in both Node 
     $nodes = new NodesResponse([$node], $requestId);
 
     expect($node->roleAssignments)->toHaveCount(4)
-        ->and($node->roleAssignments[2]->failedStep)->toBe('converge:packages')
+        ->and($node->roleAssignments[2]->failedStep)->toBe('converge:Check the role')
         ->and($node->roleAssignments[2]->requestId)->toBe($requestId)
         ->and($node->toArray()['role_assignments'])->toBe($assignments)
         ->and($nodes->toArray()['nodes'][0]['role_assignments'])->toBe($assignments);
