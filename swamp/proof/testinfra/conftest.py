@@ -8,8 +8,8 @@ from pathlib import Path
 import checks
 import fleet as fleet_module
 import pytest
+from context import Proof
 from isolation import batch_ready, case_lock, lock, restore
-from proof import Proof
 
 ROOT = Path(__file__).resolve().parent
 ORDER = ('fresh-fleet', 'dual-stack', 'full-list', 'ufw-fault', 'node-down', 'no-grant')
@@ -34,6 +34,15 @@ def pytest_configure_node(node):
     node.workerinput['proof_state'] = str(node.config.proof_state)
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_pycollect_makeitem(collector, name, obj):
+    if name.startswith('test_'):
+        metadata = next((m.kwargs for m in getattr(obj, 'pytestmark', []) if m.name == 'proof'), None)
+        if metadata:
+            return pytest.Function.from_parent(collector, name='firewall:allow[' + metadata['id'] + ']',
+                                               callobj=obj)
+
+
 def pytest_collection_modifyitems(config, items):
     proof_items = [item for item in items if item.get_closest_marker('proof')]
     if config.getoption('--negative'):
@@ -47,7 +56,6 @@ def pytest_collection_modifyitems(config, items):
         marker = item.get_closest_marker('proof')
         if marker:
             item.add_marker(pytest.mark.timeout(marker.kwargs['timeout'], func_only=True))
-            item._nodeid = item.nodeid.rsplit('::', 1)[0] + '::firewall:allow[' + marker.kwargs['id'] + ']'
     # This stock load-scheduler barrier is safe for this spike: only three cases are in
     # the last batch, fewer than the four workers. Refuse a generalization that can deadlock.
     workers = config.getoption('numprocesses', default=0)

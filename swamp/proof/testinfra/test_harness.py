@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 from backend import host
+from context import Proof
 from isolation import case_lock
-from proof import Proof
 
 
 def test_negative_cannot_pass_on_unrelated_failure(tmp_path):
