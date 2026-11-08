@@ -1,0 +1,130 @@
+# The state asserts of the case family-ipv6. converge.yml has run the CLI and checked the answer and the receipt (the Operation succeeded);
+# this playbook only reads, and reads each thing once: the UFW table of the target, the firewall records of every Node, and the probes over
+# IPv6 (in waves of as many as the limit allows, as async jobs). The case then checks its own rows and records against what was read. Last,
+# one verdict line; the playbook fails when the case failed.
+- ansible.builtin.import_playbook: ../default/facts.yml
+
+- name: Read the UFW table of the target
+  hosts: nested-app-dev
+  gather_facts: false
+  tasks:
+    - name: Read the UFW table
+      ansible.builtin.command: ufw status numbered
+      register: ufw_now
+      changed_when: false
+
+- name: Read the firewall records
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Read the firewall records of every Node
+      ansible.builtin.uri:
+        url: "{{ gateway_url }}/firewall-rules"
+        ca_path: "{{ gateway_ca }}"
+        headers: {Accept: application/json}
+        return_content: true
+      register: records
+
+    - name: Keep the rules by Node
+      ansible.builtin.set_fact:
+        rules_by_node: "{{ dict(records.json.data | map(attribute='node') | zip(records.json.data | map(attribute='rules'))) }}"
+
+- name: The probes of the `expect` section
+  ansible.builtin.import_playbook: probes.yml
+  vars:
+    probe_set: expect
+
+- name: Check the case against what was read
+  hosts: case_hosts
+  gather_facts: false
+  vars_files: [cases.yml]
+  vars:
+    rows: "{{ hostvars[tcontainer].ufw_now.stdout_lines }}"
+    rules: "{{ hostvars['localhost'].rules_by_node[target] | default([]) }}"
+    row_start: '^\[ *[0-9]+\] +'
+  tasks:
+    # A result of an earlier run stays in the fact cache: start from an empty one.
+    - name: Nothing is verified yet
+      ansible.builtin.set_fact:
+        verified: false
+        verify_failures: ""
+        cacheable: true
+
+    - name: Every probe of the case saw what was expected
+      vars:
+        mine: "{{ hostvars['localhost'].probe_obs | selectattr('case', 'equalto', inventory_hostname) | list }}"
+        wrong: "{{ mine | rejectattr('ok') | list }}"
+      ansible.builtin.assert:
+        that:
+          - wrong | length == 0
+          - mine | length == probes_of_case | length
+        fail_msg: "probes: {{ wrong | map(attribute='text') | join('; ') }} ({{ mine | length }} of {{ probes_of_case | length }} probes ran)"
+        quiet: true
+      ignore_errors: true
+      register: probes_checked
+
+    # The rows of family 6: the allow line shows the IPv6 source (the To column may carry the `(v6)` mark or not), the deny line is from
+    # `Anywhere (v6)`. The allow line sits above the deny line.
+    - name: UFW family 6, an ALLOW line for the IPv6 source above the DENY line of the test port
+      vars:
+        allow_row: >-
+          {{ rows | select('search', row_start ~ c.port ~ '/tcp( \(v6\))? +ALLOW IN +' ~ src6 ~ '( |$)')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+        deny_row: >-
+          {{ rows | select('search', row_start ~ c.port ~ '/tcp \(v6\) +DENY IN +Anywhere \(v6\) +# proof:deny-' ~ inventory_hostname ~ '$')
+             | map('split', ']') | map('first') | map('replace', '[', '') | map('trim') | map('int') | list }}
+      ansible.builtin.assert:
+        that:
+          - allow_row | length == 1
+          - deny_row | length == 1
+          - allow_row | first < deny_row | first
+        fail_msg: "ufw family 6: allow rows {{ allow_row }}, deny rows {{ deny_row }}; expected one of each, the allow above the deny"
+        quiet: true
+      ignore_errors: true
+      register: ufw_checked
+
+    - name: The Gateway has one active record for the IPv6 source
+      vars:
+        matching: >-
+          {{ rules | selectattr('protocol', 'equalto', 'tcp') | selectattr('source', 'equalto', src6) | selectattr('status', 'equalto', 'active')
+             | selectattr('port', 'in', [c.port | int, c.port | string]) | list }}
+      ansible.builtin.assert:
+        that: matching | length == 1
+        fail_msg: "records: {{ matching | length }} active records with source {{ src6 }} for port {{ c.port }}, expected 1"
+        quiet: true
+      ignore_errors: true
+      register: record_checked
+
+    - name: Collect what failed
+      vars:
+        problems: "{{ [probes_checked, ufw_checked, record_checked] | select('failed') | map(attribute='msg') | list }}"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ problems | join('; ') }}"
+        verified: "{{ problems | length == 0 }}"
+        cacheable: true
+
+- name: Verdicts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verdict of each case (command seconds, case seconds in converge, the window of the case and of its CLI call, asks while the Node was busy)
+      vars:
+        why: "{{ [hostvars[item].failures, hostvars[item].verify_failures] | select | join(' ; ') }}"
+        passed: "{{ why == '' and hostvars[item].verified | bool }}"
+      ansible.builtin.debug:
+        msg: >-
+          {{ item }}: {{ 'passed' if passed else ('failed | ' ~ (why or 'the checks did not end')) }}
+          (command {{ hostvars[item].cmd_secs }} s, case {{ hostvars[item].case_secs }} s, casewin {{ hostvars[item].case_start | float | round(2) }} {{ hostvars[item].case_end | float | round(2) }}, cli {{ hostvars[item].cli_start | float | round(1) }} {{ hostvars[item].cli_end | float | round(1) }}, busy {{ hostvars[item].busy_retries }}, on {{ target }})
+      loop: "{{ groups['case_hosts'] }}"
+
+    - name: Collect the failed cases
+      ansible.builtin.set_fact:
+        failed_cases: "{{ failed_cases | default([]) + [item] }}"
+      loop: "{{ groups['case_hosts'] }}"
+      when: hostvars[item].failures | length > 0 or hostvars[item].verify_failures | length > 0 or not (hostvars[item].verified | bool)
+
+    - name: Fail when a case failed
+      ansible.builtin.assert:
+        that: failed_cases | default([]) | length == 0
+        fail_msg: "failed: {{ failed_cases | default([]) | join(', ') }}"
+        quiet: true

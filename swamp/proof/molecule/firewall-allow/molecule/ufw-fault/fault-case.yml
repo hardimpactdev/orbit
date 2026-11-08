@@ -1,0 +1,111 @@
+---
+# A case with a fault in two stages (interrupted-reorder, failure-after-partial-change), for its own host (`d` is its definition, cases.yml).
+#   setup    the shim goes in place and ufw is told to fail after its first call that contains the word (steps.py fault)
+#   stage 1  the command runs: its answer must have status failed and its Operation must end failed; snapshots s0 (before) and s1 (after)
+#   stage 2  the fault is cleared (the real ufw is back), the same command runs again and must succeed; snapshot s2
+# Nothing is judged here beyond the answers and the receipts: the state asserts are in verify-<case>.yml, which reads the snapshots.
+# The UFW table and the records of stage 1 would be gone after stage 2, so they are kept as facts (snapshot.yml).
+- name: "{{ inventory_hostname }}: the shim goes in place"
+  ansible.builtin.include_tasks: shim-install.yml
+
+- name: "{{ inventory_hostname }}: ufw fails after the first call that contains '{{ d.fault.word }}' (WORD, AFTER and SEEN are what the shim reads)"
+  ansible.builtin.copy:
+    content: "WORD={{ d.fault.word }}\nAFTER={{ d.fault.count }}\nSEEN=0\n"
+    dest: "{{ shim_dir }}/fault"
+    mode: "0644"
+  delegate_to: "{{ tcontainer }}"
+
+- name: "{{ inventory_hostname }}: snapshot before stage 1"
+  ansible.builtin.include_tasks: snapshot.yml
+  vars: {snap: s0}
+
+# ---- stage 1
+- name: "{{ inventory_hostname }}: stage 1, run the command"
+  ansible.builtin.command:
+    argv: "{{ orbit + d.argv + ['--json'] }}"
+    chdir: /
+  environment: "{{ cli_env }}"
+  register: run1
+  failed_when: false
+  changed_when: false
+
+- name: "{{ inventory_hostname }}: stage 1, read the answer"
+  ansible.builtin.set_fact:
+    answer1: "{{ (run1.stdout | from_json) if (run1.stdout is search('^\\s*[{\\[]')) else {} }}"
+    cmd_secs: "{{ (cmd_secs | default(0) | float) + ((run1.end | to_datetime('%Y-%m-%d %H:%M:%S.%f')) - (run1.start | to_datetime('%Y-%m-%d %H:%M:%S.%f'))).total_seconds() }}"
+    cacheable: true
+
+- name: "{{ inventory_hostname }}: stage 1, the answer says the Operation failed (the exit code is not part of the case)"
+  ansible.builtin.assert:
+    that: answer1.status | default('') == 'failed'
+    fail_msg: "stage 1: exit {{ run1.rc }}, status {{ answer1.status | default('-') }}; expected status failed"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: stage 1, the receipt of the Operation ends failed"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/operations/{{ answer1.id | default(answer1.operation.id | default('')) }}"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: receipt1
+  until: (receipt1.json.data | default(receipt1.json)).status in ['succeeded', 'failed', 'cancelled']
+  retries: 30
+  delay: 2
+
+- name: "{{ inventory_hostname }}: stage 1, the receipt agrees with the answer"
+  ansible.builtin.assert:
+    that: (receipt1.json.data | default(receipt1.json)).status == 'failed'
+    fail_msg: "stage 1: receipt status {{ (receipt1.json.data | default(receipt1.json)).status }}, expected failed"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: snapshot after stage 1"
+  ansible.builtin.include_tasks: snapshot.yml
+  vars: {snap: s1}
+
+# ---- stage 2
+- name: "{{ inventory_hostname }}: stage 2, clear the fault (the real ufw takes its path back)"
+  ansible.builtin.include_tasks: shim-remove.yml
+
+- name: "{{ inventory_hostname }}: stage 2, run the command again"
+  ansible.builtin.command:
+    argv: "{{ orbit + d.argv + ['--json'] }}"
+    chdir: /
+  environment: "{{ cli_env }}"
+  register: run2
+  failed_when: false
+  changed_when: false
+
+- name: "{{ inventory_hostname }}: stage 2, read the answer"
+  ansible.builtin.set_fact:
+    answer2: "{{ (run2.stdout | from_json) if (run2.stdout is search('^\\s*[{\\[]')) else {} }}"
+    cmd_secs: "{{ (cmd_secs | default(0) | float) + ((run2.end | to_datetime('%Y-%m-%d %H:%M:%S.%f')) - (run2.start | to_datetime('%Y-%m-%d %H:%M:%S.%f'))).total_seconds() }}"
+    cacheable: true
+
+- name: "{{ inventory_hostname }}: stage 2, the answer is a success"
+  ansible.builtin.assert:
+    that:
+      - run2.rc == 0
+      - answer2.status | default('') == 'succeeded'
+    fail_msg: "stage 2: exit {{ run2.rc }}, status {{ answer2.status | default('-') }}; expected exit 0 and status succeeded"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: stage 2, the receipt of the Operation ends succeeded"
+  ansible.builtin.uri:
+    url: "{{ gateway_url }}/operations/{{ answer2.id | default(answer2.operation.id | default('')) }}"
+    ca_path: "{{ gateway_ca }}"
+    headers: {Accept: application/json}
+    return_content: true
+  register: receipt2
+  until: (receipt2.json.data | default(receipt2.json)).status in ['succeeded', 'failed', 'cancelled']
+  retries: 30
+  delay: 2
+
+- name: "{{ inventory_hostname }}: stage 2, the receipt agrees with the answer"
+  ansible.builtin.assert:
+    that: (receipt2.json.data | default(receipt2.json)).status == 'succeeded'
+    fail_msg: "stage 2: receipt status {{ (receipt2.json.data | default(receipt2.json)).status }}, expected succeeded"
+    quiet: true
+
+- name: "{{ inventory_hostname }}: snapshot after stage 2"
+  ansible.builtin.include_tasks: snapshot.yml
+  vars: {snap: s2}

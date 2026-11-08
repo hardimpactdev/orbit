@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (--keep-items is record-only), R2-R4, swamp-vault-design. Same shape as tool.remove. docs/reference/vaultwarden.md.
   %% Tightened: flow-tighten 2026-11-02, rule 22 (plain pinned CLI primitives, native fan-out, vault-backed credentials and native end check).
   %% status: draft
-  %% command: vault:teardown
+  %% command: vault:destroy
   %% kind: vault.teardown
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
@@ -13,16 +13,16 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant VW as Vaultwarden<br/>vault.orbit Route
-  CLI->>GW: vault:teardown
+  CLI->>GW: vault:destroy
   %%> Command:
-  %%> - `orbit vault:teardown --yes`
+  %%> - `orbit vault:destroy --yes`
   %%> - syntax: `[--keep-items] [--yes] [--idempotency-key=KEY] [--json]`
   %%> Confirmation:
   %%> - in a terminal the CLI asks a default-No question; without a terminal, or with `--json`, `--yes` is required
   Note over GW: Validate, lock the vault<br/>task #5169 · 14 items
   %%> Requirements:
   %%> - the `vault` extension is on and Vaultwarden is set up, else `vault.not_configured`
-  %%> - no other setup, sync or teardown runs, else `vault.sync_busy`
+  %%> - no other setup, sync or destruction runs, else `vault.sync_busy`
   %%> Decides:
   %%> - whether the published items must leave Vaultwarden, or only the setup goes
   opt --keep-items
@@ -31,7 +31,7 @@ sequenceDiagram
     %%> - the stored account, organization, collection and publishing ledger are deleted
     %%> - the items stay in Vaultwarden; a later setup on the same collection can adopt them
     %%> - no Swamp run starts (R1); Vaultwarden is not contacted
-    GW-->>CLI: Torn down<br/>items kept in Vaultwarden
+    GW-->>CLI: Destroyed<br/>items kept in Vaultwarden
     %%> What you get:
     %%> - the final result at once; the command ends here without the deletion flow below
   end

@@ -19,7 +19,7 @@ Use `--idempotency-key=KEY` to retry the same Operation admission after a lost r
 | `--organization` | yes | Organization name or ID. |
 | `--collection` | yes | Collection name or ID in that organization. |
 
-The CLI never accepts the client secret or the master password as an argument. Setup can run again with a new API key or master password. Another organization or collection needs [`vault:teardown`](/cli/vault/teardown) first. The output is the [status](/cli/vault/status).
+The CLI never accepts the client secret or the master password as an argument. Setup can run again with a new API key or master password. Another organization or collection needs [`vault:destroy`](/cli/vault/destroy) first. The output is the [status](/cli/vault/status).
 
 ```bash
 orbit vault:setup --url=https://vault.orbit --client-id=user.3f0c… \

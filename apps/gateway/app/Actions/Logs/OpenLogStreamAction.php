@@ -7,12 +7,14 @@ namespace App\Actions\Logs;
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamAvailability;
+use App\Domain\Logs\LogStreamRecordType;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Logs\LogStreamTarget;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Instance;
 use App\Models\Node;
+use Orbit\Sdk\Requests\Logs\ScheduleLogStreamTarget;
 
 /**
  * Opens a live log stream for one viewer (ADR 0153): checks that the serving Node can stream and
@@ -32,6 +34,14 @@ final readonly class OpenLogStreamAction
     /** @return array{stream: LogStream, auth: string} */
     public function execute(LogStreamTarget $target, Node $viewer, string $socketId, int $lines): array
     {
+        if ($target->recordType === LogStreamRecordType::Schedule) {
+            throw new ResourceOperationException(
+                'schedule.follow_unavailable',
+                'Schedule follow needs orbit-agent '.ScheduleLogStreamTarget::MinimumAgentVersion.'.',
+                409,
+            );
+        }
+
         $nodeId = $target->node->id;
         $reason = $target->sshOnly ? 'ssh_only' : $this->availability->unavailableReason($nodeId);
         $connection = $this->realtime->resolve();

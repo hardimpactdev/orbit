@@ -11,4 +11,5 @@ enum LogStreamRecordType: string
 {
     case Instance = 'instance';
     case Process = 'process';
+    case Schedule = 'schedule';
 }

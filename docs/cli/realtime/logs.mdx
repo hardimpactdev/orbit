@@ -1,23 +1,26 @@
 ---
-title: "orbit realtime:tail"
-sidebarTitle: "realtime:tail"
+title: "orbit realtime:logs --follow"
+sidebarTitle: "realtime:logs"
 description: "Connect to the `orbit` channel and print every event until you stop the command."
 ---
 
 ```bash
-orbit realtime:tail [--types=FILTER,...] [--json]
+orbit realtime:logs --follow [--types=FILTER,...] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
+| `--follow` | Required. Realtime has no retained history. |
 | `--types=FILTER,...` | Comma-separated type filters. Each filter is an exact type, such as `process.status`, or a family followed by `.*`, such as `node.*`. Without the option, every type prints. |
 | `--json` | Print each event's full envelope as one JSON line. |
 
 ```bash
-orbit realtime:tail
-orbit realtime:tail --types=node.*,process.status
-orbit realtime:tail --json
+orbit realtime:logs --follow
+orbit realtime:logs --follow --types=node.*,process.status
+orbit realtime:logs --follow --json
 ```
+
+Without `--follow`, Orbit refuses with `realtime.follow_required`. It does not return an earlier event snapshot.
 
 The command asks the Gateway for the connection, as `realtime:show` does, and signs its subscription through the Gateway. Human output prints one line per event: `<at>  <type>  <summary>`, where the summary lists the data fields as `key=value` pairs. JSON output prints the `{ type, id, at, data }` envelope, one object per line. Press Ctrl-C to stop.
 
@@ -27,6 +30,7 @@ When the socket drops, the command reconnects after 1, 2, 4, 8, and 16 seconds, 
 
 | Error code | Meaning |
 | --- | --- |
+| `realtime.follow_required` | Supply `--follow`; earlier events are not stored. |
 | `realtime.not_configured` | No `websocket` role is active. Poll the commands you need instead. |
 | `input.noninteractive_required` | The command runs without a terminal and without `--json`. |
 | `input.invalid` | A `--types` filter is not valid. |

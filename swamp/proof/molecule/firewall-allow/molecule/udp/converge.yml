@@ -1,0 +1,13 @@
+# The commands of the two cases, run on the task VM (the operator side) with the real CLI against the nested Gateway. One host per case
+# (molecule.yml); they run as many at a time as ANSIBLE_FORKS allows, on the free strategy so a slow case holds none of the others.
+- ansible.builtin.import_playbook: ../default/facts.yml
+
+- name: Run the cases
+  hosts: case_hosts
+  gather_facts: false
+  strategy: free
+  # A limit of 1 means one case after the other; a larger limit is the forks of Ansible (ANSIBLE_FORKS), all hosts at once.
+  serial: "{{ 1 if (lookup('ansible.builtin.env', 'ANSIBLE_FORKS') | default('1', true) | int) == 1 else 0 }}"
+  vars_files: [cases.yml]
+  tasks:
+    - ansible.builtin.import_tasks: act.yml

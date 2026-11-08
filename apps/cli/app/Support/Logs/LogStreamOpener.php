@@ -13,8 +13,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
-use Orbit\Sdk\Requests\Logs\InstanceLogStreamTarget;
-use Orbit\Sdk\Requests\Logs\ProcessLogStreamTarget;
+use Orbit\Sdk\Requests\Logs\LogStreamTarget;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;
 use Orbit\Sdk\Responses\Logs\LogStreamRenewalResponse;
 use Orbit\Sdk\Responses\Logs\LogStreamResponse;
@@ -60,7 +59,7 @@ final class LogStreamOpener implements RealtimeChannelOpener
     /** @param  int  $history  How many earlier lines the next stream asks for: `--lines` at first. */
     public function __construct(
         private readonly GatewayConnector $connector,
-        private readonly InstanceLogStreamTarget|ProcessLogStreamTarget $target,
+        private readonly LogStreamTarget $target,
         private int $history,
         private readonly LogFollowClock $clock,
     ) {}

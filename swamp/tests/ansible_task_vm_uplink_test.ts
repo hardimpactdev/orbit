@@ -30,3 +30,10 @@ Deno.test("boot waits online for IPv4 only", () => {
     "--any --ipv4",
   );
 });
+
+Deno.test("every copy asks DHCP for an address by its own MAC, through a drop-in of the uplink file", () => {
+  // The copies share the base's machine-id, from which networkd makes its default client ID (provision 12863, #3141).
+  const dropIn =
+    "/etc/systemd/network/00-orbit-task-vm.network.d/orbit-client-id.conf";
+  assertStringIncludes(file(dropIn), "[DHCPv4]\nClientIdentifier=mac\n");
+});

@@ -1,10 +1,10 @@
 ---
 title: "Live logs"
-description: "How a viewer tails an Instance log or a Process log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the one-shot reads that use the same path."
+description: "How a viewer tails an Instance, Process or Schedule log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the one-shot reads that use the same path."
 covers:
   - apps/gateway/app/Domain/Logs/**
   - apps/gateway/app/Actions/Logs/**
-  - apps/gateway/app/Http/Controllers/Api/{InstanceLogStreamsController,ProcessLogStreamsController,RespondsWithLogStreams}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceLogStreamsController,ProcessLogStreamsController,ScheduleLogStreamsController,RespondsWithLogStreams}.php
   - apps/gateway/app/Infrastructure/Logs/**
   - apps/gateway/app/Infrastructure/AgentView/LogRelay.php
   - apps/agent/src/logs/**
@@ -12,9 +12,11 @@ covers:
 
 # Live logs
 
-A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
+Schedule follow is disabled in the CLI and API until orbit-agent 0.14.0 is released and pinned. New Schedule leases refuse with `schedule.follow_unavailable`; web viewers use bounded snapshots.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
+A live log stream shows new lines of one Instance or Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance, Process, or Schedule.
+
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs), [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
 
 ## How a stream works
 
@@ -36,6 +38,7 @@ Open a stream through the record whose log you want to follow.
 | --- | --- | --- |
 | `POST /api/v1/instances/{instance}/log-streams` | `instance:log-stream:create` | The same as `instance:logs` |
 | `POST /api/v1/processes/{process}/log-streams` | `process:log-stream:create` | The same as `process:logs` |
+| `POST /api/v1/schedules/{schedule}/log-streams` | `schedule:log-stream:create` | The same as `schedule:logs`; the selector is a Schedule UUID. |
 
 | Field | Required | Meaning |
 | --- | --- | --- |
@@ -70,6 +73,8 @@ A stream lives for 60 seconds after it opens or after its last renewal.
 | `DELETE /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:destroy` | Closes the stream at once. |
 | `PUT /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
 | `DELETE /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:destroy` | Closes the stream at once. |
+| `PUT /api/v1/schedules/{schedule}/log-streams/{stream}` | `schedule:log-stream:renew` | Extends the lease and activates it on the first renewal. |
+| `DELETE /api/v1/schedules/{schedule}/log-streams/{stream}` | `schedule:log-stream:destroy` | Closes the stream at once. |
 
 Each call checks the access grant again. Only the Node that opened a stream can renew or close it, and only through the record it was opened for. A renewal returns `{ id, lease_seconds }`, and a close returns `{ id, closed: true }`. Renewals do not record Activity.
 
@@ -110,11 +115,11 @@ Each record has one source, the same one that its one-shot read uses.
 | Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
 | systemd Process | The journal entries that `journalctl --unit orbit-process-{id}-{name}.service` selects: the unit's own entries, systemd's messages about the unit, messages that root services log about it, and its core dumps | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
-| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. A one-shot read only; there is no follow | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
+| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. Agent 0.14.0 snapshots use this source; Schedule follow stays disabled | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process and of a Schedule also uses. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
+The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process also uses. Agent 0.14.0 uses the same format for Schedule snapshots, reversing whole entries while keeping continuation lines in order. The current frozen Agent predates this fix, so Schedule follow stays disabled until the fixed release is pinned. Process snapshots and live streams therefore select and print the same entries. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
 
 The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
 
@@ -150,7 +155,7 @@ The agent redacts each line before it leaves the Node. The Gateway redacts it ag
 | Where | What is replaced with `[REDACTED]` |
 | --- | --- |
 | Agent and Gateway | PEM blocks, credentials in URLs such as `https://user:pass@host`, `Authorization` and `Proxy-Authorization` header values, `Bearer` tokens, and the value after a secret-named key, such as `API_KEY=...`, `"password": "..."`, or `db_password: ...` |
-| Gateway | Each stored environment value of the Instance, or each environment value of a Docker Process, of eight characters or more, except the values of setting keys |
+| Gateway | Each stored environment value of the Instance (also for its Schedules), or each environment value of a Docker Process, of eight characters or more, except the values of setting keys |
 
 The setting keys are exactly `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `APP_FAKER_LOCALE`, `APP_TIMEZONE`, `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE`, `BCRYPT_ROUNDS`, `LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`, `LOG_DEPRECATIONS_CHANNEL`, `DB_CONNECTION`, `DB_PORT`, `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE`, `CACHE_DRIVER`, `MAIL_MAILER`, `MAIL_PORT`, and `MAIL_ENCRYPTION`. Their values, such as `production`, would otherwise hide ordinary words in the log. The list names each key in full, so a secret under a similar key, such as `LOG_SLACK_WEBHOOK_URL`, stays redacted. Hosts and URLs, such as `APP_URL` and `DB_HOST`, stay redacted too.
 
@@ -242,3 +247,7 @@ The subscriber's socket loop only records what arrives. A child process does eve
 ### End a stream instead of dropping old lines
 
 When the relay falls behind, it ends the stream with `relay_behind`. The viewer then falls back to SSH reads, which show the current tail. Dropping the oldest lines silently is rejected, because the viewer would miss lines without knowing it.
+
+Schedule viewer leases use `/api/v1/schedules/{schedule}/log-streams` and the `schedule:log-stream:{create,renew,destroy}` transport names. The Schedule ID stays a UUID. Orbit resolves only its `orbit-schedule-{uuid}.service` journal source. The same access, lease, redaction, reconnect, and loss rules apply. These transport endpoints are excluded from MCP.
+
+`realtime:logs --follow` subscribes to Gateway events instead of file logs. It retains the `{type,id,at,data}` envelope. Bare `realtime:logs` refuses because realtime has no event history.
