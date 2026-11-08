@@ -309,9 +309,9 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 #### Prepare a command
 
-`task:prep` starts `tasks.prep` through `POST /api/v1/tasks/{task}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command`.
+`task:prep` starts `tasks.prep` through `POST /api/v1/tasks/{task}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command` or a nested `family:part:command`. A nested command's files join its parts after the family with dashes: `node:role:list` is `docs/cli/node/role-list.mdx`.
 
-It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `task:pr-ready`; the MCP tool `task-prep` is the caller. A command that is not `family:command` in lower case returns `422 tasks.prep_command_invalid`.
+It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `task:pr-ready`; the MCP tool `task-prep` is the caller. Any other form, or upper case, returns `422 tasks.prep_command_invalid`.
 
 The optional `brief` (8,000 characters) goes into every prompt of the run. The optional `reference` (80,000 characters) goes only into the draft prompt; use it for text the workspace does not hold, such as the approved files of a sibling that is still in an open PR.
 

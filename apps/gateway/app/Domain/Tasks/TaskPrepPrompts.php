@@ -17,11 +17,13 @@ final readonly class TaskPrepPrompts
 
     public static function for(string $command, ?string $brief = null, ?string $reference = null): self
     {
-        if (preg_match('/\A([a-z][a-z0-9]*(?:-[a-z0-9]+)*):([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\z/D', $command, $match) !== 1) {
-            throw new ResourceOperationException('tasks.prep_command_invalid', 'The command must be `family:command` in lower case.', 422);
+        // A nested command keeps its family; the rest names its files with dashes: `node:role:list` is `docs/cli/node/role-list.mdx`.
+        $segment = '[a-z][a-z0-9]*(?:-[a-z0-9]+)*';
+        if (preg_match('/\A('.$segment.'):('.$segment.'(?::'.$segment.')*)\z/D', $command, $match) !== 1) {
+            throw new ResourceOperationException('tasks.prep_command_invalid', 'The command must be `family:command` or `family:part:command` in lower case.', 422);
         }
 
-        return new self($command, $match[1], $match[2], $brief === null || trim($brief) === '' ? null : trim($brief), $reference === null || trim($reference) === '' ? null : trim($reference));
+        return new self($command, $match[1], str_replace(':', '-', $match[2]), $brief === null || trim($brief) === '' ? null : trim($brief), $reference === null || trim($reference) === '' ? null : trim($reference));
     }
 
     public function chart(): string
