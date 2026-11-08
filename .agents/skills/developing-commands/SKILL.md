@@ -59,6 +59,8 @@ Run a combined Unit and Feature test collection when adding global test constant
 
 Before changing a CI cache, separate hits from misses in job logs. A Cargo lock change can restore dependencies built by the same compiler on the same OS and architecture; Cargo fingerprints still decide what must rebuild.
 
+A task VM host has two capacity measures: `max_vms` resource units and `task_max_vms` task claims. Test parked claims and authenticated CI admission together when changing either measure; a VM count must not become a resource-unit count.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.

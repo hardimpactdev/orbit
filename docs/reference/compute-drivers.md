@@ -458,7 +458,9 @@ Each shared host reserves slot number 1 for authenticated CI command proofs and 
 
 The reserve is one Large VM (3 `max_vms` units), not one budget unit; `max_vms=9` provides two task VMs plus the reserve. An occupied reserve counts once, so a running proof does not subtract a second reserve from task capacity. A task VM that already held slot 1 before this rule keeps it until release; drain that VM during rollout.
 
-`task_vms.task_max_vms` adds a per-host limit on the number of VMs held by task work, including prep, build, review, provision, operator proofs and parked claims. It counts VMs, not `max_vms` units. Unset or null adds no limit. Authenticated CI proofs and base refresh proofs do not consume this task count, but every VM still consumes the host’s resource budget. With `max_vms=12` and `task_max_vms=2`, task work can hold two Large VMs; CI and refresh proofs can use the remaining two places. The shared reserve and `ci_only` rule still apply. Lowering the task limit releases no claim; new task claims fail with `tasks.capacity_unavailable` until the count falls below it.
+`task_vms.task_max_vms` adds a per-host limit on the number of VMs held by task work, including prep, build, review, provision, operator proofs and parked claims. It counts VMs, not `max_vms` units. Unset or null adds no limit. Authenticated CI proofs and base refresh proofs do not consume this task count, but every VM still consumes the host’s resource budget.
+
+With `max_vms=12` and `task_max_vms=2`, task work can hold two Large VMs; CI and refresh proofs can use the remaining two places. The shared reserve and `ci_only` rule still apply. Lowering the task limit releases no claim; new task claims fail with `tasks.capacity_unavailable` until the count falls below it.
 
 Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no Incus host has room, the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
 

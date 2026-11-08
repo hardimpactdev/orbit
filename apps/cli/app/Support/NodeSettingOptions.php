@@ -121,6 +121,7 @@ final readonly class NodeSettingOptions
             $valid = match (true) {
                 in_array($key, $strings, true) => is_string($item),
                 in_array($key, $integers, true) => is_int($item),
+                $key === 'task_max_vms' => $item === null || is_int($item),
                 $key === 'ci_only' => is_bool($item),
                 $key === 'zfs_dataset' => $item === null || is_string($item),
                 $key === 'operator_owned' => is_array($item) && array_is_list($item) && array_all($item, fn (mixed $resource): bool => is_string($resource)),

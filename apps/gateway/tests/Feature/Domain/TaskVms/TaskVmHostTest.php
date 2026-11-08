@@ -51,3 +51,37 @@ it('refuses an invalid loop pool size before it can become host intent', functio
     expect(fn () => NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'max_vms' => 3, 'pool_size' => $size], Ipv4Subnet::from('10.44.0.0/24')))
         ->toThrow(TaskVmException::class, 'pool_size');
 })->with(['0GiB', '640GB', '640GiB source=/dev/sda', 640, null]);
+
+it('stores and clears a task VM count limit through node update', function (?int $limit): void {
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'task-host', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '10.44.0.10', 'user' => 'orbit',
+        'settings' => ['task_vms' => ['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => 1]],
+    ]));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $value = ['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => $limit];
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->patchJson("/api/v1/nodes/{$node->id}", ['task_vms' => $value])->assertOk()
+        ->assertJsonPath('data.settings.task_vms.task_max_vms', $limit);
+    $settings = $node->refresh()->settings['task_vms'];
+    expect($settings['task_max_vms'])->toBe($limit);
+    expect(TaskVmHost::fromConfig([...$settings, 'node_id' => $node->id], 0, Ipv4Subnet::from('10.44.0.0/24'), [])->taskMaxVms)->toBe($limit);
+})->with([0, 2, 64, null]);
+
+it('rejects invalid task VM count limits', function (mixed $limit): void {
+    expect(fn () => NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => $limit], Ipv4Subnet::from('10.44.0.0/24')))
+        ->toThrow(TaskVmException::class, 'task_max_vms');
+})->with([-1, 65, '2', 2.5, true]);
+
+it('returns 422 for a string task limit and preserves the stored host settings', function (): void {
+    $value = ['cidr' => '10.252.10.0/24', 'max_vms' => 12, 'task_max_vms' => 2];
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'task-host', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '10.44.0.10', 'user' => 'orbit', 'settings' => ['task_vms' => $value],
+    ]));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->patchJson("/api/v1/nodes/{$node->id}", ['task_vms' => [...$value, 'task_max_vms' => '2']])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.settings_invalid');
+    expect($node->refresh()->settings['task_vms'])->toBe($value);
+});

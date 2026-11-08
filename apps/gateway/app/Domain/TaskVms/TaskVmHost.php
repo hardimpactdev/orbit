@@ -39,9 +39,10 @@ final readonly class TaskVmHost
         public string $imageAlias = self::BaseImage,
         public bool $ciOnly = false,
         public string $poolSize = '640GiB',
+        public ?int $taskMaxVms = null,
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'pool_size', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'pool_size', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only', 'task_max_vms'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -65,6 +66,7 @@ final readonly class TaskVmHost
             'network' => $name('/\Aorbittask[a-z0-9]{1,6}\z/D'),
             'cidr' => ['required', TaskVmConfig::bridgeRule("{$key}.cidr", $vpnSubnet)],
             'max_vms' => $int(1, 64),
+            'task_max_vms' => ['sometimes', 'nullable', 'integer:strict', 'between:0,64'],
             'cpus' => $int(1, 64),
             'memory' => $size,
             'disk' => $size,
@@ -82,6 +84,7 @@ final readonly class TaskVmHost
             'network' => "{$key}.network is invalid.",
             'cidr.required' => "{$key}.cidr must be an IPv4 network, for example 10.251.77.0/24.",
             'max_vms' => "{$key}.max_vms must be an integer from 1 to 64.",
+            'task_max_vms' => "{$key}.task_max_vms must be null or an integer from 0 to 64.",
             'cpus' => "{$key}.cpus must be an integer from 1 to 64.",
             'memory' => "{$key}.memory is invalid.",
             'disk' => "{$key}.disk is invalid.",
@@ -111,6 +114,7 @@ final readonly class TaskVmHost
             imageAlias: $valid->string('image_alias')->value(),
             ciOnly: ($entry['ci_only'] ?? false) === true,
             poolSize: $valid->string('pool_size')->value(),
+            taskMaxVms: isset($entry['task_max_vms']) ? $valid->integer('task_max_vms') : null,
         );
     }
 
