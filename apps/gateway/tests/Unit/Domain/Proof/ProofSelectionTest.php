@@ -252,6 +252,34 @@ it('maps the code of the firewall commands to them in the checked-in selection l
     'the SDK request' => ['packages/php-sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php'],
 ]);
 
+it('selects role addition for its implementation in the checked-in list', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->commands)->toBe(['node:role:add']);
+})->with([
+    'apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php',
+    'apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php',
+    'apps/gateway/app/Http/Controllers/Api/NodeRolesController.php',
+    'apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php',
+    'apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php',
+    'packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php',
+    'swamp/workflows/workflow-operation-node-role-add.yaml',
+    'swamp/ansible/operation-node-role-add.yml',
+    'swamp/proof/node/role-add.cases.yaml',
+]);
+
+it('selects every case for shared proof entry and human failure rendering', function (string $path): void {
+    $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+
+    expect($list->match($path)?->kind)->toBe(ProofRuleKind::Everything);
+})->with([
+    'apps/cli/app/Commands/Proof/ProofCommand.php',
+    'apps/gateway/app/Domain/Proof/ProofVerifyIntent.php',
+    'apps/gateway/app/Http/Requests/Proof/StartProofVerifyRequest.php',
+    'packages/php-sdk/src/Requests/Proof/VerifyProofRequest.php',
+    'apps/cli/app/Support/GatewayFailureRenderer.php',
+]);
+
 it('keeps the router LAN ingress code out of the firewall commands', function (string $path): void {
     $list = firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
 

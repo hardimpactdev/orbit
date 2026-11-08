@@ -76,7 +76,7 @@ describe('proof', function (): void {
         $mock = proof_verify_gateway([proof_verify_running(), proof_verify_operation('passed')]);
 
         expect(Artisan::call('proof', ['orbit-command' => 'firewall:allow', '--group' => '3682', '--json' => true, '--no-interaction' => true]))->toBe(0);
-        $mock->assertSent(static fn ($request): bool => $request instanceof VerifyProofRequest && $request->body()->all() === ['command' => 'firewall:allow', 'task' => 3682]);
+        $mock->assertSent(static fn ($request): bool => $request instanceof VerifyProofRequest && $request->body()->all() === ['command' => 'firewall:allow', 'group' => 3682]);
 
         expect(Artisan::call('proof', ['orbit-command' => 'firewall:allow', '--group' => 'abc', '--json' => true, '--no-interaction' => true]))->toBe(1)
             ->and(Artisan::output())->toContain('proof.group_invalid');
@@ -140,12 +140,12 @@ describe('proof', function (): void {
         expect($mock->findResponseByRequest(VerifyProofRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('vm.4711.1');
     });
 
-    it('accepts a command with an underscore and a hyphen', function (string $command): void {
+    it('accepts command names including nested command parts', function (string $command): void {
         $mock = proof_verify_gateway([proof_verify_operation('passed')]);
 
         expect(Artisan::call('proof', ['orbit-command' => $command, '--json' => true]))->toBe(0);
         $mock->assertSent(static fn ($request): bool => $request instanceof VerifyProofRequest && $request->body()->all() === ['command' => $command]);
-    })->with(['task:pr-ready', 'firewall:allow']);
+    })->with(['task:pr-ready', 'firewall:allow', 'node:role:add', 'family:part:sub-command:action']);
 
     it('refuses a name that is not family:action before any request', function (string $command): void {
         $mock = MockClient::global([]);
@@ -158,7 +158,10 @@ describe('proof', function (): void {
     })->with([
         'no colon' => ['doctor'],
         'upper case' => ['Firewall:allow'],
-        'three segments' => ['firewall:rule:allow'],
+        'empty middle part' => ['node::add'],
+        'empty final part' => ['node:role:'],
+        'upper case nested part' => ['node:Role:add'],
+        'nested path' => ['node:role:../add'],
         'a path' => ['firewall/allow'],
         'trailing space' => ['firewall:allow '],
         'empty action' => ['firewall:'],
@@ -191,7 +194,7 @@ describe('proof', function (): void {
     })->with([
         'not a task VM' => ['refused-no-task-vm', 'proof.no_task_vm'],
         'wrong project' => ['refused-wrong-project', 'proof.wrong_project'],
-        'no workspace' => ['refused-no-workspace', 'task.no_workspace'],
+        'no workspace' => ['refused-no-workspace', 'tasks.no_workspace'],
         'target busy' => ['refused-target-busy', 'operation.target_busy'],
         'extension off' => ['refused-extension-disabled', 'extension.disabled'],
     ]);

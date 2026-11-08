@@ -256,6 +256,7 @@ final class GatewayFailureRenderer
             self::safeErrorMessage($humanMessage ?? $message),
             self::fieldDetails($humanDetails),
             $requestId,
+            $code,
         ));
     }
 

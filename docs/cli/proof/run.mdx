@@ -12,6 +12,8 @@ orbit proof:run <commit> [--all] [--report-only] [--keep-failed] [--idempotency-
 | --- | --- | --- |
 | `commit` | yes | Full 40 or 64 character lowercase commit SHA. |
 
+The selection list maps the CLI, Gateway, SDK and native execution files for `node:role:add` to its approved cases. Changes to shared proof admission or failure rendering select every available cases file; test-only changes remain skipped.
+
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |

@@ -131,7 +131,7 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
 
     private static function commandError(string $command): ?string
     {
-        return preg_match('/\A[a-z][a-z0-9_]*:[a-z][a-z0-9_-]*\z/D', $command) === 1 ? null : 'Enter the command as family:action, for example firewall:allow.';
+        return preg_match('/\A[a-z][a-z0-9_]*(?::[a-z][a-z0-9_-]*)+\z/D', $command) === 1 ? null : 'Enter the command as family:action, for example firewall:allow.';
     }
 
     /** @return list<array<array-key, mixed>> */

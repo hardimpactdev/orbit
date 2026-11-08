@@ -837,7 +837,7 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
-Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, `ci-runner`, or `swamp` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an eligible existing assignment and uses its role convergence DAG. Eligibility is recorded state: active, failed at a `converge:` step, or provisioning for at least 11 minutes without an Operation holding the Node. Recent provisioning, removal and unrelated failures are refused before host contact or mutation. Native initial-add failures retain a `converge:` failure marker, so explicit convergence can repair partial work. VPN and Router retain their protected-role policy.
 
 The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared Swamp workflow and Ansible phases; Node convergence separately owns the observer and Orbit CLI.
 

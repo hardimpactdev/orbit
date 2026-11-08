@@ -20,11 +20,11 @@ final class AddNodeRoleCommand extends NodeCommand
 
     #[\Override]
     protected $signature = 'node:role:add
-        {node : Node ID or name}
+        {node : Positive numeric Node ID}
         {role : Role name}
         {--converge : Converge an existing assignment}
         {--idempotency-key= : Reuse a key to retry this operation start}
-        {--postgres-process= : For the analytics role: ID of its PostgreSQL 16 Process on a database Node}
+        {--postgres-process= : For the analytics role: ID of its PostgreSQL 16 or managed PostgreSQL 18 storage Process}
         {--clickhouse-process= : For the analytics role: ID of its ClickHouse Process on a database Node}
         {--json : Return machine-readable JSON}';
 
@@ -41,15 +41,27 @@ final class AddNodeRoleCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
 
-        if ($connector === null) {
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+        foreach (['postgres-process', 'clickhouse-process'] as $option) {
+            if ($role !== 'analytics' && $this->option($option) !== null) {
+                $this->renderGatewayFailure(
+                    'validation.failed',
+                    'Analytics storage options are only valid for the analytics role.',
+                    details: ['field' => '--'.$option],
+                );
 
-        if ($nodeId === null) {
+                return self::FAILURE;
+            }
+        }
+
+        $connector = $this->gatewayConnector($repository, $connectors);
+
+        if ($connector === null) {
             return self::FAILURE;
         }
 
@@ -96,8 +108,10 @@ final class AddNodeRoleCommand extends NodeCommand
         ] as [$option, $label, $image]) {
             $value = $this->option($option);
 
-            if (is_string($value) && preg_match('/\A[1-9][0-9]*\z/D', $value) === 1) {
-                $ids[] = (int) $value;
+            $id = is_string($value) ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) : false;
+
+            if (is_int($id)) {
+                $ids[] = $id;
 
                 continue;
             }

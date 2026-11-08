@@ -49,6 +49,27 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# Role addition and explicit role convergence share one native workflow and cases file.
+apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php          node:role:add
+apps/cli/app/Commands/Nodes/FollowsNodeRoleOperations.php   node:role:add
+apps/gateway/app/Actions/Nodes/AdmitNodeRoleOperationAction.php  node:role:add
+apps/gateway/app/Http/Controllers/Api/NodeRolesController.php  node:role:add
+apps/gateway/app/Http/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
+apps/gateway/app/Domain/Nodes/NativeNodeRoleAddInput.php     node:role:add
+apps/gateway/app/Domain/Nodes/NativeNodeRoleRuntimeInput.php  node:role:add
+apps/gateway/app/Domain/Nodes/NodeRoleDirectProjection.php   node:role:add
+apps/gateway/app/Models/NodeRole.php                        node:role:add
+packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php  node:role:add
+swamp/workflows/workflow-operation-node-role-add.yaml       node:role:add
+swamp/ansible/operation-node-role-add.yml                   node:role:add
+swamp/proof/node/role-add.cases.yaml                        node:role:add
+
+# Shared proof entry points must accept every command that the selection list can choose.
+apps/cli/app/Commands/Proof/**                             *
+apps/gateway/app/Domain/Proof/**                           *
+apps/gateway/app/Http/Requests/Proof/**                     *
+packages/php-sdk/src/Requests/Proof/**                     *
+
 # Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
 # any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
 # commands use (schedules, logs, project definitions) stays out. The table of run budgets (data) and two checks that no request path calls select nothing; the rules that read the table select every case.

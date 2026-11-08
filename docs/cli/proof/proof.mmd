@@ -20,6 +20,7 @@ sequenceDiagram
   %%> Open question for Nick:
   %%> - may a task VM prove its own group without Gateway access, through a narrower check (the caller is the guest Node of the group's VM)? That changes who may start work, so it waits for Nick
   %%> - the command names a cases file: `firewall:allow` is `swamp/proof/firewall/allow.cases.yaml` in the VM's own checkout, so the cases run against the code the author has now, committed or not
+  %%> - nested command names are accepted; colons after the family become hyphens in the file name, so `node:role:add` names `swamp/proof/node/role-add.cases.yaml`, using the same lookup as CI
   %%> What it does:
   %%> - one command per run; in CI, `proof:run` proves each affected command on a VM of its own
   %%> Built, not yet passed live:
