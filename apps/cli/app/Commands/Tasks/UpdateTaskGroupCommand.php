@@ -13,6 +13,7 @@ use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class UpdateTaskGroupCommand extends TaskCommand
 {
+    #[\Override]
     protected $signature = 'task:update
         {task? : Numeric Task ID}
         {--title= : New title}
@@ -25,6 +26,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--topology= : JSON array of required workload nodes}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Update a task or subtask.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
