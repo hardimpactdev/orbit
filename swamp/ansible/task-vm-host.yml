@@ -52,7 +52,7 @@
   vars:
     prepare_bridge: "{{ host.cidr.split('/')[0].rsplit('.', 1)[0] }}.{{ (host.cidr.split('/')[0].rsplit('.', 1)[1] | int) + 1 }}/{{ host.cidr.split('/')[1] }}"
     prepare_acl_name: "{{ host.network }}-egress"
-    prepare_private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
+    prepare_private_ranges: &task_vm_private_ranges [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
     prepare_acl_rules:
       description: Orbit task VM boundary
       egress:
@@ -79,7 +79,7 @@
       restricted.snapshots: allow
   tasks:
     - name: Prepare storage and isolated networking
-      ansible.builtin.import_tasks: tasks/task-vm-host-prepare.yml
+      ansible.builtin.include_tasks: tasks/task-vm-host-prepare.yml
 
 - name: Task VM base
   hosts: task_vm_host
@@ -423,7 +423,7 @@
     bridge: "{{ host.network }}"
     # The ranges the bridge ACL drops, as the host preparation phase lists them (a test holds the two equal).
     # The log skips them, so it records only a connection that can leave the host.
-    private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
+    private_ranges: *task_vm_private_ranges
     # Our own file, never Incus's: `dnsmasq.<bridge>.log` in /var/log/incus is the capture of dnsmasq's stderr that Incus truncates at every
     # start. dnsmasq appends to this one, so a restart of the bridge's dnsmasq loses nothing.
     dnsmasq_log: "/var/log/orbit/dnsmasq-{{ bridge }}.log"

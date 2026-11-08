@@ -23,7 +23,7 @@ final readonly class NodeFirewallDesiredRules
 
     /**
      * The rules role and Metrics converge keep on the Node: baseline, each active role, the task VM image
-     * peers that task VM host preparation keeps, then Metrics, then the rules extensions contribute.
+     * peers that `task-vms:prepare-host` keeps, then Metrics, then the rules extensions contribute.
      *
      * @return list<DesiredFirewallRule>
      */

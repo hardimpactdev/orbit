@@ -74,3 +74,5 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 `node:update` is a partial patch: it changes only the fields you name. The name, the platform, and the task VM host settings are records, so the Gateway saves them at once. Only the apps folder changes the machine, so only it starts a run. One command keeps one place for a Node's fields. A rename does not touch WireGuard: removing and adding the Node again would delete its WireGuard peer and records.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.
+
+Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).

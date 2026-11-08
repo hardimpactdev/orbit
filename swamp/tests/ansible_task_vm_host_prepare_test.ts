@@ -177,7 +177,11 @@ Deno.test({
       assert(result.ok, result.output);
       assertStringIncludes(f.calls(), '"source=data/orbit-tasks"');
       assertEquals(Deno.readTextFileSync(`${f.folder}/arc`).trim(), "0");
-      assert(!Deno.statSync(`${f.folder}`).isFile);
+      assert(
+        !Array.from(Deno.readDirSync(f.folder)).some((entry) =>
+          entry.name === "arc.conf"
+        ),
+      );
       const intent = JSON.parse(
         Deno.readTextFileSync(`${f.folder}/intent.json`),
       );
