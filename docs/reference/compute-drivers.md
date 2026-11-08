@@ -913,7 +913,7 @@ Restore the prior Gateway release with its loader and recipe, and select its ret
 
 ### Prepare an Incus host
 
-Every base refresh starts with the shared `host-prepare` Ansible phase. It checks existing resources before changing them. A missing pool is created from a new `zfs_dataset` when configured; an existing dataset is refused because Incus takes ownership of its source. Without a dataset, Incus creates a ZFS pool on its own loop file, sized by `pool_size` (default `640GiB`). An existing pool must use ZFS, and a configured dataset must match its source. Existing pools are never resized or replaced.
+Every base refresh starts with the shared `host-prepare` Ansible phase. It checks existing resources before changing them. A missing pool is created from a new `zfs_dataset` when configured; an existing dataset is refused because Incus takes ownership of its source. Without a dataset, Incus creates a ZFS pool on its own loop file, sized by `pool_size` (default `640GiB`). A leftover loop file or symlink at `/var/lib/incus/disks/<pool>.img` is refused untouched, because Incus would truncate it. An existing pool must use ZFS, and a configured dataset must match its source. Existing pools are never resized or replaced.
 
 On a host whose pool source is a regular file, this phase caps the host-wide ZFS ARC at 2 GiB, both now and after reboot. That is about 6.6% of a 30.24 GiB host and leaves room for databases and other services. The phase does not change ARC settings on native-ZFS hosts, including an existing native pool with no `zfs_dataset` setting. It installs the ZFS userspace tools when needed and loads the kernel module before creating a pool. Then it sets up these parts:
 
