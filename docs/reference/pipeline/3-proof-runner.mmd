@@ -45,8 +45,10 @@ sequenceDiagram
     SW->>VM: Run the batch<br/>runner batch BATCH
     %%> What it does:
     %%> - one Swamp step runs every case of the batch; the runner reads the fleet once
-    %%> - the cases that share the fleet run several at a time (the `parallel` key of the cases file, 4 by default), never two on one Node: each case acts on one Node of the cases file's `spread`, and the Gateway lets one firewall write run on a Node at a time
-    %%> - the cases that change or compare what every case shares (the Operation list, a fault, a held lock) run alone, after the others
+    %%> - the cases run several at a time (the `parallel` key of the cases file, 4 by default), on the Nodes of the cases file's `spread`
+    %%> - cases that change nothing are readers: several may read one Node together; a writer, including a fault or a held lock, is the only case on its Node until it ends
+    %%> - `request: none` and the `operations` comparison read Operations of the command's kind and its Node target only; filters apply before the newest-50 limit, and the newest matching ID detects an added Operation even when the page is full
+    %%> - cases that change the shared fleet (`agent_report`, `node_down`, `node_access_remove`, `ipv6_addresses`), read every Node, work on another Node or set `exclusive: true` run alone, after the others
     %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
     %%> Result:
     %%> - one verdict line a case, those that did not pass first; the full receipt of each stays in the evidence directory
