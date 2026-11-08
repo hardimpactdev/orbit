@@ -1,7 +1,7 @@
 ---
 # The warm checkout of a task image (docs/cli/task/vm-image-refresh.mmd): main at the converged commit, with `vendor/` and
 # `node_modules/` of every project and their caches, at the fixed path that a task's workspace Instance names. Each step checks the
-# state first: the checkout moves only when HEAD differs, and a project installs only when its lock file differs from the one it
+# state first: a new clone materializes its files, an existing checkout moves only when HEAD differs, and a project installs only when its lock file differs from the one it
 # installed. The repository is read without a credential: the task VMs serve a public repository.
 - name: Look for the checkout
   ansible.builtin.stat: { path: "{{ intent.checkout.path }}/.git" }
@@ -24,7 +24,8 @@
   register: checkout_head
   changed_when: false
 - name: Move the checkout to the commit
-  when: checkout_head.stdout | trim != intent.checkout.commit
+  # A --no-checkout clone already has HEAD, even though its worktree is empty.
+  when: not checkout_git.stat.exists or checkout_head.stdout | trim != intent.checkout.commit
   block:
     - name: Fetch the commit
       become: true
