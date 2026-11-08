@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: fleet maintenance redesign (recipe.json read by Ansible, Tools phase last, recipe packages held). docs/reference/node-provisioning.md#converge-the-orbit-footprint.
-  %% status: reviewed
+  %% status: draft
   %% command: node:converge
   %% kind: node.converge
   autonumber
@@ -17,79 +17,84 @@ sequenceDiagram
   CLI->>GW: node:converge NODE
   %%> Command:
   %%> - `orbit node:converge NODE`
-  %%> - syntax: `<node> [--json]`
-  %%> What it does:
-  %%> - brings one Node fully to the release: Orbit binaries, role software, roles, Tools and network
-  %%> - every run applies all phases; each phase skips what already matches
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> - syntax: `<node> [--force] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock Node, hub
   %%> Requirements:
-  %%> - the calling Node has an access grant to the target Node
+  %%> - the calling Node has an access grant to the target Node (`node_access.required`)
   %%> - the target is an active, managed Linux Node (`node.converge_unsupported`)
-  %%> - no other converge runs for the target or the hub; the Gateway holds one lock for each
-  %%> Builds:
-  %%> - targets only: the Node, its active roles, its Tools, its recorded network and the hub
-  %%> - no versions: the playbooks read the pins of the release
-  GW->>SW: Start run, full intent<br/>operation-node-converge
-  GW-->>CLI: 202 Accepted<br/>task ID
-  %%> What you get:
-  %%> - the task ID, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
-  %%> Why:
-  %%> - the intent is too large for one environment value, so it goes to a private run file
-  SW->>N: Install Orbit binaries<br/>Ansible phase: binaries
-  %%> Why first:
-  %%> - later phases and Doctor rely on the agent's facts and the `orbit-env` group
-  %%> - it covers the agent's configuration and unit, the `orbit-env` access to Instance `.env` files, and the temporary-file cleanup rule; the agent restarts only when a file changed
-  %%> - the Orbit CLI comes with it, so one converge brings a Node fully to the release
-  SW->>N: Install role software<br/>Ansible phase: software
-  %%> Why:
-  %%> - installs the recipe's common and role tools at their pins, then holds them
-  %%> - the hold keeps Tools from moving tested software; Ubuntu security updates still pass
-  SW->>N: Configure the roles<br/>Ansible phase: roles
-  %%> Best effort:
-  %%> - closing world access on Instance `.env` files and clearing Route residue never fail the run; the next converge tries again
-  opt Node has Tools
-    SW->>N: Install Tools<br/>Ansible phase: tools
-    %%> Why last of the software:
-    %%> - a Tool that needs another version of a held package fails alone; role software stays as tested
-    %%> On a Tool failure:
-    %%> - the phase goes on with the other Tools and returns each Tool's result; only that Tool is marked failed
-  end
-  SW->>H: Apply the network<br/>Ansible phase: network
-  %%> Why one phase on both Nodes:
-  %%> - the peer and the hub change together; the hub first, then the Node, then a wait for the handshake
-  %%> - no drift writes no file and reloads nothing
-  SW->>N: Check the Node<br/>Ansible phase: check
-  %%> Why:
-  %%> - the one end check: role software, units, sites and a recent handshake
-  %%> - a hub with no peers has no handshake to check, and a Node with no recorded hub skips the network phase
-  alt check passes
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record converged state
+  %%> - no converge owns the target or its hub (`operation.target_busy`)
+  %%> Input:
+  %%> - capture the target, active roles, recorded Tools and network; release pins stay in the recipe
+  %%> Refusals:
+  %%> - an unrenderable part is node.footprint_failed; an unsupported contribution is operation.kind_unavailable
+  alt admission refused
+    %% path: admission-refused
+    GW--xCLI: Refused, no run
     %%> Result:
-    %%> - the task succeeds; a failed Tool is marked failed on its own record
-  else a phase fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the task failed
-    %%> Result:
-    %%> - the task fails with the failed phase
-    %%> On the Node:
-    %%> - finished phases stay; there is no rollback
-    %%> Retry:
-    %%> - run the same command again: it starts from the first phase and skips what matches
-  end
-  opt run completed or failed
-    SW->>SW: Remove the run folder<br/>private run files
+    %%> - return the admission error without changing the Node
+  else admitted
+    %% path: admitted
+    GW->>SW: Start run, full intent<br/>operation-node-converge
+    GW-->>CLI: 202 Accepted<br/>task ID
+    SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
     %%> Why:
-    %%> - the intent, inventory and any secrets do not outlive the run, whatever its result
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
+    %%> - keep the captured intent and private execution files in one run folder
+    SW->>N: Install Orbit binaries<br/>Ansible phase: binaries
+    %%> Why first:
+    %%> - later phases depend on the agent configuration and the orbit-env group
+    SW->>N: Install role software<br/>Ansible phase: software
+    %%> Why:
+    %%> - establish and hold the recipe baseline before operator Tools
+    SW->>N: Configure the roles<br/>Ansible phase: roles
+    %%> On a cleanup failure:
+    %%> - Instance .env permission cleanup and recorded Route residue cleanup are best effort
+    opt Node has recorded Tools
+      %% path: tools
+      SW->>N: Install Tools<br/>Ansible phase: tools
+      %%> On a Tool failure:
+      %%> - continue with the other Tools and return each Tool's outcome
+    end
+    opt Node has a recorded hub
+      %% path: network
+      SW->>H: Apply the network<br/>Ansible phase: network
+      %%> Order:
+      %%> - configure the hub before the target Node; check the tunnel after both
+      %%> On a repeat:
+      %%> - matching live state writes no file and reloads nothing
+    end
+    SW->>N: Check the Node<br/>Ansible phase: check
+    %%> Result:
+    %%> - the single end check covers the required state, including the network when applicable
+    %%> Exceptions:
+    %%> - a hub with no peers has no handshake to check
+    SW->>SW: Remove the run folder<br/>after work has stopped
+    %%> When:
+    %%> - declare cleanup after completion or failure, including skipped downstream phases
+    %%> On a cleanup failure:
+    %%> - preserve the original failure and expose incomplete cleanup; a worker crash proves no cleanup
+    alt all required state matches, no changes or failed Tools
+      %% path: already-applied
+      SW-->>GW: Succeeded, skipped<br/>node.footprint_unchanged
+      %%> Result:
+      %%> - record the checked footprint and the stable skip reason
+    else required phases pass
+      %% path: succeeded
+      SW-->>GW: Succeeded, record state
+      %%> Result:
+      %%> - the shared terminal reader records the footprint and each Tool's outcome
+      %%> - a failed Tool does not fail the task
+    else a required phase fails
+      %% path: phase-failed
+      SW--xGW: Failed, retain changes<br/>error_code · failed phase
+      %%> On the Node:
+      %%> - completed work and partial changes within the failed phase stay; no rollback
+      %%> - skip later work, but still schedule cleanup once execution has stopped
+      %%> Retry:
+      %%> - a new invocation starts at the first phase and repairs what does not match
+    end
+    loop until terminal
+      %% path: follow
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
   end

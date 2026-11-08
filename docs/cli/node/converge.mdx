@@ -1,49 +1,65 @@
 ---
 title: "orbit node:converge"
 sidebarTitle: "node:converge"
-description: "Bring one Node fully to the release: Orbit binaries, role software, roles, Tools, and network. It never changes an Instance or a role assignment, so it works on a Node that owns Instances, unlike `node:add`."
+description: "Re-apply one managed Linux Node's Orbit footprint."
 ---
 
+## Usage
+
 ```bash
-orbit node:converge <node> [--json]
+orbit node:converge <node> [--force] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
+| `node` | yes | Node ID; see the [Node selector contract](/cli/node). |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the final Operation as JSON. |
+| `--force` | off | Re-apply every footprint artifact even when its recorded digest matches. Access, eligibility and locking checks still apply. **Target restart policy:** restart only for changed state, not merely because this option was passed (stage-2 requests `effect:binaries` and `effect:force` below). |
+| `--idempotency-key=KEY` | none | Shared [keyed-start option](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Use the [CLI standard's machine output](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit node:converge 7
+orbit node:converge 7 --force
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list. A noninteractive or `--json` call without it is refused with `node.id_invalid` and sends no request.
+[Required-input interaction](/reference/cli-ux#input-and-output-modes) follows the CLI standard.
 
-Every run applies all phases in order, and each phase skips what already matches:
+## How it works
 
-1. **Orbit binaries.** The Node agent and the Orbit CLI at the release's pins, the agent's configuration and unit, the `orbit-env` access to Instance `.env` files, and the temporary-file cleanup rule. The agent restarts only when a file changed.
-2. **Role software.** The common and role tools at the pins of the release. They are held, so a Tool cannot move tested software. Ubuntu security updates still pass.
-3. **Roles.** The configuration of the Node's active roles. It changes no role assignment. Closing world access on Instance `.env` files and clearing Route residue are best effort and never fail the run; the next converge tries again.
-4. **Tools.** The Node's recorded Tools, when it has any. A Tool that fails is marked failed on its own record, the other Tools still run, and the task still succeeds.
-5. **Network.** The WireGuard peer and the hub change together: the hub first, then the Node. A rerun with no drift writes no file and reloads nothing.
-6. **Check.** The role software, units, sites and a recent tunnel handshake. This is the one end check. A hub with no peers has no handshake to check, and a Node with no recorded hub skips the network phase.
+Orbit admits only an active, managed Linux Node that the calling Node has an access grant to. It reserves the target and its VPN hub against another converge.
 
-Only an active, managed Linux Node can be converged; any other Node is refused with `node.converge_unsupported`. Only one converge runs at a time for a Node and for the hub: another is refused with `operation.target_busy`. The CLI follows the task and prints the final result with the request ID.
+The [footprint reference](/reference/node-provisioning#converge-the-orbit-footprint) owns artifact identities, digests and the workload boundary: converge does not run `node:add`, replace an Instance checkout, or change role assignments. It can repair a Node that owns Instances.
 
-A failed phase fails the task with that phase. The run's private files are removed after success or failure. Finished phases stay and nothing is rolled back. After you fix the cause, run the same command again; it starts from the first phase and skips what matches.
+### Target flow
+
+The six-phase flow below is an unimplemented target, not a guarantee of the current command. The runnable `required-phases` cases check phase names and counts, not machine effects. Stage 2 must implement the missing effects and add the fixtures and assertions named under `uncovered` in the [proof specification](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/node/converge.cases.yaml). Each target names its capability request:
+
+1. **Orbit binaries** (`effect:binaries`). Install the release-pinned Node agent and Orbit CLI, the agent's configuration and service, `orbit-env` access to Instance `.env` files, and the temporary-file cleanup rule.
+2. **Role software** (`effect:software`). Apply the release recipe's common and role software before Tools. Keep recipe packages held so a Tool cannot move tested software, while allowing Ubuntu security updates.
+3. **Roles** (`effect:roles`). Apply the active roles' configuration. Treat Instance `.env` permission cleanup and recorded Route residue cleanup as best effort.
+4. **Tools** (`path:tools`). Apply recorded Tools, if any. Mark a failed Tool on its own record, continue with the others, and allow the task to succeed.
+5. **Network** (`path:network`, `effect:no-network`). Apply the recorded network, hub first and then the Node. Skip this phase without a recorded hub; write no file and reload nothing when live state matches.
+6. **Check** (`effect:check`). Check the required software, units, sites, and a recent tunnel handshake. A hub with no peers needs no handshake check.
+
+The target repeat checks live required state rather than trusting the recorded digest alone (`effect:check`). If everything matches and no Tool failed, it must succeed as skipped with `node.footprint_unchanged`. The runnable `already-applied` case checks the skip reason and presence of the check phase; the live-state and Tool assertions still need the capabilities above.
+
+The target failure contract retains completed work and partial changes within a failed phase, skips later work, and performs no rollback. A new invocation starts at the first phase and repairs what does not match; stage-2 request `effect:partial-failure` covers the missing fault injection and state assertions.
+
+Target cleanup removes temporary execution files after work stops on success or failure, reports incomplete cleanup without hiding the original failure, and waits for confirmation that interrupted work has stopped. A worker crash alone proves no cleanup; stage-2 request `effect:cleanup` covers folder inspection and cleanup/interruption faults.
+
+<div className="flow-at" data-chart="node/converge"></div>
 
 ## Errors
 
 | Code | Meaning |
 | --- | --- |
-| `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node.id_invalid` | The supplied numeric Node ID is outside the accepted positive-integer range. |
 | `node.converge_unsupported` | The Node is not an active, managed Linux Node. |
-| `operation.target_busy` | Another converge holds the Node or the hub. |
-| `node_access.required` | The caller has no access grant to the Node. |
-
-## How it works
-
-<div className="flow-at" data-chart="node/converge"></div>
+| `operation.target_busy` | Another converge holds the target or its VPN hub. |
+| `node_access.required` | The calling Node has no access grant to the target. |
+| `node.footprint_failed` | A required footprint part cannot be rendered, or a required part did not complete. |
+| `operation.kind_unavailable` | A required footprint contribution has no supported action; refusal occurs before Node changes. |
+| `operation.native_failed` | Execution failed; the failed phase identifies where it stopped. |

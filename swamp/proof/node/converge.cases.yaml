@@ -1,0 +1,115 @@
+# Stage 1 contract. Format: docs/reference/verification-cases.
+# Phase-name checks prove only names/counts, not machine effects.
+# Uncovered machine effects are unimplemented or unproved targets for stage 2;
+# their request IDs are referenced by the page, not executable assertions.
+command: node:converge
+chart: node/converge
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+uncovered:
+  "effect:binaries": "Stage 2 must implement the release-pinned CLI and change-only agent restarts, then add installed-binary, file-content and service-state assertions for binaries, configuration, orbit-env access and tmpfiles. cli.as runs the candidate checkout, not the installed CLI."
+  "effect:software": "Stage 2 must implement the full recipe software and holds, then add package-version and hold-state assertions plus a recipe drift fixture to prove the target recipe.json baseline and unrelated security updates."
+  "effect:roles": "Need Instance, Process and role-assignment snapshots plus file and service assertions to prove the target role repair preserves workloads and assignments. Add a scoped permission/residue fault to prove the target best-effort cleanup policy."
+  "path:tools": "Stage 2 must implement recorded-Tool installation and add Tool fixtures, package-conflict injection and per-Tool result assertions. These must prove the target ordering after role software, continuation after a Tool fails, and protection of held recipe packages."
+  "path:network": "Need a recorded-hub fixture with live WireGuard, file-write and reload assertions to prove hub-before-peer ordering, tunnel checks and no writes on a matching repeat. The base batch does not declare this fixture."
+  "effect:no-network": "Need a no-hub recorded-target fixture and a skipped-phase assertion to prove network is omitted rather than failing."
+  "effect:check": "Stage 2 must implement the comprehensive post-network end check and add software, unit, site and handshake drift fixtures plus a final-check fault to prove it rejects incomplete state. Include a hub with no peers to prove the target handshake exception."
+  "code:node.converge_unsupported": "Need recorded inactive, unmanaged and non-Linux target fixtures in isolated batches to prove refusal before an Operation or Node effect, with and without --force."
+  "code:operation.target_busy": "Need a converge-specific held-operation fixture for the target and a second target sharing its hub to prove both reservations refuse concurrent converge. busy_node only holds firewall writes."
+  "code:node.footprint_failed": "Need a render-failure fixture and required-part outcome injection to prove admission refusal or terminal failure without recording an unproven digest."
+  "code:operation.kind_unavailable": "Need an unsupported footprint-contribution fixture, including one with a matching recorded digest, to prove refusal before Node effects."
+  "effect:partial-failure": "Need phase-specific failure injection after a real write and footprint/file snapshots to prove the target retention of completed/partial changes, skipping of later work, and repair on a new invocation. fault only injects UFW failures."
+  "effect:cleanup": "Stage 2 must implement the private run-folder lifecycle and add folder inspection, cleanup-failure injection and a worker-interruption fixture. These must prove the target removal only after work stops, reporting of incomplete cleanup, and preservation of the original failure."
+  "effect:force": "Need recorded-digest fixtures and per-artifact effect assertions to prove forced reapplication with the target change-only service restart policy; force-reapplies-roles only checks the role phase's name/count."
+  "negative:assertions": "Need safe named non-traffic assertions and negative mutations to prove phase, skip and admission assertions can fail; the runner's negative checks currently support probes only."
+
+cases:
+  - id: required-only
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded, follow]
+    summary: Required arguments alone return a successful Operation and leave Doctor without drift.
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded}}
+    expect:
+      - doctor: {node: app-dev, drift: 0}
+
+  - id: required-phases
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded]
+    summary: Each required logical phase is exposed once in the terminal Operation.
+    fails_today: The current workflow exposes individual cfgmgmt actions rather than these named Ansible phases. This case checks names/counts only; the machine effects need the stage-2 capabilities under uncovered.
+    variants:
+      - {name: binaries, phase: Install Orbit binaries}
+      - {name: software, phase: Install role software}
+      - {name: roles, phase: Configure the roles}
+      - {name: check, phase: Check the Node}
+    act:
+      - cli:
+          run: [node:converge, "${app-dev.id}"]
+          expect: {exit: 0, status: succeeded, steps: {name: "${phase}", count: 1}}
+    expect: []
+
+  - id: already-applied
+    batch: fresh-fleet
+    covers: [main, admitted, already-applied]
+    summary: A new invocation checks an already-converged Node and reports a successful skip.
+    fails_today: NodeConvergeProjection reports unchanged artifacts but supplies no stable node.footprint_unchanged skip reason.
+    setup:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli:
+          run: [node:converge, "${app-dev.id}"]
+          expect: {exit: 0, status: succeeded, skipped: node.footprint_unchanged, steps: {name: Check the Node, count: 1}}
+    expect: []
+
+  - id: force-reapplies-roles
+    batch: fresh-fleet
+    covers: [main, admitted, succeeded]
+    summary: A forced converge exposes the role phase after a previous successful converge; this checks its name/count, not its effects.
+    fails_today: The force input exists, but there is no Configure the roles Ansible phase in the current workflow.
+    setup:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded}}
+    act:
+      - cli:
+          run: [node:converge, "${app-dev.id}", --force]
+          expect: {exit: 0, status: succeeded, steps: {name: Configure the roles, count: 1}}
+    expect: []
+
+  - id: invalid-node-id
+    batch: fresh-fleet
+    covers: [main]
+    summary: A nonpositive numeric selector is refused before admission, even with force.
+    variants:
+      - {name: ordinary, flags: []}
+      - {name: force, flags: [--force]}
+    act:
+      - cli: {run: [node:converge, "0", "@flags"], expect: {exit: 1, code: node.id_invalid, request: none}}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: node-access-required
+    batch: no-grant
+    covers: [main, admission-refused]
+    summary: A caller without the target's access grant cannot converge it, including with force.
+    variants:
+      - {name: ordinary, flags: []}
+      - {name: force, flags: [--force]}
+    act:
+      - cli:
+          as: app-prod
+          run: [node:converge, "${app-dev.id}", "@flags"]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unreachable-node
+    batch: node-down
+    covers: [main, admitted, phase-failed, follow]
+    summary: An active recorded Node that cannot be reached fails the Operation rather than reporting a successful converge.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 1, status: failed, code: operation.native_failed}}
+    expect: []
