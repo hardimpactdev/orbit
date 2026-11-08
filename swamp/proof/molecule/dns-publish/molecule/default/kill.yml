@@ -35,6 +35,12 @@
       retries: 20
       delay: 1
       changed_when: false
+# A marker of an earlier run would end the wait below at once, before the lock holder of this run exists.
+- name: Clear the marker of an earlier run
+  become: true
+  ansible.builtin.file:
+    path: /run/orbit-proof-stopping
+    state: absent
 - name: Start the phase detached
   ansible.builtin.command:
     argv: [timeout, "200", ansible-playbook, -i, "{{ folder.path }}/inventory.yml", --tags, publish, -e, "{{ scaled_lock }}", "{{ ansible_dir }}/dns-publish.yml"]
