@@ -24,16 +24,16 @@ it('balances whole batches using the latest measured case times and expands vari
     Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
         'status' => 'failed', 'input' => [], 'result' => ['cases' => [['program' => $file.'#c', 'seconds' => 5]]]]);
     $source = Mockery::mock(ProofCommitSource::class);
-    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches:\n  first: {}\n  second: {}\n  third: {}\n");
-    $source->shouldReceive('file')->with('head', $file)->andReturn("command: firewall:allow\ncases:\n  - {id: a, batch: first}\n  - {id: b, batch: second, variants: [{name: v4}, {name: v6}]}\n  - {id: c, batch: third}\n");
+    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches:\n  first: {}\n  second: {}\n  third: {}\n  fourth: {}\n");
+    $source->shouldReceive('file')->with('head', $file)->andReturn("command: firewall:allow\ncases:\n  - {id: a, batch: first}\n  - {id: b, batch: second, variants: [{name: v4}, {name: v6}]}\n  - {id: c, batch: third}\n  - {id: d, batch: fourth}\n");
 
     $batches = (new ProofBatchPlan($source))->read('head', [['command' => 'firewall:allow', 'file' => $file]]);
     $shards = ProofBatchPlan::split($batches, 2);
 
-    expect(array_column($batches, 'seconds'))->toBe([20.0, 13.0, 5.0])
+    expect(array_column($batches, 'seconds'))->toBe([20.0, 13.0, 5.0, 6.5])
         ->and($batches[1]['cases'])->toBe(['b[v4]', 'b[v6]'])
         ->and(array_column($shards[0], 'batch'))->toBe(['first'])
-        ->and(array_column($shards[1], 'batch'))->toBe(['second', 'third']);
+        ->and(array_column($shards[1], 'batch'))->toBe(['second', 'fourth', 'third']);
 });
 
 it('refuses a selected command with no cases instead of planning a green zero-case run', function (?string $yaml): void {

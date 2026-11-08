@@ -28,7 +28,7 @@ final readonly class ProofBatchPlan
         $times = $this->times();
         $measured = array_values($times);
         sort($measured);
-        $fallback = $measured === [] ? 1.0 : $measured[intdiv(count($measured), 2)];
+        $fallback = $measured === [] ? 1.0 : ($measured[intdiv(count($measured) - 1, 2)] + $measured[intdiv(count($measured), 2)]) / 2;
         $batches = [];
         foreach ($commands as $command) {
             $spec = $this->yaml($commit, $command['file']);

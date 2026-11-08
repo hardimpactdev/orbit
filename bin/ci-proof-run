@@ -52,7 +52,9 @@ def evaluate(code, output):
     reason = f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip() if error and (error.get('code') or error.get('detail')) else None
     if result is None:
         return False, [f'The proof printed no result (exit status {code}).', *([reason] if reason else [])]
-    cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
+    raw_cases = result.get('cases')
+    cases = [case for case in raw_cases or [] if isinstance(case, dict)] if isinstance(raw_cases, list) else []
+    well_formed = isinstance(raw_cases, list) and len(cases) == len(raw_cases)
     lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
     lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
               for case in cases]
@@ -68,9 +70,10 @@ def evaluate(code, output):
     outcome = result.get('outcome')
     ran = outcome == 'passed' and cases and all(case.get('verdict') == 'passed' for case in cases)
     selected = result.get('selected_commands')
-    covered = (selected is None or (isinstance(selected, list) and all(
-        any(case.get('command') == command and case.get('verdict') == 'passed' for case in cases) for command in selected)))
-    passed = code == 0 and covered and (ran or (outcome == 'nothing_to_prove' and not cases and not selected))
+    covered = (selected is None or (isinstance(selected, list) and (bool(selected) or not cases) and all(
+        isinstance(command, str) and bool(command) and any(case.get('command') == command and case.get('verdict') == 'passed' for case in cases)
+        for command in selected)))
+    passed = code == 0 and well_formed and covered and (ran or (outcome == 'nothing_to_prove' and not cases and not selected))
     return bool(passed), lines
 
 

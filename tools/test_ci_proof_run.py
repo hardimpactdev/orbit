@@ -45,6 +45,11 @@ class EvaluateTest(unittest.TestCase):
             with self.subTest(output=output):
                 self.assertFalse(proof.evaluate(0, output)[0])
 
+    def test_malformed_case_rows_cannot_be_discarded_to_turn_a_report_green(self):
+        for cases in (None, {}, 'bad', [{'command': 'firewall:allow', 'verdict': 'passed'}, None]):
+            output = json.dumps({'result': {'outcome': 'passed', 'cases': cases}})
+            self.assertFalse(proof.evaluate(0, output)[0])
+
     def test_a_passed_proof_without_a_case_that_ran_fails(self):
         self.assertFalse(proof.evaluate(0, json.dumps({'result': {'outcome': 'passed', 'cases': []}}))[0])
 
