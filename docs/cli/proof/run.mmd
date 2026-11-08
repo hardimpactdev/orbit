@@ -41,12 +41,12 @@ sequenceDiagram
   %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers `tasks.capacity_unavailable`, even when a skipped host has free slots
   %%> - the copies must also be fresh: only a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the proof commit with main is used (stage 2 chart, decided 2026-11-07); a host whose copies miss one is skipped, and the refusal says so
   %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` fails with the reason
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - a run started with `--report-only` (the report-only proof CI job) yields capacity to task and proof work: its VMs are admitted only on a host that keeps the slots of one large VM free after them. With less room it fails at admission with `tasks.capacity_unavailable`, whose message names the reserve, and starts nothing. It uses the same admission as every run, with the free slots reduced; no queue and no loop
-  %%> - why: two report-only proofs of a Swamp unit change started a run for every case, filled the host and made the Gateway refuse a critical-path proof; the report-only job never has to win capacity
-  %%> - the flag goes when the proof CI becomes a required check
-  %%> - a report-only VM is always a clone (it claims no ready slot), so a host of 6 slots, such as beast, takes one only when idle (one per idle host); a report-only proof of more commands fails at admission and the job goes red, which is acceptable for a job that is not required
-  %%> - the reserve keeps one large VM free; a critical proof of several commands, which admits one large VM for each, can still be refused while report-only VMs run, and nothing queues; a proof that is not report-only then cancels the report-only proofs (the rule of 2026-11-07 below)
+  %%> Capacity rule:
+  %%> - each host reserves slot 1 (one Large VM, 3 max_vms units) for command proofs and refresh candidate proofs; task work never takes it
+  %%> - all command proofs, including report-only CI, take the reserve first, then free task slots; the old keepFree policy is removed
+  %%> - report-only means preemptible by a normal proof, not lower priority than task work
+  %%> - when report-only CI has no room, it waits visibly at `Wait for VMs to be released`, retries every 20 s for up to 200 s, and neither releases kept VMs nor cancels another proof
+  %%> - on exhaustion it fails with tasks.capacity_unavailable, the selected commands and no case rows; CI reports not_run_capacity and a receipt, never a passing proof
   %%> Decided by the top orchestrator, for Nick's review (2026-11-07): a kept VM never blocks a waiting proof. M5 try 10 waited for the VMs of try 9 (kept until 04:35 and 04:37) after their evidence had been read, and A cancelled their groups by hand.
   %%> - rule: when the admission of a proof is refused for capacity (`tasks.capacity_unavailable`) and an earlier proof still holds kept VMs (`--keep-failed`), the admission releases them first. It cancels the group of each kept run, the cancel every run gets with the trigger `proof-run`, and tries again every 20 s until 200 s after the start of the proof, with the step `Wait for VMs to be released`. With no kept VM left, or after 240 s, it fails as before
   %%> - a kept VM stays as long as capacity is not short, so a person who is reading it loses it only when a proof needs the room

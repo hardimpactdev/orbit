@@ -41,7 +41,7 @@ sequenceDiagram
   %%> - a family's block is added with the first cases file of the family, because a path that selects only commands with no cases file starts a proof run that proves nothing; `apps/**` stays `skip` until then
   %%> - code that every command runs through selects `*`, which runs the cases of every command that has a cases file, so a shared change re-proves what it can break; the shared files are named in the list
   %%> - a file is chosen by what a change to it can affect: `OperationBudgetTable.php` (the run budget of each kind, one entry per kind, and the serve cap derived from it) is data and selects nothing; the rules that read it (`OperationRunBudgets.php`) and the kind registry stay shared. A change to a Swamp unit, a role template or the manifest touches no command and selects nothing; `everything` stays for a change whose reach is unknown, such as the selection list or the proof runner
-  %%> - the report-only proof CI job yields to task and proof work with `--report-only` (rule and reason: the chart of `proof:run`, `docs/cli/proof/run.mmd`)
+  %%> - the report-only proof CI job uses the per-host proof reserve with `--report-only`; only normal proofs can preempt it (rule and reason: the chart of `proof:run`, `docs/cli/proof/run.mmd`)
   %%> Built:
   %%> - the firewall family (`firewall:allow`, `firewall:deny`, `firewall:list`, `firewall:remove`) and the shared files, checked by Pest tests against the checked-in list
   Note over CI: Fast checks<br/>about 2 minutes
