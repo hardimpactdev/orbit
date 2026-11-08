@@ -55,20 +55,36 @@ for (const [name, task] of [
             const fixtureTasks = `${folder}/replacement.json`;
             await Deno.writeTextFile(fixtureTasks, JSON.stringify(tasks));
             const play = `${folder}/play.json`;
+            const reportPath = `${folder}/commit.json`;
+            const collections = `${folder}/empty-collections`;
+            await Deno.mkdir(collections);
             await Deno.writeTextFile(play, JSON.stringify([{
                 hosts: "localhost", connection: "local", gather_facts: false,
                 vars: { converge_replacement: { path: target, ...(link ? { link: source } : { url: `file://${source}`, sha256: digest }) } },
-                tasks: [{ name: "Apply the tagged base replacement", "ansible.builtin.import_tasks": fixtureTasks, tags: ["agent"] }],
+                tasks: [{
+                    name: "Apply the tagged base replacement", tags: ["agent"],
+                    block: [{ name: "Run the actual replacement tasks", "ansible.builtin.import_tasks": fixtureTasks }],
+                    always: [{
+                        name: "Record the fixture's commit result, including lock failure",
+                        "ansible.builtin.copy": { dest: reportPath, content: "{{ converge_replacement_commit | default({}) | to_json }}", mode: "0600" },
+                        // This local test-evidence write is not part of the target's change count.
+                        changed_when: false,
+                    }],
+                }],
             }]));
             const run = async (expectedAgentChange = true) => {
                 const result = await new Deno.Command("ansible-playbook", {
                     args: ["-i", "localhost,", "--tags", "agent", "--extra-vars", JSON.stringify({ expected_agent_change: expectedAgentChange }), play],
                     stdout: "piped", stderr: "piped",
-                    env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "ansible.posix.json" },
+                    // Prove the fixture needs only ansible-core, not a callback from a
+                    // collection installed outside the gate's Deno environment.
+                    env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default", ANSIBLE_COLLECTIONS_PATH: collections },
                 }).output();
-                const output = decoder.decode(result.stdout);
-                const report = JSON.parse(output);
-                return { code: result.code, report, output: output + decoder.decode(result.stderr) };
+                const output = decoder.decode(result.stdout) + decoder.decode(result.stderr);
+                const recap = output.match(/^localhost\s+:\s+ok=\d+\s+changed=(\d+)\s+unreachable=0\s+failed=(\d+)/m);
+                assert(recap, `Ansible produced no fixture recap (exit ${result.code}):\n${output}`);
+                const commit = JSON.parse(await Deno.readTextFile(reportPath));
+                return { code: result.code, commit, changed: Number(recap[1]), failed: Number(recap[2]), output };
             };
             holder = new Deno.Command("flock", {
                 args: ["--exclusive", fixtureLock, "sh", "-c", "printf ready; read release"],
@@ -79,9 +95,9 @@ for (const [name, task] of [
             reader.releaseLock();
             const refused = await run();
             assertEquals(refused.code, 2, refused.output);
-            const failed = refused.report.plays[0].tasks.find((item: { task: { name: string } }) => item.task.name === "Commit the replacement under the update lock");
-            assertEquals(failed.hosts.localhost.rc, 1, refused.output);
-            assertEquals(failed.hosts.localhost.cmd.slice(0, 4), ["flock", "--wait", "1", fixtureLock]);
+            assertEquals(refused.failed, 1, refused.output);
+            assertEquals(refused.commit.rc, 1, refused.output);
+            assertEquals(refused.commit.cmd.slice(0, 4), ["flock", "--wait", "1", fixtureLock]);
             assertEquals(await Deno.readTextFile(target), "old release\n");
             if (link) assertEquals(await Deno.readLink(target), old);
             const staging = async () => {
@@ -97,14 +113,16 @@ for (const [name, task] of [
             holder = undefined;
             const applied = await run();
             assertEquals(applied.code, 0, applied.output);
-            assert(applied.report.stats.localhost.changed > 0, applied.output);
+            assertEquals(applied.failed, 0, applied.output);
+            assert(applied.changed > 0, applied.output);
             assertEquals(await Deno.readTextFile(target), "admitted release\n");
             if (link) assertEquals(await Deno.readLink(target), source);
             else assertEquals((await Deno.stat(target)).mode! & 0o777, 0o755);
             assertEquals(await staging(), []);
             const repeated = await run(false);
             assertEquals(repeated.code, 0, repeated.output);
-            assertEquals(repeated.report.stats.localhost.changed, 0, repeated.output);
+            assertEquals(repeated.failed, 0, repeated.output);
+            assertEquals(repeated.changed, 0, repeated.output);
             assertEquals(await Deno.readTextFile(old), "old release\n");
         } finally {
             if (holder) {
