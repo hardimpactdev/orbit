@@ -45,6 +45,8 @@
   ansible.builtin.stat:
     path: "{{ prepare_pool.get('config', {}).get('source', '/dev/null') }}"
     follow: true
+    get_checksum: false
+    get_mime: false
   register: prepare_source
 
 - name: Identify loop storage from its actual backing file
@@ -97,6 +99,22 @@
   when: prepare_pool == {} and host.zfs_dataset is not none
   ansible.builtin.assert:
     that: host.zfs_dataset not in prepare_datasets.stdout.splitlines()
+    fail_msg: task_vm.setup_failed
+
+- name: Inspect the loop backing file before creating its pool
+  when: prepare_pool == {} and host.zfs_dataset is none
+  ansible.builtin.stat:
+    path: "/var/lib/incus/disks/{{ host.pool }}.img"
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: prepare_backing
+
+# Incus truncates an existing backing file before zpool create, so a leftover file or symlink must stay untouched.
+- name: Refuse an existing loop backing file
+  when: prepare_pool == {} and host.zfs_dataset is none
+  ansible.builtin.assert:
+    that: not prepare_backing.stat.exists
     fail_msg: task_vm.setup_failed
 
 - name: Create the ZFS pool

@@ -19,6 +19,7 @@ const privateRanges =
 function fixture(native = false, existing = false) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
+  Deno.mkdirSync(`${folder}/disks`);
   Deno.writeTextFileSync(`${folder}/arc`, "0\n");
   Deno.writeTextFileSync(`${folder}/pool.img`, "");
   const state = {
@@ -79,7 +80,8 @@ function fixture(native = false, existing = false) {
     tasks,
   }])
     .replaceAll("/etc/modprobe.d/orbit-task-vm-zfs.conf", `${folder}/arc.conf`)
-    .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`);
+    .replaceAll("/sys/module/zfs/parameters/zfs_arc_max", `${folder}/arc`)
+    .replaceAll("/var/lib/incus/disks/", `${folder}/disks/`);
   Deno.writeTextFileSync(`${folder}/play.yml`, stringify(JSON.parse(source)));
   const host = {
     project: "orbit-tasks",
@@ -209,6 +211,8 @@ Deno.test({
         "project",
         "bridge",
         "existing-dataset",
+        "backing-file",
+        "backing-symlink",
       ]
     ) {
       const f = fixture(
@@ -235,6 +239,14 @@ Deno.test({
             config: { "ipv4.address": "10.252.20.1/24" },
           }];
         }
+        const backing = `${f.folder}/disks/orbit-tasks.img`;
+        if (conflict === "backing-file") {
+          Deno.writeTextFileSync(backing, "leftover pool bytes");
+        }
+        if (conflict === "backing-symlink") {
+          Deno.writeTextFileSync(`${f.folder}/target`, "foreign bytes");
+          Deno.symlinkSync(`${f.folder}/target`, backing);
+        }
         Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
         const result = f.run(
           conflict === "existing-dataset" ? "data/orbit-tasks" : "",
@@ -242,6 +254,15 @@ Deno.test({
         assertEquals(result.ok, false, `${conflict}: ${result.output}`);
         assertStringIncludes(result.output, "task_vm.setup_failed");
         assert(!/"create"|"edit"|"set"|"copy"/.test(f.calls()), f.calls());
+        if (conflict === "backing-file") {
+          assertEquals(Deno.readTextFileSync(backing), "leftover pool bytes");
+        }
+        if (conflict === "backing-symlink") {
+          assertEquals(
+            Deno.readTextFileSync(`${f.folder}/target`),
+            "foreign bytes",
+          );
+        }
       } finally {
         f.cleanup();
       }
