@@ -37,12 +37,13 @@ sequenceDiagram
   SW->>SW: Check the workspace commit
   loop each assigned batch, in order
     SW->>VM: Restore the head checkout
-    %%> A prior new-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
+    %%> A prior flagged-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
     SW->>VM: Read the command batches
     SW->>SW: Select the assigned batch
     SW->>VM: Restore the base snapshot
     SW->>VM: Run selected cases<br/>with batch setup
-    SW->>VM: Prove new cases fail
+    SW->>VM: Replay changed flagged cases
+    %%> Use the runner’s case-level comparison, then filter fails_on_base: true and the admitted batch. Whole-file code or tooling selection does not replay unchanged flags. Each replay must fail with cause assertion; passing or missing evidence fails.
     VM-->>SW: Verdict lines
   end
   SW->>VM: Release the slot
