@@ -89,13 +89,13 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 
 ## Prove it
 
-Molecule proves a command with the delegated driver (`default` with `managed: false`; it creates and destroys nothing). A command has a folder `swamp/proof/molecule/<family>-<command>/molecule/` with two scenarios. The [porting guide](../../../docs/swamp/porting.md#5-prove-it-with-molecule) has the layout.
+Two things prove a command. The [porting guide](../../../docs/swamp/porting.md#5-prove-it) has the layout.
 
 1. **`unit`:** run `molecule test -s unit` on any machine. It proves the templates on fixed text.
-2. **`default`:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), run `molecule test`. `converge` runs the real CLI, `php apps/cli/orbit <command> --json`, and asserts the answer; `verify` asserts the machine state and the Gateway records.
+2. **Cases file:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), the case runner runs `swamp/proof/<family>/<command>.cases.yaml` against the real CLI, `php apps/cli/orbit <command> --json`. Follow [verifying-commands](../verifying-commands/SKILL.md).
 3. **Idempotence:** run the command twice. The second run is `succeeded` with its skip reason and changes nothing on the Node. A phase run directly (`ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>` from the run folder) must report zero `changed` on a second run.
 4. **Negative:** break the effect and check that only that case fails.
-5. Run the whole path through Swamp as one Molecule step per batch, and attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
+5. Attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
 
 Report the time on fresh Nodes, the time with nothing to change, and the phase times of `profile_tasks` (`ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks`).
 

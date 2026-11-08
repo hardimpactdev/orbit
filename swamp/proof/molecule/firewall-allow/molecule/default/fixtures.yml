@@ -1,6 +1,0 @@
----
-# What one container needs, from the cases that work on it (molecule.yml: case_target, case_ports, case_denies).
-node_short: "{{ inventory_hostname | regex_replace('^nested-', '') }}"
-my_cases: "{{ case_target | dict2items | selectattr('value', 'equalto', node_short) | map(attribute='key') | list }}"
-my_ports: "{{ my_cases | map('extract', case_ports) | flatten | list }}"
-my_denies: "{{ my_cases | map('extract', case_denies) | flatten | list }}"
