@@ -182,6 +182,20 @@ const commandDeliverable = {
     paths: [],
 };
 
+Deno.test("a failed handoff preserves the admitted base for its retry", async () => {
+    const base = "b".repeat(40);
+    const value = await localResult(
+        { ...input, base, command: "exit 1" },
+        valid,
+        { ...snapshots(), project: ran(1), changed: ran(0) },
+        outputs({ project: "failed" }),
+    );
+    if (!("outcome" in value)) throw new Error("Expected local evidence");
+    assertEquals(value.outcome, "failed");
+    assertEquals(value.head, commit);
+    assertEquals(value.subtask_start_commit, base);
+});
+
 Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", async () => {
     const value = await localResult(
         {
