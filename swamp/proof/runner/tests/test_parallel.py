@@ -203,6 +203,45 @@ class BaselineFollowsThePlacementTest(unittest.TestCase):
         self.assertEqual(self.run_observer('app-prod', 'gateway')['verdict'], 'passed')
 
 
+class FitTest(unittest.TestCase):
+    @staticmethod
+    def passed(number):
+        return {'id': f'case-{number:03}', 'verdict': 'passed', 'secs': 1.5}
+
+    @staticmethod
+    def failed(number, size=900):
+        return {'id': f'bad-{number:03}', 'verdict': 'failed', 'cause': 'assertion', 'secs': 2, 'failed': ['expect[%d] ' % number + 'x' * size] * 4}
+
+    def test_lines_that_fit_stay_whole_and_the_ones_that_did_not_pass_come_first(self):
+        kept = runner.fit([self.passed(1), self.failed(1, 20), self.passed(2)])
+        self.assertEqual([json.loads(line)['id'] for line in kept], ['bad-001', 'case-001', 'case-002'])
+        self.assertEqual(len(json.loads(kept[0])['failed']), 4)
+
+    def test_failures_that_do_not_fit_keep_two_short_messages_before_any_line_is_cut(self):
+        results = [self.failed(number) for number in range(5)] + [self.passed(number) for number in range(40)]
+        kept = runner.fit(results)
+        self.assertLessEqual(len('\n'.join(kept).encode()), runner.STEP_OUTPUT_LIMIT)
+        documents = [json.loads(line) for line in kept]
+        self.assertEqual([item['id'] for item in documents[:5]], [f'bad-{number:03}' for number in range(5)])
+        self.assertTrue(all(len(item['failed']) == 2 and all(len(message) <= 100 for message in item['failed']) for item in documents[:5]))
+
+    def test_what_does_not_fit_is_counted_and_the_output_stays_under_the_cut_of_a_step(self):
+        results = [self.passed(number) for number in range(120)]
+        kept = runner.fit(results)
+        self.assertLessEqual(len('\n'.join(kept).encode()), runner.STEP_OUTPUT_LIMIT)
+        counted = json.loads(kept[-1])['cut']
+        self.assertEqual(counted + len(kept) - 1, 120)
+
+    def test_the_last_line_needs_no_room_for_the_count(self):
+        result = {'id': 'x' * 3900, 'verdict': 'passed', 'secs': 1}
+        self.assertEqual(len(runner.fit([result])), 1)
+
+    def test_the_whole_allow_batch_of_passed_cases_fits(self):
+        loaded = spec.load(PROOF / 'firewall' / 'allow.cases.yaml', BATCHES)
+        results = [{'id': case.id, 'verdict': 'passed', 'secs': 12.3} for case in loaded.cases if case.batch == 'fresh-fleet']
+        self.assertEqual(len(runner.fit(results)), len(results))
+
+
 class SchedulerTest(unittest.TestCase):
     @staticmethod
     def case(case_id, node, lock='node'):
@@ -274,6 +313,27 @@ class BatchTest(unittest.TestCase):
                     patch.object(runner, 'schedule', lambda cases, limit, work: [(case, work(case)) for case in cases[:len(verdicts)]]):
                 code, _, _ = self.call(['batch', 'fresh-fleet', '--file', str(CASES), '--evidence', tempfile.gettempdir()])
             self.assertEqual(code, expected, verdicts)
+
+    def test_the_lines_that_did_not_pass_come_first(self):
+        verdicts = {'new-restricted-allow': 'passed', 'already-applied': 'failed', 'partial-application': 'passed'}
+        with patch.object(fleet_module, 'from_environment', lambda: FakeFleet()), \
+                patch.object(runner, 'run_case', lambda case, fleet, spec, root, negative=False, discovery=0: {'id': case.id, 'verdict': verdicts[case.id], 'secs': 1}):
+            code, lines, _ = self.call(['batch', 'fresh-fleet', '--file', str(CASES), '--evidence', tempfile.gettempdir(), '--parallel', '1', '--only', ' '.join(verdicts)])
+        self.assertEqual([line['verdict'] for line in lines], ['failed', 'passed', 'passed'])
+        self.assertEqual(code, 1)
+
+    def test_only_runs_the_named_cases(self):
+        ran = []
+        with patch.object(fleet_module, 'from_environment', lambda: FakeFleet()), \
+                patch.object(runner, 'run_case', lambda case, fleet, spec, root, negative=False, discovery=0: ran.append(case.id) or {'id': case.id, 'verdict': 'passed', 'secs': 1}):
+            code, lines, _ = self.call(['batch', 'fresh-fleet', '--file', str(CASES), '--evidence', tempfile.gettempdir(), '--only', 'conflict already-applied'])
+        self.assertEqual(sorted(ran), ['already-applied', 'conflict'])
+        self.assertEqual((code, len(lines)), (0, 2))
+
+    def test_only_refuses_a_case_that_is_not_in_the_batch(self):
+        code, _, err = self.call(['batch', 'dual-stack', '--file', str(CASES), '--only', 'conflict'])
+        self.assertEqual(code, 3)
+        self.assertIn('unknown case in batch dual-stack: conflict', err)
 
     def test_a_fleet_that_cannot_be_found_fails_every_case_of_the_batch_as_infrastructure(self):
         def missing():

@@ -20,6 +20,8 @@ import steps
 
 BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
+STEP_OUTPUT_LIMIT = 4096   # Swamp cuts the output of a step here
+CUT_LINE_BYTES = 40        # room kept for the line that counts what was cut
 
 
 class Run:
@@ -250,20 +252,51 @@ def schedule(cases, limit, work):
                 yield running.pop(future), future.result()
 
 
+def compact(result):
+    """A failed or unrun result cut down to two short failure messages, for a report that would not fit."""
+    failed = [message[:100] for message in result.get('failed', [])[:2]]
+    return {**result, **({'failed': failed} if failed else {})}
+
+
+def fit(results, limit=STEP_OUTPUT_LIMIT):
+    """The verdict lines that fit in the output of one Swamp step, which cuts at 4096 bytes. The cases that did not pass come first, so a cut
+    never hides one. When the lines do not fit, those cases keep two short messages each; the lines still left out are counted in a last
+    line, and the workflow reports their cases as having printed no verdict."""
+    ordered = sorted(results, key=lambda result: result['verdict'] == 'passed')
+    lines = [verdict_line(result) for result in ordered]
+    if sum(len(line.encode()) + 1 for line in lines) > limit:
+        lines = [verdict_line(compact(result)) if result['verdict'] != 'passed' else line for result, line in zip(ordered, lines)]
+    kept, size = [], 0
+    for index, line in enumerate(lines):
+        cost = len(line.encode()) + 1
+        if size + cost + (0 if index == len(lines) - 1 else CUT_LINE_BYTES) > limit:
+            kept.append(json.dumps({'cut': len(lines) - index}))
+            break
+        kept.append(line)
+        size += cost
+    return kept
+
+
 def command_batch(args):
-    """Run the cases of one batch with the fleet (guests, addresses, Node IDs) read once. One verdict line a case, as each ends; the exit status is the worst verdict."""
+    """Run the cases of one batch with the fleet (guests, addresses, Node IDs) read once. One verdict line a case, those that did not pass first.
+    The exit status is the worst verdict. `--only` names the cases to run, in one argument."""
     spec = spec_module.load(args.file, args.batches)
     if args.batch not in spec.batches:
         raise spec_module.SpecError('unknown batch: ' + args.batch)
     cases = [case for case in spec.cases if case.batch == args.batch]
+    if args.only is not None:
+        wanted = args.only.split()
+        unknown = [name for name in wanted if name not in {case.id for case in cases}]
+        if unknown:
+            raise spec_module.SpecError(f'unknown case in batch {args.batch}: {unknown[0]}')
+        cases = [case for case in cases if case.id in wanted]
     root = Path(args.evidence or fleet_module.evidence_root())
     limit = args.parallel or spec.parallel
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
     except fleet_module.FleetError as error:
-        for case in cases:
-            print(verdict_line({'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}), flush=True)
+        print('\n'.join(fit([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
         return 1
     discovery = round(time.time() - discovered, 2)
 
@@ -273,10 +306,9 @@ def command_batch(args):
         except Exception as error:  # a case whose receipt cannot be written is a failed case, never a pass
             return {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [f'{type(error).__name__}: {error}']}
 
-    verdicts = []
-    for _, result in schedule(cases, limit, work):
-        verdicts.append(result['verdict'])
-        print(verdict_line(result), flush=True)
+    results = [result for _, result in schedule(cases, limit, work)]
+    print('\n'.join(fit(results)), flush=True)
+    verdicts = {result['verdict'] for result in results}
     return 1 if 'failed' in verdicts else 2 if 'unrun' in verdicts else 0
 
 
@@ -317,6 +349,7 @@ def main(argv=None):
     batch.add_argument('batch')
     batch.add_argument('--evidence')
     batch.add_argument('--parallel', type=int, help='cases at a time; the cases file sets the default')
+    batch.add_argument('--only', help='run only these cases of the batch: their IDs in one argument, separated by spaces')
     for command in (plan, case, setup, batch):
         command.add_argument('--file', required=True)
         command.add_argument('--batches', default=str(BATCHES))
