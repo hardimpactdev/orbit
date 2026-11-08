@@ -14,7 +14,7 @@ final readonly class ProofSelectionResult
 {
     /** @param list<Case> $cases
      * @param  list<Uncovered>  $uncovered
-     * @param  string|null  $everythingBecause  why every case was selected: all_requested, selection_list_changed, file_list_incomplete, selection_list_missing or wildcard
+     * @param  string|null  $everythingBecause  why every case was selected: all_requested, file_list_incomplete, selection_list_missing or wildcard
      * @param  string  $mergeBase  the merge base of the commit with the default branch, which the proof of a new case needs
      */
     public function __construct(public array $cases, public array $uncovered, public ?string $everythingBecause, public string $mergeBase) {}

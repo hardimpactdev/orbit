@@ -114,10 +114,10 @@ it('lets the last matching line win', function (): void {
         ->and(proofSelect(['swamp/proof/runner/runner.py'])['because'])->toBe('wildcard');
 });
 
-it('selects every case when the selection list changed, and the change cannot narrow it', function (): void {
+it('treats a changed selection list like any other path: only a command or case change selects a proof', function (): void {
     $selected = proofSelect(['swamp/proof/selection.txt', 'docs/a.md'], list: PROOF_LIST."\nswamp/proof/selection.txt   skip\n");
 
-    expect($selected['because'])->toBe('selection_list_changed')->and($selected['files'])->toBe(PROOF_CASES_FILES);
+    expect($selected['nothing'])->toBeTrue();
 });
 
 it('selects every case when GitHub lists an incomplete file list', function (): void {
