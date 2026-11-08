@@ -16,6 +16,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
@@ -61,7 +62,8 @@ final readonly class TaskReviewRoundIntent
             throw new ResourceOperationException('tasks_pr.rounds_exhausted', 'The group used its review rounds.', 409);
         }
         $subtask = $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->orderBy('position')->orderBy('id')->first();
-        if (! $subtask instanceof Task || ! $this->candidate($group, $subtask, $head)) {
+        $candidate = $subtask instanceof Task ? $this->candidate($group, $subtask, $head) : null;
+        if (! $subtask instanceof Task || ! $candidate instanceof TaskCheck) {
             throw new ResourceOperationException('tasks_pr.no_checked_candidate', 'The head is not a passed handoff candidate of the current subtask, or a head that an earlier round pushed.', 409);
         }
         $group->load('project', 'taskable');
@@ -85,6 +87,9 @@ final readonly class TaskReviewRoundIntent
         return [
             ...$target->intent($group), 'node_id' => $instance->node_id, 'round' => $round, 'head' => $head,
             'task_vm_id' => $vm->id,
+            'review_evidence' => ['head' => $head, 'tree' => $candidate->tree_after,
+                'handoff' => ['check_id' => $candidate->id, 'outcome' => $candidate->status->value, 'commit' => $candidate->commit_sha, 'tree' => $candidate->tree_after, 'exit_code' => $candidate->exit_code],
+                'hosted_checks' => $target->checks],
             ...($resume === null ? [] : ['resume' => $resume['intent']]),
             'review' => $turn(new TaskTurnData($subtask->id, 'reviewer', TaskReviewRoundPrompt::for($head, $round), 'new', null, null)),
             ...$fix,
@@ -99,10 +104,18 @@ final readonly class TaskReviewRoundIntent
         ];
     }
 
-    /** The head is a passed handoff candidate of the current subtask, or the commit that an earlier round of the group pushed. */
-    private function candidate(Task $group, Task $subtask, string $head): bool
+    /** The passed handoff result, backed by its standalone operation or an earlier round's successful push. */
+    private function candidate(Task $group, Task $subtask, string $head): ?TaskCheck
     {
-        return TaskReviewRound::query()->where('task_group_id', $group->id)->where('pushed_commit', $head)->exists()
-            || $this->candidates->onHead($group, [$subtask->id], $head);
+        $checks = TaskCheck::query()->where('task_id', $subtask->id)->where('kind', TaskCheckKind::Handoff->value)
+            ->where('status', TaskCheckStatus::Passed->value)->where('commit_sha', $head)->whereNotNull('tree_after')->orderByDesc('id')->get();
+        foreach ($checks as $check) {
+            if ($this->candidates->eligible($group, $check)
+                || TaskReviewRound::query()->where('task_group_id', $group->id)->where('pushed_commit', $head)->where('check_id', $check->id)->exists()) {
+                return $check;
+            }
+        }
+
+        return null;
     }
 }

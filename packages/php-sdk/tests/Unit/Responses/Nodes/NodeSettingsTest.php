@@ -26,13 +26,13 @@ describe(NodeSettings::class, function (): void {
     it('maps typed task VM settings without inventing role intent', function (): void {
         $settings = NodeSettings::fromGatewayData(['task_vms' => [
             'cidr' => '10.251.77.0/24', 'max_vms' => 4,
-            'image_alias' => 'custom-base', 'operator_owned' => [],
+            'image_alias' => 'custom-base', 'operator_owned' => [], 'ci_only' => true, 'pool_size' => '640GiB',
         ]]);
         expect($settings->isEmpty())->toBeFalse()
             ->and($settings->task_vms?->max_vms)->toBe(4)
             ->and($settings->toArray()['task_vms'])->toBe([
                 'cidr' => '10.251.77.0/24', 'max_vms' => 4,
-                'image_alias' => 'custom-base', 'operator_owned' => [],
+                'image_alias' => 'custom-base', 'operator_owned' => [], 'ci_only' => true, 'pool_size' => '640GiB',
             ]);
     });
 
@@ -41,6 +41,12 @@ describe(NodeSettings::class, function (): void {
         expect($settings->task_vms?->ci_only)->toBe($expected);
         expect(array_key_exists('ci_only', $settings->task_vms->toArray()))->toBe($expected !== null);
     })->with([[true, true], [false, false], ['true', null], [1, null], [null, null]]);
+
+    it('preserves VM count limits including zero and ignores non-integers', function (mixed $value, ?int $expected): void {
+        $settings = NodeSettings::fromGatewayData(['task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'task_max_vms' => $value]]);
+        expect($settings->task_vms?->task_max_vms)->toBe($expected);
+        expect(array_key_exists('task_max_vms', $settings->task_vms->toArray()))->toBe($expected !== null);
+    })->with([[0, 0], [2, 2], ['2', null], [true, null], [null, null]]);
 
     it('bounds malformed apps settings without restoring legacy keys', function (): void {
         $settings = NodeSettings::fromGatewayData([

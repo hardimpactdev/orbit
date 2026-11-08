@@ -92,8 +92,11 @@ it('sends task VM host settings and their removal without changing apps', functi
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['task_vms' => $host]);
 })->with([
     'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base']],
+    'CI-only loop pool' => [['cidr' => '10.252.10.0/24', 'max_vms' => 3, 'ci_only' => true, 'pool_size' => '512GiB']],
     'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
     'CI-only host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 6, 'ci_only' => true]],
+    'task-limited host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'task_max_vms' => 2]],
+    'proof-only task limit' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'task_max_vms' => 0]],
     'shared host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'ci_only' => false]],
     'removed host' => [null],
 ]);
@@ -132,7 +135,9 @@ it('refuses missing and malformed input before making a request', function (arra
     'invalid host JSON' => [['node' => '2', '--task-vms' => '{'], 'node.setting_invalid'],
     'host is a list' => [['node' => '2', '--task-vms' => '[]'], 'node.setting_invalid'],
     'host unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"unknown":true}'], 'node.setting_invalid'],
+    'string task count' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":12,"task_max_vms":"2"}'], 'node.setting_invalid'],
     'string capacity' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":"4"}'], 'node.setting_invalid'],
+    'non-string pool size' => [['node' => '2', '--task-vms' => '{"cidr":"10.252.10.0/24","max_vms":3,"pool_size":512}'], 'node.setting_invalid'],
     'non-string operator-owned resource' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":["orbit-ci/*",7]}'], 'node.setting_invalid'],
     'operator-owned object instead of list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":{"resource":"orbit-ci/*"}}'], 'node.setting_invalid'],
 ]);

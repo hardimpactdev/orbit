@@ -1,14 +1,21 @@
 ---
-- name: Renew persistent Swamp workers one at a time
+- name: Renew one of three persistent Swamp workers
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     renewal_swamp_binary: /usr/local/bin/swamp
     renewal_accepting: [idle, busy]
-    renewal_name: "{{ renewal_names[renewal_slot] }}"
-    renewal_peer_name: "{{ renewal_names[renewal_peer] }}"
+    renewal_session_seconds: 28800
+    renewal_round_seconds: 5400
+    renewal_due_seconds: 10800
+    renewal_slots: [a, b, c]
+    renewal_capacity: "{{ ansible_processor_vcpus }}"
   tasks:
+    - name: Read the CPU count used by auto concurrency
+      ansible.builtin.setup:
+        gather_subset: ["!all", "!min", hardware]
+        filter: ansible_processor_vcpus
     - name: Find the worker account home
       ansible.builtin.getent:
         database: passwd
@@ -31,48 +38,89 @@
           SWAMP_API_KEY_FILE: "{{ renewal_home }}/.config/swamp/api-key"
           SWAMP_NO_UPDATE_CHECK: '1'
           SWAMP_NO_TELEMETRY: '1'
-    # Swamp names the worker from its enrollment token. Bootstrap, remint and
-    # existing swamp Nodes use different token names. Read each unit's own receipt.
-    - name: Read the latest enrollment receipt of each worker unit
+    - name: Read worker unit states before choosing recovery or renewal
       ansible.builtin.command:
-        argv:
-          - timeout
-          - '10'
-          - journalctl
-          - "--unit=orbit-swamp-worker@{{ item }}.service"
-          - '--grep=Enrolled as '
-          - --lines=1
-          - --output=cat
-          - --no-pager
-          - --quiet
-      loop: [a, b]
-      register: renewal_receipts
+        argv: [timeout, '10', systemctl, show, "orbit-swamp-worker@{{ item }}.service", --property=ActiveState, --value]
+      loop: "{{ renewal_slots }}"
+      register: renewal_units
       changed_when: false
-      # Report read failures through the public assertion below, without raw journal output.
-      failed_when: false
-      no_log: true
-    - name: Resolve the real pool names from the enrollment receipts
+    - name: Select failed or inactive units
       ansible.builtin.set_fact:
-        renewal_names: >-
-          {{ renewal_names | default({}) | combine({item.item:
-            (item.stdout | default('') | regex_replace('\x1b\[[0-9;]*m', '')
-            | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default(''))
-            if item.rc | default(-1) in [0, 1] else ''}) }}
-      loop: "{{ renewal_receipts.results }}"
-      loop_control: {label: "{{ item.item }}"}
-    - name: Require two distinct enrollment names before maintenance
+        renewal_down_slots: >-
+          {{ renewal_units.results | selectattr('stdout', 'in', ['failed', 'inactive']) | map(attribute='item') | list }}
+        renewal_pool: []
+    - name: Read the actual connection receipts of serving units
+      ansible.builtin.import_tasks: tasks/swamp-worker-connections.yml
+      vars:
+        renewal_required_slots: "{{ renewal_slots | difference(renewal_down_slots) }}"
+    - name: Read the three permanent workers
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
+      become: true
+      become_user: "{{ orbit_user }}"
+      environment: "{{ renewal_environment }}"
+      register: renewal_list
+      changed_when: false
+      no_log: true
+    - name: Select the permanent pool with its actual connection times
+      ansible.builtin.set_fact:
+        renewal_pool: >-
+          {{ renewal_pool | default([]) + [item | combine({'connectedAt': renewal_connections[item.name]})] }}
+      loop: >-
+        {{ (renewal_list.stdout | from_json).workers
+        | selectattr('name', 'in', renewal_names.values() | list) | list }}
+      loop_control: {label: "{{ item.name }}"}
+    # Recovery starts a down unit; it never drains either serving peer. End this
+    # round after start, so voluntary renewal waits for the next pool check.
+    - name: Recover one down worker while its two peers serve
+      when: renewal_down_slots | length > 0
+      vars:
+        renewal_recovery_peers: >-
+          {{ renewal_pool | rejectattr('name', 'equalto', renewal_names[renewal_down_slots | first]) | list }}
+      block:
+        - name: Require two serving peers before recovery
+          ansible.builtin.assert:
+            that:
+              - renewal_down_slots | length == 1
+              - renewal_recovery_peers | length == 2
+              - >-
+                renewal_recovery_peers | selectattr('status', 'in', renewal_accepting)
+                | selectattr('instanceUuid') | selectattr('capacity', 'ge', renewal_capacity | int) | list | length == 2
+            fail_msg: Worker recovery stopped because two full workers are not serving
+        - name: Reset the down worker's systemd failure limit
+          ansible.builtin.command:
+            argv: [timeout, '10', systemctl, reset-failed, "orbit-swamp-worker@{{ renewal_down_slots | first }}.service"]
+          changed_when: true
+        - name: Start only the down worker
+          ansible.builtin.systemd_service:
+            name: "orbit-swamp-worker@{{ renewal_down_slots | first }}.service"
+            state: started
+        - name: Log the recovery attempt
+          ansible.builtin.debug:
+            msg: "Started {{ renewal_down_slots | first }} without a drain; its connection will be checked next round"
+        - name: End the recovery round without voluntary renewal
+          ansible.builtin.meta: end_play
+    - name: Require all three workers to be connected before renewal
       ansible.builtin.assert:
         that:
-          - renewal_names.a | length > 0
-          - renewal_names.b | length > 0
-          - renewal_names.a != renewal_names.b
+          - renewal_pool | length == 3
+          - renewal_pool | selectattr('status', 'in', renewal_accepting) | selectattr('instanceUuid') | list | length == 3
         fail_msg: >-
-          Worker renewal stopped: cannot resolve both unit names from enrollment journals.
-          The eight-hour session cap can still abort active dispatches.
-          No worker was drained; retry in five minutes
-    - name: Renew a before touching b
-      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
-      vars: {renewal_slot: a, renewal_peer: b}
-    - name: Renew b only after a accepts work
-      ansible.builtin.import_tasks: tasks/swamp-worker-renew-slot.yml
-      vars: {renewal_slot: b, renewal_peer: a}
+          Worker renewal stopped: all three permanent workers must be connected before maintenance.
+          No worker was drained; the eight-hour cap risk remains, retry in five minutes
+    - name: Select the oldest worker and its unit
+      ansible.builtin.set_fact:
+        renewal_current: "{{ renewal_pool | sort(attribute='connectedAt') | first }}"
+    - name: Resolve the target and its two peers
+      ansible.builtin.set_fact:
+        renewal_slot: "{{ (renewal_names | dict2items | selectattr('value', 'equalto', renewal_current.name) | first).key }}"
+        renewal_peers: "{{ renewal_pool | rejectattr('name', 'equalto', renewal_current.name) | list }}"
+    - name: Read the current time
+      ansible.builtin.setup:
+        gather_subset: ["!all", "!min", date_time]
+        filter: ansible_date_time
+    - name: Renew the oldest due worker only
+      ansible.builtin.include_tasks: tasks/swamp-worker-renew-slot.yml
+      when: >-
+        ((ansible_date_time.epoch | int) -
+        renewal_current.connectedAt) >= renewal_due_seconds

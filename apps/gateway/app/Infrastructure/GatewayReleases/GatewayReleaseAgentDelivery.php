@@ -49,7 +49,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     public function fetch(string $revision, Node $gateway): array
     {
         $sha = $this->commit($revision);
-        $frozen = $this->download(rtrim($this->repository, '/').'/raw/'.$sha.'/'.self::Pin, $sha);
+        $frozen = $this->download($this->pinUrl($sha), $sha);
         $pin = json_decode($frozen, true);
         $url = data_get($pin, 'artifacts.linux-x86_64.url');
         if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
@@ -125,6 +125,16 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         }
 
         return (string) array_key_first($matches);
+    }
+
+    /** GitHub serves a commit's file from its raw host; the github.com/raw redirect can answer 504 for new commits for a long time. */
+    private function pinUrl(string $sha): string
+    {
+        $repository = rtrim($this->repository, '/');
+
+        return str_starts_with($repository, 'https://github.com/')
+            ? 'https://raw.githubusercontent.com/'.substr($repository, strlen('https://github.com/')).'/'.$sha.'/'.self::Pin
+            : $repository.'/raw/'.$sha.'/'.self::Pin;
     }
 
     private function download(string $url, string $sha): string

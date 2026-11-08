@@ -45,6 +45,8 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
+Set `task_vms.task_max_vms` through `node:update --task-vms` to cap task-work VM claims on a host. Parked claims count; authenticated CI and base refresh proofs are exempt. See [Task VM fields](/reference/node-settings#task-vm-fields) for the count and resource limits.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -76,3 +78,5 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 Set `task_vms.ci_only` through `node:update --task-vms=JSON` to admit only authenticated CI proofs and the host’s own refresh proof. CI prefers these hosts. The [host settings reference](/reference/node-settings#task-vm-fields) lists capacity units and validation.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Its Node selector must be a positive numeric ID; names are refused locally. Analytics storage options apply only to `analytics`, including during convergence. Use `--converge` for an eligible existing assignment and `--idempotency-key` to retry the same request. Add and convergence use the shared target access rule, including for `metrics`; Gateway authority or an explicit target grant permits the caller.
+
+Task VM host settings include `pool_size` for a new loop-backed ZFS pool. Existing pools keep their size. See [task VM host settings](/reference/node-settings#configure-a-task-vm-host).

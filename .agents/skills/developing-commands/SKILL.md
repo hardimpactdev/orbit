@@ -61,6 +61,8 @@ Before changing a CI cache, separate hits from misses in job logs. A Cargo lock 
 
 Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
 
+A task VM host has two capacity measures: `max_vms` resource units and `task_max_vms` task claims. Test parked claims and authenticated CI admission together when changing either measure; a VM count must not become a resource-unit count.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.

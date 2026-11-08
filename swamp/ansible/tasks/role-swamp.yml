@@ -72,7 +72,7 @@
     state: "{{ 'restarted' if swamp_binary.changed or swamp_link.changed or swamp_identity.changed or swamp_units.changed else 'started' }}"
     enabled: true
   loop: "{{ rt.swamp.workers }}"
-- name: Start worker renewal after both workers
+- name: Start worker renewal after all workers
   ansible.builtin.systemd: { name: orbit-swamp-worker-renewal.timer, state: started, enabled: true }
 - name: Check Swamp units
   ansible.builtin.command: { argv: [systemctl, is-active, "{{ item }}"] }

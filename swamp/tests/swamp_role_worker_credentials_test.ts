@@ -15,6 +15,11 @@ Deno.test("the Swamp Ansible phase opens worker credentials before writing or st
     const unit = named("Write Swamp service units");
     assertEquals(credentials.loop, "{{ rt.swamp.workers }}");
     assertEquals(
+        named("Start the Swamp workers").loop,
+        "{{ rt.swamp.workers }}",
+    );
+    assert(named("Check Swamp units").loop.includes("rt.swamp.workers"));
+    assertEquals(
         credentials["ansible.builtin.file"].group,
         "{{ rt.swamp.user }}",
     );
@@ -25,7 +30,7 @@ Deno.test("the Swamp Ansible phase opens worker credentials before writing or st
     );
     assert(
         tasks.indexOf(named("Start the Swamp workers")) <
-            tasks.indexOf(named("Start worker renewal after both workers")),
+            tasks.indexOf(named("Start worker renewal after all workers")),
     );
 });
 
