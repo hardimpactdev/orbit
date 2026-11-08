@@ -23,6 +23,13 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofChangedFile;
+use App\Domain\Proof\ProofChangedFiles;
+use App\Domain\Proof\ProofCommitRange;
+use App\Domain\Proof\ProofCommitSource;
+use App\Domain\Proof\ProofRunIntent;
+use App\Domain\Proof\ProofRunSettlement;
+use App\Domain\Proof\ProofSelectionList;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
@@ -1220,4 +1227,66 @@ it('makes an operator proof join the task queue behind an earlier task even when
     expect($later->refresh()->status)->toBe(OperationStatus::Waiting);
     app(TaskVmAdmission::class)->admit($earlier->id);
     expect($earlier->refresh()->status)->toBe(OperationStatus::Queued)->and(TaskVm::forGroup($task)?->capacity_pool)->toBe('task');
+});
+
+/** A trusted four-batch CI proof on the host fixture, without a real Swamp submission. */
+function slotPoolCiProofWorld(int $places): Node
+{
+    Queue::fake();
+    [$host, , $build] = slotPoolHost(ciPlaces: $places);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    app(TaskExtensionState::class)->enable();
+    config(['proof.execution' => true, 'swamp.proof_club_api_key' => 'club-key']);
+    $commit = str_repeat('a', 40);
+    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+        'status' => OperationStatus::Succeeded, 'input' => ['commit' => $commit], 'result' => ['refreshed' => true, 'build_id' => $build->id]]);
+    $source = Mockery::mock(ProofCommitSource::class);
+    $source->shouldReceive('commitExists')->andReturn(true);
+    $source->shouldReceive('branchesWithHead')->andReturn(['feature']);
+    $source->shouldReceive('changes')->andReturn(new ProofChangedFiles($commit, [new ProofChangedFile('changed.php', 'modified')], true));
+    $source->shouldReceive('proofPaths')->andReturn(['swamp/proof/firewall/allow.cases.yaml']);
+    $source->shouldReceive('range')->andReturn(new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles($commit, [], true)));
+    $source->shouldReceive('file')->andReturnUsing(static fn (string $sha, string $path): string => match ($path) {
+        ProofSelectionList::Path => "changed.php firewall:allow\n",
+        'swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n  three: {}\n  four: {}\n",
+        default => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n  - {id: c, batch: three}\n  - {id: d, batch: four}\n",
+    });
+    app()->instance(ProofCommitSource::class, $source);
+    $host->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+
+    return $host;
+}
+
+it('lets the front CI proof take every free place up to its batch count and records whole assignments once', function (int $places): void {
+    $caller = slotPoolCiProofWorld($places);
+    $intent = app(ProofRunIntent::class);
+    $proof = $intent->start(str_repeat('a', 40), false, 'test', null, keepFailed: true, authenticatedCaller: $caller);
+    $intent->admit($proof->id);
+    $intent->admit($proof->id);
+    $children = ProofRunSettlement::children($proof->id);
+    expect($proof->refresh()->error_code)->toBeNull()->and($children)->toHaveCount(min(4, $places))
+        ->and(TaskVm::query()->live()->where('capacity_pool', 'ci')->count())->toBe(min(4, $places));
+    $assignments = [];
+    foreach ($children as $child) {
+        expect($child->input['assignments'])->not->toBeEmpty()->and($child->input)->not->toHaveKey('keep_failed');
+        foreach ($child->input['assignments'] as $assignment) {
+            $assignments[] = $assignment['batch'];
+        }
+    }
+    sort($assignments);
+    expect($assignments)->toBe(['four', 'one', 'three', 'two']);
+})->with([1, 2, 6]);
+
+it('holds later CI proofs behind the queue front even before the front has selected cases', function (): void {
+    $caller = slotPoolCiProofWorld(2);
+    $intent = app(ProofRunIntent::class);
+    $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+    $second = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
+    $intent->admit($second->id);
+    expect($second->refresh()->status)->toBe(OperationStatus::Running)->and($second->input['runs'])->toBe([])
+        ->and($second->state['capacity_wait_reason'])->toContain('earlier CI proof')->and(TaskVm::query()->live()->count())->toBe(0);
+    $first->update(['status' => OperationStatus::Cancelled]);
+    $intent->admit($second->id);
+    expect($second->refresh()->input['runs'])->toHaveCount(2);
 });

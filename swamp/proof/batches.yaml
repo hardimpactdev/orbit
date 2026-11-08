@@ -1,4 +1,4 @@
-# DRAFT. The batches of the proof cases, in run order. Nothing reads this file yet.
+# The batches of the proof cases, in run order. Admission and the runner read this file.
 # A batch is a group of cases that run one after another after one restore of the task's base snapshot.
 # Cases undo nothing; a case that changes state all cases share gets its own batch.
 # Format: docs/reference/verification-cases.

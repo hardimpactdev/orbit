@@ -6,21 +6,21 @@ sequenceDiagram
   participant CLI as CI job / CLI
   participant GW as Gateway
   participant GH as GitHub
-  participant Q as CI proof queue<br/>first come first served
+  participant Q as CI queue<br/>FIFO
   participant SW as Swamp
-  participant VM as Fresh proof VMs
+  participant VM as Proof VMs
   CLI->>GW: Record the proof
   %%> Record commit, authenticated caller and options, then queue admission. Only an active authenticated ci-runner Node uses the CI pool. Operator proofs join task admission.
   GW-->>CLI: Follow one proof Operation
-  GW->>GH: Check trust and select commands
+  GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
-  GW->>GH: Read whole batches and expanded case identities
+  GW->>GH: Read whole batches<br/>expand case ids
   %%> Read the selected YAML at the commit. Empty or malformed selected cases fail. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
   %%> Earlier open CI proofs without admitted runs block later proofs, including while selection is being read. Cancellation, failure and no selection remove a proof from admission.
   Q->>GW: Admit the front proof
   %%> Under the admission lock, take every currently free usable CI place, at least one and at most the batch count. A full pool or stale base waits, up to two hours, then fails clearly. Never refuse capacity or skip green.
-  GW->>GW: Balance whole batches across places
+  GW->>GW: Balance whole batches<br/>by measured time
   %%> Longest measured batch first; assign each to the least loaded VM. A batch never splits. Record expected cases and all shard operations atomically.
   GW->>SW: Start one run per VM
   SW->>VM: Claim a slot
@@ -32,12 +32,12 @@ sequenceDiagram
     %%> A prior new-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
     SW->>VM: Plan the assigned batch
     SW->>VM: Restore the base snapshot
-    SW->>VM: Run the batch and prove new cases can fail
+    SW->>VM: Run the batch<br/>prove new cases fail
     VM-->>SW: Verdict lines
   end
   SW->>VM: Release the slot
   %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.
-  SW-->>GW: Report full verdict artifact
+  SW-->>GW: Report verdicts<br/>full artifact
   %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts fail the shard; a missing expected case is unrun.
   GW->>GW: Merge all shard verdicts
   %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Failed, cancelled, unrun and missing verdicts fail.

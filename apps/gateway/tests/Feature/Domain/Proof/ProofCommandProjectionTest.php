@@ -71,7 +71,7 @@ function proofRuns(array $commands): array
 function proofEnded(string $status, array $steps, string $report = ''): array
 {
     return ['run_id' => PROOF_RUN_ID, 'status' => $status, 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['steps' => [...$steps, ...($report === '' ? [] : ['Report' => ['status' => 'succeeded', 'stdout' => $report]])], 'summary' => ['status' => $status, 'failed_steps' => array_keys(array_filter($steps, static fn (array $step): bool => $step['status'] === 'failed'))]]];
+        'result' => ['report' => implode("\n", array_map(static fn (string $line): string => "firewall:allow\tswamp/proof/firewall/allow.cases.yaml\t\t".$line, array_filter(explode("\n", $report)))), 'steps' => [...$steps, ...($report === '' ? [] : ['Report' => ['status' => 'succeeded', 'stdout' => $report]])], 'summary' => ['status' => $status, 'failed_steps' => array_keys(array_filter($steps, static fn (array $step): bool => $step['status'] === 'failed'))]]];
 }
 
 const PROOF_PASSED = '{"id": "main", "verdict": "passed", "secs": 9.5}';
@@ -106,9 +106,9 @@ describe('the keep_failed input of one run', function (): void {
         expect($workflow['inputs']['properties']['keep_failed'])->toBe(['type' => 'boolean'])
             ->and(array_keys(ProofCommandProjection::keepFlag(['keep_failed' => true])))->each->toBeIn(array_keys($workflow['inputs']['properties']))
             // Swamp skips a step whose guard is true, so the guard names the flag and the two steps whose outcome keeps the VM.
-            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Claim a slot"]', 'steps[?"Prove the command"]')
+            ->and($destroy['guard'])->toContain('inputs.?keep_failed', 'steps[?"Claim a slot"]', 'inputs.intent.verifications.all')
             // The destroy step is still one of the steps that the projection reads, and the report waits for it whether it ran or was skipped.
-            ->and($destroy['dependsOn'])->toContain(['step' => 'Prove the command', 'condition' => ['type' => 'always']])
+            ->and($destroy['dependsOn'])->toContain(['step' => 'Prove assigned batches', 'condition' => ['type' => 'always']])
             ->and(collect($steps['Report']['dependsOn'])->firstWhere('step', 'Release the slot')['condition'])->toBe(['type' => 'always']);
     });
 });
@@ -121,7 +121,8 @@ describe('the record of one run', function (): void {
 
         expect($projected->status)->toBe(OperationStatus::Failed)
             ->and($projected->error_code)->toBe('proof.run_failed')
-            ->and($projected->result['cases'])->toBe([['program' => 'swamp/proof/firewall/allow.cases.yaml', 'command' => 'firewall:allow', 'verdict' => 'unrun', 'seconds' => 0]])
+            ->and($projected->result['cases'])->toHaveCount(1)
+            ->and($projected->result['cases'][0])->toMatchArray(['program' => 'swamp/proof/firewall/allow.cases.yaml', 'command' => 'firewall:allow', 'verdict' => 'unrun', 'seconds' => 0])
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
             // The run released the slot itself; the claim's record starts no second release.
             ->and($vm->refresh()->group_id)->toBe($group->id);
@@ -451,4 +452,49 @@ describe('the check of the workspace commit, with the end of the VM', function (
 
         expect($proof->refresh()->error_code)->toBe('proof.workspace_commit_mismatch')->and($proof->result['workspace'])->toHaveCount(1);
     });
+});
+
+it('merges full shard reports beyond the history tail, requires every case, and deletes each VM', function (bool $omit): void {
+    Queue::fake();
+    [$proof, [[$first, $firstGroup, $firstVm], [$second, $secondGroup, $secondVm]]] = proofRuns(['firewall:allow', 'firewall:deny']);
+    $batches = [];
+    foreach ([[$first, $firstVm], [$second, $secondVm]] as $index => [$run, $vm]) {
+        $ids = array_map(static fn (int $number): string => 'case-'.$number, range(1, 120));
+        $batch = ['command' => $run->input['command'], 'file' => $run->input['file'], 'batch' => 'fresh', 'cases' => $ids];
+        $batches[] = $batch;
+        $run->update(['input' => [...$run->input, 'ci_pool' => true, 'assignments' => [$batch]]]);
+        $ended = proofKeptEnd($vm, '', 'succeeded');
+        $ended['status'] = 'succeeded';
+        $lines = [];
+        foreach ($ids as $id) {
+            if ($omit && $index === 1 && $id === 'case-120') {
+                continue;
+            }
+            $lines[] = $batch['command']."\t".$batch['file']."\tfresh\t".json_encode(['id' => $id, 'verdict' => 'passed', 'secs' => 1]);
+        }
+        $ended['result']['report'] = implode("\n", $lines);
+        // Native history keeps only a tail. The fixed capture supplies the full report independently.
+        $ended['result']['steps']['Report'] = ['status' => 'succeeded', 'stdout' => substr($ended['result']['report'], -4096)];
+        $proof->update(['input' => [...$proof->input, 'selected_commands' => ['firewall:allow', 'firewall:deny'], 'batches' => $batches]]);
+        app(ProofCommandProjection::class)->apply($run, $ended);
+        if ($index === 0) {
+            expect($proof->refresh()->status)->toBe(OperationStatus::Running);
+        }
+    }
+    expect($proof->refresh()->status)->toBe($omit ? OperationStatus::Failed : OperationStatus::Succeeded)
+        ->and($proof->result['cases'])->toHaveCount(240)
+        ->and($firstGroup->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($secondGroup->refresh()->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($firstVm->refresh()->state)->toBe(TaskVmState::Destroyed)
+        ->and($secondVm->refresh()->state)->toBe(TaskVmState::Destroyed);
+    Queue::assertNotPushed(CancelProofGroup::class);
+})->with([false, true]);
+
+it('releases a proof claim after a definite Swamp start refusal', function (): void {
+    Queue::fake();
+    [$proof, [[$run]]] = proofRuns(['firewall:allow']);
+    $run->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
+    app(ProofCommandProjection::class)->refused($run);
+    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed);
 });

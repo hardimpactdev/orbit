@@ -113,7 +113,11 @@ function proofSource(): object
 
         public function file(string $sha, string $path): ?string
         {
-            return $this->list;
+            return match ($path) {
+                'swamp/proof/selection.txt' => $this->list,
+                'swamp/proof/batches.yaml' => "batches:\n  fresh-fleet: {summary: Fresh}\n",
+                default => "command: firewall:allow\ncases:\n  - {id: allow, batch: fresh-fleet}\n",
+            };
         }
 
         public function proofPaths(string $sha): array

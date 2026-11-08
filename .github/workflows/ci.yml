@@ -443,9 +443,9 @@ jobs:
           "$RUNNER_TEMP/proof-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0
           "$RUNNER_TEMP/proof-tools/bin/ruff" check --isolated --select=E4,E7,E9,F,I swamp/proof/runner swamp/proof/firewall tools/swamp-proof-guest
 
-  # Optional proof is outside required.needs. Nick decides graduation after coverage and admission are reliable.
+  # A selected proof is part of the single Required checks result.
   proof-run:
-    name: Proof request and report (optional)
+    name: CI proof
     outputs:
       outcome: ${{ steps.report.outputs.outcome }}
     needs: changes
@@ -461,7 +461,7 @@ jobs:
     # move the job to such a runner.
     runs-on: ${{ fromJSON(vars.ORBIT_PROOF_RUNNER || '["self-hosted","hardimpact","orbit-shard"]') }}
     # The VM wait plus the 30 minute run budget.
-    timeout-minutes: 45
+    timeout-minutes: 195
     # A new push cancels the proof run of the previous push on the same PR. A cancelled step cancels its Orbit run.
     concurrency:
       group: proof-run-${{ github.event.pull_request.number }}
@@ -478,8 +478,6 @@ jobs:
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
-          # The authenticated CI runner uses the per-host reserve; report-only controls reporting, not capacity (docs/cli/proof/run.mmd).
-          PROOF_REPORT_ONLY: '1'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
         run: python3 -I bin/ci-proof-run
       - name: Store the proof report receipt
@@ -489,22 +487,6 @@ jobs:
           name: proof-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/proof-receipt.json
           if-no-files-found: warn
-
-  proof-assertions:
-    name: Proof assertions (optional)
-    needs: proof-run
-    # Capacity is a successful report of no execution, never a passing assertion check.
-    if: >-
-      always() && needs.proof-run.result != 'skipped'
-      && needs.proof-run.outputs.outcome != 'not_run_capacity'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 1
-    steps:
-      - name: Require a successful proof verdict
-        env:
-          OUTCOME: ${{ needs.proof-run.outputs.outcome }}
-          REPORT_RESULT: ${{ needs.proof-run.result }}
-        run: test "$REPORT_RESULT" = success && test "$OUTCOME" = passed
 
   swamp:
     name: Swamp
@@ -530,12 +512,13 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, gateway-release, changes]
+    needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, proof-run, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks
         env:
           NEEDS: ${{ toJSON(needs) }}
+          PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.proof_run == 'true' }}
         run: |
           python3 - <<'PYTHON'
           import json, os, sys
@@ -543,6 +526,7 @@ jobs:
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
+          selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
           selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):

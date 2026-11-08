@@ -3,11 +3,11 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-from pathlib import Path
 import stat
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'bin/ci-proof-run'
 loader = importlib.machinery.SourceFileLoader('ci_proof_run', str(SCRIPT))
@@ -93,35 +93,15 @@ class CapacityReportTest(unittest.TestCase):
         return {'id': 73, 'status': 'failed', 'error': {'code': 'tasks.capacity_unavailable', 'detail': 'private host detail'},
                 'result': {'commit': SHA, 'outcome': 'failed', 'cases': [], 'selected_commands': ['firewall:allow']}}
 
-    def test_explicit_admission_capacity_is_not_a_passing_proof(self):
+    def test_capacity_failure_stays_failed_in_every_envelope(self):
         for wrapper in (None, 'data', 'operation'):
             payload = self.capacity()
             output = json.dumps({wrapper: payload} if wrapper else payload)
-            outcome, lines, receipt = proof.report(1, output, SHA, 'ci-proof.7.2', True)
-            self.assertEqual('not_run_capacity', outcome)
-            self.assertFalse(proof.evaluate(1, output)[0])
-            self.assertIn('Selected commands: firewall:allow', lines)
-            self.assertEqual({'commit': SHA, 'idempotency_key': 'ci-proof.7.2', 'operation_id': 73,
-                              'outcome': 'not_run_capacity', 'selected_commands': ['firewall:allow'],
-                              'error_code': 'tasks.capacity_unavailable'}, receipt)
-            self.assertNotIn('private host detail', '\n'.join(lines) + json.dumps(receipt))
-
-    def test_capacity_cannot_hide_assertions_or_malformed_and_unrelated_errors(self):
-        mutations = [lambda p: p['result'].update(cases=[{'verdict': 'failed'}]),
-                     lambda p: p['result'].update(cases=[{'verdict': 'passed'}]),
-                     lambda p: p['result'].update(cases=None),
-                     lambda p: p['result'].update(outcome='passed'),
-                     lambda p: p['result'].update(commit='b' * 40),
-                     lambda p: p['result'].pop('selected_commands'),
-                     lambda p: p['result'].update(selected_commands=['bad\ncommand']),
-                     lambda p: p['error'].update(code='proof.queue_unavailable')]
-        for mutate in mutations:
-            payload = self.capacity()
-            mutate(payload)
-            self.assertEqual('failed', proof.report(1, json.dumps(payload), SHA, 'key', True)[0])
-        self.assertEqual('failed', proof.report(1, 'bad json', SHA, 'key', True)[0])
-        self.assertEqual('failed', proof.report(1, json.dumps(self.capacity()), SHA, 'key', False)[0])
-        self.assertEqual('failed', proof.report(0, json.dumps(self.capacity()), SHA, 'key', True)[0])
+            outcome, lines, receipt = proof.report(1, output, SHA, 'ci-proof.7.2')
+            self.assertEqual('failed', outcome)
+            self.assertIn('No case ran.', lines)
+            self.assertEqual('failed', receipt['outcome'])
+            self.assertEqual(['firewall:allow'], receipt['selected_commands'])
 
 
 
@@ -146,13 +126,6 @@ class RunTest(unittest.TestCase):
         self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2', done.stderr)
         self.assertIn('passed', summary)
 
-    def test_the_report_only_job_asks_to_yield_capacity(self):
-        body = 'printf "%s\\n" "$*" >&2\ncat <<\'JSON\'\n' + document('passed') + '\nJSON\n'
-        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '1'})
-        self.assertIn(f'proof:run {SHA} --report-only --json --idempotency-key ci-proof.7.2', done.stderr)
-        done, _ = self.run_script(body, {'PROOF_REPORT_ONLY': '0'})
-        self.assertNotIn('--report-only', done.stderr)
-
     def test_a_failed_case_fails_the_job(self):
         done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')
         self.assertNotEqual(0, done.returncode)
@@ -161,17 +134,28 @@ class RunTest(unittest.TestCase):
         done, _ = self.run_script('echo \'{"error":{"code":"proof.path_unmapped"}}\'\nexit 3\n')
         self.assertEqual(3, done.returncode)
 
-    def test_capacity_writes_a_receipt_and_skip_output_only_in_report_only_mode(self):
-        body = "cat <<'JSON'\n" + json.dumps(CapacityReportTest().capacity()) + "\nJSON\nexit 3\n"
-        done, summary = self.run_script(body, {'PROOF_REPORT_ONLY': '1'})
+    def test_capacity_unavailable_with_no_case_can_never_turn_the_job_green(self):
+        payload = CapacityReportTest().capacity()
+        payload['error']['detail'] = 'not run: capacity unavailable, no case ran'
+        body = "cat <<'JSON'\n" + json.dumps(payload) + "\nJSON\nexit 3\n"
+        for environment in ({}, {'PROOF_REPORT_ONLY': '1'}):
+            done, summary = self.run_script(body, environment)
+            self.assertEqual(3, done.returncode, done.stderr)
+            self.assertIn('No case ran.', summary)
+            self.assertEqual('outcome=failed\n', self.outputs)
+            self.assertEqual('failed', self.receipt['outcome'])
+
+    def test_zero_cases_and_a_missing_selected_command_fail_even_with_a_clean_cli_exit(self):
+        for result in ({'outcome': 'passed', 'cases': []},
+                       {'outcome': 'nothing_to_prove', 'cases': [], 'selected_commands': ['firewall:allow']},
+                       {'outcome': 'passed', 'selected_commands': ['firewall:allow', 'firewall:deny'],
+                        'cases': [{'command': 'firewall:allow', 'case': 'a', 'verdict': 'passed'}]}):
+            done, _ = self.run_script("cat <<'JSON'\n" + json.dumps({'result': result}) + "\nJSON\n")
+            self.assertNotEqual(0, done.returncode)
+
+    def test_no_selected_command_passes_without_cases(self):
+        done, _ = self.run_script("echo '{\"result\":{\"outcome\":\"nothing_to_prove\",\"cases\":[],\"selected_commands\":[]}}'\n")
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertIn('not run: capacity unavailable', summary)
-        self.assertEqual('outcome=not_run_capacity\n', self.outputs)
-        self.assertEqual('not_run_capacity', self.receipt['outcome'])
-        self.assertEqual(['firewall:allow'], self.receipt['selected_commands'])
-        done, _ = self.run_script(body)
-        self.assertEqual(3, done.returncode)
-        self.assertEqual('outcome=failed\n', self.outputs)
 
     def test_a_bad_sha_or_a_missing_cli_fails_before_running(self):
         self.assertNotEqual(0, self.run_script('exit 0\n', {'PROOF_SHA': 'main'})[0].returncode)

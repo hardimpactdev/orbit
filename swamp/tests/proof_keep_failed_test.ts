@@ -27,7 +27,7 @@ const passed = '{"id": "main", "verdict": "passed", "secs": 9.5}';
 const failed = '{"id": "deny", "verdict": "failed", "cause": "assertion", "secs": 4, "failed": ["ufw"]}';
 const proved = (report: string, status = "succeeded") => ({ status, outputs: { report: { stdout: report } } });
 /** Whether the release is skipped, so that the slot stays. */
-const keeps = (inputs: Record<string, unknown>, steps: Record<string, unknown>) => skipped(release, { inputs, steps });
+const keeps = (inputs: Record<string, unknown>, steps: Record<string, unknown>) => skipped(release, { inputs: { ...inputs, intent: { verifications: [{ step: "Prove assigned batches-0" }] } }, steps });
 
 Deno.test("anchor: a guard that is true skips the step, as a guard of the repository already relies on", async () => {
     // The restore of `base` is skipped for a proof in CI, whose intent has no `restore_first`: that guard is true there.
@@ -42,7 +42,7 @@ Deno.test("the proof run takes keep_failed as an optional boolean", () => {
 
 const created = { status: "succeeded" };
 const steps = (report: string | null, over: Record<string, unknown> = {}) => ({
-    "Claim a slot": created, ...(report === null ? {} : { "Prove the command": proved(report) }), ...over,
+    "Claim a slot": created, ...(report === null ? {} : { "Prove assigned batches-0": proved(report) }), ...over,
 });
 
 Deno.test("without keep_failed the release runs, whatever the cases did", () => {
@@ -59,13 +59,13 @@ Deno.test("with keep_failed a run whose cases did not all pass skips the release
 
 Deno.test("with keep_failed a run that printed no verdict, or whose verify step failed, skips the release", () => {
     assert(keeps({ keep_failed: true }, steps("")));
-    assert(keeps({ keep_failed: true }, { "Claim a slot": created, "Prove the command": { status: "failed" } }));
+    assert(keeps({ keep_failed: true }, { "Claim a slot": created, "Prove assigned batches-0": { status: "failed" } }));
     assert(keeps({ keep_failed: true }, steps(null)));
 });
 
 Deno.test("with keep_failed a run that failed in its claim, before any case ran, skips the release too (M5 try 11)", () => {
     assert(keeps({ keep_failed: true }, { "Claim a slot": { status: "failed" } }));
-    assert(keeps({ keep_failed: true }, { "Claim a slot": { status: "failed" }, "Prove the command": { status: "skipped" } }));
+    assert(keeps({ keep_failed: true }, { "Claim a slot": { status: "failed" }, "Prove assigned batches-0": { status: "skipped" } }));
     assert(keeps({ keep_failed: true }, {}));
 });
 
@@ -75,5 +75,5 @@ Deno.test("with keep_failed a run that succeeded in every part, with every verdi
 });
 
 Deno.test("with keep_failed a run that failed the check of the workspace commit, so that its proof step was skipped, skips the release", () => {
-    assert(keeps({ keep_failed: true }, steps(null, { "Prove the command": { status: "skipped" } })));
+    assert(keeps({ keep_failed: true }, steps(null, { "Prove assigned batches-0": { status: "skipped" } })));
 });

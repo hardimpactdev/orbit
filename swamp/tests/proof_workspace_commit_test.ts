@@ -40,7 +40,7 @@ Deno.test("the read lets an unreadable workspace reach the assert, and it reads 
 });
 
 Deno.test("no case runs before the check: the proof of the command depends on it succeeding, and the check on the read", () => {
-    const prove = step("Prove the command").dependsOn!;
+    const prove = step("Prove assigned batches").dependsOn!;
     assert(prove.some((dependency) => dependency.step === "Check the workspace commit" && dependency.condition.type === "succeeded"));
     assert(check.dependsOn!.some((dependency) => dependency.step === "Read the workspace commit" && dependency.condition.type === "succeeded"));
 });

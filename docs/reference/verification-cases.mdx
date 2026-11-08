@@ -197,7 +197,7 @@ The check cannot read prose. The reviewer walks the `Requirements` of each chart
 
 ## Batches and restores
 
-A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A run proves one command, so cases of different commands never share a batch; batch definitions such as `dual-stack` are shared.
+A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A batch belongs to one command. CI balances whole batches across its VMs; a VM may run batches from several commands. Batch definitions such as `dual-stack` are shared.
 
 - The run starts on the task's `base` snapshot. The first batch needs no restore.
 - A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).

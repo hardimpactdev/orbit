@@ -19,7 +19,9 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmSeedFloor;
+use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Models\Instance;
@@ -35,8 +37,8 @@ use Throwable;
 
 /**
  * Admits `proof:run`: the request records the proof; the job checks that the commit is trusted, selects the cases from the diff and the
- * selection list of the commit, and records one run for each selected command on its own task group. Operator proofs join the shared
- * task admission queue; CI claims are admitted together. The Gateway reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
+ * selection list of the commit. Operator proofs join task admission, one command per VM. The front CI proof takes every free usable CI
+ * place up to its batch count and balances whole batches across those VMs. The Gateway reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
 {
@@ -98,7 +100,7 @@ final readonly class ProofRunIntent
             $uncovered = $selection->uncovered;
             $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'selected_commands' => array_values(array_unique(array_column($selection->cases, 'command'))), 'uncovered' => $selection->uncovered];
             // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
-            if (! $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['input' => $intent]))) {
+            if (! $this->whileOpen($proof->id, fn (Operation $current) => $current->input['runs'] !== [] ? null : $this->store->change($current, ['input' => $intent]))) {
                 return;
             }
             if ($selection->nothingToProve()) {
@@ -109,29 +111,44 @@ final readonly class ProofRunIntent
 
                 return;
             }
+            if (($intent['ci_pool'] ?? false) === true && $proof->created_at?->lt(now()->subSeconds(self::WaitSeconds))) {
+                throw new ResourceOperationException('proof.capacity_timeout', 'The two-hour CI admission budget expired before a place was claimed.', 409);
+            }
             if (! $this->settings->executionEnabled()) {
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
             // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
+            $batches = ($intent['ci_pool'] ?? false) === true ? app(ProofBatchPlan::class)->read($commit, $selection->cases) : [];
             $fresh = $this->freshHosts($selection->mergeBase);
-            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent): array {
+            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent, $batches): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
                 // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
-                if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
+                $current = Operation::query()->lockForUpdate()->find($proof->id);
+                if (! $current instanceof Operation || $current->status->terminal()) {
                     throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
                 }
 
+                if ($current->input['runs'] !== []) {
+                    return [];
+                }
+                $ci = ($intent['ci_pool'] ?? false) === true;
+                if ($ci && Operation::query()->where('kind', OperationKinds::ProofRun)->where('status', OperationStatus::Running)
+                    ->where('input->ci_pool', true)->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)->exists()) {
+                    throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier CI proof.');
+                }
+                $shards = $ci ? ProofBatchPlan::split($batches, app(TaskVmSlotPool::class)->freeCiPlaces()) : array_map(static fn (array $case): array => [$case], $selection->cases);
                 $runs = [];
-                foreach ($selection->cases as $case) {
+                foreach ($shards as $assignments) {
+                    $case = $assignments[0];
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null,
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance, $ci ? ProofBatchPlan::stored($assignments) : []), 'proof-run', null,
                         ciPool: ($intent['ci_pool'] ?? false) === true, capacityRequest: ['proof_operation_id' => $proof->id, 'base' => $selection->mergeBase, 'command' => $case['command'], 'file' => $case['file']]));
-                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
+                    $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, ...($ci ? ['assignments' => $assignments] : [])];
                 }
 
                 // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs], 'current_step' => null]);
+                $this->store->change($proof, ['input' => [...$intent, 'runs' => $runs, ...($ci ? ['batches' => $batches] : [])], 'current_step' => null]);
 
                 return $runs;
             }));
@@ -226,16 +243,18 @@ final readonly class ProofRunIntent
      * Captured in the admission transaction of the provision, so that no step of the run calls the Gateway.
      *
      * @param  array{command:string,file:string}  $case
+     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float}>  $assignments
      * @param  array<string,mixed>  $input  the provision input
      * @return array<string,mixed>
      */
-    private function runInput(Operation $proof, string $commit, string $base, array $case, array $input, Task $group, Instance $instance): array
+    private function runInput(Operation $proof, string $commit, string $base, array $case, array $input, Task $group, Instance $instance, array $assignments = []): array
     {
         $instance->loadMissing('node');
         $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
 
         return [
             'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'],
+            ...($assignments === [] ? [] : ['assignments' => $assignments]),
             'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_pool' => ($proof->input['ci_pool'] ?? false) === true,
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
             'execution_secrets' => $input['execution_secrets'] ?? [],
@@ -245,7 +264,7 @@ final readonly class ProofRunIntent
                 // The proof of a new case switches the checkout to the merge base, with the new cases file of the head.
                 'head' => $commit, 'merge_base' => $base],
             'cancel' => app(TaskCancelIntent::class)->captureForProof($group),
-            ...(ValidatedData::object($proof->input)['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [],
+            ...(($proof->input['ci_pool'] ?? false) !== true && (ValidatedData::object($proof->input)['keep_failed'] ?? false) === true) ? ['keep_failed' => true] : [],
         ];
     }
 

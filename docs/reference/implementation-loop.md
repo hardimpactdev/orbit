@@ -55,8 +55,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| Proof request and assertions (optional) | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Not in Required checks yet, see [the proof run job](#the-proof-run-job) |
-| Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success for a branch PR; see [the proof run job](#the-proof-run-job) |
+| Required checks | Require every selected build, static check and branch PR proof to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
@@ -66,42 +66,15 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is the CI job of [the proof CI](/reference/feature-flow#the-proof-ci). It is **report-only**. It is not in the `needs` of `Required checks`, so a red proof run does not block a merge. One firewall run has passed end to end. Complete coverage and reliable admission still need review; Nick decides when proof becomes required.
+`proof-run` in `.github/workflows/ci.yml` is part of `Required checks` when a pull request comes from this repository and its changed paths select commands. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork still needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner.
 
-**When it runs**
+CI proofs join one FIFO admission queue. Its front takes every free usable CI place up to its number of batches. Orbit balances whole batches by measured case time, runs them on fresh VMs, merges the verdicts and deletes the VMs. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
-- `bin/ci-build-plan` reads `swamp/proof/selection.txt`, the list that `orbit proof:run` reads. It uses the same glob rules, and the last matching line wins.
-- A path that selects a command or `*` starts the job.
-- A `skip` or `none:` line never starts it. Documentation, charts and case descriptions never start it.
-- A path that matches no line starts it. Then `proof:run` refuses the path with `proof.path_unmapped`.
-- The plan prints the result as the output `proof_run`. It stays out of `jobs`, because `Required checks` reads every entry of `jobs`.
+A clean CLI exit is insufficient: the job requires a passing result with case verdicts for every selected command. A failed case, an unrun case, a missing result or a selected command with no verdict fails. A result with no selected command passes. A capacity message with no cases always fails; it has no successful skip classification.
 
-The job follows these rules for pull requests:
+The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
 
-- The job runs on every push of a pull request from a branch of this repository.
-- A fork pull request never runs it. There is no merge queue, so no `merge_group` run, and no run after the merge.
-- A new push cancels the proof run of the previous push on the same pull request. The job uses `concurrency` with `cancel-in-progress`.
-- A cancelled job signals `bin/ci-proof-run`. The script passes the signal to `orbit`, and Orbit cancels its run.
-
-**What it does**
-
-The authenticated caller Node needs an active `ci-runner` role to use CI capacity. Orbit records this eligibility before queueing admission and binds idempotency to the caller. CI prefers `ci_only` hosts, then shared hosts with a CI/refresh reserve. Task work and operator proofs cannot use either. Busy CI admission retries every 20 seconds for up to 200 seconds. Another proof cannot preempt CI.
-
-- The job checks out only `bin/ci-proof-run`.
-- The script passes the full SHA of the pull request head to `orbit proof:run --json`. It also passes the idempotency key `ci-proof.<run id>.<attempt>`. It chooses no cases.
-- The script follows the operation until it ends.
-- Explicit report-only admission refusals for `tasks.capacity_unavailable`, with no case rows and a known command selection, record **not run: capacity unavailable**.
-- The request report succeeds and the separate optional assertion check skips. This is never a passing proof.
-- Other nonzero exits, missing results and case verdicts other than `passed` stay red.
-- The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
-- The job summary lists the cases, the uncovered paths and the receipt link. It holds no command output.
-
-**Where it runs**
-
-- The job holds no secret.
-- The `orbit` CLI on the runner calls the Gateway from the runner's WireGuard address. It acts as the enrolled Node of that address. That Node needs an access grant to the Gateway Node.
-- The job uses the labels `self-hosted, hardimpact, orbit-shard`. Set the repository variable `ORBIT_PROOF_RUNNER` to a JSON list of labels to move it.
-- The timeout is 45 minutes.
+The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The 195-minute job timeout covers two hours of admission, execution and cancellation.
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
