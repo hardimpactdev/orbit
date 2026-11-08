@@ -116,3 +116,5 @@ Change a stage in the place that owns it, and update this page in the same PR.
 - **The charts:** edit the `.mmd` file next to the command page, chart first. The stage charts are `docs/reference/pipeline/<n>-<stage>.mmd`, placed on this page with a `flow-at` placement, as the CLI pages rules describe. Run `bin/check-flows`. The rules are in [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
 - **The skills:** `preparing-commands` for stage 1, `verifying-commands` for stages 2 and 3, and `developing-commands` for stage 4 and the code. They link here and to the charts and keep only what an agent must do at its own step.
 - **The proof CI job and the selection list:** [Feature flow](/reference/feature-flow).
+
+The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.

@@ -28,12 +28,20 @@ sequenceDiagram
   %%> - refuses a composed prompt longer than the workflow accepts, 100000 characters, with `tasks.prompt_too_large`
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
+  opt publication deleted the workspace
+    Note over GW: Wait for a task place
+    %%> Use the shared first-come-first-served task queue, with a two-hour admission budget. Read the task branch head and admit a fresh VM from the base at that commit, with a new Pi session.
+  end
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:
   %%> - the admitted prompt, role, session, candidate, SSH identity and vault key names
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
   %%> - follow the Operation while Swamp runs the turn
+  opt a fresh task place was admitted
+    SW->>N: Claim a task place
+    %%> The common task provision child rebuilds the workspace from the base plus the task branch before the turn starts. A failed claim fails the turn and releases its claim.
+  end
   Note over SW: prepare
   %%> What it does:
   %%> - Build the Pi request and fixed private paths from the admitted intent.
