@@ -45,14 +45,6 @@ export type Entry = {
 };
 export type Baseline = { schema: number; entries: Entry[] };
 
-/** Keep the frozen HTTP allowance only for the exact public Task rename. */
-export function taskQueueComparison(old: string, current: string): string {
-    const renamed = old.replaceAll("/api/v1/task-groups", "/api/v1/tasks")
-        .replace("tasks: plan.tasks.map(", "subtasks: plan.tasks.map(");
-    return old.includes('"/api/v1/task-groups"') && current === renamed
-        ? old
-        : current;
-}
 type Analysis = {
     findings: Finding[];
     imports: string[];
@@ -2606,16 +2598,6 @@ if (import.meta.main) {
                 );
             }
         }
-        // This caller keeps exactly its existing HTTP sites during the public
-        // Task rename. Compare its unchanged source in the old vocabulary so
-        // neither the count nor the permitted calls can grow.
-        const taskQueue =
-            "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts";
-        const oldQueue = base.get(taskQueue);
-        const newQueue = head.get(taskQueue);
-        if (oldQueue && newQueue) {
-            head.set(taskQueue, taskQueueComparison(oldQueue, newQueue));
-        }
         const analyses = analyze(head, inventory);
         const external = await toolFindings(head);
         for (const f of external) {
@@ -2745,7 +2727,16 @@ if (import.meta.main) {
             ...ratchet([], baseline, {
                 ...prior,
                 entries: [
-                    ...prior.entries,
+                    ...prior.entries.map((entry) => {
+                        // Correct stale labels only from immutable base source;
+                        // the recorded count cap still cannot grow.
+                        const actual = baseEntries.find((row) =>
+                            row.file === entry.file && row.rule === entry.rule
+                        );
+                        return actual && actual.count <= entry.count
+                            ? { ...entry, evidence: actual.evidence }
+                            : entry;
+                    }),
                     ...baseEntries.filter((e) =>
                         [
                             "foreach-shared-identity",
