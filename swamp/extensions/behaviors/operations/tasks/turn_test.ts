@@ -11,7 +11,24 @@ import {
     round,
     settle,
     terminal,
+    turnDataMethods,
 } from "./turn.ts";
+
+// Exercise the declaration Swamp parses and the resource boundary it persists.
+async function recordedTerminal(input: unknown) {
+    let written: Record<string, unknown> = {};
+    await turnDataMethods.terminal.execute(
+        turnDataMethods.terminal.arguments.parse(input),
+        {
+            async writeResource(spec, name, value) {
+                assertEquals([spec, name], ["publicOutput", "terminal"]);
+                written = value;
+                return {};
+            },
+        },
+    );
+    return JSON.parse(String(written.stdout));
+}
 
 const head = "a".repeat(40), tree = "b".repeat(40);
 export function turnInput(role = "implementer") {
@@ -125,6 +142,7 @@ Deno.test("turn result retains the existing board token metrics", () => {
     assertEquals(value.receipt.outcome, "ready_for_review");
     assertEquals(value.metrics, {
         tokens: 25,
+        cost_usd: null,
         input_tokens: 12,
         cached_input_tokens: 8,
         output_tokens: 5,
@@ -376,15 +394,8 @@ Deno.test("private worker readers return fixed codes and never quote their input
     assertEquals(JSON.parse(await terminal({ path, turn })), {
         state: "failed",
         turnId: turn,
-        usage: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            total: 4,
-            calls: 0,
-            peakContext: 0,
-        },
+        usage: { total: 4 },
+        transcript: [],
     });
     assertEquals(JSON.parse(await receipt({ path: dir + "/missing.json" })), {
         receipt: null,
@@ -744,4 +755,626 @@ Deno.test("a review round whose reviewer turn left no result has no verdict", ()
         failed.body,
         "**Review round 1** of `aaaaaaa`: **no verdict**",
     );
+});
+
+Deno.test("an absent terminal report omits metrics instead of erasing earlier usage", () => {
+    const value = JSON.parse(
+        finish({ ...result(), terminal: "", failure: true }).result_json,
+    );
+    assertEquals(value.state, "failed");
+    assertEquals(Object.hasOwn(value, "metrics"), false);
+});
+
+Deno.test("terminal shaping preserves nullable cost and omits unavailable token counters", () => {
+    for (const cost of [0.75, null]) {
+        const value = JSON.parse(
+            finish({
+                ...result(),
+                terminal: JSON.stringify({
+                    state: "done",
+                    turnId: "operation-15",
+                    usage: { total: 140, cost },
+                }),
+            }).result_json,
+        );
+        assertEquals(value.metrics, { tokens: 140, cost_usd: cost });
+    }
+});
+
+Deno.test("the recorded stream produces redacted bounded transcript evidence and priced usage", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/terminal.json";
+        const turn = "operation-15";
+        const entry = (id: string, text: string) => ({
+            id,
+            timestamp: "",
+            message: { role: "assistant", content: [{ type: "text", text }] },
+        });
+        await Deno.writeTextFile(
+            path,
+            [
+                {
+                    kind: "snapshot",
+                    entries: [entry("old", "x".repeat(270000))],
+                },
+                {
+                    kind: "entry",
+                    entry: entry(
+                        "new",
+                        "Authorization: Bearer private-test-token",
+                    ),
+                },
+                {
+                    kind: "state",
+                    turnId: turn,
+                    state: "done",
+                    usage: { total: 140, cost: 0.75 },
+                },
+            ].map((event) => JSON.stringify(event)).join("\n"),
+        );
+        const recorded = await recordedTerminal({ path, turn });
+        assertEquals(recorded.usage, { total: 140, cost: 0.75 });
+        assertEquals(
+            recorded.transcript.map((entry: { id: string }) => entry.id),
+            ["orbit-truncated", "new"],
+        );
+        assertEquals(
+            JSON.stringify(recorded).includes("private-test-token"),
+            false,
+        );
+        const value = JSON.parse(
+            finish({ ...result(), terminal: JSON.stringify(recorded) })
+                .result_json,
+        );
+        assertEquals(value.transcript, recorded.transcript);
+        assertEquals(value.subtask, 11);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+for (
+    const ending of [
+        "",
+        '\n{"kind":',
+        '\n{"state":"done","turnId":"other-turn","usage":{"total":999}}',
+    ]
+) {
+    Deno.test(`failed finalization retains transcript without inventing usage (${ending.length})`, async () => {
+        const dir = await Deno.makeTempDir();
+        try {
+            const path = `${dir}/terminal.json`;
+            await Deno.writeTextFile(
+                path,
+                JSON.stringify({
+                    kind: "entry",
+                    entry: {
+                        id: "partial",
+                        message: {
+                            role: "assistant",
+                            content: "Saved before disconnect",
+                        },
+                    },
+                }) + ending,
+            );
+            const evidence = await recordedTerminal({
+                path,
+                turn: "operation-15",
+                partial: true,
+            });
+            const result = JSON.parse(
+                finish({
+                    input: turnInput(),
+                    before: "",
+                    after: "",
+                    terminal: JSON.stringify(evidence),
+                    receipt: "",
+                    difference: "",
+                    restored: "",
+                }).result_json,
+            );
+            assertEquals(result.state, "failed");
+            assertEquals(result.transcript[0].id, "partial");
+            assertEquals("metrics" in result, false);
+        } finally {
+            await Deno.remove(dir, { recursive: true });
+        }
+    });
+}
+
+Deno.test("the persisted resource keeps messages and tool metadata without arguments outputs or errors", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        const entry = (id: string, message: unknown) => ({
+            id,
+            timestamp: "2026-11-08T10:00:00Z",
+            message,
+        });
+        const entries = [
+            entry("assistant", {
+                role: "assistant",
+                content: [
+                    { type: "text", text: "Checking the file" },
+                    {
+                        type: "toolCall",
+                        id: "read-1",
+                        name: "read",
+                        arguments: {
+                            path: "/app/config.php",
+                            password: ["structured-password-value"],
+                            cookies: { sid: "private-cookie-value" },
+                            nested: { apiKey: "nested-api-key-value" },
+                            unused: "private-unused-argument",
+                        },
+                    },
+                    {
+                        type: "toolCall",
+                        id: "bash-1",
+                        name: "bash",
+                        arguments: {
+                            command: "echo complete",
+                            credentials: { password: "pw" },
+                        },
+                    },
+                    {
+                        type: "toolCall",
+                        id: "write-1",
+                        name: "write",
+                        arguments: {
+                            path: "/app/out.php",
+                            content: "private-file-write-value",
+                        },
+                    },
+                ],
+            }),
+            entry("read-result", {
+                role: "toolResult",
+                toolCallId: "read-1",
+                toolName: "read",
+                content: [{
+                    type: "text",
+                    text: JSON.stringify({
+                        password: [
+                            "raw-file-contents-without-a-credential-pattern",
+                        ],
+                        nested: { cookies: { sid: "output-cookie-value" } },
+                        authorization: "json-auth-value",
+                        escaped: JSON.stringify({
+                            password: 'escaped-"quote-value',
+                        }),
+                    }),
+                }],
+            }),
+            entry("bash-result", {
+                role: "toolResult",
+                toolCallId: "bash-1",
+                toolName: "bash",
+                content: [{
+                    type: "text",
+                    text:
+                        "complete\nstructured-password-value private-cookie-value nested-api-key-value pw\nCookie: sid=unstructured-cookie-value",
+                }],
+            }),
+            entry("error-call", {
+                role: "assistant",
+                content: [{
+                    type: "toolCall",
+                    id: "edit-1",
+                    name: "edit",
+                    arguments: {
+                        path: "/app/out.php",
+                        password: "error-secret-value",
+                    },
+                }],
+            }),
+            entry("error-result", {
+                role: "toolResult",
+                toolCallId: "edit-1",
+                toolName: "edit",
+                isError: true,
+                content:
+                    "failed unstructured-tool-failure-value error-secret-value",
+                error: {
+                    message: "raw-tool-error-value",
+                    code: "private-code-value",
+                },
+                details: { password: ["failure-array-value"] },
+            }),
+            entry("assistant-error", {
+                role: "assistant",
+                stopReason: "error",
+                content: [],
+                errorMessage: "raw-assistant-error-value",
+            }),
+            entry("user", {
+                role: "user",
+                // Pi and the model-router guard use bare 32-byte hex credentials.
+                // Swamp redacts them without consulting a Gateway/route reader.
+                content: "password=message-secret-value\n" + "a".repeat(64) +
+                    " " + "b".repeat(64),
+            }),
+            entry("system", {
+                role: "system",
+                content: "private-system-value",
+            }),
+        ];
+        await Deno.writeTextFile(
+            path,
+            [
+                { kind: "snapshot", entries },
+                { kind: "state", turnId: "operation-15", state: "done" },
+            ].map((event) => JSON.stringify(event)).join("\n"),
+        );
+        const recorded = await recordedTerminal({ path, turn: "operation-15" });
+        const persisted = JSON.stringify(recorded);
+        for (
+            const secret of [
+                "structured-password-value",
+                "private-cookie-value",
+                "nested-api-key-value",
+                "private-unused-argument",
+                "private-file-write-value",
+                "raw-file-contents-without-a-credential-pattern",
+                "unstructured-cookie-value",
+                "error-secret-value",
+                "unstructured-tool-failure-value",
+                "output-cookie-value",
+                "json-auth-value",
+                "escaped-",
+                "raw-tool-error-value",
+                "private-code-value",
+                "failure-array-value",
+                "raw-assistant-error-value",
+                "private-system-value",
+                "message-secret-value",
+                "echo complete",
+                "/app/",
+                "a".repeat(64),
+                "b".repeat(64),
+            ]
+        ) {
+            assertEquals(
+                persisted.includes(secret),
+                false,
+                secret + " reached public persistence",
+            );
+        }
+        assertEquals(recorded.transcript, [
+            {
+                id: "assistant",
+                at: "2026-11-08T10:00:00Z",
+                kind: "message",
+                label: "assistant",
+                text: "Checking the file",
+            },
+            {
+                id: "assistant:0",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "read",
+                text: "read · succeeded · 0 ms",
+            },
+            {
+                id: "assistant:1",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "bash",
+                text: "bash · succeeded · 0 ms",
+            },
+            {
+                id: "assistant:2",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "write",
+                text: "write · stopped without a result",
+            },
+            {
+                id: "error-call:0",
+                at: "2026-11-08T10:00:00Z",
+                kind: "activity",
+                label: "edit",
+                text: "edit · tool failed: error · 0 ms",
+            },
+            {
+                id: "user",
+                at: "2026-11-08T10:00:00Z",
+                kind: "message",
+                label: "user",
+                text: "password=[REDACTED]\n[REDACTED] [REDACTED]",
+            },
+        ]);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+Deno.test("short secrets redact text without changing structural transcript fields", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        const at = "2026-11-08T10:00:00Z";
+        await Deno.writeTextFile(
+            path,
+            JSON.stringify({
+                kind: "snapshot",
+                entries: [{
+                    id: "assistant-a",
+                    timestamp: at,
+                    message: {
+                        role: "assistant",
+                        content: [
+                            { type: "text", text: "a" },
+                            {
+                                type: "toolCall",
+                                id: "call-a",
+                                name: "edit",
+                                arguments: { password: "a" },
+                            },
+                        ],
+                    },
+                }, {
+                    id: "result-a",
+                    timestamp: "2026-11-08T10:00:01Z",
+                    message: {
+                        role: "toolResult",
+                        toolCallId: "call-a",
+                        isError: true,
+                        content: "a",
+                    },
+                }],
+            }),
+        );
+        const recorded = await recordedTerminal({
+            path,
+            turn: "operation-16",
+            partial: true,
+        });
+        assertEquals(recorded.transcript, [{
+            id: "assistant-a",
+            at,
+            kind: "message",
+            label: "assistant",
+            text: "[REDACTED]",
+        }, {
+            id: "assistant-a:0",
+            at: "2026-11-08T10:00:01Z",
+            kind: "activity",
+            label: "edit",
+            text: "edit · tool failed: error · 1000 ms",
+        }]);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+});
+
+// Message text through the declared terminal and result methods, as Swamp persists them.
+async function recordedMessages(texts: string[]) {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        await Deno.writeTextFile(
+            path,
+            [
+                {
+                    kind: "snapshot",
+                    entries: texts.map((text, index) => ({
+                        id: "message-" + index,
+                        timestamp: "2026-11-08T10:00:00Z",
+                        message: {
+                            role: index % 2 ? "user" : "assistant",
+                            content: text,
+                        },
+                    })),
+                },
+                { kind: "state", turnId: "operation-15", state: "done" },
+            ].map((event) => JSON.stringify(event)).join("\n"),
+        );
+        const terminal = await recordedTerminal({ path, turn: "operation-15" });
+        let written: Record<string, unknown> = {};
+        await turnDataMethods.result.execute(
+            turnDataMethods.result.arguments.parse({
+                ...result(),
+                terminal: JSON.stringify(terminal),
+            }),
+            {
+                async writeResource(spec, name, value) {
+                    assertEquals([spec, name], ["turnResult", "result"]);
+                    written = value;
+                    return {};
+                },
+            },
+        );
+        assertEquals(
+            JSON.parse(String(written.result_json)).transcript,
+            terminal.transcript,
+        );
+        return (terminal.transcript as { text: string }[]).map((entry) =>
+            entry.text
+        );
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
+}
+
+// Each case is message text and the text both public resources must keep.
+const STRUCTURED_CREDENTIALS: [string, string, string][] = [
+    [
+        "JSON array value",
+        '{"password":["synthetic-secret-a1"]}',
+        '{"password":[REDACTED]}',
+    ],
+    [
+        "nested object under a secret key",
+        '{"db":{"credentials":{"user":"app","pass":"synthetic-secret-a2"}},"region":"eu"}',
+        '{"db":{"credentials":[REDACTED]},"region":"eu"}',
+    ],
+    [
+        "secret key inside a nested object",
+        '{"config":{"auth":{"password":"synthetic-secret-a3","port":5432}}}',
+        '{"config":{"auth":{"password":[REDACTED],"port":5432}}}',
+    ],
+    [
+        "secret key inside an array of objects",
+        '[{"name":"a","token":"synthetic-secret-a4"}]',
+        '[{"name":"a","token":[REDACTED]}]',
+    ],
+    [
+        "escaped JSON inside a string",
+        '{\\"note\\":\\"he said \\\\\\"hi\\\\\\"\\",\\"password\\":\\"synthetic-secret-a5\\"}',
+        '{\\"note\\":\\"he said \\\\\\"hi\\\\\\"\\",\\"password\\":[REDACTED]}',
+    ],
+    [
+        "escaped quote inside the secret value",
+        '{"password":"synthetic\\"-secret-a6","user":"app"}',
+        '{"password":[REDACTED],"user":"app"}',
+    ],
+    [
+        "password after an escaped quote",
+        'note=\\"x\\" password=synthetic-secret-a7 done',
+        'note=\\"x\\" password=[REDACTED] done',
+    ],
+    [
+        "HTTP header lines",
+        "GET / HTTP/1.1\nAuthorization: Bearer synthetic-secret-a8\nAccept: */*",
+        "GET / HTTP/1.1\nAuthorization: [REDACTED]\nAccept: */*",
+    ],
+    [
+        "basic authorization",
+        "Proxy-Authorization: Basic c3ludGhldGljLXNlY3JldC1hOQ==",
+        "Proxy-Authorization: [REDACTED]",
+    ],
+    [
+        "cookie headers",
+        "Cookie: sid=synthetic-secret-b1; theme=dark\nSet-Cookie: session=synthetic-secret-b2; Path=/; HttpOnly",
+        "Cookie: [REDACTED]\nSet-Cookie: [REDACTED]",
+    ],
+    [
+        "quoted headers in a command",
+        `curl -H "Cookie: sid=synthetic-secret-b3" -H 'Authorization: token synthetic-secret-b4' https://example.test`,
+        `curl -H "Cookie: [REDACTED]" -H 'Authorization: [REDACTED]' https://example.test`,
+    ],
+    [
+        "quoted authorization and cookie values",
+        `{"authorization": "Bearer synthetic-secret-b5", 'cookie': 'sid=synthetic-secret-b6'}`,
+        `{"authorization": [REDACTED], 'cookie': [REDACTED]}`,
+    ],
+    [
+        "key: value and key=value forms",
+        "client_secret: synthetic-secret-b7\napi_key = \"synthetic secret b8\"\nPRIVATE_KEY='synthetic-secret-b9'\n?sessionToken=synthetic-secret-c1&next=1",
+        "client_secret: [REDACTED]\napi_key = [REDACTED]\nPRIVATE_KEY=[REDACTED]\n?sessionToken=[REDACTED]&next=1",
+    ],
+    [
+        "a key after an escaped newline",
+        '"line one\\npassword=synthetic-secret-c2"',
+        '"line one\\npassword=[REDACTED]"',
+    ],
+    [
+        "PEM block",
+        "key below\n-----BEGIN PRIVATE KEY-----\nc3ludGhldGljLXNlY3JldC1jMw==\n-----END PRIVATE KEY-----\nafter",
+        "key below\n[REDACTED]\nafter",
+    ],
+    [
+        "bare JWT",
+        "The header was eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMtc2VjcmV0LWM0In0.c3ludGhldGljLXNpZw here.",
+        "The header was [REDACTED] here.",
+    ],
+    [
+        "mixed text",
+        'Run it with DB_PASSWORD=synthetic-secret-c5 and then {"apiKey": "synthetic-secret-c6", "region": "eu"}.',
+        'Run it with DB_PASSWORD=[REDACTED] and then {"apiKey": [REDACTED], "region": "eu"}.',
+    ],
+];
+const READABLE_TEXT = [
+    "I changed the password handling in the login form.",
+    "The password field must be at least 12 characters, and the token expiry stays at 60 minutes.",
+    '{"name": "orbit", "region": "eu", "input_tokens": 1200, "enabled": true}',
+    "idempotency_key: retry-42 and public_key: orbit-host",
+    "Set the key: value pairs in the config.",
+    "Accept: application/json",
+];
+
+Deno.test("structured credentials in message text are redacted in both public resources", async () => {
+    const texts = await recordedMessages(
+        STRUCTURED_CREDENTIALS.map(([, raw]) => raw),
+    );
+    STRUCTURED_CREDENTIALS.forEach(([name, , expected], index) => {
+        assertEquals(texts[index], expected, name);
+        assertEquals(/synthetic.?secret/.test(texts[index]), false, name);
+    });
+});
+
+Deno.test("ordinary prose and public fields stay readable", async () => {
+    assertEquals(await recordedMessages(READABLE_TEXT), READABLE_TEXT);
+});
+
+Deno.test("a failed tool keeps a fixed failure class, never its diagnostic text", async () => {
+    const dir = await Deno.makeTempDir();
+    try {
+        const path = dir + "/transcript.json";
+        const failures: [unknown, string][] = [
+            ["output\n\nCommand timed out after 30 seconds", "timeout"],
+            ["Command aborted", "aborted"],
+            [
+                "cat: /private/thing: No such file or directory\n\nCommand exited with code 1",
+                "exit_nonzero",
+            ],
+            ["Command terminated without an exit code", "exit_nonzero"],
+            [
+                "EACCES: permission denied, open '/private/diagnostic-path'",
+                "permission",
+            ],
+            [
+                "ENOENT: no such file or directory, open '/private/diagnostic-path'",
+                "not_found",
+            ],
+            ["private-diagnostic-value", "error"],
+            [
+                [{ type: "text", text: "Command timed out after 1 seconds" }],
+                "timeout",
+            ],
+        ];
+        const at = "2026-11-08T10:00:00Z";
+        await Deno.writeTextFile(
+            path,
+            JSON.stringify({
+                kind: "snapshot",
+                entries: failures.flatMap(([content], index) => [{
+                    id: "call-" + index,
+                    timestamp: at,
+                    message: {
+                        role: "assistant",
+                        content: [{
+                            type: "toolCall",
+                            id: "tool-" + index,
+                            name: "bash",
+                            arguments: {},
+                        }],
+                    },
+                }, {
+                    id: "result-" + index,
+                    timestamp: at,
+                    message: {
+                        role: "toolResult",
+                        toolCallId: "tool-" + index,
+                        isError: true,
+                        content,
+                    },
+                }]),
+            }),
+        );
+        const recorded = await recordedTerminal({
+            path,
+            turn: "operation-17",
+            partial: true,
+        });
+        assertEquals(
+            recorded.transcript.map((entry: { text: string }) => entry.text),
+            failures.map(([, kind]) => `bash · tool failed: ${kind} · 0 ms`),
+        );
+        assertEquals(JSON.stringify(recorded).includes("private"), false);
+    } finally {
+        await Deno.remove(dir, { recursive: true });
+    }
 });

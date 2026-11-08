@@ -6,6 +6,7 @@ namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -101,7 +102,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
@@ -130,6 +131,7 @@ final readonly class SwampCommandStep
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
         }
+        $this->projectChildren($operation, $runId, $run);
         if (! in_array($run['status'], $terminalStatuses, true)) {
             $deadline = OperationRunBudgets::deadline($operation);
             if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
@@ -155,7 +157,8 @@ final readonly class SwampCommandStep
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
-        $result = $this->terminalOutput($run, $selector);
+        $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
+            ? [] : $this->terminalOutput($run, $selector);
         $status = $run['status'];
         if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
@@ -183,6 +186,58 @@ final readonly class SwampCommandStep
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected;
+    }
+
+    /** The same declared terminal reader records completed children while their parent is open.
+     * @param  array<string,mixed>  $run
+     */
+    private function projectChildren(Operation $operation, string $runId, array $run): void
+    {
+        $declarations = [];
+        $direct = app(DirectOperation::class);
+        foreach (array_keys($direct->definitions()) as $kind) {
+            $definition = $direct->definition($kind);
+            if ($definition === null || ! is_subclass_of($definition['projection'], DirectOperationChildProjection::class)) {
+                continue;
+            }
+            $projection = app($definition['projection']);
+            if ($projection instanceof DirectOperationChildProjection && $projection->acceptsParent($operation)
+                && $definition['workflow'] !== ($run['workflowName'] ?? null) && isset($definition['terminal_result'])) {
+                $declarations[$definition['workflow']] = [$projection, $definition['terminal_result']];
+            }
+        }
+        if ($declarations === []) {
+            return;
+        }
+        $children = [];
+        $recorded = ValidatedData::object($operation->state['native_children'] ?? []);
+        foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $childId) {
+            if (isset($recorded[$childId])) {
+                continue;
+            }
+            $child = $this->history($childId);
+            if (($child['id'] ?? null) === $childId && is_string($child['workflowName'] ?? null) && isset($declarations[$child['workflowName']])
+                && in_array($child['status'] ?? null, ['succeeded', 'failed', 'interrupted'], true)) {
+                $children[] = $child;
+            }
+        }
+        usort($children, static fn (array $left, array $right): int => strcmp(ValidatedData::string($left['completedAt'] ?? ''), ValidatedData::string($right['completedAt'] ?? '')));
+        foreach ($children as $child) {
+            [$projection, $selector] = $declarations[ValidatedData::string($child['workflowName'])];
+            $result = $this->terminalOutput($child, $selector);
+            DB::transaction(function () use ($operation, $child, $projection, $result): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                $recorded = ValidatedData::object($current->state['native_children'] ?? []);
+                if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($recorded[ValidatedData::string($child['id'])])) {
+                    return;
+                }
+                $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
+                $current->update(['state' => [...($current->state ?? []), 'native_children' => [
+                    ...ValidatedData::object($current->state['native_children'] ?? []), ValidatedData::string($child['id']) => true,
+                ]]]);
+            });
+        }
+        $operation->refresh();
     }
 
     /**
@@ -446,7 +501,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true,data?:string}  $selector
+     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -511,20 +566,63 @@ final readonly class SwampCommandStep
                     continue;
                 }
                 foreach ($job['steps'] as $step) {
-                    if (! is_array($step) || ($step['name'] ?? null) !== $capture['step'] || ($step['status'] ?? null) !== 'succeeded' || ! is_array($step['outputs'] ?? null)) {
+                    if (! is_array($step) || ($step['name'] ?? null) !== $capture['step'] || ($step['status'] ?? null) !== 'succeeded') {
                         continue;
                     }
-                    $outputs = $step['outputs'];
+                    $outputs = is_array($step['outputs'] ?? null) ? $step['outputs'] : [];
+                    if ($outputs === [] || (isset($capture['field']) && ! array_key_exists($capture['field'], $outputs))) {
+                        $outputs = $this->artifactResult($step, $capture['artifact'] ?? 'result');
+                    }
                     if (! isset($capture['field'])) {
                         $result[$name] = $outputs;
                     } elseif (array_key_exists($capture['field'], $outputs)) {
                         $result[$name] = $outputs[$capture['field']];
+                    } else {
+                        throw $this->unavailable();
                     }
                 }
             }
         }
 
         return $result;
+    }
+
+    /** Resolve a captured result by its exact recorded identity, never the latest behavior output.
+     * @param  array<string,mixed>  $step
+     * @return array<string,mixed>
+     */
+    private function artifactResult(array $step, string $name): array
+    {
+        $artifacts = array_values(array_filter(is_array($step['dataArtifacts'] ?? null) ? $step['dataArtifacts'] : [],
+            static fn (mixed $artifact): bool => is_array($artifact) && ($artifact['name'] ?? null) === $name));
+        if (count($artifacts) !== 1) {
+            throw $this->unavailable();
+        }
+        $artifact = $artifacts[0];
+        if (! is_string($artifact['dataId'] ?? null) || ! Str::isUuid($artifact['dataId'])
+            || ! is_int($artifact['version'] ?? null) || $artifact['version'] < 1) {
+            throw $this->unavailable();
+        }
+        $reply = $this->read('data.query', [
+            'predicate' => 'id == "'.$artifact['dataId'].'" && version == '.$artifact['version'],
+            'limit' => 2, 'select' => '{"id": id, "name": name, "version": version, "content": content}',
+        ]);
+        $rows = is_array($reply['data'] ?? null) ? ($reply['data']['results'] ?? null) : null;
+        $row = is_array($rows) && count($rows) === 1 ? array_values($rows)[0] : null;
+        if (! is_array($row) || ($row['id'] ?? null) !== $artifact['dataId'] || ($row['name'] ?? null) !== $name
+            || ($row['version'] ?? null) !== $artifact['version']) {
+            throw $this->unavailable();
+        }
+        $content = $row['content'] ?? null;
+        // Native JSON resources are parsed by data.query; text resources still need decoding.
+        if (is_string($content)) {
+            $content = json_decode($content, true);
+        }
+        if (! is_array($content) || array_is_list($content)) {
+            throw $this->unavailable();
+        }
+
+        return ValidatedData::object($content);
     }
 
     /** The `stdout` of the `output` data artifact a step wrote, for a step whose output the run history did not inline.

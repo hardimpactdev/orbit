@@ -6,13 +6,11 @@ namespace App\Infrastructure\Tasks\Pi;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Models\Node;
-use App\Support\ValidatedData;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use InvalidArgumentException;
 
 /**
  * Calls the Pi server on a Node. Every failure becomes an AgentDriverException that names the
@@ -23,19 +21,6 @@ final readonly class PiClient
     private const float CONNECT_TIMEOUT = 3.0;
 
     private const float TIMEOUT = 15.0;
-
-    private const float STREAM_SECONDS = 20.0;
-
-    private const float STREAM_READ_TIMEOUT = 5.0;
-
-    /**
-     * The session response budget, sent to Pi so it can truncate snapshots before transfer. The transfer guard also
-     * refuses a server that violates the budget, before decoding can fill a PHP worker's memory.
-     */
-    public const int SESSION_MAX_BYTES = 16 * 1024 * 1024;
-
-    /** A viewer's read waits at most this long, the stream's read timeout, so it holds a PHP worker briefly. */
-    public const float READ_TIMEOUT = self::STREAM_READ_TIMEOUT;
 
     public function __construct(private PiConnection $connection) {}
 
@@ -59,95 +44,6 @@ final readonly class PiClient
     public function interrupt(Node $node, string $sessionId): void
     {
         $this->ensure($this->call(fn (): Response => $this->request($node)->post($this->url($node, 'sessions', $sessionId, 'interrupt'))), $node);
-    }
-
-    /** @return array<string, mixed> */
-    public function state(Node $node, string $sessionId): array
-    {
-        $payload = $this->session($node, $sessionId, null, self::TIMEOUT, stateOnly: true);
-        if (! in_array($payload['kind'] ?? null, ['state', 'snapshot'], true)) {
-            throw new AgentDriverException('The Pi server returned an invalid state.');
-        }
-
-        unset($payload['entries']);
-
-        return $payload;
-    }
-
-    /**
-     * Reads a session for a viewer within {@see READ_TIMEOUT}. With a cursor from the server's current run, the server
-     * answers a `delta`: the events a stream would replay after the cursor, and the current state. Otherwise it answers
-     * a `snapshot`, as a server built before deltas always does.
-     *
-     * @param  array{run: string, sequence: int}|null  $after
-     * @return array<string, mixed>
-     */
-    public function read(Node $node, string $sessionId, ?array $after, ?float $timeoutSeconds = null): array
-    {
-        $payload = $this->session($node, $sessionId, $after, $timeoutSeconds ?? self::READ_TIMEOUT);
-        if (! in_array($payload['kind'] ?? null, ['snapshot', 'delta'], true)) {
-            throw new AgentDriverException('The Pi server returned an invalid snapshot.');
-        }
-
-        return $payload;
-    }
-
-    /**
-     * Streams one bounded connection. Without a cursor it starts with a snapshot. With a cursor
-     * from the server's current run it starts with a `resumed` event and the events after the
-     * cursor; the server sends a snapshot instead when it cannot resume. Then entry and state
-     * events follow. Yields a heartbeat whenever no event arrives within the read timeout.
-     *
-     * @param  array{run: string, sequence: int}|null  $after
-     * @return iterable<array<string, mixed>>
-     */
-    public function stream(Node $node, string $sessionId, ?array $after = null): iterable
-    {
-        // HTTP/1.0 keeps the response unchunked. PHP's dechunk filter holds small NDJSON lines
-        // until 8 KiB arrive, which would stall every event behind the next heartbeats.
-        $response = $this->ensure($this->call(fn (): Response => $this->request($node)
-            ->timeout(0)
-            ->withOptions(['stream' => true, 'read_timeout' => self::STREAM_READ_TIMEOUT, 'version' => '1.0'])
-            ->accept('application/x-ndjson')
-            ->get($this->url($node, 'sessions', $sessionId, 'stream'), ['max_bytes' => self::SESSION_MAX_BYTES, ...($after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])])), $node);
-        $body = $response->toPsrResponse()->getBody();
-
-        try {
-            yield from new PiEventLines(self::STREAM_SECONDS)->read($body);
-        } finally {
-            $body->close();
-        }
-    }
-
-    /**
-     * Gets `GET /sessions/{id}`, bounded by {@see SESSION_MAX_BYTES}. The transfer stops once the body passes the limit,
-     * and the body is decoded only when it fits.
-     *
-     * @param  array{run: string, sequence: int}|null  $after
-     * @return array<string, mixed>
-     */
-    private function session(Node $node, string $sessionId, ?array $after, float $timeout, bool $stateOnly = false): array
-    {
-        $response = $this->call(fn (): Response => $this->request($node)
-            ->timeout($timeout)
-            // Decoding stays off, so the progress counts are the body's own bytes.
-            ->withOptions(['decode_content' => false, 'progress' => static function (int $total, int $received): void {
-                self::assertSessionSize(max($total, $received));
-            }])
-            ->get($this->url($node, 'sessions', $sessionId), $stateOnly ? ['view' => 'state'] : ['max_bytes' => self::SESSION_MAX_BYTES, ...($after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])]));
-        self::assertSessionSize($response->toPsrResponse()->getBody()->getSize() ?? 0);
-        try {
-            return ValidatedData::object($this->ensure($response, $node)->json());
-        } catch (InvalidArgumentException) {
-            throw new AgentDriverException($stateOnly ? 'The Pi server returned an invalid state.' : 'The Pi server returned an invalid snapshot.');
-        }
-    }
-
-    public static function assertSessionSize(int $bytes): void
-    {
-        if ($bytes > self::SESSION_MAX_BYTES) {
-            throw new AgentDriverException('The Pi server session is larger than '.intdiv(self::SESSION_MAX_BYTES, 1024 * 1024).' MiB.');
-        }
     }
 
     /** @param callable(): Response $send */

@@ -73,6 +73,8 @@ Create the group in Backlog with `tasks-create` for the Orbit Project, and its s
 - Build test fixtures from real output.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
+Every task read uses recorded Gateway state, including the agent viewer and stream. Never contact Pi or a Node during a read. Swamp records turn evidence; agent observations record workspace line counts.
+
 ## Review a subtask
 
 Check the risk that the brief names first, then the quality bar. The review prompt's blocking rule decides what blocks.

@@ -444,11 +444,11 @@ describe('requests', function (): void {
         $mock->assertNothingSent();
     });
 
-    it('passes the agent thread cursor through to the Gateway', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-agent-show/delta'));
+    it('passes after-sequence to the Gateway and returns its recorded snapshot', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-agent-show/after-sequence'));
 
         expect(Artisan::call('tasks:agent:show', ['group' => '1', 'session' => '3', '--after-sequence' => 'run-1.7', '--json' => true]))->toBe(0)
-            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'delta', 'cursor' => 'run-1.9']);
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'snapshot', 'cursor' => null]);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ShowTaskAgentRequest
             && $request->query()->all() === ['after_sequence' => 'run-1.7']);
     });

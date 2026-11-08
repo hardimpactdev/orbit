@@ -5,106 +5,39 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\Instance;
 use App\Models\Task;
+use Carbon\CarbonInterface;
 
-/**
- * Fills settle metrics on a top-level task and its subtasks from agent observations
- * and the shared checkout. A refused agent read keeps the last stored thread values.
- */
+/** Computes display metrics from Gateway records without changing them. */
 final readonly class TaskGroupMetricsRefresher
 {
-    public function __construct(
-        private AgentThreadObserver $threads,
-        private TaskWorkspaceDiffReader $diff,
-    ) {}
-
     public function refresh(Task $group): Task
     {
         $group->loadMissing(['project', 'tasks', 'taskable']);
-
-        if (! $group->groupStatus()->isActive()) {
-            return $group;
-        }
-
-        $reviewerTokens = 0;
-        $hasReviewerTokens = false;
-        foreach (AgentThread::query()->where('task_group_id', $group->id)->where('role', TaskThreadRole::Reviewer->value)->orderBy('id')->get() as $reviewer) {
-            if (str_starts_with($reviewer->external_id, AgentThread::PendingPrefix)) {
-                continue;
-            }
-            $this->threads->observe($reviewer);
-            $reviewer->refresh();
-            if ($reviewer->tokens !== null) {
-                $hasReviewerTokens = true;
-                $reviewerTokens += max(0, $reviewer->tokens);
+        $tokens = null;
+        foreach (AgentThread::query()->where('task_group_id', $group->id)->started()->get() as $thread) {
+            if ($thread->tokens !== null) {
+                $tokens = ($tokens ?? 0) + max(0, $thread->tokens);
             }
         }
-        $taskTokens = 0;
-        $hasTaskTokens = false;
-
+        if ($tokens !== null) {
+            $group->tokens = $tokens;
+        }
         foreach ($group->tasks as $task) {
-            $this->refreshTask($task);
-
-            if ($task->tokens !== null) {
-                $hasTaskTokens = true;
-                $taskTokens += max(0, $task->tokens);
-            }
+            $this->duration($task, $task->settled_at);
         }
+        $this->duration($group, $group->ended_at ?? $group->settled_at);
 
-        if ($hasTaskTokens || $hasReviewerTokens) {
-            $group->tokens = $taskTokens + $reviewerTokens;
-        }
-
-        $instance = $group->taskable;
-        $base = $group->project->default_branch;
-
-        if ($instance instanceof Instance && is_string($base) && $base !== '') {
-            $changes = $this->diff->lineChanges($instance, $base);
-            if ($changes !== null) {
-                $group->lines_added = $changes['additions'];
-                $group->lines_deleted = $changes['deletions'];
-                $group->line_diff = $changes['additions'] + $changes['deletions'];
-            }
-        }
-
-        $started = $group->started_at;
-
-        if ($started !== null) {
-            $group->duration_ms = max(0, (int) now()->diffInMilliseconds($started, true));
-        }
-
-        if ($group->isDirty()) {
-            $group->save();
-        }
-
-        return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+        return $group;
     }
 
-    private function refreshTask(Task $task): void
+    private function duration(Task $task, ?CarbonInterface $ended): void
     {
-        $thread = $task->implementerThread;
-        if ($thread !== null && ! str_starts_with($thread->external_id, AgentThread::PendingPrefix)) {
-            $this->threads->observe($thread);
-            if ($thread->tokens !== null) {
-                $task->tokens = $thread->tokens;
-            }
-            if ($thread->lines_added !== null && $thread->lines_deleted !== null) {
-                $task->lines_added = $thread->lines_added;
-                $task->lines_deleted = $thread->lines_deleted;
-                $task->line_diff = $thread->lines_added + $thread->lines_deleted;
-            }
-        }
-
-        $started = $task->started_at;
-
-        if ($started !== null) {
-            $ended = $task->settled_at ?? now();
-            $task->duration_ms = max(0, (int) $ended->diffInMilliseconds($started, true));
-        }
-
-        if ($task->isDirty()) {
-            $task->save();
+        $terminal = $task->isTopLevel()
+            ? in_array($task->status, TaskGroupStatus::endedStatuses(), true)
+            : in_array($task->status, [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled], true);
+        if ($task->started_at !== null && ($ended !== null || ! $terminal)) {
+            $task->duration_ms = max(0, (int) ($ended ?? now())->diffInMilliseconds($task->started_at, true));
         }
     }
 }

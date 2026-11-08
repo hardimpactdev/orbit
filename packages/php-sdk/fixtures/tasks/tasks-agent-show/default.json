@@ -19,7 +19,7 @@
                     "id": "call-1",
                     "kind": "activity",
                     "label": "bash",
-                    "text": "Tests: 12 passed\n\n$ composer check\nexit code 0",
+                    "text": "bash · succeeded · 1200 ms",
                     "at": "2026-09-23T09:55:00.000Z"
                 }
             ],
@@ -36,8 +36,8 @@
             "provider_error": null,
             "thread_id": 3,
             "kind": "snapshot",
-            "cursor": "run-1.7",
-            "archived": false
+            "cursor": null,
+            "archived": true
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

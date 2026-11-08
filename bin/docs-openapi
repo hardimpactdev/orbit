@@ -761,7 +761,7 @@ DESCRIPTIONS = {
     'instance:deploy': 'Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.',
     'instance:rollback': 'Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.',
     'tasks:swamp-runs': 'Returns the latest five Swamp workflow runs for this task group, with bounded redacted step output and a run log tail. Poll every five seconds. Availability is available, stale with the last successful snapshot, or unavailable. Requires Gateway access and the Tasks extension. See /reference/tasks#swamp-run-output.',
-    'tasks:agent:show': 'Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer\'s `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread\'s Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.',
+    'tasks:agent:show': 'Returns one redacted snapshot from recorded Gateway state: transcript entries, state and token metrics. kind is snapshot and cursor is null. after_sequence is accepted but never requests a Pi read or a delta. archived means a stored transcript exists; later turns can replace it. Output updates when each turn ends, including a child turn inside a running parent. A thread without recorded transcript evidence returns an empty snapshot. Requires Gateway access. See /reference/tasks#read-a-thread.',
     'operation:show': 'Returns one parent Operation with its admitted input, native status, safe result and error code. Starts no work and records no Gateway step receipts. See /reference/operations#read-an-operation.',
     'operation:list': 'Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds active jobs; `status=waiting` finds operations waiting for existing work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.',
     'operation:cancel': 'Records a cooperative cancellation request for the native workflow and returns the current parent Operation. Swamp observes the request and records the terminal result. A finished Operation stays unchanged.',
@@ -1656,21 +1656,21 @@ components['DevelopmentDeployStep'] = development_deploy_step
 components['DevelopmentDeploySteps'] = {'type': 'array', 'items': {'$ref': '#/components/schemas/DevelopmentDeployStep'}}
 DEVELOPMENT_DEPLOY_STEP_SCHEMA = {'$ref': '#/components/schemas/DevelopmentDeployStep'}
 
-# The agent viewer's snapshot event (AgentThreadEvent plus AgentObservation), or a delta after a cursor. A saved transcript holds only the keys it stored.
+# The agent viewer returns one recorded snapshot. Later turns may replace its transcript.
 components['TaskAgentSnapshot'] = {'type': 'object', 'required': ['thread_id', 'kind', 'cursor', 'archived'], 'properties': {
     'thread_id': {'type': 'integer', 'description': 'The agent thread ID.'},
-    'kind': {'type': 'string', 'enum': ['snapshot', 'delta'], 'description': '`snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`.'},
+    'kind': {'type': 'string', 'enum': ['snapshot'], 'description': 'Always snapshot. after_sequence is accepted but does not request a delta.'},
     'state': {'type': ['string', 'null'], 'enum': ['idle', 'working', 'asking_for_input', 'done', 'failed', None]},
     'input_requests': {'type': 'array', 'items': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'kind': {'type': 'string'}, 'details': {}}, 'required': ['id', 'kind', 'details']}},
-    'entries': {'type': 'array', 'description': 'The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`.', 'items': {'type': 'object', 'properties': {
+    'entries': {'type': 'array', 'description': 'The recorded normalized transcript, oldest first. Output updates when a turn ends.', 'items': {'type': 'object', 'properties': {
         'id': {'type': 'string'}, 'kind': {'type': 'string', 'description': '`message` or `activity`.'}, 'label': {'type': 'string', 'description': 'The role of a message, or the tool of an activity.'},
         'text': {'type': 'string'}, 'at': {'type': 'string'},
     }, 'required': ['id', 'kind', 'label', 'text', 'at']}},
     **{k: {'type': ['integer', 'null']} for k in ('tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'lines_added', 'lines_deleted')},
     'error': {'type': ['string', 'null']},
     'provider_error': {'type': ['string', 'null'], 'enum': ['overloaded', 'rate_limited', 'server_error', None]},
-    'cursor': {'type': ['string', 'null'], 'description': 'The thread\'s place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started.'},
-    'archived': {'type': 'boolean', 'description': 'True when the snapshot is the transcript Orbit saved before the task VM was deleted.'},
+    'cursor': {'type': 'null', 'description': 'Always null. Reads do not resume a Pi stream.'},
+    'archived': {'type': 'boolean', 'description': 'True when a stored transcript exists. A later turn can replace it.'},
 }}
 
 RESPONSE_OVERRIDES = {
@@ -2009,7 +2009,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
     if route['name'] == 'tasks:agent-stream':
-        responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
+        responses['200'] = {'description': 'One recorded agent snapshot, then normal EOF. The cursor is null. Output updates when a turn ends. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'agent:realtime':
         connection = {'type': 'object', 'properties': {
             'url': {'type': ['string', 'null'], 'description': 'Reverb WebSocket URL.'},

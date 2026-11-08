@@ -193,6 +193,13 @@ final class SwampRunSubscriber
         }
         $event = $message['event'] ?? null;
         $run = is_array($event) ? ($event['run'] ?? null) : null;
+        if ($type === 'event' && $entry['attached'] && is_array($event) && is_string($event['parentRunId'] ?? null) && Str::isUuid($event['parentRunId'])
+            && is_int($event['seq'] ?? null) && $event['seq'] > 0
+            && in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) && is_array($run)
+            && in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+            // The root stays followed. The existing reconciler also records finished child evidence.
+            ReconcileSwampOperations::dispatch();
+        }
         if ($type === 'event' && $entry['attached'] && is_array($event) && is_int($event['seq'] ?? null) && $event['seq'] > 0
             && (! isset($event['parentRunId']) || $event['parentRunId'] === $entry['run'])) {
             app(NativeRunProgress::class)->apply($operationId, $entry['run'], $event);

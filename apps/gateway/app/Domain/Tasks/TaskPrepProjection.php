@@ -79,7 +79,7 @@ final readonly class TaskPrepProjection implements DirectOperationProjection
             foreach ($threads as $name => $thread) {
                 $result = TaskPrepResults::turn($native[$name] ?? null);
                 if ($result !== null) {
-                    TaskTurnProjection::recordThread($operation->target_id, $thread, $result);
+                    TaskTurnProjection::recordTurn($operation, $thread, $result);
                     $rounds += str_starts_with($name, 'review') ? 1 : 0;
                 }
             }

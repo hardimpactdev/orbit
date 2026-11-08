@@ -22,7 +22,7 @@ final class TaskBroadcasts
     public const array MetricColumns = ['tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'updated_at'];
 
     /** Agent thread columns whose change broadcasts `agent_thread.updated`. */
-    public const array ThreadColumns = ['state', 'error', 'observation_error'];
+    public const array ThreadColumns = ['state', 'error', 'observation_error', 'observed_at'];
 
     /** @var array<int, bool> Group ids, true when the group was created in this unit of work. */
     private array $groups = [];
@@ -138,7 +138,7 @@ final class TaskBroadcasts
                     continue;
                 }
                 $this->broadcaster->broadcast(RecordEventType::AgentThreadUpdated, $thread->id, [
-                    'id' => $thread->id, 'task_group_id' => $thread->task_group_id, 'task_id' => $thread->task_id, 'state' => $thread->state?->value,
+                    'id' => $thread->id, 'task_group_id' => $thread->task_group_id, 'task_id' => $thread->task_id, 'state' => $thread->activityState()?->value,
                 ]);
             }
         }
