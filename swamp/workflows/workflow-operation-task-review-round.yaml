@@ -303,7 +303,7 @@ jobs:
       behaviorName: '${{ ("task-review-round-settle-the-check-" + string(inputs.intent.publish.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: checked
       inputs:
-        result_json: '${{ ("Check the fix" in steps && "outputs" in steps["Check the fix"] && "Push the candidate" in steps["Check the fix"].outputs && "finish" in steps["Check the fix"].outputs["Push the candidate"]) ? steps["Check the fix"].outputs["Push the candidate"].finish.result_json : "" }}'
+        result_json: '${{ ("Check the fix" in steps && "outputs" in steps["Check the fix"] && "Read the result" in steps["Check the fix"].outputs) ? steps["Check the fix"].outputs["Read the result"].result_json : "" }}'
   - name: Check the fix passed
     labels: {role: swamp}
     guard: '${{ !has(inputs.intent.fix) || steps["Settle the review"].outputs.verdict != "findings" }}'

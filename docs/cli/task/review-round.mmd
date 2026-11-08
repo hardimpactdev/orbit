@@ -75,7 +75,7 @@ sequenceDiagram
     %%> - the handoff check of the Project on the workspace, as `task:check` runs it, without hosted CI (`check_name` is null): the PR runs its own CI on the pushed head
     Note over SW: Settle the check<br/>commit · tree
     %%> What it does:
-    %%> - the new `checked` method of `@nckrtl/task-turn-data` reads the output of the check: passed, and the commit and tree to push
+    %%> - the `checked` method of `@nckrtl/task-turn-data` reads the direct `Read the result` output of the check: passed, and the commit and tree to push; grandchildren's outputs are not propagated by Swamp
     %%> Refuses:
     %%> - a check that did not pass, or that ends `changed`, because the author must make the commit; the step `Check the fix passed` fails with `tasks.review_fix_not_passed`: nothing is pushed
     SW->>GW: Mint the push token<br/>operation:direct:github-token

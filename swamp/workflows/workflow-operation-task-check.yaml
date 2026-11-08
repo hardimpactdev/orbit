@@ -186,6 +186,19 @@ jobs:
     - step: Commit the candidate
       condition:
         type: always
+  - name: Read the result
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ ("task-check-read-result-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: checked
+      inputs:
+        result_json: '${{ "Push the candidate" in steps && "outputs" in steps["Push the candidate"] && "finish" in steps["Push the candidate"].outputs ? steps["Push the candidate"].outputs.finish.result_json : "" }}'
+    dependsOn:
+    - step: Push the candidate
+      condition:
+        type: always
   - name: Check the result
     labels: {role: swamp}
     task:
@@ -194,6 +207,6 @@ jobs:
       message: The task check could not complete its repository work.
       severity: high
     dependsOn:
-    - step: Push the candidate
+    - step: Read the result
       condition:
         type: always
