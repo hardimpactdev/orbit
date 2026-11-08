@@ -1,0 +1,74 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2, R4, flow-tighten rule 22 and Q-DBAUTH (one valkey-cli call per step, AUTH as the first stdin line from the vault; no rollback). docs/reference/database-servers.md#close-an-adopted-server.
+  %% status: draft
+  %% command: database:server:update
+  %% kind: database_server.close
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: database:server:update<br/>--require-password
+  %%> Command:
+  %%> - `orbit database:server:update beast-valkey --require-password`
+  %%> - syntax: `<slug> --require-password [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the slug of an adopted Valkey server
+  %%> - `--require-password` is required; missing or false input is refused
+  Note over GW: Validate, write two inputs<br/>task #5170 · vault
+  %%> Requirements:
+  %%> - the server is an active Valkey server
+  %%> - every connection on it has a password (`database.server_in_use`)
+  %%> What it does:
+  %%> - writes two vault inputs, each an `AUTH default` line with the admin password and the commands of one step
+  %%> - records task #5170 with the host, port and whether `default` is still open; never the password
+  GW->>SW: Start run, full intent<br/>operation-database-server-close
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  GW-->>CLI: 202 Accepted<br/>task #5170
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt default is still open
+    SW->>N: List default clients<br/>exec · valkey-cli
+    %%> What it does:
+    %%> - one `valkey-cli` call: `AUTH default`, then `CLIENT LIST USER default`
+    %%> How:
+    %%> - `docker run --rm -i --network=host valkey/valkey:8.1 valkey-cli -h <host> -p <port>`, with the vault input on stdin, so the password is never in argv
+    Note over SW: Prove no other client<br/>assert · one line
+    %%> What it does:
+    %%> - the list holds only this call's own connection; another client fails the run with `database.server_in_use`
+    SW->>N: Close default access<br/>exec · valkey-cli
+    %%> What it does:
+    %%> - one `valkey-cli` call: `AUTH default`, `ACL SETUSER default resetpass #<sha256>`, `ACL SAVE`, `CLIENT KILL USER default SKIPME yes`
+    %%> No rollback:
+    %%> - a failed save leaves the live ACL closed but not saved; a rerun repeats the close
+    Note over SW: Prove the ACL is saved<br/>assert · three OK
+    %%> What it does:
+    %%> - `AUTH`, `ACL SETUSER` and `ACL SAVE` each answered `OK`
+  end
+  SW->>N: Check default access<br/>exec · valkey-cli PING
+  %%> What it does:
+  %%> - one `valkey-cli PING` with no password; the end check
+  %%> Why:
+  %%> - access only counts as closed when a client without a password gets `NOAUTH`
+  Note over SW: Prove default is closed<br/>assert · NOAUTH
+  %%> What it does:
+  %%> - the `PING` answer starts with `NOAUTH`
+  alt default is closed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record default closed<br/>task succeeded · vault cleared
+    %%> Result:
+    %%> - the server's `default_open` is false; both vault inputs are deleted
+  else a step fails
+    SW--xGW: Run failed<br/>failed step
+    Note over GW: Keep the record<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - `database.server_in_use` when another client is logged in as `default`; otherwise `database.server_command_failed`
+    %%> - both vault inputs are deleted
+  end

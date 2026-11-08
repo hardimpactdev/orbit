@@ -87,7 +87,7 @@ describe('Gateway release requests', function (): void {
     });
 
     it('reads the automatic release state with its pause and last tick', function (): void {
-        $paused = gateway_release_send(new ShowGatewayReleaseAutomationRequest, 'gateway-release-auto-status/paused');
+        $paused = gateway_release_send(new ShowGatewayReleaseAutomationRequest, 'gateway-auto-release-status/paused');
 
         expect($paused)->toBeInstanceOf(GatewayReleaseAutomationResponse::class)
             ->and($paused->enabled)->toBeTrue()

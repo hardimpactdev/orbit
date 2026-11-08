@@ -83,6 +83,8 @@ cases:
     setup:
       - use: {fixture: blocked-port, proto: [tcp, udp]}
       - ufw_rule: {as: existing, on: app-dev, action: allow, proto: tcp, port: "${port}", from: "${gateway.src}", above: deny}
+      - probe: {from: gateway, to: app-dev, proto: tcp, port: "${port}", expect: connect}
+      - probe: {from: gateway, to: app-dev, proto: udp, port: "${port}", expect: blocked}
     act:
       - cli:
           run: [firewall:allow, "@rule"]

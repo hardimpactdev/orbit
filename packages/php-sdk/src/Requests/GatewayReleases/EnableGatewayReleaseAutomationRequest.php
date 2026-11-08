@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseAutomationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** Turns automatic Gateway releases on. */
+/** Public command: gateway:auto-release:enable. Turns automatic Gateway releases on. */
 final class EnableGatewayReleaseAutomationRequest extends GatewayRequest
 {
     #[\Override]
