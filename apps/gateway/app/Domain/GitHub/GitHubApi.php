@@ -189,6 +189,14 @@ interface GitHubApi
     public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array;
 
     /**
+     * The commit a branch points at, or null when GitHub answers that the branch does not exist. Every other failure throws.
+     * Needs a token with `contents: read`.
+     *
+     * @throws GitHubApiException
+     */
+    public function branchHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): ?string;
+
+    /**
      * How the head commit relates to the base commit. Needs a token with `contents: read`.
      *
      * @throws GitHubApiException

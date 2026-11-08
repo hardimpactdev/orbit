@@ -10,6 +10,7 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
@@ -27,6 +28,7 @@ final readonly class CompleteTaskGroupAction
         private GitHubApi $github,
         private StopTaskSubtaskAction $stop,
         private TaskExecutionLock $execution,
+        private TaskFinalReview $review,
     ) {}
 
     /**
@@ -48,10 +50,17 @@ final readonly class CompleteTaskGroupAction
     {
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
+        // Approved work that origin does not have refuses the completion before it changes anything: tasks:publish comes first.
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
-            $this->authorizeEndedPullRequest($group);
+            $ended = $this->endedPullRequest($group);
+            $this->review->assertOnOrigin($group);
+            if ($ended !== null) {
+                $this->authorizeEndedPullRequest($group, ...$ended);
+            }
         } elseif ($group->status !== TaskGroupStatus::Completed && ! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             throw $this->notReady();
+        } else {
+            $this->review->assertOnOrigin($group);
         }
         app(TaskOperations::class)->cancelOpen($group);
 
@@ -84,11 +93,15 @@ final readonly class CompleteTaskGroupAction
         return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
 
-    /** Stores authorization separately, so a crash or rollback resumes without another GitHub read. */
-    private function authorizeEndedPullRequest(Task $group): void
+    /**
+     * Reads how the watched pull request ended. Null when an earlier completion stored it already.
+     *
+     * @return array{url:string,state:string,mergedAt:?string}|null
+     */
+    private function endedPullRequest(Task $group): ?array
     {
         if (in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
-            return;
+            return null;
         }
         $url = $group->watched_pr_url;
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
@@ -106,7 +119,12 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady();
         }
 
-        $mergedAt = $state === 'merged' ? $pullRequest->mergedAt : null;
+        return ['url' => $url, 'state' => $state, 'mergedAt' => $state === 'merged' ? $pullRequest->mergedAt : null];
+    }
+
+    /** Stores authorization separately, so a crash or rollback resumes without another GitHub read. */
+    private function authorizeEndedPullRequest(Task $group, string $url, string $state, ?string $mergedAt): void
+    {
         $this->execution->synchronized($group->id, function () use ($group, $url, $state, $mergedAt): void {
             DB::transaction(function () use ($group, $url, $state, $mergedAt): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
