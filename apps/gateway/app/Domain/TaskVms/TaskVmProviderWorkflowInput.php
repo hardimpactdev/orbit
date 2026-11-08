@@ -20,7 +20,7 @@ final readonly class TaskVmProviderWorkflowInput
     {
         $host = Node::query()->findOrFail($vm->host_node_id);
         $location = $this->settings->host($host->id);
-        if ($vm->name !== 'tvm-'.$vm->id) {
+        if (! TaskVmName::accepts($vm)) {
             throw new ResourceOperationException('task_vm.provider_identity_invalid', 'The VM provider identity is unavailable.', 409);
         }
 

@@ -125,8 +125,7 @@ final readonly class TaskVmSlotRuns
         // A release needs only what it deletes: the VM, its seed clone and its identity volume by name, on its host. It deletes by name, so
         // it deletes only a task VM's name: `<host>-tvm-<n>` of slot n, under the host name it had then, or `tvm-<id>` of the old pool. A
         // name of another shape, such as a base or a seed, refuses. Names are unique, so no task VM name is another VM's or its seed.
-        $shape = $slot->slot_number === null ? '/^tvm-[0-9]+$/' : '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-tvm-'.$slot->slot_number.'$/';
-        if (preg_match($shape, $slot->name) !== 1) {
+        if (! TaskVmName::accepts($slot)) {
             throw new ResourceOperationException('task_vm.release_refused', "Task VM [{$slot->name}] has no task VM name (<host>-tvm-<slot> or tvm-<id>), so no release deletes it.", 409,
                 details: ['task_vm_id' => $slot->id]);
         }

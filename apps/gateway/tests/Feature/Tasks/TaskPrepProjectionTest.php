@@ -15,7 +15,9 @@ use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskPrepThreads;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -28,6 +30,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -111,7 +114,7 @@ it('records the VM as ready once its resume step succeeded and keeps the finding
     [$operation, $group, $vm, $instance] = prepRun();
     $vm->update(['state' => TaskVmState::Parked]);
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
-        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
+        'command' => 'firewall:allow', 'task_vm_id' => $vm->id, 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
         'author' => ['thread_id' => 11], 'fix' => ['thread_id' => 11], 'reviews' => [['thread_id' => 12], ['thread_id' => 13]],
     ]]);
 
@@ -131,7 +134,7 @@ it('keeps the VM parked when the run failed before the resume step succeeded', f
     [$operation, , $vm] = prepRun();
     $vm->update(['state' => TaskVmState::Parked]);
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
-        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-1'],
+        'command' => 'firewall:allow', 'task_vm_id' => $vm->id, 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-1'],
         'author' => ['thread_id' => 11], 'fix' => ['thread_id' => 11], 'reviews' => [['thread_id' => 12], ['thread_id' => 13]],
     ]]);
 
@@ -157,12 +160,59 @@ it('refuses the corrections of a group that is busy or has no task VM workspace'
     expect($start)->toThrow(ResourceOperationException::class, 'owned task VM workspace');
 });
 
+it('admits corrections on a ready slot VM without a resume', function (): void {
+    [$group, $vm] = prepFixWorld(TaskVmState::Ready);
+
+    expect(fn () => app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null))->toThrow(ResourceOperationException::class);
+
+    $operation = Operation::query()->where('kind', 'tasks.prep_fix')->sole();
+    expect($operation->input['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input['node_id'])->toBe($vm->node_id)
+        ->and($operation->input)->not->toHaveKey('resume')
+        ->and($operation->input)->not->toHaveKey('resume_secrets');
+
+    $input = app(TaskPrepFixProjection::class)->input($operation);
+    expect($input['intent'])->not->toHaveKey('resume')
+        ->and($input['intent']['task_vm_id'])->toBe($vm->id)
+        ->and(json_encode($input['resume_secrets']))->toBe('{}');
+});
+
+it('captures a resume before corrections on a parked slot VM', function (): void {
+    [$group, $vm] = prepFixWorld(TaskVmState::Parked);
+
+    expect(fn () => app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Finding 1.'), 'test', null))->toThrow(ResourceOperationException::class);
+
+    $operation = Operation::query()->where('kind', 'tasks.prep_fix')->sole();
+    expect($operation->input['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input['resume']['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input['resume']['mode'])->toBe('resume')
+        ->and($operation->input['resume']['provider_input']['name'])->toBe('shark-tvm-2')
+        ->and($operation->input)->toHaveKey('resume_secrets');
+});
+
+/** The owned workspace and author of a succeeded prep run. */
+function prepFixWorld(TaskVmState $state): array
+{
+    [$prep, $group, $vm, $instance] = prepRun();
+    SwampNodeFixture::ensure();
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [new TaskVmHost($vm->host_node_id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 5, 4, '8GiB', '40GiB')],
+        '/pi', str_repeat('a', 64), ['gpt-6']));
+    $vm->update(['name' => 'shark-tvm-2', 'slot_number' => 2, 'state' => $state, 'pi_token' => str_repeat('p', 64)]);
+    $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id, 'status' => TaskGroupStatus::Running,
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3223', 'watched_pr_state' => 'open']);
+    $subtask = $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft the spec', 'status' => TaskStatus::Completed, 'position' => 1]);
+    $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
+    $prep->update(['status' => OperationStatus::Succeeded, 'input' => [...$prep->input, 'draft' => ['thread_id' => $author->id]]]);
+
+    return [$group, $vm];
+}
+
 it('reads the Operation without writing the Pi token, writes it once at run start, and sends an empty resume map as an object', function (): void {
     [$operation, , $vm] = prepRun();
     $vm->update(['pi_token' => str_repeat('p', 64)]);
     $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id];
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
-        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => [], 'author' => [], 'fix' => [], 'reviews' => [], 'plan' => [],
+        'command' => 'firewall:allow', 'task_vm_id' => $vm->id, 'publish' => [], 'author' => [], 'fix' => [], 'reviews' => [], 'plan' => [],
         'execution_secrets' => ['pi_token' => $reference], 'resume_secrets' => [], 'publish_secrets' => [],
     ]]);
     // A recording stand-in for the vault write.
@@ -203,7 +253,7 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
     $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
     $reviews = [TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), TaskPrepThreads::create($group, $subtask, $instance, 'reviewer')];
     $operation->update(['kind' => 'tasks.prep_fix', 'input' => [
-        'command' => 'firewall:allow', 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
+        'command' => 'firewall:allow', 'task_vm_id' => $vm->id, 'resume' => ['task_vm_id' => $vm->id], 'publish' => ['branch' => 'task-'.$group->id],
         'author' => ['thread_id' => $author->id], 'fix' => ['thread_id' => $author->id], 'reviews' => [['thread_id' => $reviews[0]->id], ['thread_id' => $reviews[1]->id]],
     ]]);
     $turn = static fn (int $tokens): array => ['shape_result' => ['result_json' => json_encode(['state' => 'done', 'metrics' => ['tokens' => $tokens]])]];
