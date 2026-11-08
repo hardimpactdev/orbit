@@ -106,10 +106,14 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 
 After choosing commands, choose their cases:
 
-1. Expand the merge-base and head files with the proof runner, including fixtures, list vars, variants, fleet settings and batch setup. Compare canonical per-case definitions by id. A command code change selects the whole file. Any parse error or unknown construct also selects the whole file.
-2. CI consumes that one runner result and publishes `proof-selection.json`, bound to the exact head and merge base. Record every considered file, including files with zero selected cases.
-3. The Gateway reads that result from the CI workflow artifact. It does not parse YAML to decide whether a definition changed. A missing, expired, invalid or mismatched result selects the whole file.
-4. Record selected case ids and reasons: `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
+1. Expand base and head definitions with the runner. Include fixtures, list vars, variants, fleet settings and batch setup.
+2. Publish the runner selection as `proof-selection.json`. Bind it to the exact head and merge base.
+3. Read the runner result in the Gateway. Validate its identity and selected case ids.
+4. Record selected case ids and reasons. Keep each case in its batch with its required setup.
+
+The runner compares canonical definitions by id. A command code change selects the whole file. Any parse error or unknown construct also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
+
+Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
 
 Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.
 
