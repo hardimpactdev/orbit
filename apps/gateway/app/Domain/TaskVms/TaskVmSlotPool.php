@@ -35,8 +35,8 @@ final readonly class TaskVmSlotPool
         private ProofSettings $proof) {}
 
     /**
-     * Takes a slot in the admission transaction: on the host with the most room that has a base snapshot, or on `$host`. Only a command
-     * proof (`$proof`) or a refresh (no group) may take the reserve, slot 1. It records the task VM and mints its identity: the Node with its `app-dev` role
+     * Takes a slot in the admission transaction: on the host with the most room that has a base snapshot, or on `$host`. Only an authenticated CI
+     * proof (`$proof`) or a refresh (no group) may take the reserve, slot 1, or use a CI-only host. CI prefers CI-only hosts; a refresh stays on its own host. It records the task VM and mints its identity: the Node with its `app-dev` role
      * and `pi-server` Process, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node now so nothing is read back.
      *
      * @throws TaskCapacityException when no host has room, or the group's Project is not the one whose checkout the base carries
@@ -52,7 +52,11 @@ final readonly class TaskVmSlotPool
         $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
             && ($group === null || $this->currentImage($pair[1], $pair[0]) !== null)));
         $free = $this->capacity->freeSlots($hosts, $proof || $group === null);
-        arsort($free);
+        $ciOnly = [];
+        foreach ($hosts as [$location]) {
+            $ciOnly[$location->nodeId] = $location->ciOnly;
+        }
+        uksort($free, static fn (int $a, int $b): int => ($ciOnly[$b] <=> $ciOnly[$a]) ?: ($free[$b] <=> $free[$a]));
         $room = array_filter($free, static fn (int $slots): bool => $slots >= $size->slots());
         // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
         $skipped = $group === null ? [] : array_filter($room, static fn (int $slots, int $id): bool => ! app(TaskVmSeedFloor::class)->allows($id), ARRAY_FILTER_USE_BOTH);

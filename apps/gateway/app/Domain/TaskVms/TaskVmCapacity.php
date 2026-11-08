@@ -42,7 +42,7 @@ final readonly class TaskVmCapacity
      * its group asks for assistance. The exception is a failed VM that a proof run kept (`--keep-failed`): it holds the CPU and memory of its host, so it counts until
      * it is destroyed. A VM takes the slots of its size
      * ({@see TaskVmSize::slots()}). A host over its budget has 0. Unless `$proof` is true, the free
-     * reserve (slot number 1) is withheld. An occupied reserve is already counted and is not withheld twice.
+     * reserve (slot number 1) is withheld and CI-only hosts expose no capacity. An occupied reserve is already counted and is not withheld twice.
      *
      * @param  list<array{TaskVmHost, Node}>  $hosts  from {@see self::activeHosts()}
      * @return array<int, int> host Node id => free slots
@@ -61,7 +61,7 @@ final readonly class TaskVmCapacity
         $free = [];
         foreach ($hosts as [$host]) {
             $reserve = $proof || isset($reserved[$host->nodeId]) ? 0 : TaskVmSize::Large->slots();
-            $free[$host->nodeId] = max(0, $host->maxVms - ($used[$host->nodeId] ?? 0) - $reserve);
+            $free[$host->nodeId] = $host->ciOnly && ! $proof ? 0 : max(0, $host->maxVms - ($used[$host->nodeId] ?? 0) - $reserve);
         }
 
         return $free;

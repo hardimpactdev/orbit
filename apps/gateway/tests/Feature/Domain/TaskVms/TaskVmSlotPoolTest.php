@@ -1006,3 +1006,36 @@ it('counts an occupied reserve once and keeps the full task budget available', f
         ->and($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
     expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
 });
+
+it('exposes no CI-only host capacity to task work or operator proofs', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 6);
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    $pool = app(TaskVmSlotPool::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    expect(TaskVm::query()->count())->toBe(0);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($host->id);
+    expect($pool->take(null, $host->id)->slot_number)->toBe(2);
+    expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+});
+
+it('prefers CI-only capacity before a shared host with more room and keeps refresh pinned', function (): void {
+    [$beast, $project, $build] = slotPoolHost(maxVms: 12);
+    $sabre = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
+    $copy = $build->replicate();
+    $copy->host_node_id = $sabre->id;
+    $copy->save();
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [...$settings->hosts, new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
+    expect($pool->take(null, $beast->id)->host_node_id)->toBe($beast->id);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($beast->id);
+    expect(fn () => $pool->take(null, $sabre->id))->toThrow(TaskCapacityException::class);
+});

@@ -93,6 +93,8 @@ it('sends task VM host settings and their removal without changing apps', functi
 })->with([
     'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base']],
     'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
+    'CI-only host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 6, 'ci_only' => true]],
+    'shared host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 12, 'ci_only' => false]],
     'removed host' => [null],
 ]);
 

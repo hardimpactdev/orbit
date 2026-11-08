@@ -55,7 +55,7 @@ final readonly class ProofRunIntent
      * the groups and VMs and the hand-over to Swamp run in the job {@see AdmitProofRun}, which a release drains with the queue workers
      * (docs/cli/proof/run.mmd). The outcome of a refused or failed admission is on the proof Operation, with its code and message.
      */
-    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false): Operation
+    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false, ?Node $authenticatedCaller = null): Operation
     {
         if (($existing = $this->idempotency->replay(OperationKinds::ProofRun)) !== null) {
             return $existing;
@@ -65,7 +65,11 @@ final readonly class ProofRunIntent
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
-            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
+            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly,
+                'caller_node_id' => $authenticatedCaller?->id,
+                'ci_reserve' => $authenticatedCaller?->status === LifecycleStatus::Active && $authenticatedCaller->roles()
+                    ->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
+                'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
         try {
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id));
@@ -124,7 +128,8 @@ final readonly class ProofRunIntent
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null,
+                        ciReserve: ($intent['ci_reserve'] ?? false) === true));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -163,7 +168,7 @@ final readonly class ProofRunIntent
 
     /**
      * A proof that cannot be placed takes the room back from the VMs that yield to it, and tries again in a few seconds: the VMs that failed
-     * runs kept (`--keep-failed`), and the running report-only proofs, which are cancelled. A report-only proof waits without either action,
+     * runs kept (`--keep-failed`), and the running non-CI report-only proofs, which are cancelled. A report-only proof waits without either action,
      * so CI can use the reserve when its current proof or refresh ends. Stale copies are refused without preemption.
      *
      * @return bool whether the admission goes on: a VM is on its way out, the proof is young enough to wait, and the new try is queued
@@ -238,6 +243,7 @@ final readonly class ProofRunIntent
 
         return [
             'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'],
+            'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_reserve' => ($proof->input['ci_reserve'] ?? false) === true,
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
             'execution_secrets' => $input['execution_secrets'] ?? [],
             'provision' => array_diff_key($input, ['execution_secrets' => true]),

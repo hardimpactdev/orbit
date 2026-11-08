@@ -478,7 +478,7 @@ jobs:
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
-          # The job is report-only: its VMs yield capacity to task and proof work (docs/cli/proof/run.mmd).
+          # The authenticated CI runner uses the per-host reserve; report-only controls reporting, not capacity (docs/cli/proof/run.mmd).
           PROOF_REPORT_ONLY: '1'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
         run: python3 -I bin/ci-proof-run

@@ -15,7 +15,7 @@ use Throwable;
 
 /**
  * The stop of the running report-only proofs (`proof:run --report-only`, the job of every pull request) for a proof that cannot be placed.
- * A report-only proof yields capacity, so a normal proof that is refused for room takes it back: each report-only proof that has runs is
+ * A non-CI report-only proof yields capacity, so a normal proof that is refused for room takes it back: each non-CI report-only proof that has runs is
  * cancelled the way a person cancels it (`operation:cancel`), which cancels its runs and the group and VM of each, found by `proof_operation_id`.
  * See docs/cli/proof/run.mmd.
  */
@@ -37,6 +37,7 @@ final readonly class ProofReportOnlyProofs
     {
         $leaving = 0;
         $ids = Operation::query()->where('kind', OperationKinds::ProofRun)->where('input->report_only', true)->where('id', '!=', $except)
+            ->where(static fn ($query) => $query->whereNull('input->ci_reserve')->orWhere('input->ci_reserve', false))
             ->where(static fn ($query) => $query->whereIn('status', [OperationStatus::Queued->value, OperationStatus::Running->value, OperationStatus::Waiting->value])
                 ->orWhere('finished_at', '>', now()->subMinutes(self::DrainMinutes)))
             ->orderBy('id')->pluck('id');
@@ -56,7 +57,7 @@ final readonly class ProofReportOnlyProofs
     private function stop(int $id, int $by): bool
     {
         $proof = Operation::query()->find($id);
-        if (! $proof instanceof Operation) {
+        if (! $proof instanceof Operation || ($proof->input['ci_reserve'] ?? false) === true) {
             return false;
         }
         $runs = ProofRunSettlement::children($id);
