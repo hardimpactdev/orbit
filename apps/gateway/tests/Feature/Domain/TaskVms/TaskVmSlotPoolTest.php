@@ -8,6 +8,7 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Data\Tasks\StartTaskPrepFixData;
+use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
@@ -43,6 +44,8 @@ use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundIntent;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnIntent;
+use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
@@ -1137,4 +1140,84 @@ it('claims a fresh VM and new author session for a review round at the published
         ->and($operation->input['fix']['new_session'])->toBeTrue()
         ->and($operation->input['review']['new_session'])->toBeTrue()
         ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
+});
+
+it('rebuilds a normal fix turn from the published branch after deletion, waiting for a task place when needed', function (bool $wait): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 1);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $group = slotPoolGroup($project);
+    $group->update(['implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
+    $subtask = $group->tasks()->create(['title' => 'Fix the review', 'brief' => 'Apply the review.', 'position' => 1, 'status' => TaskStatus::Running,
+        'deliverables' => [['id' => 'fix', 'type' => 'review', 'description' => 'Review applied.']]]);
+    $initial = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
+    $initial->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $old = TaskVm::forGroup($group);
+    $oldNode = $old->node_id;
+    $workspace = $group->fresh()->taskable_id;
+    $old->update(['state' => TaskVmState::Releasing]);
+    app(TaskVmSlotReleaseProjection::class)->record($old, true, null);
+    $group->refresh()->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1']);
+    expect(Instance::query()->find($workspace))->toBeNull()->and(Node::query()->find($oldNode))->toBeNull();
+    $head = str_repeat('d', 40);
+    app()->instance(RemoteBranchHeads::class, new class($head, $group->id) implements RemoteBranchHeads
+    {
+        public function __construct(private string $head, private int $group) {}
+
+        public function head(Project $project, string $branch): string
+        {
+            expect($branch)->toBe('task-'.$this->group);
+
+            return $this->head;
+        }
+    });
+    $holder = $wait ? app(TaskVmSlotPool::class)->take(slotPoolGroup($project)) : null;
+    $turn = app(TaskTurnIntent::class)->start($group,
+        new TaskTurnData($subtask->id, 'implementer', 'Apply the review.', 'new'), 'test', null);
+    if ($holder !== null) {
+        expect($turn->status)->toBe(OperationStatus::Waiting)->and(TaskVm::forGroup($group))->toBeNull();
+        app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
+        app(TaskVmAdmission::class)->admit($turn->id);
+        $turn->refresh();
+    }
+    expect($turn->status)->toBe(OperationStatus::Queued)
+        ->and($turn->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
+        ->and($turn->input['new_session'])->toBeTrue()
+        ->and($turn->input['node_id'])->not->toBe($oldNode)
+        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
+    if ($wait) {
+        $turn->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
+        app(TaskTurnProjection::class)->refused($turn);
+        Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
+    } else {
+        $turn->update(['state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+        app(TaskTurnProjection::class)->apply($turn, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'status' => 'succeeded', 'result' => [
+            'steps' => ['Claim a task place' => ['status' => 'succeeded']],
+            'turn' => json_encode(['state' => 'idle', 'subtask' => $subtask->id]),
+        ]]);
+        expect(TaskVm::forGroup($group)?->state)->toBe(TaskVmState::Ready)
+            ->and($group->fresh()->taskable->starting_commit)->toBe($head);
+        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
+    }
+})->with([false, true]);
+
+it('makes an operator proof join the task queue behind an earlier task even when a place has just freed', function (): void {
+    Queue::fake();
+    [, $project] = slotPoolHost(taskPlaces: 1);
+    slotPoolSweepWorld();
+    slotPoolClaimServices();
+    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $task = slotPoolGroup($project);
+    $earlier = app(TaskProvisionIntent::class)->start($task, 'test', null, str_repeat('a', 40));
+    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
+    $proof = slotPoolGroup($project);
+    $later = app(TaskProvisionIntent::class)->admit($proof, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null);
+
+    expect($earlier->status)->toBe(OperationStatus::Waiting)->and($later->status)->toBe(OperationStatus::Waiting)
+        ->and(TaskVm::forGroup($proof))->toBeNull();
+    app(TaskVmAdmission::class)->admit($later->id);
+    expect($later->refresh()->status)->toBe(OperationStatus::Waiting);
+    app(TaskVmAdmission::class)->admit($earlier->id);
+    expect($earlier->refresh()->status)->toBe(OperationStatus::Queued)->and(TaskVm::forGroup($task)?->capacity_pool)->toBe('task');
 });

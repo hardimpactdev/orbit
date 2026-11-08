@@ -131,8 +131,8 @@ sequenceDiagram
     %%> Result:
     %%> - a PR receipt makes the group watch its PR and release its VM; a branch-only push keeps its workspace
     %%> - task #5165 succeeds
-    opt publication returned a PR receipt
-      GW->>SW: Delete the published task VM
+    opt PR receipt
+      GW->>SW: Delete the task VM
       %%> The VM is marked releasing with the publication record. Its deletion removes the workspace, Node, keys and peer; the group holds no task place afterwards.
       SW-->>GW: Confirm deletion
       %%> A later fix turn, build or review round waits for a task place and starts from the base plus the published task branch.

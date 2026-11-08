@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM, all in parallel; each run does provision, verify and cancel as children; Gateway projects each run once.
+  %% Target design: one Swamp flow for proof:run (Nick + orchestrator, 2026-11-05). Gateway admits intent; each selected command gets its own parent run on its own proof VM; each run does provision, verify and cancel as children; Gateway projects each run once.
   %% status: draft
   %% command: proof:run
   %% kind: proof.run
@@ -40,13 +40,14 @@ sequenceDiagram
   %%> - the Gateway closes `proof.run` from the records of the runs and runs nothing; it passes only when every run passed
   %%> - a proof needs the nested fleet, so each proof VM is placed only on a host whose seed holds usable ready copies of the current format (stage 2 chart); with no such host free, admission answers even when a skipped host has free slots
   %%> - the copies must also be fresh: only a host whose ready copies include every change of the playbooks, pins and lock files up to the merge base of the proof commit with main is used (stage 2 chart, decided 2026-11-07); a host whose copies miss one is skipped, and the waiting reason says so
-  %%> - if one run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` waits within its admission budget
+  %%> - if one CI run cannot be admitted, for example when no host has room, nothing is kept: all the groups and VMs are admitted in one transaction and roll back together, no Swamp run starts, and `proof.run` waits within its admission budget
   %%> Capacity rule:
   %%> - an authenticated active ci-runner Node uses the CI pool; other callers use the task pool. Refresh candidate proofs use the CI pool too
   %%> - one VM holds one place until confirmed deletion; the pools have separate admission and never borrow places from each other
-  %%> - a full pool waits visibly at `Wait for VMs to be released` and retries every 20 seconds within a two-hour total budget; timeout fails clearly with `proof.capacity_timeout`
+  %%> - operator proofs join the same FIFO task admission queue as prep, build, turns and review; each command waits without a VM and captures its full intent only when its place is admitted
+  %%> - a full CI pool waits visibly at `Wait for VMs to be released` and retries every 20 seconds within a two-hour total budget; timeout fails clearly with `proof.capacity_timeout`
   %%> - waiting never preempts another proof or releases a kept VM
-  %%> - admission records all groups, VMs and the run list together; a retry before capacity is available leaves no partial claim
+  %%> - CI admission records all groups, VMs and the run list together; an operator proof records its children together and each joins task admission
   SW->>VM: Provision the task VM<br/>child workflow · task provision
   %%> The same path every task uses today: clone the task image and seed, boot, enrol, check out the commit.
   SW->>VM: Reset and mount<br/>ready copies · the commit

@@ -40,7 +40,7 @@ final readonly class TaskBuildIntent
         return in_array($group->status, [TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)
             && $subtasks->count() === 1 && $subtasks->first()?->status === TaskStatus::Completed
             && $runs(OperationKinds::TasksPrep)->where('status', OperationStatus::Succeeded)->exists()
-            && ! $runs(OperationKinds::TasksBuild)->when($admission !== null, static fn ($query) => $query->whereKeyNot($admission))->exists();
+            && ! $runs(OperationKinds::TasksBuild)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting, OperationStatus::Succeeded])->when($admission !== null, static fn ($query) => $query->whereKeyNot($admission))->exists();
     }
 
     public function start(Task $group, string $head, string $caller, ?string $request): Operation

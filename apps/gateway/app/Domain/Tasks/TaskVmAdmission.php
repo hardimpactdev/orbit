@@ -7,13 +7,17 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskPrepData;
 use App\Data\Tasks\StartTaskPrepFixData;
+use App\Data\Tasks\TaskTurnData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Proof\ProofRunIntent;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
 use App\Models\Node;
 use App\Models\Operation;
@@ -48,10 +52,13 @@ final readonly class TaskVmAdmission
 
                 return $this->start->execute($kind, 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $requestId, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
-        } catch (TaskCapacityException) {
+        } catch (TaskCapacityException $exception) {
             $coordinator = Node::query()->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Swamp)->where('status', 'active'))->firstOrFail();
 
-            return $this->wait($kind, 'task_group', $group->id, $coordinator->id, $request, $caller, $requestId);
+            $operation = $this->wait($kind, 'task_group', $group->id, $coordinator->id, $request, $caller, $requestId);
+            $this->store->change($operation, ['state' => ['capacity_wait_reason' => $exception->getMessage()]]);
+
+            return $operation;
         }
     }
 
@@ -59,7 +66,7 @@ final readonly class TaskVmAdmission
     public function wait(string $kind, string $target, int $id, int $node, array $request, string $caller, ?string $requestId): Operation
     {
         return DB::transaction(function () use ($kind, $target, $id, $node, $request, $caller, $requestId): Operation {
-            $operation = $this->store->create($kind, $target, $id, $node, ['capacity_request' => $request], $caller, $requestId, OperationStore::lockKey($target, $id));
+            $operation = $this->store->create($kind, $target, $id, $node, ['capacity_request' => $request, ...(isset($request['proof_operation_id']) ? ['proof_operation_id' => $request['proof_operation_id'], 'command' => $request['command'], 'file' => $request['file']] : [])], $caller, $requestId, OperationStore::lockKey($target, $id));
             $this->store->change($operation, ['status' => OperationStatus::Waiting, 'current_step' => $target === 'task_group' ? 'Wait for a task place' : 'Wait for a CI place']);
             if ($target === 'task_group') {
                 Task::topLevel()->whereKey($id)->update(['capacity_wait_reason' => 'capacity']);
@@ -101,17 +108,19 @@ final readonly class TaskVmAdmission
                 $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
                 app(TaskOperations::class)->requireOpenExternal($group);
                 $request = ValidatedData::object($operation->input['capacity_request']);
-                if ($operation->kind === 'tasks.provision') {
+                if (in_array($operation->kind, ['tasks.provision', 'proof.command'], true)) {
                     app(TaskProvisionIntent::class)->assertProvisionable($group);
                 }
                 if ($operation->kind === 'tasks.build' && ! TaskBuildIntent::waiting($group, $operation->id)) {
                     throw new ResourceOperationException('tasks.build_refused', 'The build needs a prep group whose spec is done and whose build has not started.', 409);
                 }
                 $input = match ($operation->kind) {
+                    'proof.command' => app(ProofRunIntent::class)->captureCommand($group, $request),
                     'tasks.provision' => app(TaskProvisionIntent::class)->capture($group, ValidatedData::string($request['commit'])),
                     'tasks.prep' => app(TaskPrepIntent::class)->capture($group, new StartTaskPrepData(ValidatedData::string($request['command']), ValidatedData::nullableString($request['brief'] ?? null), ValidatedData::nullableString($request['reference'] ?? null)), ValidatedData::string($request['commit'])),
                     'tasks.build' => app(TaskBuildIntent::class)->capture($group, ValidatedData::string($request['head'])),
                     'tasks.prep_fix' => app(TaskPrepFixIntent::class)->capture($group, new StartTaskPrepFixData(ValidatedData::string($request['corrections']))),
+                    'tasks.turn' => app(TaskTurnIntent::class)->captureTurn($group, TaskTurnData::from($request)),
                     'tasks.review_round' => app(TaskReviewRoundIntent::class)->capture($group, ValidatedData::string($request['head'])),
                     default => throw new \LogicException('Unknown task capacity request.'),
                 };
@@ -139,6 +148,12 @@ final readonly class TaskVmAdmission
             'result' => ['error_code' => $code, 'message' => $message], 'lock_key' => null]);
         if ($operation->target_type === 'task_group') {
             Task::topLevel()->whereKey($operation->target_id)->update(['capacity_wait_reason' => null]);
+        }
+        if ($operation->kind === 'proof.command') {
+            DB::afterCommit(static function () use ($operation): void {
+                CancelProofGroup::dispatch($operation->id);
+                app(ProofRunSettlement::class)->settle(ValidatedData::integer($operation->input['proof_operation_id']));
+            });
         }
     }
 }

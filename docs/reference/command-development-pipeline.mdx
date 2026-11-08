@@ -100,6 +100,8 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 
 Task work and CI proofs use separate fixed pools on every host. Beast and Shark each have two task places and two CI places. Sabre has zero task places and two CI places. A place holds one VM; VM size does not change the place count. The request kind chooses the pool. Only `proof.run` from an authenticated active `ci-runner` Node and base refresh proofs use the CI pool. Other work uses the task pool.
 
+The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.
+
 A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review.
 
 CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
@@ -116,5 +118,3 @@ Change a stage in the place that owns it, and update this page in the same PR.
 - **The charts:** edit the `.mmd` file next to the command page, chart first. The stage charts are `docs/reference/pipeline/<n>-<stage>.mmd`, placed on this page with a `flow-at` placement, as the CLI pages rules describe. Run `bin/check-flows`. The rules are in [CLI pages and flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md).
 - **The skills:** `preparing-commands` for stage 1, `verifying-commands` for stages 2 and 3, and `developing-commands` for stage 4 and the code. They link here and to the charts and keep only what an agent must do at its own step.
 - **The proof CI job and the selection list:** [Feature flow](/reference/feature-flow).
-
-The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.

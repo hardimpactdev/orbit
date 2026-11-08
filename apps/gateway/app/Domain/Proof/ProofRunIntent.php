@@ -35,8 +35,8 @@ use Throwable;
 
 /**
  * Admits `proof:run`: the request records the proof; the job checks that the commit is trusted, selects the cases from the diff and the
- * selection list of the commit, and records the intent of one run for each selected command, each on a task group and VM of its own, all
- * or none. The Gateway reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
+ * selection list of the commit, and records one run for each selected command on its own task group. Operator proofs join the shared
+ * task admission queue; CI claims are admitted together. The Gateway reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
 {
@@ -112,8 +112,7 @@ final readonly class ProofRunIntent
             if (! $this->settings->executionEnabled()) {
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
-            // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
-            // the groups roll back with it, and Swamp starts no run before the whole proof is admitted.
+            // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
             $fresh = $this->freshHosts($selection->mergeBase);
             app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
@@ -127,7 +126,7 @@ final readonly class ProofRunIntent
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
                         fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null,
-                        ciPool: ($intent['ci_pool'] ?? false) === true));
+                        ciPool: ($intent['ci_pool'] ?? false) === true, capacityRequest: ['proof_operation_id' => $proof->id, 'base' => $selection->mergeBase, 'command' => $case['command'], 'file' => $case['file']]));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -248,6 +247,24 @@ final readonly class ProofRunIntent
             'cancel' => app(TaskCancelIntent::class)->captureForProof($group),
             ...(ValidatedData::object($proof->input)['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [],
         ];
+    }
+
+    /** Resume an operator proof from the shared task admission queue.
+     * @param  array<string,mixed>  $request
+     * @return array<string,mixed>
+     */
+    public function captureCommand(Task $group, array $request): array
+    {
+        $proof = Operation::query()->findOrFail(ValidatedData::integer($request['proof_operation_id']));
+        if ($proof->status->terminal()) {
+            throw new ResourceOperationException('proof.admission_interrupted', 'The proof ended while waiting for a task place.', 409);
+        }
+        $fresh = $this->freshHosts(ValidatedData::string($request['base']));
+        $input = ValidatedData::object(app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn (): array => app(TaskProvisionIntent::class)->capture($group, ValidatedData::string($request['commit']))));
+
+        return $this->runInput($proof, ValidatedData::string($request['commit']), ValidatedData::string($request['base']),
+            ['command' => ValidatedData::string($request['command']), 'file' => ValidatedData::string($request['file'])], $input, $group,
+            Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])));
     }
 
     private function group(string $commit, string $command): Task

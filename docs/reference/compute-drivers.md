@@ -8,7 +8,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
   - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/gateway/database/migrations/2027_01_29_000001_drop_upcloud_task_vm_support.php
+  - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools}.php
   - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
 
@@ -453,6 +453,8 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
 
 Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision, prep, build, fix turns and review rounds use the task pool. Only a `proof:run` from an authenticated active `ci-runner` Node uses the CI pool; base-refresh proofs use it too. Operator proofs use task places. Neither request flags nor reporting mode grants CI capacity.
+
+The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings. Operator proofs join the shared task admission queue.
 
 When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 

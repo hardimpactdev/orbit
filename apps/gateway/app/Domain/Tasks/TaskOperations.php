@@ -52,7 +52,7 @@ final readonly class TaskOperations
             $this->requireOpenExternal($group);
             $validate($group);
 
-            if (in_array($kind, ['tasks.build', 'tasks.prep_fix', 'tasks.review_round'], true) && $intent !== null) {
+            if (in_array($kind, ['tasks.build', 'tasks.prep_fix', 'tasks.review_round', 'tasks.turn'], true) && $intent !== null) {
                 return app(TaskVmAdmission::class)->start($group, $kind, $input, fn (): array => $intent($group), $triggeredBy, $requestId);
             }
 

@@ -43,8 +43,9 @@ final readonly class TaskProvisionIntent
      * Only `proof.command` with persisted authenticated CI eligibility uses the CI pool; task work uses the task pool.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
+     * @param  array<string,mixed>  $capacityRequest
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false, array $capacityRequest = []): Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
@@ -58,12 +59,12 @@ final readonly class TaskProvisionIntent
 
             return $extend($input, $group, Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), TaskVm::query()->findOrFail(ValidatedData::integer($input['task_vm_id'])));
         };
-        if ($kind === 'proof.command') {
+        if ($kind === 'proof.command' && $ciPool) {
             return DB::transaction(fn (): Operation => $this->start->execute($kind, 'task_group', $group->id,
                 ValidatedData::integer(($input = $capture())['node_id']), $input, $caller, $request));
         }
 
-        return app(TaskVmAdmission::class)->start($group, $kind, ['commit' => $startCommit], $capture, $caller, $request);
+        return app(TaskVmAdmission::class)->start($group, $kind, ['commit' => $startCommit, ...$capacityRequest], $capture, $caller, $request);
     }
 
     /** Claims a fresh workspace. Re-entry uses the published branch after the VM was deleted. Call in the admission transaction.

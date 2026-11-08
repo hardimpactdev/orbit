@@ -17,20 +17,24 @@ use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
+use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Jobs\Tasks\AdmitTaskVm;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Env;
@@ -421,15 +425,18 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
-    it('waits without any capacity refusal or group allocation, then times out clearly', function (bool $reportOnly): void {
+    it('queues an operator proof in task admission without a VM, then times out clearly', function (bool $reportOnly): void {
         proofWorldWithoutCapacity();
         $proof = proofAdmitted(reportOnly: $reportOnly);
         expect($proof->error_code)->toBeNull()->and($proof->status)->toBe(OperationStatus::Running)
-            ->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)->and(Task::query()->count())->toBe(0);
-        Queue::assertPushed(AdmitProofRun::class);
-        $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
-        app(ProofRunIntent::class)->admit($proof->id);
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.capacity_timeout');
+            ->and(TaskVm::query()->count())->toBe(0);
+        $child = ProofRunSettlement::children($proof->id)->sole();
+        expect($child->status)->toBe(OperationStatus::Waiting)->and($child->current_step)->toBe('Wait for a task place');
+        Queue::assertPushed(AdmitTaskVm::class);
+        $child->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+        app(TaskVmAdmission::class)->admit($child->id);
+        expect($child->refresh()->error_code)->toBe('tasks.capacity_timeout')
+            ->and($proof->refresh()->status)->toBe(OperationStatus::Failed);
     })->with([true, false]);
 
     it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {
@@ -443,11 +450,12 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         Process::run(['rm', '-rf', $base]);
-        $detail = $proof->state['capacity_wait_reason'] ?? proofFailureDetail($proof) ?? '';
+        $child = ProofRunSettlement::children($proof->id)->first();
+        $detail = $child?->state['capacity_wait_reason'] ?? $proof->state['capacity_wait_reason'] ?? proofFailureDetail($proof) ?? '';
         expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
             ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped);
         if ($skipped) {
-            expect($proof->current_step)->toBe(ProofRunIntent::WaitStep);
+            expect(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place');
         }
     })->with([
         'main moved by documents and Gateway PHP only' => ['dddddddddddd0000000000000000000000000000', ['ahead', ['docs/a.md', 'apps/gateway/app/Domain/Proof/ProofRunIntent.php']], false],
@@ -471,7 +479,7 @@ describe('proof:run admission', function (): void {
         $proof = proofAdmitted();
 
         Process::run(['rm', '-rf', $base]);
-        expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+        expect($proof->status)->toBe(OperationStatus::Running)->and(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place')
             ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
         Queue::assertNotPushed(CancelProofGroup::class);
     });
@@ -612,3 +620,15 @@ it('derives the CI pool only from the authenticated active ci-runner Node', func
     $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, reportOnly: true, authenticatedCaller: $node);
     expect($proof->input)->toMatchArray(['caller_node_id' => $node->id, 'ci_pool' => $ci]);
 })->with([['ci-runner', 'active', true], ['ci-runner', 'failed', false], ['app-dev', 'active', false]]);
+
+it('keeps authenticated CI proofs waiting without children until capacity or a clear timeout', function (): void {
+    proofWorldWithoutCapacity();
+    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $proof = proofAdmitted(caller: $caller);
+    expect($proof->status)->toBe(OperationStatus::Running)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
+        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
+    $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+    app(ProofRunIntent::class)->admit($proof->id);
+    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.capacity_timeout');
+});
