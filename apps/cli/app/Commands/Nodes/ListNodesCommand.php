@@ -8,6 +8,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class ListNodesCommand extends NodeCommand
@@ -49,11 +50,14 @@ final class ListNodesCommand extends NodeCommand
                 $node->name,
                 $node->status,
                 $node->agent?->stateLabel(),
-                $node->roles === [] ? null : implode(', ', $node->roles),
+                $node->assignments === [] ? null : implode(', ', array_map(
+                    static fn (NodeRoleAssignmentResponse $assignment): string => "{$assignment->role} ({$assignment->status})",
+                    $node->assignments,
+                )),
                 $node->platform ?? null,
                 NodeOutput::tld($node->tld),
                 $node->user,
-                $node->clusterId ?? null,
+                $node->clusterName,
                 $node->wireguardIp ?? null,
                 $node->lanIp ?? null,
             ];

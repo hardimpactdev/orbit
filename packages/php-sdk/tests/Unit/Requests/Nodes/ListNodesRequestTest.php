@@ -108,6 +108,8 @@ function list_nodes_gateway_data(): array
                 'release' => 12,
             ],
             'agent' => ['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'],
+            'cluster_name' => 'development',
+            'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => 'converge:Require supported Ubuntu', 'error_code' => 'role.converge_failed']],
         ],
         [
             'id' => 7,
@@ -132,6 +134,8 @@ function list_nodes_gateway_data(): array
             'settings' => null,
             'updating' => null,
             'agent' => null,
+            'cluster_name' => null,
+            'assignments' => [],
         ],
     ];
 }

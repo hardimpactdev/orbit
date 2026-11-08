@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
@@ -77,6 +78,47 @@ it('preserves the original named constructor contract', function (): void {
         ->and($response->errorCode)
         ->toBeNull();
 });
+
+it('preserves recorded native failure labels in the shared Node projection', function (string $step): void {
+    $assignment = [
+        'id' => 12,
+        'role' => 'app-dev',
+        'status' => 'failed',
+        'failed_step' => $step,
+        'error_code' => 'node_role.convergence_failed',
+    ];
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'failed_step' => $step,
+        'assignments' => [$assignment],
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->failedStep)->toBe($step)
+        ->and($response->assignments[0]->failedStep)->toBe($step)
+        ->and($response->toArray()['assignments'])->toBe([$assignment]);
+})->with(['converge:Require supported Ubuntu', 'converge:Check the role']);
+
+it('still rejects unsafe assignment failure labels without exposing them', function (mixed $step): void {
+    try {
+        NodeResponse::fromGatewayData(node_response_gateway_data([
+            'assignments' => [[
+                'id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => $step,
+            ]],
+        ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        test()->fail('Unsafe assignment failure label was accepted.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->getMessage())
+            ->toBe('Gateway response contains an invalid node role assignment failed_step.')
+            ->not->toContain('step-secret-sentinel');
+    }
+})->with([
+    'wrong type' => [['bad']],
+    'empty' => '',
+    'overlong' => str_repeat('a', 129),
+    'control' => "converge:Require Ubuntu\nstep-secret-sentinel",
+    'credential assignment' => 'converge:password=step-secret-sentinel',
+    'credential header' => 'converge:Authorization:step-secret-sentinel',
+    'bearer credential' => 'converge:Bearer step-secret-sentinel',
+]);
 
 it('does not invent an SSH port for malformed gateway data', function (): void {
     $response = NodeResponse::fromGatewayData(
@@ -276,8 +318,29 @@ function node_response_public_data(): array
         'settings' => null,
         'updating' => null,
         'agent' => null,
+        'cluster_name' => null,
+        'assignments' => [],
     ];
 }
+
+it('preserves the shared assignment projection and Cluster name in Node collections', function (): void {
+    $assignments = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $assignments[] = ['id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
+            'failed_step' => $status === 'failed' ? 'ansible:converge' : null,
+            'error_code' => $status === 'failed' ? 'role.converge_failed' : null];
+    }
+    $node = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'cluster_name' => 'development', 'assignments' => $assignments,
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+    $list = new NodesResponse([$node], $node->requestId);
+
+    expect($node->clusterName)->toBe('development')
+        ->and($node->assignments)->toHaveCount(4)
+        ->and($list->toArray()['nodes'][0]['cluster_name'])->toBe('development')
+        ->and($list->toArray()['nodes'][0]['cluster_id'])->toBe(3)
+        ->and($list->toArray()['nodes'][0]['assignments'])->toBe($assignments);
+});
 
 it('reads the update in progress and ignores a malformed one', function (mixed $updating, ?array $expected): void {
     $response = NodeResponse::fromGatewayData(['id' => 4, 'name' => 'gateway', 'updating' => $updating], 'request');
