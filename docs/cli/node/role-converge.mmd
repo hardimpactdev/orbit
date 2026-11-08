@@ -61,6 +61,11 @@ sequenceDiagram
     SW->>N: Install Swamp<br/>native steps
     %%> What it does:
     %%> - installs the binary beside the running one, links it, then applies the identity, the serve unit and the worker units
+    SW->>N: Enable renewal<br/>systemd timer
+    %%> Order:
+    %%> - the Ansible node phase installs the renewal program and rendered units first
+    %%> - start the timer after both workers are started; it drains a, confirms re-enrollment, then drains b
+    %%> - active dispatches finish during each drain; the peer keeps accepting work
     %%> Why not in place:
     %%> - replacing the running binary breaks every dispatch, so the running serve and workers keep working until they restart
   end
