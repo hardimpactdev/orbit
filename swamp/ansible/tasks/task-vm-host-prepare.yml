@@ -1,0 +1,205 @@
+---
+# One host phase for native datasets and Incus-managed loop files. Read incompatible resources before changing any of them.
+- name: Read the host resources
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/{{ item }}?project=default&recursion=1"]
+  loop: [storage-pools, projects, networks, network-acls]
+  register: prepare_read
+  changed_when: false
+
+- name: Select the host resources
+  ansible.builtin.set_fact:
+    prepare_pool: "{{ (prepare_read.results[0].stdout | from_json | selectattr('name', 'equalto', host.pool) | first) | default({}) }}"
+    prepare_project: "{{ (prepare_read.results[1].stdout | from_json | selectattr('name', 'equalto', host.project) | first) | default({}) }}"
+    prepare_network: "{{ (prepare_read.results[2].stdout | from_json | selectattr('name', 'equalto', host.network) | first) | default({}) }}"
+    prepare_acl: "{{ (prepare_read.results[3].stdout | from_json | selectattr('name', 'equalto', prepare_acl_name) | first) | default({}) }}"
+
+- name: Refuse incompatible host resources
+  ansible.builtin.assert:
+    that:
+      - prepare_pool == {} or prepare_pool.driver == 'zfs'
+      - prepare_pool == {} or host.zfs_dataset is none or prepare_pool.config.source == host.zfs_dataset
+      - prepare_project == {} or prepare_project.config.get('features.networks', 'true') == 'false'
+      - prepare_project == {} or prepare_project.config.get('features.profiles', 'true') == 'true'
+      - prepare_project == {} or prepare_project.config.get('features.images', 'true') == 'true'
+      - prepare_project == {} or prepare_project.config.get('features.storage.volumes', 'true') == 'true'
+      - prepare_network == {} or (prepare_network.type == 'bridge' and prepare_network.managed and prepare_network.config['ipv4.address'] == prepare_bridge)
+    fail_msg: task_vm.setup_failed
+
+- name: Read an existing profile
+  when: prepare_project != {}
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/profiles/default?project={{ host.project }}"]
+  register: prepare_profile
+  changed_when: false
+
+- name: Refuse incompatible profile devices
+  when: prepare_project != {}
+  ansible.builtin.assert:
+    that:
+      - "(prepare_profile.stdout | from_json).devices.get('root', {}).get('type', 'disk') == 'disk'"
+      - "(prepare_profile.stdout | from_json).devices.get('eth0', {}).get('type', 'nic') == 'nic'"
+    fail_msg: task_vm.setup_failed
+
+- name: Inspect the pool source
+  ansible.builtin.stat:
+    path: "{{ prepare_pool.get('config', {}).get('source', '/dev/null') }}"
+    follow: true
+  register: prepare_source
+
+- name: Identify loop storage from its actual backing file
+  ansible.builtin.set_fact:
+    prepare_loop: "{{ (prepare_pool == {} and host.zfs_dataset is none) or (prepare_pool != {} and prepare_source.stat.isreg | default(false)) }}"
+
+- name: Install the ZFS tools
+  ansible.builtin.apt:
+    name: zfsutils-linux
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    fail_on_autoremove: true
+
+- name: Keep a host memory margin for loop storage after reboot
+  when: prepare_loop
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/orbit-task-vm-zfs.conf
+    content: "# Orbit loop-backed task VM storage: reserve RAM for host services.\noptions zfs zfs_arc_max=2147483648\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load ZFS
+  community.general.modprobe:
+    name: zfs
+    state: present
+
+- name: Read the running ARC limit
+  when: prepare_loop
+  ansible.builtin.slurp:
+    src: /sys/module/zfs/parameters/zfs_arc_max
+  register: prepare_arc
+
+- name: Keep the running ARC inside the loop host budget
+  when: prepare_loop and (prepare_arc.content | b64decode | trim) != '2147483648'
+  ansible.builtin.command:
+    argv: [tee, /sys/module/zfs/parameters/zfs_arc_max]
+    stdin: '2147483648'
+  changed_when: true
+
+- name: Read datasets before creating a native pool
+  when: prepare_pool == {} and host.zfs_dataset is not none
+  ansible.builtin.command:
+    argv: [zfs, list, -H, -o, name]
+  register: prepare_datasets
+  changed_when: false
+
+- name: Refuse an existing dataset
+  when: prepare_pool == {} and host.zfs_dataset is not none
+  ansible.builtin.assert:
+    that: host.zfs_dataset not in prepare_datasets.stdout.splitlines()
+    fail_msg: task_vm.setup_failed
+
+- name: Create the ZFS pool
+  when: prepare_pool == {}
+  ansible.builtin.command:
+    argv: >-
+      {{ ['incus', 'storage', 'create', host.pool, 'zfs']
+         + (['size=' ~ host.pool_size] if host.zfs_dataset is none else ['source=' ~ host.zfs_dataset]) }}
+  changed_when: true
+
+- name: Create the isolated project
+  when: prepare_project == {}
+  ansible.builtin.command:
+    argv: [incus, project, create, "{{ host.project }}", -c, features.images=true, -c, features.profiles=true, -c, features.networks=false]
+  changed_when: true
+
+- name: Create the egress ACL
+  when: prepare_acl == {}
+  ansible.builtin.command:
+    argv: [incus, network, acl, create, "{{ prepare_acl_name }}", --project, default]
+  changed_when: true
+
+- name: Converge the egress ACL
+  when: prepare_acl.get('egress', []) != prepare_acl_rules.egress or prepare_acl.get('ingress', []) != prepare_acl_rules.ingress
+  ansible.builtin.command:
+    argv: [incus, network, acl, edit, "{{ prepare_acl_name }}", --project, default]
+    stdin: "{{ prepare_acl_rules | to_json }}"
+  changed_when: true
+
+- name: Create the NAT bridge with its ACL attached
+  when: prepare_network == {}
+  ansible.builtin.command:
+    argv: "{{ ['incus', 'network', 'create', host.network, '--project', 'default', '--type=bridge', 'ipv4.address=' ~ prepare_bridge] + prepare_network_args }}"
+  changed_when: true
+
+- name: Converge the existing bridge
+  when: prepare_network != {} and prepare_network.config.get(item.key) != item.value
+  ansible.builtin.command:
+    argv: [incus, network, set, "{{ host.network }}", --project, default, "{{ item.key }}={{ item.value }}"]
+  loop: "{{ prepare_network_config | dict2items }}"
+  changed_when: true
+
+- name: Read the project profile
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/profiles/default?project={{ host.project }}"]
+  register: prepare_profile_after
+  changed_when: false
+
+- name: Converge the default profile
+  when: >-
+    (prepare_profile_after.stdout | from_json).devices !=
+    ((prepare_profile_after.stdout | from_json).devices | combine(prepare_devices, recursive=true))
+  ansible.builtin.command:
+    argv: [incus, profile, edit, default, --project, "{{ host.project }}"]
+    stdin: >-
+      {{ (prepare_profile_after.stdout | from_json)
+         | combine({'devices': (prepare_profile_after.stdout | from_json).devices | combine(prepare_devices, recursive=true)}) | to_json }}
+  changed_when: true
+
+- name: Read the project restrictions
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/projects/{{ host.project }}"]
+  register: prepare_project_after
+  changed_when: false
+
+- name: Converge project restrictions
+  when: (prepare_project_after.stdout | from_json).config.get(item.key) != item.value
+  ansible.builtin.command:
+    argv: [incus, project, set, "{{ host.project }}", "{{ item.key }}={{ item.value }}"]
+  loop: "{{ prepare_restrictions | dict2items }}"
+  changed_when: true
+
+- name: Read stock images
+  ansible.builtin.command:
+    argv: [incus, --project, "{{ host.project }}", image, list, --format, json]
+  register: prepare_images
+  changed_when: false
+
+- name: Copy the stock Ubuntu VM image
+  when: host.image not in (prepare_images.stdout | from_json | map(attribute='aliases') | flatten | map(attribute='name') | list)
+  ansible.builtin.command:
+    argv: [incus, image, copy, images:ubuntu/26.04/cloud, "local:", --vm, --alias, "{{ host.image }}", --target-project, "{{ host.project }}"]
+  changed_when: true
+
+- name: Allow forwarded task VM traffic
+  community.general.ufw:
+    rule: allow
+    route: true
+    interface_in: orbittask+
+    comment: orbit-task-vms
+
+- name: Check prepared storage and bridge
+  ansible.builtin.command:
+    argv: [incus, query, "--", "/1.0/{{ item }}"]
+  loop: ["storage-pools/{{ host.pool }}", "networks/{{ host.network }}?project=default"]
+  register: prepare_check
+  changed_when: false
+
+- name: Confirm host readiness
+  ansible.builtin.assert:
+    that:
+      - (prepare_check.results[0].stdout | from_json).driver == 'zfs'
+      - (prepare_check.results[1].stdout | from_json).config['ipv4.address'] == prepare_bridge
+      - (prepare_check.results[1].stdout | from_json).config['security.acls'] == prepare_acl_name
+      - (prepare_check.results[1].stdout | from_json).config['ipv6.address'] == 'none'
+    fail_msg: task_vm.setup_failed

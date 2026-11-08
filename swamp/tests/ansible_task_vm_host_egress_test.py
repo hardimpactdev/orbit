@@ -14,7 +14,7 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 PLAYBOOK = ANSIBLE / 'task-vm-host.yml'
-AGENT_SETUP = Path(__file__).resolve().parents[2] / 'apps/agent/src/commands/incus/setup.rs'
+HOST_PLAYBOOK = Path(__file__).resolve().parents[1] / 'ansible/task-vm-host.yml'
 PRIVATE = '10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4'
 OURS = 'log-queries=extra\nlog-facility=/var/log/orbit/dnsmasq-orbittask0.log'
 # Only these two checks fail the part, and with it the image refresh. Every other check warns.
@@ -171,12 +171,10 @@ class TaskVmHostEgressTest(unittest.TestCase):
         self.assertTrue(all(handler['failed_when'] is False for handler in play['handlers']))
 
     def test_the_ranges_the_log_skips_are_the_ranges_the_bridge_acl_drops(self):
-        # One list in two places: the agent's `acl()` makes the ACL, this part reads it. Drift would log a private range or hide a public one.
-        source = AGENT_SETUP.read_text()
-        acl = re.search(r'"action":"drop","destination":"([^"]+)"', source)
-        self.assertIsNotNone(acl, 'apps/agent/src/commands/incus/setup.rs no longer lists the dropped egress ranges')
-        self.assertEqual(egress_play()['vars']['private_ranges'], acl.group(1).split(','))
-        self.assertEqual(PRIVATE.split(', '), acl.group(1).split(','))
+        prepare = next(play for play in yaml.safe_load(HOST_PLAYBOOK.read_text()) if play.get('tags') == ['host-prepare'])
+        ranges = prepare['vars']['prepare_private_ranges']
+        self.assertEqual(egress_play()['vars']['private_ranges'], ranges)
+        self.assertEqual(PRIVATE.split(', '), ranges)
 
     def test_it_changes_the_bridge_in_one_setting_and_nothing_else_of_incus(self):
         play = egress_play()

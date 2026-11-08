@@ -44,6 +44,43 @@
         ansible_port: "{{ host.ssh.target.port }}"
         ansible_ssh_private_key_file: "{{ host.ssh.identity_file }}"
 
+- name: Prepare the task VM host
+  hosts: task_vm_host
+  become: true
+  gather_facts: false
+  tags: [host-prepare]
+  vars:
+    prepare_bridge: "{{ host.cidr.split('/')[0].rsplit('.', 1)[0] }}.{{ (host.cidr.split('/')[0].rsplit('.', 1)[1] | int) + 1 }}/{{ host.cidr.split('/')[1] }}"
+    prepare_acl_name: "{{ host.network }}-egress"
+    prepare_private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
+    prepare_acl_rules:
+      description: Orbit task VM boundary
+      egress:
+        - {action: drop, destination: "{{ prepare_private_ranges | join(',') }}", state: enabled}
+        - {action: allow, state: enabled}
+      ingress:
+        - {action: allow, source: "{{ prepare_bridge.split('/')[0] }}/32", protocol: tcp, destination_port: '22', state: enabled}
+    prepare_network_config:
+      ipv4.nat: 'true'
+      ipv6.address: none
+      security.acls: "{{ prepare_acl_name }}"
+      security.acls.default.ingress.action: reject
+      security.acls.default.egress.action: reject
+    prepare_network_args: "{{ prepare_network_config | dict2items | map(attribute='key') | zip(prepare_network_config.values()) | map('join', '=') | list }}"
+    prepare_devices:
+      root: {type: disk, path: /, pool: "{{ host.pool }}"}
+      eth0: {type: nic, name: eth0, network: "{{ host.network }}", security.port_isolation: 'true'}
+    prepare_restrictions:
+      restricted: 'true'
+      restricted.networks.access: "{{ host.network }}"
+      restricted.virtual-machines.lowlevel: allow
+      restricted.devices.disk: allow
+      restricted.devices.disk.paths: /var/lib/orbit/package-cache
+      restricted.snapshots: allow
+  tasks:
+    - name: Prepare storage and isolated networking
+      ansible.builtin.import_tasks: tasks/task-vm-host-prepare.yml
+
 - name: Task VM base
   hosts: task_vm_host
   become: true
@@ -74,7 +111,7 @@
           ansible.builtin.command: { argv: "{{ incus + ['list', '--format', 'json', '--', '^' ~ base.vm ~ '$'] }}" }
           register: base_read
           changed_when: false
-        # Once per host: a host without a base VM gets it from the stock image that `task-vms:prepare-host` copied and a blank seed volume.
+        # Once per host: a host without a base VM gets it from the stock image that host preparation copied and a blank seed volume.
         # The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge that
         # follows builds everything else, and it builds all of it when no digest is recorded.
         - name: Make the base VM
@@ -384,7 +421,7 @@
   tags: [egress-log]
   vars:
     bridge: "{{ host.network }}"
-    # The ranges the bridge ACL drops, as `acl()` in apps/agent/src/commands/incus/setup.rs lists them (a test holds the two equal).
+    # The ranges the bridge ACL drops, as the host preparation phase lists them (a test holds the two equal).
     # The log skips them, so it records only a connection that can leave the host.
     private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4]
     # Our own file, never Incus's: `dnsmasq.<bridge>.log` in /var/log/incus is the capture of dnsmasq's stderr that Incus truncates at every
@@ -498,7 +535,7 @@
          and 'log prefix "orbit-egress "' in egress_end_table.stdout
          and (egress_end_table.stdout.split() | intersect(forbidden) | length == 0) }}
   tasks:
-    # The bridge belongs to `task-vms:prepare-host`. A host without it is not ready for this part, and nothing below runs.
+    # The bridge belongs to the shared host preparation phase. A host without it is not ready for this part, and nothing below runs.
     - name: Read the bridge
       ansible.builtin.command: { argv: [incus, query, "/1.0/networks/{{ bridge }}?project=default"] }
       register: bridge_before
