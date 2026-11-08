@@ -25,14 +25,14 @@ rm -f -- {{ f.path | quote }} || bad {{ f.path | quote }}
 rm -f -- {{ (dns_dir ~ '/disabled/' ~ (f.path | basename)) | quote }} || bad {{ (dns_dir ~ '/disabled/' ~ (f.path | basename)) | quote }}
 {% endfor %}
 systemctl daemon-reload || bad 'daemon-reload'
-{% for u in restore_snap.units if u.name == 'dnsmasq' %}
+{% for u in restore_snap.units if u.name == dns_service | default('dnsmasq') %}
 {% if u.enabled %}
-systemctl enable dnsmasq >/dev/null 2>&1 || bad 'enable dnsmasq'
+systemctl enable {{ dns_service | default('dnsmasq') | quote }} >/dev/null 2>&1 || bad 'enable dnsmasq'
 {% else %}
-systemctl disable dnsmasq >/dev/null 2>&1 || bad 'disable dnsmasq'
+systemctl disable {{ dns_service | default('dnsmasq') | quote }} >/dev/null 2>&1 || bad 'disable dnsmasq'
 {% endif %}
 {% if u.active %}
-if systemctl restart dnsmasq; then
+if systemctl restart {{ dns_service | default('dnsmasq') | quote }}; then
 {% if restore_snap.files | selectattr('present') | selectattr('path', 'equalto', dns_conf_file) | list | length > 0 %}
   cp -p -- {{ dns_conf_file | quote }} {{ dns_loaded_file | quote }} || bad 'the loaded copy'
 {% else %}
@@ -42,13 +42,13 @@ else
   bad 'restart dnsmasq'
 fi
 {% else %}
-systemctl stop dnsmasq || bad 'stop dnsmasq'
+systemctl stop {{ dns_service | default('dnsmasq') | quote }} || bad 'stop dnsmasq'
 {% endif %}
 {% endfor %}
-{% for u in restore_snap.units if u.name != 'dnsmasq' and u.enabled %}
+{% for u in restore_snap.units if u.name != dns_service | default('dnsmasq') and u.enabled %}
 systemctl enable -- {{ u.name | quote }} >/dev/null 2>&1 || bad {{ ('enable ' ~ u.name) | quote }}
 {% endfor %}
-{% for u in restore_snap.units if u.name != 'dnsmasq' and u.active %}
+{% for u in restore_snap.units if u.name != dns_service | default('dnsmasq') and u.active %}
 systemctl start -- {{ u.name | quote }} || bad {{ ('start ' ~ u.name) | quote }}
 {% endfor %}
 end=$(( $(date +%s) + {{ dns_restore_deadline }} ))
@@ -65,7 +65,7 @@ ask() {
 # The old setup served the VPN DNS address clients use (dns.listen[0]) and the Node's own resolver, so those must answer over UDP and TCP.
 # A further listen address was never served by the old setup, and another process may hold it (a foreign dnsmasq that answers REFUSED), so
 # it is only reported, never a failure. The cutover script still demands that dnsmasq holds every listen address: that detects the failed start.
-{% for address in [dns.listen[0], dns_local_resolver] %}
+{% for address in (([dns.listen[0]] + ([dns_local_resolver] if dns_local_resolver is not none else [])) if restore_snap.units | selectattr('active') | list | length > 0 else []) %}
 ask {{ address | quote }} +notcp || bad {{ ('answer on ' ~ address ~ ' over UDP') | quote }}
 ask {{ address | quote }} +tcp || bad {{ ('answer on ' ~ address ~ ' over TCP') | quote }}
 {% endfor %}

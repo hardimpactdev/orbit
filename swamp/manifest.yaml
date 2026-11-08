@@ -16,6 +16,7 @@ additionalFiles:
   - ansible/route-withdraw.yml
   - ansible/ai-router-task-guard.yml
   - ansible/dns-publish.yml
+  - ansible/peer-dns.yml
   - ansible/vars/dns.yml
   - ansible/templates/dns-validate.j2
   - ansible/templates/dns-orbit.conf.j2
@@ -27,6 +28,17 @@ additionalFiles:
   - ansible/templates/dns-restore.sh.j2
   - ansible/templates/dns-cutover.sh.j2
   - ansible/tasks/dns-commit.yml
+  - ansible/tasks/dns-router-prepare.yml
+  - ansible/tasks/dns-router-retire.yml
+  - ansible/tasks/dns-address-target.yml
+  - ansible/tasks/dns-member.yml
+  - ansible/tasks/dns-target-ready.yml
+  - ansible/tasks/dns-member-health.yml
+  - ansible/tasks/dns-member-vpn.yml
+  - ansible/tasks/dns-member-snapshot.yml
+  - ansible/tasks/dns-member-restore.yml
+  - ansible/templates/dns-member-policy.j2
+  - ansible/templates/dns-result.j2
   - ansible/tasks/address-node.yml
   - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml

@@ -12,7 +12,7 @@
   loop: "{{ address_target.host_keys }}"
 - name: Address the Node
   ansible.builtin.add_host:
-    name: node
+    name: "{{ address_name | default('node') }}"
     groups: ["{{ address_group }}"]
     ansible_host: "{{ address_target.host }}"
     ansible_user: "{{ address_target.user }}"

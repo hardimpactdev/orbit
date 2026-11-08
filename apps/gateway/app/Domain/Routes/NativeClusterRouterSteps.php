@@ -32,7 +32,7 @@ final readonly class NativeClusterRouterSteps
 
         $leaves = array_map(NativeRouteCreatePlan::leaf(...), RouteExecutionProof::objects($forward['prepare_certificates']));
         $installs = NativeRouteTargetPlan::installs(['renders' => $renders], $leaves);
-        $publishCaddy = $restoreCaddy = $retireCaddy = $dns = $restoreDns = [];
+        $publishCaddy = $restoreCaddy = $retireCaddy = $dns = [];
         foreach ($renders as $nodeId => $render) {
             $nodeId = (int) $nodeId;
             [$before, $prepared, $after] = [$content($nodeId, 'before'), $content($nodeId, 'prepared'), $content($nodeId, 'caddy')];
@@ -49,10 +49,7 @@ final readonly class NativeClusterRouterSteps
             $dnsBefore = is_array($render) && is_array($render['dns_before'] ?? null) ? ValidatedData::object($render['dns_before']) : null;
             if ($dnsAfter !== null && ! PrivateDnsPublication::same($dnsAfter, $dnsBefore)) {
                 $dns[] = ['node_id' => $nodeId, 'dns' => $dnsAfter];
-                if ($dnsBefore !== null) {
-                    // The restore runs after the forward publication, so its render takes a newer revision.
-                    $restoreDns[] = ['node_id' => $nodeId, 'dns' => app(PrivateDnsPublication::class)->restamp($dnsBefore)];
-                }
+
             }
         }
         $rules = static function (string $side, string $ensure) use ($forward): array {
@@ -94,7 +91,7 @@ final readonly class NativeClusterRouterSteps
                 'account' => app(RouteRenderContext::class)->user($node)];
         }
         ksort($nodes);
-        $common = ['leaves' => $leaves, 'leaf_indexes' => array_keys($leaves), 'root_certificate' => $leaves === [] ? '' : app(LeafCertificateSigner::class)->rootCertificate(),
+        $common = ['retain_dns_selection' => ($candidate['dns_selected'] ?? false) === true, 'leaves' => $leaves, 'leaf_indexes' => array_keys($leaves), 'root_certificate' => $leaves === [] ? '' : app(LeafCertificateSigner::class)->rootCertificate(),
             'nodes' => $nodes === [] ? (object) [] : $nodes];
         $empty = array_fill_keys(NativeRouteTargetPlan::SiteLists, []) + ['lan' => []];
         $trust = array_values(array_unique(array_column($leaves, 'node_id')));
@@ -110,14 +107,14 @@ final readonly class NativeClusterRouterSteps
             $checkNodes = array_values(array_unique([...ValidatedData::integerList($retire['site_nodes']), ...$firewallNodes]));
             sort($checkNodes);
 
-            return [...$common, 'retire' => $retire, 'cleanup' => $cleanup, 'lan_absent' => [], 'retire_nodes' => $retireNodes,
+            return [...$common, 'dns' => $dns, 'retire' => $retire, 'cleanup' => $cleanup, 'lan_absent' => [], 'retire_nodes' => $retireNodes,
                 'lan_remove' => $retireLan, 'ingress_close' => [], 'firewall_nodes' => $firewallNodes, 'check_nodes' => $checkNodes];
         }
 
         return [...$common, 'candidate' => $candidate === null ? [] : [['node_id' => ValidatedData::integer($candidate['node_id']), 'intent' => $candidate]],
             'lan_present' => $lan, 'publish' => NativeRouteTargetPlan::phase([...$empty, 'caddy' => $publishCaddy, 'trust' => $trust], $common, $installs['early']),
-            'probes' => $probes, 'dns' => $dns, 'grace' => $dns === [] ? [] : [['seconds' => 31]], 'select' => $dns === [] ? [] : [['records' => count($dns)]],
+            'probes' => $probes, 'dns' => $dns, 'select' => $dns === [] ? [] : [['records' => count($dns)]],
             'retire' => $retire, 'cleanup' => $cleanup, 'lan_absent' => $retireLan, 'retire_nodes' => $retireNodes,
-            'restore' => $restore, 'restore_lan' => $lan, 'restore_dns_plan' => ['dns' => $restoreDns, 'nodes' => $common['nodes']]];
+            'restore' => $restore, 'restore_lan' => $lan];
     }
 }

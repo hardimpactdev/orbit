@@ -6,7 +6,9 @@ namespace App\Actions\Clusters;
 
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ActiveTldScopeGuard;
+use App\Domain\Clusters\ClusterDnsTransition;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteMutationReconciler;
@@ -45,6 +47,8 @@ final readonly class DetachClusterNodeAction
 
         try {
             $this->assertDetachable($cluster, $node);
+            app(ClusterDnsTransition::class)->begin($node, $cluster->id, null);
+            app(PrivateDnsManager::class)->converge();
             $this->convergeMembership([$node->id => ['cluster_id' => null]]);
 
             $updated = DB::transaction(function () use ($cluster, $node): Cluster {
@@ -83,6 +87,8 @@ final readonly class DetachClusterNodeAction
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],
         );
+
+        app(ClusterDnsTransition::class)->complete($node);
 
         return $updated;
     }

@@ -35,11 +35,14 @@ describe('PrivateDnsPublication', function (): void {
         $node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
 
         $entry = app(PrivateDnsPublication::class)->entry($node);
+        $preparation = app(PrivateDnsPublication::class)->entry($node, clusterOnly: true);
 
         expect($entry['node_id'])->toBe($node->id)
             ->and($entry['connection'])->toMatchArray(['nodeHost' => '10.44.0.1', 'nodeUser' => 'orbit', 'become' => true])
             ->and($entry['host_keys'])->toBe(['ssh-ed25519 vpn-host-key'])
-            ->and($entry['dns']['listen'])->toBe(['10.44.0.1']);
+            ->and($entry['dns']['listen'])->toBe(['10.44.0.1'])
+            ->and($entry['dns'])->not->toHaveKey('cluster_only')
+            ->and($preparation['dns']['cluster_only'])->toBeTrue();
     });
 
     it('restamps a render with a newer revision and leaves its content', function (): void {

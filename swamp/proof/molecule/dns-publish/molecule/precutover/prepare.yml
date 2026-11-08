@@ -1,0 +1,5 @@
+---
+- name: Prepare the real old listener fixture
+  ansible.builtin.import_playbook: ../default/prepare.yml
+- name: Prepare isolated Router and member links
+  ansible.builtin.import_playbook: ../cluster/prepare.yml

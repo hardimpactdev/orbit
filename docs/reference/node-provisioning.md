@@ -78,7 +78,7 @@ Admission records a provisioning Node and freezes its public resource plan. Boot
 | Observer | Ansible phase `agent`: fetch the pinned binary, write its public configuration and mode-0600 secret, and start its systemd unit. |
 | Access | A native step logs in as the managed user and, on Linux, runs a command with passwordless sudo. |
 | Roles | Run the frozen native role workflows in assignment order; publish the CLI as best effort. Exporters require explicit enablement. |
-| DNS | The shared `dns-publish` child writes the dnsmasq files of a new VPN hub and publishes private DNS. |
+| DNS | The shared `dns-publish` child publishes VPN and Router projections and selects eligible LAN members. The member phase keeps public DNS independent. |
 | End check | Ansible phase `check` reads the agent, its binary and secret, and the tunnel handshake. The native `Check the Node` assertion determines completion. |
 
 Each role in the intent names its execution copies as a record: `{}` for a role without any.

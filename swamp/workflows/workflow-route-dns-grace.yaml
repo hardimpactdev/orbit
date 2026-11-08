@@ -16,4 +16,5 @@ jobs:
       behaviorName: route-dns-grace
       methodName: execute
       inputs:
-        run: /usr/bin/sleep 31
+        # dns-publish owns the durable grace, including retries. Existing callers keep their terminal step.
+        run: timeout 1 true

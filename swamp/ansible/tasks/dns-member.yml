@@ -1,0 +1,267 @@
+---
+- name: Read resolved capability
+  ansible.builtin.command:
+    argv: [resolvectl, --version]
+  register: member_resolved_version
+  changed_when: false
+- name: Render the effective peer policy
+  ansible.builtin.set_fact:
+    member_effective: "{{ lookup('ansible.builtin.template', 'dns-member-policy.j2') | from_json }}"
+  vars:
+    policy: "{{ dns_member_policy }}"
+    member_version: "{{ member_resolved_version.stdout | regex_findall('^systemd ([0-9]+)') | first | default('0') }}"
+- name: Choose a fully qualified Cluster probe
+  ansible.builtin.set_fact:
+    member_cluster_probe_name: >-
+      {{ (member_effective.delegate.domains | first) if '.' in (member_effective.delegate.domains | first)
+      else 'orbit-dns-check.' ~ (member_effective.delegate.domains | first) }}
+  when: member_effective.delegate is not none
+- name: Refuse invalid peer policy
+  ansible.builtin.assert:
+    that: member_effective.error is none
+    fail_msg: dns.policy_invalid
+    quiet: true
+- name: Name the peer lock holder
+  ansible.builtin.set_fact:
+    member_holder: "/run/orbit-peer-dns-{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}.pid"
+- name: Take the shared WireGuard peer lock
+  ansible.builtin.command:
+    argv:
+      - flock
+      - --exclusive
+      - --timeout
+      - "60"
+      - /run/lock/orbit-wireguard-peer.lock
+      - sh
+      - -c
+      - 'echo $$ > "$1" && exec sleep 420'
+      - sh
+      - "{{ member_holder }}"
+  async: 500
+  poll: 0
+  register: member_lock
+  changed_when: false
+- name: Apply and check the peer policy under its lock
+  block:
+    - name: Wait for the peer lock
+      ansible.builtin.wait_for:
+        path: "{{ member_holder }}"
+        timeout: 65
+    - name: Confirm resolved is active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, systemd-resolved]
+      changed_when: false
+    - name: Read the existing VPN DNS server
+      ansible.builtin.command:
+        argv: [resolvectl, dns, orbit]
+      register: member_old_server
+      changed_when: false
+    - name: Read the existing VPN domains
+      ansible.builtin.command:
+        argv: [resolvectl, domain, orbit]
+      register: member_old_domains
+      changed_when: false
+    - name: Read the existing VPN default-route policy
+      ansible.builtin.command:
+        argv: [resolvectl, default-route, orbit]
+      register: member_old_default
+      changed_when: false
+    - name: Read the active delegate scopes
+      ansible.builtin.command:
+        argv: [resolvectl, status]
+      register: member_live_scopes
+      changed_when: false
+    - name: Keep the active owned delegate
+      ansible.builtin.set_fact:
+        member_live_delegate: >-
+          {{ member_live_scopes.stdout | regex_findall('(?ms)^Delegate orbit-cluster\n(.*?)(?=^(?:Link [0-9]|Delegate |Global)|\Z)')
+          | first | default('') }}
+    - name: Read the owned delegate
+      ansible.builtin.slurp:
+        src: /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+      register: member_old_delegate
+      failed_when: member_old_delegate is failed and 'file not found' not in (member_old_delegate.msg | default('') | lower)
+    - name: Read the last applied member receipt
+      ansible.builtin.slurp:
+        src: /var/lib/orbit/peer-dns/applied.json
+      register: member_applied_read
+      failed_when: member_applied_read is failed and 'file not found' not in (member_applied_read.msg | default('') | lower)
+    - name: Read the DNS marker
+      ansible.builtin.slurp:
+        src: /etc/wireguard/orbit.dns-link
+      register: member_marker_read
+      failed_when: member_marker_read is failed and 'file not found' not in (member_marker_read.msg | default('') | lower)
+    - name: Read the DNS hook alone
+      ansible.builtin.command:
+        argv: [grep, -E, "^PostUp[[:space:]]*=[[:space:]]*resolvectl dns %i ", /etc/wireguard/orbit.conf]
+      register: member_hook_read
+      changed_when: false
+      failed_when: member_hook_read.rc not in [0, 1]
+    - name: Compare the persistent and live member scopes
+      ansible.builtin.set_fact:
+        member_applied: "{{ (member_applied_read.content | b64decode | from_json) if member_applied_read.content is defined else {} }}"
+        member_changed: >-
+          {{ member_applied_read.content is not defined or (member_old_server.stdout.split(':', 1)[1] | trim) != member_effective.server or
+          (member_old_domains.stdout.split(':', 1)[1] | trim) != (member_effective.domains | map('regex_replace', '^', '~') | join(' ')) or
+          (member_old_default.stdout.split(':', 1)[1] | trim) != 'no' or
+          (member_old_delegate.content | default('') | b64decode) != member_effective.delegate_content or
+          (member_effective.delegate is none and member_live_delegate != '') or
+          (member_effective.delegate is not none and
+          ((member_live_delegate | regex_findall('(?m)^\s*DNS Servers: (.*)$') | first | default('') | trim) != member_effective.delegate.server or
+          (member_live_delegate | regex_findall('(?m)^\s*DNS Domain: (.*)$') | first | default('') | trim) !=
+          (member_effective.delegate.domains | map('regex_replace', '^', '~') | join(' ')) or
+          (member_live_delegate | regex_findall('(?m)^\s*Default Route: (.*)$') | first | default('') | trim) != 'no')) or
+          (member_marker_read.content | default('') | b64decode) != member_effective.marker or
+          member_hook_read.stdout != member_effective.hook }}
+    - name: Refuse a stale member selection under the peer lock
+      ansible.builtin.assert:
+        that: (dns_member_policy.revision | default(0) | int) >= (member_applied.revision | default(0) | int)
+        fail_msg: dns.member_selection_superseded
+        quiet: true
+    - name: Check the LAN route before selection
+      ansible.builtin.command:
+        argv: [ip, -4, route, get, "{{ member_effective.delegate.server }}"]
+      register: member_lan_route
+      changed_when: false
+      when: member_effective.delegate is not none
+    - name: Refuse a Cluster path through WireGuard
+      ansible.builtin.assert:
+        that: "' dev orbit ' not in (' ' ~ member_lan_route.stdout ~ ' ')"
+        fail_msg: dns.cluster_lan_unreachable
+        quiet: true
+      when: member_effective.delegate is not none
+    - name: Capture durable member recovery state
+      ansible.builtin.import_tasks: dns-member-snapshot.yml
+      when: member_changed
+    - name: Persist the selected scopes and verify them
+      block:
+        - name: Make the delegate directory
+          ansible.builtin.file:
+            path: /etc/systemd/dns-delegate.d
+            state: directory
+            mode: "0755"
+        # Persist and activate complete VPN policy before delegate removal, including reboot hooks.
+        - name: Apply complete VPN policy before withdrawal
+          ansible.builtin.import_tasks: dns-member-vpn.yml
+          when: member_effective.delegate is none
+        - name: Write the selected Cluster delegate
+          ansible.builtin.copy:
+            content: "{{ member_effective.delegate_content }}"
+            dest: /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Reload member resolved
+          when: member_effective.delegate is not none
+        - name: Withdraw the owned Cluster delegate
+          ansible.builtin.file:
+            path: /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+            state: absent
+          notify: Reload member resolved
+          when: member_effective.delegate is none
+        - name: Reload a changed live scope even when its file already matches
+          ansible.builtin.debug:
+            msg: Applying changed private scopes
+          changed_when: member_changed
+          notify: Reload member resolved
+        - name: Load the selected delegate scopes
+          ansible.builtin.meta: flush_handlers
+        - name: Apply the VPN scope after the delegate is ready
+          ansible.builtin.import_tasks: dns-member-vpn.yml
+          when: member_effective.delegate is not none
+        - name: Flush cached answers before checking selection
+          ansible.builtin.command:
+            argv: [resolvectl, flush-caches]
+          changed_when: false
+        - name: Resolve a private VPN name without cache
+          ansible.builtin.command:
+            argv: [timeout, "20", resolvectl, query, --cache=no, --type=A, gateway.orbit]
+          register: member_private_probe
+          changed_when: false
+        - name: Resolve a Cluster name without cache
+          ansible.builtin.command:
+            argv:
+              - timeout
+              - "20"
+              - resolvectl
+              - query
+              - --cache=no
+              - --type=A
+              - "{{ member_cluster_probe_name }}"
+          register: member_cluster_probe
+          changed_when: false
+          when: member_effective.delegate is not none
+        - name: Check the selected Cluster address
+          ansible.builtin.assert:
+            that: member_effective.delegate.server in member_cluster_probe.stdout
+            fail_msg: dns.cluster_dns_unreachable
+            quiet: true
+          when: member_effective.delegate is not none
+        - name: Resolve a public name without cache
+          ansible.builtin.command:
+            argv: [timeout, "20", resolvectl, query, --cache=no, --type=A, example.com]
+          register: member_public_probe
+          changed_when: false
+        - name: Verify private and public resolver selection
+          ansible.builtin.assert:
+            that:
+              - "'-- link: orbit' in member_private_probe.stdout"
+              - "'-- link: orbit' not in member_public_probe.stdout"
+            fail_msg: dns.check_failed
+            quiet: true
+        - name: Converge read-only DNS health observation
+          ansible.builtin.import_tasks: dns-member-health.yml
+        - name: Read the successful member selection time
+          ansible.builtin.command:
+            argv: [date, +%s]
+          register: member_commit_time
+          changed_when: false
+        - name: Record the effective policy receipt
+          ansible.builtin.set_fact:
+            dns_member_receipt:
+              revision: "{{ dns_member_policy.revision | default('0') }}"
+              checked_at: "{{ member_commit_time.stdout }}"
+              effective: "{{ member_effective }}"
+              selected_at: "{{ member_commit_time.stdout if member_changed else (member_applied.selected_at | default(member_commit_time.stdout)) }}"
+              digest: "{{ member_effective | to_json | hash('sha256') }}"
+        - name: Commit the member policy
+          ansible.builtin.copy:
+            content: "{{ dns_member_receipt | to_json }}"
+            dest: /var/lib/orbit/peer-dns/applied.json
+            mode: "0600"
+          changed_when: false
+        - name: Remove the committed member snapshot
+          ansible.builtin.file:
+            path: /var/lib/orbit/peer-dns/snapshot
+            state: absent
+      rescue:
+        - name: Retain the member failure for the aggregate result
+          ansible.builtin.set_fact:
+            dns_member_failure: dns.member_selection_failed
+        - name: Recover the member with complete private coverage
+          when: member_snapshot is defined
+          block:
+            - name: Restore the durable member snapshot
+              ansible.builtin.import_tasks: dns-member-restore.yml
+          rescue:
+            - name: Retain incomplete member recovery
+              ansible.builtin.set_fact:
+                dns_member_failure: dns.rollback_failed
+            - name: Report incomplete member recovery
+              ansible.builtin.fail:
+                msg: dns.rollback_failed
+        - name: Fail the member phase with its serving paths retained
+          ansible.builtin.fail:
+            msg: dns.member_selection_failed
+  always:
+    - name: Release the peer lock
+      ansible.builtin.shell: |
+        if test -r {{ member_holder | quote }}; then
+          kill "$(cat {{ member_holder | quote }})" 2>/dev/null || true
+          rm -f -- {{ member_holder | quote }}
+        fi
+      changed_when: false
+    - name: Remove the peer lock async job
+      ansible.builtin.async_status:
+        jid: "{{ member_lock.ansible_job_id }}"
+        mode: cleanup

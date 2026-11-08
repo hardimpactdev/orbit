@@ -1,0 +1,58 @@
+---
+- name: Make the peer DNS state directory
+  ansible.builtin.file:
+    path: /var/lib/orbit/peer-dns
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+- name: Read a retained peer DNS snapshot
+  ansible.builtin.slurp:
+    src: /var/lib/orbit/peer-dns/snapshot/manifest.json
+  register: member_snapshot_read
+  failed_when: member_snapshot_read is failed and 'file not found' not in (member_snapshot_read.msg | default('') | lower)
+- name: Capture the peer state before its first change
+  when: member_snapshot_read.content is not defined
+  block:
+    - name: Make the peer snapshot directory
+      ansible.builtin.file:
+        path: /var/lib/orbit/peer-dns/snapshot
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+    - name: Inspect the owned persistent peer files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /var/lib/orbit/peer-dns/applied.json
+        - /etc/wireguard/orbit.conf
+        - /etc/wireguard/orbit.dns-link
+        - /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+      register: member_snapshot_files
+    - name: Copy owned peer files privately on the member
+      ansible.builtin.copy:
+        src: "{{ item.item }}"
+        dest: "/var/lib/orbit/peer-dns/snapshot/{{ item.item | basename }}"
+        remote_src: true
+        mode: "0600"
+      loop: "{{ member_snapshot_files.results }}"
+      when: item.stat.exists
+      no_log: true
+    - name: Describe the captured public policy
+      ansible.builtin.copy:
+        content: >-
+          {{ {'server': member_old_server.stdout.split(':', 1)[1] | trim,
+          'domains': (member_old_domains.stdout.split(':', 1)[1] | trim).split(),
+          'default_route': member_old_default.stdout.split(':', 1)[1] | trim,
+          'present': member_snapshot_files.results | selectattr('stat.exists') | map(attribute='item') | list,
+          'absent': member_snapshot_files.results | rejectattr('stat.exists') | map(attribute='item') | list} | to_json }}
+        dest: /var/lib/orbit/peer-dns/snapshot/manifest.json
+        mode: "0600"
+- name: Read the durable public snapshot manifest
+  ansible.builtin.slurp:
+    src: /var/lib/orbit/peer-dns/snapshot/manifest.json
+  register: member_snapshot_manifest
+- name: Keep the original snapshot for recovery
+  ansible.builtin.set_fact:
+    member_snapshot: "{{ member_snapshot_manifest.content | b64decode | from_json }}"

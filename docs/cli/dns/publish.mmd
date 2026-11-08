@@ -18,6 +18,7 @@ sequenceDiagram
   %%> - reads stored desired and pending Route, Cluster, Router and membership rows in the revision transaction
   %%> - builds the VPN WireGuard answers, Router LAN answers for its LAN members, and each member's Cluster delegate and remaining VPN policy from one address-selection rule
   %%> - includes explicit retirement targets from unfinished transitions; a missing row alone never authorizes deletion
+  %%> - pre-cutover preparation sets cluster_only: it publishes Router projections and member policies through this same phase while leaving the VPN listener in place
   GW->>SW: Start run, full intent<br/>child dns-publish
   %%> Inputs:
   %%> - revision, target renders, member policies, expected answers and pinned SSH connections; no step fetches intent from the Gateway
@@ -50,7 +51,7 @@ sequenceDiagram
   %%> - only changed member policies, after their required resolver projections pass; the lifecycle caller waits for every affected member
   %%> What it does:
   %%> - persists one Cluster-only DNS delegate with the Router LAN address as its sole server, plus the remaining WireGuard policy; leaves no equal suffixes on both scopes at steady state; withdrawal activates the full VPN policy before removing the delegate, allowing brief private overlap
-  %%> - checks uncached Cluster A and AAAA, another private name, public resolution and the actual selected scope in the same phase
+  %%> - checks uncached Cluster A, another private name, public resolution and the actual selected scope; the resolver publication checks AAAA NODATA
   %%> Unsupported members:
   %%> - systemd below 258 or missing delegate support keeps VPN selection; returns dns.cluster_delegate_unsupported and Doctor reports it
   %%> Runtime failure:
@@ -65,7 +66,7 @@ sequenceDiagram
     %%> - if any member fails or is offline, no retirement runs and the old resolver, sites and LAN rules remain
     SW->>N: Retire unused resolvers<br/>dns-publish.yml · absent
     %%> What it does:
-    %%> - removes only the explicitly retired unit and files; never touches stock dnsmasq, Incus or another Cluster
+    %%> - removes only the explicitly retired unit and fences its revision; retained configuration and recovery files do not authorize service activation
     %%> - the owning command can then retire the old Router sites and prune its LAN rules
   end
   Note over SW: Remove the run folder

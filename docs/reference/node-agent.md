@@ -40,6 +40,8 @@ A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment rea
 
 ## What it observes
 
+The Gateway's watch list also names the dedicated Cluster DNS units, resolved and the read-only Cluster DNS health service and timer. The existing unit facts let Doctor report resolver outages. The agent changes no DNS policy; [member repair](/reference/private-dns#repair-one-peer) applies the shared policy.
+
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
 
 | Source | What it watches | Reported `runtime_state` |
@@ -47,7 +49,7 @@ The agent watches two sources and reports each Orbit Process unit or container b
 | systemd over D-Bus | Units named `orbit-process-*.service` | The unit's `ActiveState`, such as `active`, `inactive`, or `failed`. A missing unit reads as `inactive`. |
 | The Docker socket `/run/docker.sock` | Containers named `orbit-process-*` | The container state, such as `running`, `exited`, or `restarting`. A missing container reads as `exited`. |
 
-The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. The agent does not read Schedules, role services, CPU, or memory.
+The values use the same words as the `runtime_state` field of the Process API. The agent does not know which Process owns a name. The Gateway matches the name to a Process, so a candidate container such as `orbit-process-42-web-candidate` never matches. This Process stream excludes Schedules and host statistics. Named service units use separate facts.
 
 Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 

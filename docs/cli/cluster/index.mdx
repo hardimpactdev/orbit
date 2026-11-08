@@ -15,6 +15,8 @@ A Cluster is an optional group of Nodes with one name, at most one development T
 
 The [Routes reference](/reference/routes) owns domain generation, routing scope, and Router transition ownership. [Private DNS](/reference/private-dns#answers) owns which Router address a name resolves to.
 
+VPN DNS answers WireGuard addresses. A Cluster Router resolver answers its eligible LAN members with LAN addresses. Joining selects the Cluster delegate; leaving first restores and verifies complete VPN DNS. An offline or failed withdrawal retains the transition and blocks Node removal. See [member selection and repair](/reference/private-dns#repair-one-peer).
+
 ## Commands
 
 | Command | Result |

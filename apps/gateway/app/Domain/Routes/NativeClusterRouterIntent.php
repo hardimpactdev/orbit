@@ -66,7 +66,7 @@ final readonly class NativeClusterRouterIntent
             }
         }
         $candidateInput = $candidate === null ? null : [...$this->identity($candidate->node), 'assignment_id' => $candidate->id,
-            'active' => $candidate->status === LifecycleStatus::Active, 'caddy_package' => NativeCaddyPackageInput::make(),
+            'active' => $candidate->status === LifecycleStatus::Active, 'dns_selected' => ClusterRouterTransition::candidateAnswersDns($candidate), 'caddy_package' => NativeCaddyPackageInput::make(),
             'prerequisites' => $this->prerequisiteInput($candidate->node),
             'probes' => $probes];
 

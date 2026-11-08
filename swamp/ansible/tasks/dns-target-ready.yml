@@ -1,0 +1,11 @@
+---
+# End only an unavailable target. The controller must still aggregate partial selection receipts.
+- name: Check the admitted DNS target is reachable
+  ansible.builtin.ping:
+  register: dns_target_ping
+  ignore_unreachable: true
+  failed_when: false
+  changed_when: false
+- name: Leave an unavailable target for explicit retry
+  ansible.builtin.meta: end_host
+  when: dns_target_ping.unreachable | default(false) or dns_target_ping.ping | default('') != 'pong'

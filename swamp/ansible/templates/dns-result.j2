@@ -1,0 +1,30 @@
+{# Aggregate success and partial success. Never hide a selected target behind another target's failure. #}
+{%- set ns = namespace(resolvers=[], members=[], retired=[], error=none, revision='0') -%}
+{%- for host in result_groups['dns_node'] | default([]) -%}
+{%- set h = result_hosts[host] -%}
+{%- set r = h.dns_result | default({}) -%}
+{%- set ns.resolvers = ns.resolvers + [dict(r, target=host)] -%}
+{%- if r.revision | default('0') | int > ns.revision | int -%}{%- set ns.revision = r.revision -%}{%- endif -%}
+{%- if h.dns_failure is defined or r.digest | default('') == '' or r.digest | default('') != r.desired_digest | default('') -%}
+{%- set ns.error = h.dns_failure.code if h.dns_failure is defined else 'dns.resolver_selection_incomplete' -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for host in result_groups['dns_member'] | default([]) -%}
+{%- set r = result_hosts[host].dns_member_receipt | default({}) -%}
+{%- set ns.members = ns.members + [dict(r, node_id=result_hosts[host].dns_member_node_id | default(0))] -%}
+{%- if r.effective is not defined -%}{%- set ns.error = ns.error or result_hosts[host].dns_member_failure | default('dns.member_selection_failed') -%}{%- endif -%}
+{%- endfor -%}
+{%- for host in result_groups['dns_retired'] | default([]) -%}
+{%- if not result_hosts[host].dns_retired_ok | default(false) -%}{%- set ns.error = ns.error or 'dns.retirement_incomplete' -%}{%- endif -%}
+{%- endfor -%}
+{%- set primary = result_hosts['node'] | default({}) -%}
+{%- set result = dict(primary.dns_result | default({}), revision=ns.revision, resolvers=ns.resolvers, members=ns.members) -%}
+{%- if primary.dns_recovered is defined -%}
+{%- set _ = result.update({'recovered': primary.dns_recovered}) -%}
+{%- if not primary.dns_recovered -%}
+{%- set ns.error = 'dns.rollback_failed' -%}
+{%- set _ = result.update({'cause': primary.dns_failure.code}) -%}
+{%- endif -%}
+{%- endif -%}
+{%- if ns.error is not none -%}{%- set _ = result.update({'error_code': ns.error}) -%}{%- endif -%}
+{{ result | to_json }}

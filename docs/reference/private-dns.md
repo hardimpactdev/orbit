@@ -5,9 +5,10 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentDnsConfigRenderer,PrivateDnsPublication,PrivateDnsRevision,SwampPrivateDnsManager,DnsAddress,NativeClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Domain/AppDev/{ClusterTldTargets,PrivateDnsState,PrivateDnsManager,DnsPublishProjection,ClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Actions/AppDev/AdmitPrivateDnsPublicationAction.php
-  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,PeerDnsPolicy}.php
-  - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
-  - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
+  - apps/gateway/app/Domain/Clusters/ClusterDns*.php
+  - apps/gateway/database/migrations/2027_01_{28,29}_*.php
+  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,PeerDnsPolicy}.php
+  - apps/gateway/app/{Infrastructure/Gateway/GatewayPrivateDnsResolver,Domain/Nodes/GatewayPrivateDnsRoute}.php
   - apps/gateway/app/{Actions/Fleet/AdmitPeerDnsAction,Console/Commands/ReconcilePeerDnsCommand}.php
 ---
 
@@ -19,18 +20,21 @@ Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, 
 
 Each Route, Node, Cluster or role change stores its rows first, then publishes the whole state through the shared `dns-publish` child of its native run. A Gateway code path that must have DNS live before it goes on admits a `dns.publish` operation and waits for its end. Private DNS publication starts no other Operation.
 
+A pre-cutover admission can select `clusterOnly: true`. It prepares Router DNS and member selection through the same publication phase while the existing VPN listener keeps running. The ordinary full publication performs the VPN cutover after authorization.
+
 ## Resolver selection
 
 Managed Linux peers send only Orbit names to private DNS. The Gateway renders the private VPN domain, every Cluster TLD, every Node TLD, and every private Route domain outside those suffixes. It removes duplicates and suffixes already covered by another suffix. All other names use the machine's normal provider or DHCP resolver. A VPN DNS outage therefore leaves public resolution available while that resolver and network work.
 
 | Peer configuration | DNS server | Routing domains |
 | --- | --- | --- |
-| Default | Orbit VPN DNS | The rendered Orbit private-name set, such as `~orbit ~test` |
+| Default outside a LAN Cluster | Orbit VPN DNS | The rendered Orbit private-name set, such as `~orbit ~test` |
+| Eligible LAN member | Router LAN DNS for its Cluster; VPN DNS for other private names | Separate delegate and `orbit` domains |
 | Per-Node `--dns-server` | A usable WireGuard-subnet address that answers Orbit names | The same complete private-name set |
 
 A routing domain for an outside-TLD Route, such as `~app.example.com`, also captures descendants. It creates no private wildcard answer: VPN DNS still forwards descendants that have no private record. Resolver routing cannot select only the exact name. A private Route on an apex such as `example.com` also moves every descendant lookup to VPN DNS; choose a narrower name when those descendants must keep public resolution.
 
-Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. A peer needs `fleet.peer_dns` only while its policy differs from the one its last successful `fleet.peer_dns` run applied. The digest covers the effective VPN and Cluster scopes, delegate capability, Router identity and LAN address, peer public key and routing domains. Reconcile and Doctor use the same policy. Repair restores that policy without switching an unhealthy Cluster to VPN.
+Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. The policy digest covers the VPN and Cluster scopes, Router identity and LAN address, peer public key and routing domains. The phase observes delegate capability on the member. Repair restores the desired policy without switching an unhealthy Cluster to VPN. After upgrading an unsupported member, explicitly repair or converge it to observe its new capability.
 
 No schedule admits peer DNS. After a policy change, run `orbit:peer-dns-reconcile`, which admits every peer whose policy differs. A failed peer stays changed until you fix the cause and run it again.
 
@@ -38,13 +42,13 @@ The Gateway starts each `fleet.peer_dns` intent directly in Swamp. Its native wo
 
 The run keeps the `PostUp` hook and writes the DNS marker; both steps change nothing when the files already match. One guarded command then sets the server, routing domains and `default-route no` on `orbit`, unless the live link already holds them.
 
-The run ends by resolving `gateway.orbit`, the private name the Gateway puts in the intent, which must answer through `orbit`, and `example.com`, which must not. A succeeded Operation records the applied server and domains. A policy change waits at most one minute plus queue and traversal time. Host drift with an unchanged policy is not detected by a schedule; doctor reports it, and a reconcile repairs it. Record changes do not block on fleet SSH.
+The phase checks uncached Cluster resolution, `gateway.orbit` through `orbit`, and `example.com` through public DNS. A succeeded Operation records the effective policy and capability. There is no scheduled repair. Explicit repair or Node convergence checks live scopes even when the desired policy has not changed.
 
-Peer DNS reconciliation is serialized by the native behavior on each target Node. It holds no Gateway target lock. The agent uses a shared WireGuard peer lock for inspection and the existing exclusive peer lock for repair, including against native peer convergence.
+The shared member phase holds the exclusive WireGuard peer lock on each target Node, including against peer convergence. A revision fence refuses stale selection after a newer policy has applied.
 
 Private Route, Cluster TLD, and Node TLD writes validate names in a serialized database transaction. A change is refused only if the rendered count increases beyond 512 domains. Deletion or rollback that keeps or reduces an already oversized count is allowed. The renderer also refuses invalid stored names or more than 512 domains before peer mutation, never truncating or using `~.`. systemd 259 allows 1,024 domains per link. Orbit reserves half that capacity so a complete replacement can allocate new domains before resolved removes old ones.
 
-Doctor reports `node.private_dns_uplink_missing` when no usable non-Orbit DNS server is configured. Reconcile reports `vpn.peer_dns_uplink_missing` by Node name. Doctor reports `node.private_dns_policy_mismatch` for drift and `node.private_dns_unreachable` when a private DNS query fails or returns the wrong Gateway address. `node.public_dns_unreachable` reports a failed uncached public lookup or one sent over `orbit`. Global `resolved.conf` DNS servers are valid public resolvers. A failed read is unverifiable (`node.inspection_failed`), not policy drift. Namespace changes can report temporary mismatch until the next successful scheduled pass.
+Doctor compares recorded Cluster DNS evidence with the desired policy and reads the agent's resolver and health-unit observations. Missing observations are unverifiable (`node.inspection_failed`). The member phase checks public resolution before it commits a policy; public DNS can come from the uplink or global resolved configuration. See [repair outcomes](#repair-one-peer) for Cluster DNS findings.
 
 The policy leaves `/etc/resolv.conf` and uplink DNS in place. Route-only suffixes make the private link ineligible as a default DNS route. Apply sets the private link's live default-route flag to false. PostUp sets its DNS server and route-only domains; after tunnel restart, resolved infers `no` from those domains. WireGuard endpoint overrides stay separate. The global VPN DNS server must also be a usable WireGuard-subnet address for managed peers.
 
@@ -64,11 +68,11 @@ Read the saved state first to find the resolver link, server, and routing domain
 | `resolvectl status orbit` | The `orbit` link lists the Orbit VPN DNS address and the rendered route-only domains, such as `~orbit ~test`. |
 | `sudo grep -E '^(PostUp|PreDown) =' /etc/wireguard/orbit.conf` | `PostUp` sets the DNS server and the rendered private domains. There is no `PreDown`. |
 | `getent ahostsv4 <route-domain>` | The normal resolver returns the private Route address. |
-| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query returns the same answer. |
+| `dig +noall +answer @<vpn-dns-address> <route-domain> A` | A direct query returns the canonical WireGuard answer. |
 | `getent ahostsv4 example.com` | An ordinary name resolves through the provider or DHCP resolver. |
 | `ip route` | Application routes do not depend on the DNS selection. |
 
-Peer convergence uses the agent's `wireguard.prepare-peer-key`, `wireguard.publish-peer`, `wireguard.commit-peer`, and `wireguard.rollback-peer` commands. Admission carries them over the pinned bootstrap SSH connection until the tunnel is verified, then uses the verified connection to finish the transaction. Repair and inspection use the same agent. Routing domains travel in the standard-input envelope, so the SSH command line stays small at the 512-domain cap.
+Native Node convergence prepares and verifies the tunnel before the shared member phase selects DNS. DNS repair uses the same member phase with the stored address and pinned SSH identity. The agent only observes.
 
 The `PostUp` hook restores the selection whenever the `orbit` interface starts. There is no `PreDown` hook, because systemd-resolved drops the link settings when WireGuard deletes the interface. The policy uses the `orbit` link, including with an explicit server override. Repair reads old underlay state only to migrate it. Native peer DNS repair refuses unmanaged targets with `vpn.peer_dns_unmanaged`. Explicit repair also refuses the Gateway. AppDev TLD convergence reports the refusal and leaves its bootstrap resolver unchanged.
 
@@ -178,7 +182,7 @@ In both cases, publication still finds the `vpn` Node and publishes there. The r
 
 Private DNS answers select an address. They do not change how application traffic is routed. [Routes](/reference/routes#set-up-private-traffic) explains how a resolved Route reaches its workload.
 
-The vpn Node answers every caller with WireGuard addresses. Each Cluster Router resolver answers its LAN members with LAN addresses for that Cluster. Eligible managed Linux members select it through a Cluster-only systemd-resolved DNS delegate; public DNS stays on its existing scope. Other names and unsupported members use VPN DNS.
+The vpn Node answers every caller with WireGuard addresses. Each Cluster Router resolver answers its LAN members with LAN addresses for that Cluster. Eligible managed Linux members select a DNS delegate in systemd-resolved for the Cluster domains; public DNS stays on its existing scope. Other names and unsupported members use VPN DNS.
 
 The address comparison is as [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#consequences) lists:
 
@@ -232,36 +236,27 @@ To republish the state, run the owning command again, or `node:converge` on the 
 
 ## Repair one peer
 
-Provisioning an app-dev Node runs the [Node agent](/reference/node-agent#commands)'s `wireguard.repair-peer-dns` over SSH to the saved WireGuard address with the pinned identity. It updates the peer's resolver settings. Roles and the running tunnel stay the same.
+DNS repair applies the shared member phase over the saved WireGuard address with its pinned identity. It updates resolver settings and leaves roles and the running tunnel unchanged.
 
 DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node/wireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
 
 The repair can change the DNS server, routing domains, hooks, and saved DNS state. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
 
-The repair takes `/run/lock/orbit-wireguard-peer.lock`, the lock that peer convergence also takes, and validates the proposed configuration. It backs up managed files and records a `dns-repair-v2` transaction in `/etc/wireguard/.orbit.peer-transaction`. Then it writes the hooks and DNS state and applies the resolver settings. A refusal before publication leaves no candidate file. Repeating the repair gives the same result.
+The shared Ansible member phase serves `fleet.peer_dns`, Node convergence and lifecycle publication. It takes `/run/lock/orbit-wireguard-peer.lock`, captures the owned files privately under `/var/lib/orbit/peer-dns/snapshot`, applies both private scopes, flushes caches and checks private, Cluster and public answers. The Gateway records the effective capability and policy receipt. No agent action repairs DNS.
 
-On the `orbit` link, it changes DNS servers and routing domains and sets `DefaultRoute=no`. It preserves LLMNR, mDNS, DNSSEC, DNS over TLS, and negative trust anchors. When it migrates an old underlay selection, networkd restores the uplink configuration.
+A selected Cluster delegate has only the Router LAN DNS server. Its domains are route-only; the remaining private domains use `orbit` with `DefaultRoute=no`. Withdrawal persists and activates complete VPN coverage before removing the delegate. Brief overlap is allowed, so an interruption cannot expose Cluster names to public DNS. The public link, its DNS server and its resolver flags stay unchanged.
 
-Each failure reports one code without remote command output. The agent refuses with a `wireguard.*` code, and the Gateway reports the `vpn.*` code of the same name.
+A failed application restores the captured owned files and live scopes. A retained snapshot survives a worker interruption and is reused by the next attempt. Do not delete it or edit the WireGuard private key. A failed recovery reports `dns.rollback_failed`; repair the fault and retry the same desired state. Finish member withdrawal before removing a Router resolver, serving site or LAN rule.
 
-| Failure code | Result and recovery |
+| Outcome | Result and recovery |
 | --- | --- |
-| `vpn.peer_dns_busy` | Another peer operation holds the lock. Wait, then retry. |
-| `vpn.peer_dns_unreadable` | Inspection could not read the saved or live DNS state. Check the peer's files and resolver service, then retry. |
-| `vpn.peer_recovery_pending` | Another peer operation owns the saved candidate or backup. Keep the recovery files and finish that operation first. |
-| `vpn.peer_dns_state_unsupported`, `vpn.peer_dns_candidate_invalid` | Nothing is published. Inspect `orbit.conf` and `orbit.dns-link`, then fix the peer through normal provisioning. |
-| `vpn.peer_dns_apply_failed` | The repair restored the previous files and resolver selection. Fix the DNS or systemd-resolved fault, then retry. |
-| `vpn.peer_dns_recovery_failed` | Recovery files stay under `/etc/wireguard`. Keep them, fix the fault, and retry the same repair. The retry restores the previous state first. |
-| `vpn.peer_dns_uplink_missing` | The previous DNS state stays or is restored. Configure a non-Orbit per-link or global DNS server, then retry. |
-| `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The repair reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
+| `dns.cluster_delegate_unsupported` | Successful degraded selection: this member uses complete VPN policy and WireGuard answers. Upgrade systemd to 258 or newer, then reconcile. |
+| `dns.cluster_lan_unreachable` | The admitted Router path goes through WireGuard. Repair the LAN route before selection. |
+| `dns.member_selection_failed` | Selection or its check failed. Retain serving resources and retry after repair. |
+| `dns.resolver_selection_incomplete` | A resolver failed or a superseding revision has different content. Render a fresh revision before moving consumers or retiring anything. |
+| `dns.rollback_failed` | Recovery did not complete. Keep the snapshot and repair the fault. |
 
-The network part of `node.converge` and `fleet.peer_dns` keep no snapshot. They write Gateway-rendered files with official cfgmgmt behaviors and stop on the first failed step. A rerun writes the same files again.
-
-Agent-run repair saves the live WireGuard configuration, DNS state, and service state before it publishes. The native publication command restores that state when it fails, without resetting unrelated link settings. Recoverable admission retains a successful publication until its continuation commits; a failed continuation requests rollback over its last verified connection. A lost publication result fails for inspection and is not retried. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
-
-Peer publication keeps its complete snapshot in the root-owned, mode-0600 `/etc/wireguard/.orbit.peer-transaction` JSON record. Commit removes that single record after verifying the live public key. Rollback stops the current tunnel before restoring the saved files, then restores its active and enabled state, live DNS servers, routing domains, resolver flags, and DNS symlink if present. This also restores an operator's DNS selection when no saved DNS-link file exists.
-
-The record must fit the same 2 MiB limit used to read it; an oversized snapshot refuses before publication. DNS repair refuses a peer publication record. Peer publication and rollback leave older or unrecognized recovery artifacts in place for inspection.
+The read-only `orbit-cluster-dns-check` timer observes uncached Cluster resolution every minute. The existing agent reports its unit state; Doctor reports `node.cluster_dns_unreachable` for a failed check or stopped resolver, `node.cluster_dns_delegate_unsupported` for an observed old systemd, and unverifiable state when evidence is missing. No health check changes DNS selection. A Router or LAN outage keeps the delegate selected until repair or an explicit policy change.
 
 ## Why it works this way
 

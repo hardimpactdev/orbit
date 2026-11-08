@@ -19,9 +19,9 @@ recover() {
 {% if cutover_units | length > 0 %}
 systemctl stop -- {{ cutover_units | map('quote') | join(' ') }} || recover listener_stop_failed
 {% endif %}
-systemctl restart dnsmasq || recover dnsmasq_start_failed
+systemctl restart {{ dns_service | default('dnsmasq') | quote }} || recover dnsmasq_start_failed
 holds() {
-  main=$(systemctl show --property=MainPID --value dnsmasq)
+  main=$(systemctl show --property=MainPID --value {{ dns_service | default('dnsmasq') | quote }})
   [ "${main:-0}" -gt 0 ] || return 1
   ss -H -ulpn src "$1:{{ dns_port }}" | grep -q "pid=$main,"
 }
@@ -34,7 +34,7 @@ wait_held() {
   done
   return 1
 }
-{% for address in dns.listen + [dns_local_resolver] %}
+{% for address in dns.listen + ([dns_local_resolver] if dns_local_resolver is not none else []) %}
 wait_held {{ address | quote }} || recover dnsmasq_not_listening
 {% endfor %}
 note ok

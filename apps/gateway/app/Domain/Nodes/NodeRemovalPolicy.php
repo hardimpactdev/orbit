@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Clusters\ClusterDnsTransition;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -26,6 +27,10 @@ final readonly class NodeRemovalPolicy
     {
         if ($node->id === SwampNode::idOrNull()) {
             throw $this->conflict('node.control_removal_forbidden', 'The Swamp control Node cannot remove its own runtime.');
+        }
+        if ($node->cluster_id !== null || $node->roles()->where('role', RoleName::Router)->exists()
+            || isset($node->settings[ClusterDnsTransition::Key])) {
+            throw $this->conflict('node.cluster_detach_required', 'Complete Cluster detach and Router unset before removing this Node, including offline removal.');
         }
         $this->schedules->assertNodeRemovable($node);
         if ($removingWorkspace !== null) {

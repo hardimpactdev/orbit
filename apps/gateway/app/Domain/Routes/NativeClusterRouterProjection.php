@@ -29,6 +29,7 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         'Open LAN paths' => 'route.lan_firewall_failed',
         'Install certs, publish' => 'route.publish_failed',
         'Probe the workloads' => 'route.probe_failed',
+        'Withdraw the Router from DNS' => 'private_dns.publication_failed',
         'Select the Router in DNS' => 'private_dns.publication_failed',
         'Retire the old Router' => 'cluster.router_retire_failed',
         'Withdraw the Router sites' => 'route.withdraw_failed',
@@ -124,7 +125,7 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         } elseif (is_array($candidate)) {
             $role = NodeRole::query()->find(ValidatedData::integer($candidate['assignment_id']));
             $role?->update(['status' => $role->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
-                'failed_step' => $result['failed_step'] ?? 'router-preparation',
+                'failed_step' => (($candidate['dns_selected'] ?? false) === true || ($result['failed_step'] ?? null) === 'Select the Router in DNS') ? ClusterRouterReplacementStep::DnsPublished->value : ($result['failed_step'] ?? 'router-preparation'),
                 'error_code' => $data['error_code'] ?? 'cluster.router_failed']);
         }
 

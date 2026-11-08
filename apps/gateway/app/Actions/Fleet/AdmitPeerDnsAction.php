@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\NodeNetworkConvergeInput;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\PrivateDnsRevision;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
@@ -28,7 +29,7 @@ final readonly class AdmitPeerDnsAction
         return $this->start->execute('fleet.peer_dns', 'peer_dns', $node->id, $node->id, [
             'intent' => ['ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'server' => $server, 'dns_server' => $server, 'public_key' => $node->wireguard_public_key,
-                'domains' => $this->policy->domains($node),
+                'domains' => $this->policy->domains($node), 'selection' => [...$this->policy->selection($node), 'revision' => app(PrivateDnsRevision::class)->next()],
                 'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $this->policy->domains($node)), 'probe' => PeerDnsPolicy::PRIVATE_PROBE],
         ], $triggeredBy, $requestId);
     }

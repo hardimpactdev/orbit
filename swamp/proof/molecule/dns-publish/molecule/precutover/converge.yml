@@ -1,0 +1,72 @@
+---
+- name: Prepare Cluster DNS first and prove the VPN cutover preserves LAN selection
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_dir: "{{ playbook_dir }}/../../../../../ansible"
+    run_dir: /tmp/orbit-cluster-proof
+    node: {host: 127.0.0.1, user: root, port: 22, identity_file: /nonexistent, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA"]}
+    connection: {nodeHost: 127.0.0.1, nodeUser: root, nodePort: 22, nodeIdentityFile: /nonexistent}
+  tasks:
+    - name: Keep the real legacy service identities
+      ansible.builtin.command:
+        argv: [systemctl, show, --property=MainPID, --value, orbit-private-dns.service, dnsmasq]
+      register: legacy_pids
+      changed_when: false
+    - name: Keep all dynamically addressed proof targets local
+      ansible.builtin.copy:
+        content: "{{ {'all': {'vars': {'ansible_connection': 'local'}, 'hosts': {'node': {}}}} | to_json }}"
+        dest: "{{ run_dir }}/inventory.yml"
+        mode: "0600"
+    - name: Prepare Cluster DNS then perform the disposable VPN cutover
+      ansible.builtin.include_tasks: step.yml
+      loop: [true, false]
+      loop_control:
+        loop_var: cluster_only
+    - name: Keep a deliberately offline member as an independent target
+      ansible.builtin.copy:
+        content: >-
+          {{ {'all': {'vars': {'ansible_connection': 'local'}, 'hosts': {'node': {},
+          'dns_member-11-0': {'ansible_connection': 'ssh', 'ansible_ssh_timeout': 1}}}} | to_json }}
+        dest: "{{ run_dir }}/inventory.yml"
+        mode: "0600"
+    - name: Take a fresh revision for the failed withdrawal
+      ansible.builtin.command:
+        argv: [date, +%s%6N]
+      register: offline_revision
+      changed_when: false
+    - name: Admit explicit retirement that an offline member must block
+      ansible.builtin.copy:
+        content: >-
+          {{ {'node': node, 'dns': {'revision': offline_revision.stdout, 'listen': ['10.99.99.1'],
+          'tlds': [{'name': 'test', 'address': '10.44.0.7'}], 'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}],
+          'members': [{'node_id': 11, 'connection': connection | combine({'nodePort': 1}), 'host_keys': node.host_keys,
+          'policy': {'revision': offline_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'],
+          'all_domains': ['orbit', 'test'], 'delegate': none}}],
+          'retired': [{'node_id': 7, 'cluster_id': 999, 'revision': offline_revision.stdout,
+          'connection': connection, 'host_keys': node.host_keys}]}} | to_json }}
+        dest: "{{ run_dir }}/intent.json"
+        mode: "0600"
+    - name: Fail the publication while keeping the successful VPN projection
+      ansible.builtin.command:
+        argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+      environment:
+        ORBIT_RUN: "{{ run_dir }}"
+      register: offline_phase
+      changed_when: true
+      failed_when: offline_phase.rc == 0
+    - name: Read partial selection evidence after an unreachable target
+      ansible.builtin.slurp:
+        src: "{{ run_dir }}/result.json"
+      register: offline_result
+    - name: Confirm partial success cannot authorize retirement
+      ansible.builtin.assert:
+        that:
+          - (offline_result.content | b64decode | from_json).error_code == 'dns.member_selection_failed'
+          - (offline_result.content | b64decode | from_json).resolvers[0].digest | length == 64
+        quiet: true
+    - name: The unwithdrawn Router resolver still serves its members
+      ansible.builtin.command:
+        argv: [systemctl, is-active, orbit-cluster-dns-999.service]
+      changed_when: false

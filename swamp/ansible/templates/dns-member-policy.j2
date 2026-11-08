@@ -1,0 +1,21 @@
+{# One effective peer policy for converge, repair and lifecycle work. Capability is observed on the member. #}
+{%- set supported = (member_version | int >= 258) -%}
+{%- set delegate = policy.delegate if supported else none -%}
+{%- set domains = policy.domains if delegate is not none else policy.all_domains -%}
+{%- set errors = [] -%}
+{%- for address in [policy.server] + ([delegate.server] if delegate is not none else []) -%}
+{%- if address is not string or not address is match('^' ~ dns_pattern_ipv4 ~ '\\Z') -%}
+{%- set _ = errors.append('invalid address') -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for domain in domains + (delegate.domains if delegate is not none else []) -%}
+{%- if domain is not string or domain | length > 253 or not domain is match('^' ~ dns_pattern_name ~ '\\Z') -%}
+{%- set _ = errors.append('invalid domain') -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set hook = 'PostUp = resolvectl dns %i ' ~ policy.server ~ '; resolvectl domain %i ' ~ (domains | map('regex_replace', '^', '\\~') | join(' ')) -%}
+{%- set config = ('# Managed by Orbit.\n[Delegate]\nDNS=' ~ delegate.server ~ '\nDomains=' ~ (delegate.domains | map('regex_replace', '^', '~') | join(' ')) ~ '\nDefaultRoute=no\n') if delegate is not none else '' -%}
+{{ {'error': ('dns.policy_invalid' if errors | length > 0 or domains | length == 0 else none), 'supported': supported,
+    'server': policy.server, 'domains': domains, 'delegate': delegate, 'delegate_content': config,
+    'hook': hook, 'marker': 'orbit\n' ~ policy.server ~ '\n' ~ (domains | join('\n')) ~ '\n',
+    'degraded': ('dns.cluster_delegate_unsupported' if policy.delegate is not none and not supported else none)} | to_json }}

@@ -105,7 +105,7 @@ final readonly class ClusterRouterTransition
             return $step->rank() >= ClusterRouterReplacementStep::WorkloadVerified->rank();
         }
 
-        return $step->rank() > ClusterRouterReplacementStep::DnsPublished->rank();
+        return $step->rank() >= ClusterRouterReplacementStep::DnsPublished->rank();
     }
 
     /** A candidate that completed `dns-publication` and is not being restored. */
@@ -124,9 +124,7 @@ final readonly class ClusterRouterTransition
             return false;
         }
 
-        return $candidate->error_code === null
-            ? $step->rank() >= ClusterRouterReplacementStep::DnsPublished->rank()
-            : $step->rank() > ClusterRouterReplacementStep::DnsPublished->rank();
+        return $step->rank() >= ClusterRouterReplacementStep::DnsPublished->rank();
     }
 
     private static function restoring(NodeRole $candidate): bool

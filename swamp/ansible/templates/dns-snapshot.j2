@@ -14,7 +14,7 @@
 {%- for path in snap_absent -%}
 {%- set ns.files = ns.files + [{'path': path, 'saved': none, 'sha256': none, 'present': false, 'legacy': false, 'binder': false}] -%}
 {%- endfor -%}
-{%- set ns.units = [{'name': 'dnsmasq', 'active': snap_dnsmasq.ActiveState | default('') == 'active', 'enabled': snap_dnsmasq.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
+{%- set ns.units = [{'name': dns_service | default('dnsmasq'), 'active': snap_dnsmasq.ActiveState | default('') == 'active', 'enabled': snap_dnsmasq.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
 {%- for r in snap_listeners -%}
 {%- set ns.units = ns.units + [{'name': r.item, 'active': r.status.ActiveState | default('') == 'active', 'enabled': r.status.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
 {%- endfor -%}

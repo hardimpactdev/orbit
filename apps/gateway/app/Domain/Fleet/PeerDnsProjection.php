@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Domain\Clusters\ClusterDnsEvidence;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
@@ -23,8 +24,12 @@ final readonly class PeerDnsProjection implements DirectOperationProjection
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $result = ValidatedData::object($data['result'] ?? []);
+        if ($status === OperationStatus::Succeeded) {
+            app(ClusterDnsEvidence::class)->record(ValidatedData::integer($operation->node_id), $result);
+        }
         $result = match ($status) {
-            OperationStatus::Succeeded => array_intersect_key(ValidatedData::object($operation->input['intent']), array_flip(['server', 'domains'])),
+            OperationStatus::Succeeded => [...array_intersect_key(ValidatedData::object($operation->input['intent']), array_flip(['server', 'domains', 'selection'])),
+                ...array_intersect_key($result, array_flip(['effective', 'digest', 'selected_at', 'checked_at']))],
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };

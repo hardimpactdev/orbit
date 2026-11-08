@@ -56,3 +56,5 @@ Expected and observed issue values contain at most 255 characters. Recovery evid
 Collection runs the same Doctor comparison. Then the Gateway reads its own Laravel log in `storage/logs` from the stored cursor; no Swamp step and no Node read is involved. It reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It keeps exception class, safe source frame, request ID and timestamp; messages and raw logs never leave the reader.
 
 The first pass starts at the current end. Rotation preserves unread records by inode; truncation resumes at the shorter end. An unreadable log result preserves the cursor. The Gateway commits returned fingerprints and the cursor together. Activity and assistance collection keep their existing bounded database cursors and redacted inputs.
+
+For Cluster LAN DNS, Doctor uses the last member capability receipt and current health-unit observations. It reports unsupported delegates and failed Cluster lookups. It never switches a member to VPN after a Router or LAN outage. See [private DNS](/reference/private-dns#repair-one-peer).
