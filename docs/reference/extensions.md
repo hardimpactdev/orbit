@@ -159,9 +159,9 @@ Background work that finishes recorded work keeps running while the switch is of
 
 `extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
 
-Tasks depends on `ai-router`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\TaskVmModelRoute`, and the `ai-router` provider binds it. The Tasks `enable()` hook calls `TaskVmModelRoute::assertReady()`, so `extension:enable tasks` refuses with `ai_router.disabled` until ai-router is set up. `ai-router:teardown` refuses while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
+Tasks depends on `ai-router`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\TaskVmModelRoute`, and the `ai-router` provider binds it. The Tasks `enable()` hook calls `TaskVmModelRoute::assertReady()`, so `extension:enable tasks` refuses with `ai_router.disabled` until ai-router is set up. `ai-router:destroy` refuses while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 
-`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `ai-router:teardown`.
+`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `ai-router:destroy`.
 
 ### Defaults
 

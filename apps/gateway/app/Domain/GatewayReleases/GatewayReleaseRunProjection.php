@@ -46,6 +46,22 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
     ];
 
+    /** The Swamp Node's Ansible collections were installed from another requirements.yml than the release's; the release goes on. */
+    public const string CollectionsDrift = 'swamp.collections_drift';
+
+    /** Whether the load's check of the Ansible collections failed: it may fail without failing the release. */
+    private static function collectionsDrift(Operation $operation): bool
+    {
+        $progress = $operation->state['native_progress'] ?? null;
+        foreach (is_array($progress) && is_array($progress['steps'] ?? null) ? $progress['steps'] : [] as $step) {
+            if (is_array($step) && ($step['name'] ?? null) === 'Check the Ansible collections' && ($step['status'] ?? null) === 'failed') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function input(Operation $operation): array
     {
         return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'id', 'force', 'previous', 'repository', 'manifest', 'web',
@@ -113,6 +129,9 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         // The fleet rollout plans from a verified record whose verify version is the commit.
         $phases[$phase] = [...($phases[$phase] ?? []), ...($code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code])];
+        if (self::collectionsDrift($operation)) {
+            $phases['swamp'] = [...($phases['swamp'] ?? []), 'warning' => self::CollectionsDrift, 'fix' => 'orbit node:role:add 209 swamp --converge'];
+        }
         // The run put the previous release back after a failed check; it runs on the new, expanded schema.
         $previous = ValidatedData::string($operation->input['previous']);
         $back = $code === 'gateway.release_switched_back';

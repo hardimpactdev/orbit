@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ScheduleCompletionsController;
+use App\Http\Controllers\Api\ScheduleLogStreamsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -25,6 +26,12 @@ Route::middleware([
         ->name('schedule:list');
     Route::post('schedules', [SchedulesController::class, 'store'])
         ->name('schedule:create');
+    Route::post('schedules/{schedule}/log-streams', [ScheduleLogStreamsController::class, 'store'])
+        ->whereUuid('schedule')->name('schedule:log-stream:create');
+    Route::put('schedules/{schedule}/log-streams/{stream}', [ScheduleLogStreamsController::class, 'update'])
+        ->whereUuid('schedule')->withoutMiddleware(RecordCommandActivity::class)->name('schedule:log-stream:renew');
+    Route::delete('schedules/{schedule}/log-streams/{stream}', [ScheduleLogStreamsController::class, 'destroy'])
+        ->whereUuid('schedule')->name('schedule:log-stream:destroy');
     Route::get('schedules/{schedule}/logs', [SchedulesController::class, 'logs'])
         ->whereUuid('schedule')
         ->name('schedule:logs');

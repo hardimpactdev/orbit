@@ -68,7 +68,7 @@ A patch changes only the members it names. Other stored keys stay, and the API n
 
 Task VM placement uses Incus hosts only. The fleet uses Beast and Shark. Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
-`task-vms:converge VM` brings a ready task VM on such a host to the pins of the release. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
+The common converge brings a task VM on such a host to the pins of the release, on every base refresh and every task start. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
 
 ```bash
 orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
@@ -119,7 +119,7 @@ The Gateway reads Node settings only. It does not copy `ORBIT_TASK_VMS_INCUS_HOS
 
 Verify the stored settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal.
 
-A configured task VM host builds the nested fleet of its VMs with `php artisan task-vms:build-fleet <VM-ID>` (see [Build the nested fleet](/reference/compute-drivers#build-the-nested-fleet)).
+A configured task VM host builds the nested fleet of its VMs in the fleet phase of the common converge, on a base VM that has none (see [Build the nested fleet in the converge](/reference/compute-drivers#build-the-nested-fleet-in-the-converge)).
 
 ## Derive the effective root
 

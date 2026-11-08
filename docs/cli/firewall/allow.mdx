@@ -4,35 +4,50 @@ sidebarTitle: "firewall:allow"
 description: "Allow traffic to one destination port or port range, optionally from one source."
 ---
 
+Allow incoming traffic on one Linux Node. UFW does not restrict ports published by Docker; see the [firewall overview](/cli/firewall).
+
+## Usage
+
 ```bash
-orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT] [--json]
+orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `port` | yes | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
+| `port` | yes | Destination port from 1 through 65535, or an inclusive ordered range such as `8000:8100`. Service names are not accepted. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--node=ID` | required | Numeric target Node ID. |
-| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, a CIDR such as `10.6.0.0/24`, or `any`. |
-| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both. |
-| `--label=TEXT` | none | Free text that describes the rule. |
-| `--json` | off | Print the result as JSON. |
+| `--node=ID` | required | Positive numeric target Node ID. The calling Node needs an access grant to it. |
+| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, CIDR, or `any`. An address or CIDR affects its address family only; `any` affects both. |
+| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both; `any` is not an accepted value. |
+| `--label=TEXT` | none | Description of at most 255 characters; not rule identity. See [labels and comments](/cli/firewall#rule-identity). |
+| `--idempotency-key=KEY` | none | Global [keyed-start option](/reference/operations#retry-a-start-with-a-key). |
+| `--json` | off | Machine output under the [CLI input and output standard](/reference/cli-ux#input-and-output-modes). |
 
 ```bash
 orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="office postgres"
 orbit firewall:allow 6000:6100 --node=7 --protocol=udp
 ```
 
-In a terminal, a missing port and a missing `--node` are prompted for. Ctrl-C at a prompt exits 1 with `input.cancelled` and sends no request. Without a terminal, or with `--json`, a missing value is refused with `firewall.port_invalid` or `firewall.node_id_invalid`.
+Prompts and output follow the [CLI standard](/reference/cli-ux). See the firewall family's [rule identity and repeat behavior](/cli/firewall#rule-identity), [source ordering](/cli/firewall#order-on-the-node), and [safe change order](/cli/firewall#change-rules-without-an-exposure-window).
 
-Only one firewall change can run on a Node at a time. Another change is refused with `operation.target_busy`. To change an active rule, remove it and create it again. The CLI follows progress and reports the result with the Operation and request IDs.
+An equal, well-placed line keeps its existing comment. If TCP is already correct, an allow for both protocols adds only UDP. A managed rule for a disjoint source network does not force the existing line to move. Nor does an earlier managed allow, including one restricted to an interface and destination: it cannot change an allow's verdict. An overlapping deny still requires the allow to move above it.
 
-Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow on a protected port succeeds as skipped (`firewall.rule_exists`) when its ports lie inside a port Orbit already opens and its source is one that port already admits. The Gateway records the skip at once: no rule, no change on the Node. A range that reaches past a protected port is a normal allow. Narrower rules take precedence, so an allow for one source can override a broader deny. See [rule ordering](/cli/firewall#order-on-the-node).
+Orbit already allows SSH, recovery SSH, the WireGuard port and the ports its roles need. An allow succeeds with `Skipped — already applied (firewall.rule_exists)` when its ports lie inside one protected port or range Orbit already opens and its source is one that entry already admits. Orbit records a succeeded Operation without an operator rule or Node contact; this uses recorded intent, not a live UFW check. Another firewall change on the Node still prevents this skip (`operation.target_busy`). A range extending beyond that entry, or a source it does not admit, is a normal allow.
 
-Repeating the command skips entries already in the correct position and applies any missing changes. If the whole rule is already correct, the command succeeds with `Skipped — already applied (firewall.rule_exists)`. A failed command does not undo changes already applied on the Node.
+A normal allow requires active UFW; Orbit does not enable it. A failed execution keeps the rule visible as failed. Lines added before the failure remain, and a line deleted for reordering may be absent. There is no rollback; repeat the command after fixing the cause to repair the same record without duplicates.
 
 ## How it works
 
 <div className="flow-at" data-chart="firewall/allow"></div>
+
+## Errors
+
+See the [firewall error codes](/cli/firewall#error-codes) for input, access, conflict and overlap refusals, and [Operation errors](/reference/operations#errors) for shared admission failures. These execution results affect recovery:
+
+| Code | Meaning |
+| --- | --- |
+| `firewall.backend_inactive` | UFW is inactive; no rule is applied on the Node. |
+| `firewall.verify_failed` | The final check does not find every expected line in the required order. |
+| `operation.native_failed` | An execution step fails before returning a public check result; partial changes may remain. |

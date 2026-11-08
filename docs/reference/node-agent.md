@@ -266,7 +266,7 @@ A checkout that the agent cannot open or read is left out of its reports, and th
 
 ## Log tails
 
-The agent reads an Instance log or a Process log only while a viewer watches it through a [live log stream](/reference/live-logs). It sends the lines only to the Gateway.
+The agent reads an Instance, Process or Schedule log only while a viewer watches it through a [live log stream](/reference/live-logs). It sends the lines only to the Gateway.
 
 ### Stream list
 
@@ -627,7 +627,7 @@ The subscriber pushes the CPU and memory of every Process to browsers, so no bro
 
 ### Log relay
 
-The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` on that Node's log channel, and queues them in order. A publish run drops lines unless the stream is open for that Node. It redacts each line again, also with the stored environment values of the Instance or Process, and publishes `log.lines` in parts under 10,000 bytes. A failed run puts its events back in front of the queue and retries after 2 seconds. [Live logs](/reference/live-logs#limits) lists the Gateway's queue limits and the end reasons.
+The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` on that Node's log channel, and queues them in order. A publish run drops lines unless the stream is open for that Node. It redacts each line again, also with the stored environment values of the Instance or Process, or the Instance that owns a Schedule, and publishes `log.lines` in parts under 10,000 bytes. A failed run puts its events back in front of the queue and retries after 2 seconds. [Live logs](/reference/live-logs#limits) lists the Gateway's queue limits and the end reasons.
 
 ## Delivery
 
@@ -765,6 +765,8 @@ The supervised fixture sends a Unix datagram after execution, including its proc
 The Gateway selects the agent that its pin names: `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one release's `manifest.json`. [Release admission](/reference/gateway-recovery#build-and-seal-a-release) verifies that delivery independently of the Gateway commit's publication.
 
 A [CLI release](/reference/cli-binaries#published-releases) also builds and carries the agent when the agent source changed since the previous release. Its manifest names the agent source commit. Other releases contain only CLI assets. A new agent reaches Nodes only when a reviewed commit moves the pin. That commit copies the release's `manifest.json` into the pin and records the binary's command contract in `frozen-commands.json` and `frozen-commands-source.json`, which `bin/check-frozen-agent-commands` verifies. The next Gateway release records the new pin, and the fleet rollout installs it Node by Node.
+
+Schedule follow requires Cargo version 0.14.0 or newer for UTC journal snapshots and ordered multiline entries. This requirement is declared by `ScheduleLogStreamTarget::MinimumAgentVersion` in the PHP SDK and shared with the Gateway. A CLI release tag supplies the download URLs; it does not replace the Cargo version in the Agent manifest.
 
 An agent release carries these assets:
 

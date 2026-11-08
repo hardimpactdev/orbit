@@ -61,7 +61,6 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-(claim|token)-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^swamp-proof-club-api-key$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^nckrtl-vault-sync-plan-[a-f0-9-]{36}-(prepare-inputs-inputs-(client_secret|master_password)|session-session-session-value)$", "actions": ["write", "read"]}
   ],
   "workflows": [

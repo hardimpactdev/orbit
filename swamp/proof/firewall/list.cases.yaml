@@ -16,6 +16,12 @@ vars:
   peer_rule: ["${peer-port}", "--node=${app-prod.id}", "--from=${gateway.src}", "--protocol=tcp"]
 
 fixtures:
+  blocked-port:
+    summary: Healthy listeners blocked by an unrecorded deny; an allow must add both transports.
+    params: {proto: [tcp, udp]}
+    steps:
+      - listener: {on: app-dev, proto: "${proto}", ports: [port]}
+      - ufw_rule: {as: deny, on: app-dev, action: deny, proto: "${proto}", port: "${port}", above: proof-network}
   rules-on-two-nodes:
     summary: One allow on app-dev with a label, and one deny on app-prod with no label and no protocol. Binds port and peer-port.
     steps:
@@ -121,9 +127,9 @@ cases:
     covers: [main]
     summary: A rule whose apply failed shows the status `failed`, and JSON names the step and the error code.
     setup:
-      - listener: {on: app-dev, proto: tcp, ports: [port]}
-      - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 0}}
-      - cli: {run: [firewall:allow, "@rule"], expect: {status: failed}}
+      - use: {fixture: blocked-port, proto: [tcp, udp]}
+      - fault: {on: app-dev, command: ufw, fail_after: {match: allow, count: 1}}
+      - cli: {run: [firewall:allow, "${port}", "--node=${app-dev.id}", "--from=${gateway.src}"], expect: {status: failed}}
     act:
       - cli:
           run: [firewall:list, "--node=${app-dev.id}"]
@@ -162,7 +168,7 @@ cases:
           expect: {exit: 0, request: none}
     expect:
       - record: {list: firewall:list, args: [--managed], node: app-dev, section: managed, where: {name: "orbit:wireguard-members", role: null}, count: 1}
-      - record: {list: firewall:list, args: [--managed], node: app-dev, section: managed, where: {role: app-dev}, min: 1}
+      - record: {list: firewall:list, args: [--managed], node: app-dev, section: managed, where: {role: app-dev}, count: 0}
       - record: {list: firewall:list, args: [--managed], node: app-dev, section: rules, where: {port: "${port}"}, count: 1}
       - unchanged: {since: act, what: [ufw, firewall_records, operations]}
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
@@ -72,21 +71,15 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
-     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
-     * fails with `task_vm.parked` until it is ready.
+     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A parked task VM goes
+     * as it is: the release deletes a stopped VM as well, and nothing on it is worth a start. The caller has proved that origin has the
+     * approved work ({@see TaskFinalReview::assertOnOrigin()}).
      */
     public function remove(Task $group): null
     {
         $instance = $group->workspace()->first();
         if (! $instance instanceof Instance) {
             return null;
-        }
-        $group->setRelation('taskable', $instance);
-        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-        }
-        if (TaskFinalReview::reconcileRemovalPush($group) !== null) {
-            throw TaskPullRequestException::pending('Approved work must finish native publication before workspace removal.');
         }
         $this->removeWorkspace($instance);
     }
@@ -107,14 +100,10 @@ final readonly class RemoveTaskWorkspaceAction
      * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the release of the slot
      * (`task_vm.slot_release`) deletes the VM, its seed clone and its hub peer. The release projection deletes the
      * workspace Instance and the Node and unbinds the group, so this call only admits the release and then waits for it.
-     * A row without a slot number is not a task start's VM, and no release deletes it.
+     * A VM of the old pool, which has no slot number, goes the same way, by its name.
      */
     private function removeWithTaskVm(Instance $instance, TaskVm $vm): never
     {
-        if ($vm->slot_number === null) {
-            throw new ResourceOperationException('task_vm.release_unavailable', "Task VM [{$vm->name}] has no slot, so no release can delete it.", 409,
-                details: ['task_vm_id' => $vm->id]);
-        }
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
             app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
@@ -122,9 +111,7 @@ final readonly class RemoveTaskWorkspaceAction
         if ($vm->state === TaskVmState::Ready && $vm->group_id !== null && $vm->node_id !== null) {
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
-        if ($vm->state !== TaskVmState::Releasing) {
-            app(TaskVmSlotRuns::class)->startRelease($vm, 'task-complete');
-        }
+        app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');
 
         throw new TaskWorkspaceWaiting("The release of task VM [{$vm->name}] removes the workspace of Instance [{$instance->name}] when it ends.");
     }
@@ -132,7 +119,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null, bool $replaceDirection = false): void
     {
-        if ($exception instanceof TaskWorkspaceWaiting || ($exception instanceof TaskPullRequestException && $exception->pending)) {
+        if ($exception instanceof TaskWorkspaceWaiting) {
             return;
         }
         for ($cause = $exception; $cause instanceof Throwable; $cause = $cause->getPrevious()) {

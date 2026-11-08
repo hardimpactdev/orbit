@@ -16,6 +16,7 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -40,20 +41,20 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     /**
      * Releases each task VM of the host that no group holds and whose last release failed or whose Operation ended without its projection, such
-     * as a refused start (docs/cli/task/vm-release.mmd). One that a task start or a refresh proof still uses is left alone.
+     * as a refused start (docs/cli/task/vm-release.mmd); a VM of the old pool, which has no slot number, too. One that a task start or a refresh proof still uses is left alone.
      */
     private function releaseStale(int $hostNodeId): void
     {
         if (TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation) {
             return;
         }
-        $stale = TaskVm::query()->where('host_node_id', $hostNodeId)->whereNotNull('slot_number')->whereNull('group_id')
+        $stale = TaskVm::query()->where('host_node_id', $hostNodeId)->whereNull('group_id')
             ->whereIn('state', [TaskVmState::Failed, TaskVmState::Provisioning, TaskVmState::Releasing])->get()
             ->reject(static fn (TaskVm $vm): bool => Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists());
         foreach ($stale as $vm) {
             try {
-                app(TaskVmSlotRuns::class)->startRelease($vm, 'task-vm-sweep');
+                $this->releaseIfStale($vm, $hostNodeId);
             } catch (ResourceOperationException $refused) {
                 Log::warning('A task VM release was not admitted.', ['task_vm_id' => $vm->id, 'error_code' => $refused->errorCode, 'details' => $refused->details]);
             } catch (Throwable $broken) {
@@ -61,6 +62,22 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                 report($broken);
             }
         }
+    }
+
+    /**
+     * Locks the row and asks again, before the release: a refresh that started after the selection made its group-less VM in the same
+     * transaction as its Operation, so an open refresh now leaves the row alone, and so does a row that changed meanwhile.
+     */
+    private function releaseIfStale(TaskVm $vm, int $hostNodeId): void
+    {
+        DB::transaction(function () use ($vm, $hostNodeId): void {
+            $vm = TaskVm::query()->lockForUpdate()->find($vm->id);
+            if (! $vm instanceof TaskVm || TaskVmImageRefreshIntent::open($hostNodeId) instanceof Operation || $vm->group_id !== null
+                || ! in_array($vm->state, [TaskVmState::Failed, TaskVmState::Provisioning, TaskVmState::Releasing], true)) {
+                return;
+            }
+            app(TaskVmSlotRuns::class)->startRelease($vm, 'task-vm-sweep');
+        });
     }
 
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity): void

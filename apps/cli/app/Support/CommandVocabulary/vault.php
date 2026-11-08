@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'actions' => ['setup', 'status', 'sync', 'teardown'],
+    'actions' => ['setup', 'status', 'sync'],
     'noun_endings' => [],
     'route_exceptions' => [],
 ];

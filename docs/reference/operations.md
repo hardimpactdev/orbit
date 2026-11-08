@@ -91,11 +91,7 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
 
-`task_vm.ready_copies` has a provisional 3,600 seconds, the sum of its serial steps with margin: the Club key scan (900 seconds), the stop (300), a copy (600), the agent wait (130) and the scan of the stored copy (900). A 14-day p95 replaces it after the first successes.
-
-`task_vm.fleet_build` has a provisional 3,600 seconds, the serial bounded steps of the nested fleet. They are the VMs and their first boot, the Gateway bootstrap (about three minutes), and the converges of the Gateway and its Node. The enrollment of app-dev and app-prod takes about six minutes each. The waits of the build are Ansible tasks with their own `until` and `retries`, so their literal timeouts only guard against a hung connection and this budget is the bound. A 14-day p95 replaces it after the first successes.
-
-`task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The fleet build, when the seed has no ready copies, takes 3,600 seconds at its bound and about 25 minutes in practice. The ready copies take 3,600 seconds at their bound, about ten minutes in practice. The builder converges at 3,300 seconds at its bound, and a VM at its pins takes about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
+`task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The converge of a base from stock builds the nested fleet when the base has none. That takes 5,400 seconds at its bound and about 25 minutes in practice (the standalone fleet build, since removed, took 1,840 seconds as operation 11816). A VM at its pins converges in about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 
@@ -107,7 +103,7 @@ A `tasks.script` and a `tasks.check` capture their budget at admission in `input
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
-The other task VM workflows (`task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
+The other task VM workflows (`task-vm-workspace` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
@@ -118,8 +114,6 @@ Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each
 `proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. Replace it with the 14-day p95 after the first success.
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
-
-`task_vm.converge` has a provisional 3,300 seconds: the software phase at its 1,800-second bound, the tools phase at 900 and the check at 300, plus the short input steps. A VM at its pins takes about a minute. A 14-day p95 replaces it after the first successes.
 
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The reconciler caches each kind’s history budget for one pass.
 
@@ -485,8 +479,8 @@ The Gateway does not load those deleted interfaces.
 Synchronous Cluster changes that would move an Analytics tracking Route return
 `route.analytics_native_required` before changing records, LAN rules or DNS.
 Those changes require the native Route workflow.
-Task workspace removal waits for native publication when approved work has not
-been pushed.
+Task workspace removal never pushes or wakes a task VM: cancel and complete first
+refuse while origin lacks the latest approved commit.
 
 The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. CI never applies grants or reads credentials. The swamp role applies this manifest to serve: its convergence and every release Swamp load render it into serve's grants directory and run `swamp access reload` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)).
 

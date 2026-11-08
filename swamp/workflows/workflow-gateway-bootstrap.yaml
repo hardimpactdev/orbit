@@ -1,7 +1,7 @@
 id: 475b18ba-9a19-4601-a4af-91625eeac1ad
 name: gateway-bootstrap
 description: >-
-  Prepare a fresh machine to become a Gateway (docs/cli/task/vm-fleet-build.mmd, "Prepare the Gateway"). The operator runs this once with a local `swamp workflow run`; no step requests a worker, so the binary runs them in-process. Over SSH it puts on the machine the release checkout, the swamp role's pinned Ansible venv, and the pinned Swamp binary. Nothing else; the Swamp key is not in this run (the refresh VM pushes its key file into the machine, as stage 2 does).
+  Prepare a fresh machine to become a Gateway (docs/reference/node-provisioning.md, "Gateway bootstrap prerequisites"). The operator runs this once with a local `swamp workflow run`; no step requests a worker, so the binary runs them in-process. Over SSH it puts on the machine the release checkout, the swamp role's pinned Ansible venv, and the pinned Swamp binary. Nothing else; the Swamp key is not in this run (the refresh VM pushes its key file into the machine, as stage 2 does).
 inputs:
   type: object
   properties:

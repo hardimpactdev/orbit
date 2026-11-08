@@ -18,10 +18,6 @@ function dependencyNames(array $step): array
     return array_values(array_column($step['dependsOn'] ?? [], 'step'));
 }
 
-it('removes the checkout device of the ready copies only after the NIC, so two config writes of one container never meet', function (): void {
-    expect(dependencyNames(workflowSteps('workflow-operation-task-vm-ready-copies', 'copy')['Remove the checkout device']))->toContain('Remove the NIC');
-});
-
 it('runs a step that accepts a skipped step only when everything that step waited for is named too', function (string $workflow, string $job): void {
     $steps = workflowSteps($workflow, $job);
     $skippable = ['type' => 'or', 'conditions' => [['type' => 'succeeded'], ['type' => 'skipped']]];

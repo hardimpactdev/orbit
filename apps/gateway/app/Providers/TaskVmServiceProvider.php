@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Console\Commands\BuildTaskVmFleetCommand;
-use App\Console\Commands\ConvergeTaskVmCommand;
 use App\Console\Commands\ListTaskVmImageBuildsCommand;
 use App\Console\Commands\PrepareTaskVmHostCommand;
 use App\Console\Commands\PrepareTaskVmHubCommand;
 use App\Console\Commands\RefreshTaskVmImageCommand;
 use App\Console\Commands\RefreshTaskVmImagesCommand;
 use App\Console\Commands\ResumeTaskVmCommand;
-use App\Console\Commands\SaveTaskVmReadyCopiesCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
@@ -36,15 +33,12 @@ final class TaskVmServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->commands([
-            BuildTaskVmFleetCommand::class,
-            ConvergeTaskVmCommand::class,
             ListTaskVmImageBuildsCommand::class,
             PrepareTaskVmHostCommand::class,
             PrepareTaskVmHubCommand::class,
             RefreshTaskVmImageCommand::class,
             RefreshTaskVmImagesCommand::class,
             ResumeTaskVmCommand::class,
-            SaveTaskVmReadyCopiesCommand::class,
         ]);
     }
 }

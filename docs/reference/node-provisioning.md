@@ -422,7 +422,7 @@ Missing or damaged protected files require their approved recovery procedure and
 
 ## Task VM role phases
 
-A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The task image build of an Incus host and `task-vms:converge` both run it, so an image and a converged VM end in the same state. The build runs it on a stock Ubuntu builder that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
+A task VM is a Node with the `app-dev` role, and its software has its own Ansible playbook, `swamp/ansible/task-vm-role.yml`, in the phases of this page: `software`, `tools` and `check`. The base snapshot refresh of an Incus host and every task start run it as the common converge ([compute drivers](/reference/compute-drivers#converge-a-running-task-vm)), so a base and a started VM end in the same state. The refresh runs it on the base VM that Node 209 reaches through the host, and installs no Orbit agent: the observer comes when a VM enrols. A fourth phase, `clean`, follows an image build only.
 
 The wait for a nested fleet is not a phase of the role: it is the task file `swamp/ansible/tasks/task-vm-nested-wait.yml`, which stops when the nested Gateway guest is not running. When the Operation it waits for does not succeed, it names that Operation's failed step and error code. The playbook `task-vm-fleet-wait.yml` runs it from Node 209 for the readiness of a fleet, and the `fleet` phase imports it for the waits of its [fleet build](/reference/compute-drivers#build-the-nested-fleet-in-the-converge).
 
@@ -446,7 +446,7 @@ A task VM with a nested subnet also opens its firewall to the nested bridge (`ta
 
 ## Gateway bootstrap prerequisites
 
-A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-fleet-build.mmd)), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
+A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
 
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 
@@ -456,13 +456,13 @@ The `app` job sets up the Gateway app on the machine: it writes the `.env` (`orb
 
 Last, `orbit:bootstrap` runs on the machine from the Gateway's own code. It records the Gateway Node with its Gateway and VPN roles and sets the VPN settings. It also makes the root CA and the Gateway SSH key, and records the host key of the machine. It also records the `swamp` role on that Node, as provisioning. The Gateway finds the Swamp Node by that role, never by an id. The role and route workflows read the control Node from each intent (`control_node_id`) and accept any Node id. The VPN role stays provisioning until Swamp applies the hub.
 
-With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The fleet build of a task VM passes 10.45.0.10, the address stage 2 joins with.
+With `--operator-ip`, `orbit:bootstrap` also records the Node `operator`: no roles, that WireGuard address, and access to the Gateway Node, so it holds Gateway authority. Its key comes later, from the machine that operates the Gateway. The [fleet phase of the converge](/reference/compute-drivers#build-the-nested-fleet-in-the-converge) passes 10.45.0.10, the address stage 2 joins with.
 
 ### The Swamp control plane
 
 The `control` job gives the Gateway its own Swamp, with the Ansible `swamp` phase of `gateway-bootstrap.yml` and a local connection. `orbit:bootstrap-control-plan` prints the plan: the serve and worker units for the machine's `swamp/` checkout, the release grants, and the units of the scheduler and Horizon. The phase writes them and starts the scheduler and Horizon after serve and the workers. So the Gateway records its first run, the converge of its own Node, before its role.
 
-The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when a task VM starts its fleet from ready copies.
+The phase also mints the serve driver token, the two worker tokens and the Gateway's run and read tokens with the Swamp CLI, and places each in a file of its owner or in the Gateway `.env`. The play `remint` of the same playbook renews them later, with `swamp access token rotate` and a new worker enrollment token, when the fleet phase of the converge of a task VM renews them.
 
 The `remint` play prints no token either, so a failed renewal shows its command and its error. It rotates the serve driver token in a task of its own, with one short command, so the recorded error shows the CLI message.
 
@@ -588,6 +588,24 @@ Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollba
 Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with one dispatch slot per CPU core each (`--concurrency auto`) and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (`root` and the group of the swamp account, `0640`, in folders of `0750`) before adding the role.
+
+Swamp ends authenticated WebSockets after eight hours, even while a worker refreshes its separate 15-minute session credential. Workers keep persistent connections and `--concurrency auto`. The swamp role installs one renewal service for the pair. Its timer starts one minute after activation and checks hourly. A worker whose recorded enrollment is at least three hours old is renewed with the first SIGTERM's native drain: active dispatches finish before it disconnects.
+
+The service renews `a` only while `b` accepts work, waits for a different enrolled instance of `a` and a native `worker verify` check, then renews `b`. systemd serializes starts of the single service; use that service for manual renewal too.
+
+Before draining, the survivor must have spare dispatch capacity and pass its live probe. A fresh pool check must show the same instance still accepting with a free slot. A full survivor defers the round without draining either worker; the service retries after five minutes. Other probe failures or failed re-enrollment stop the sequence. Retries skip freshly renewed connections.
+
+The service reads each unit's latest enrollment receipt from the journal and uses that name for both pool selection and verification. This covers bootstrap names (`orbit-worker-a/b`), timestamped remint names and existing swamp-role names. The rendered unit contains token-file paths but no worker name, so renewal uses the journal receipt. A missing receipt stops maintenance without touching either worker and logs that the eight-hour cap can still abort active dispatches. Peer failure during a blocking drain is detected after the restart returns; the service logs this limit before draining.
+
+Each worker has `TimeoutStopSec=4500` and `KillMode=mixed`: only the main process receives SIGTERM, leaving its dispatch children to finish. The 75-minute allowance gives headroom over the observed cold refresh step of about 50 minutes. It is not a bound on arbitrary hung work; systemd can kill work beyond that allowance.
+
+Worker crashes retry after 30 seconds, with at most five starts in five minutes. A permanent startup failure hits that limit; maintenance can retry after five minutes instead of looping every second. An unhealthy peer, failed credentials or a prolonged scheduling failure can prevent safe renewal; the service reports failure rather than intentionally draining both workers.
+
+Orbit uses no worker-affinity groups; later steps can queue on the other worker during a drain. Swamp fails an affinity group when its worker drains, so adding affinity requires a different renewal design.
+
+After the Gateway release and its Swamp load, converge the role with `orbit node:role:add swamp swamp --converge`. The Ansible `node` phase installs the local Ansible renewal playbook and tasks and its Gateway-rendered service and timer. The native `@swamp/cfgmgmt/systemd` step applies the worker template and reloads systemd. A dependent native job enables and starts the timer only after both workers are started. Swamp load alone does not apply these host files. Convergence leaves active workers running; the timer then begins safe sequential renewal without a serve restart.
+
+Watch `orbit-swamp-worker-renewal.service`, `orbit-swamp-worker@a`, `@b` and serve. Confirm `Draining`, successful active dispatch completion, `Drain complete`, a new enrolled instance and a successful live check for `a` before `b` drains. Keep a multi-step run active across a renewal and confirm later steps succeed. At the old eight-hour boundary, there should be no code 4002 or write-then-drop failure. Allow time for two drains when activating the first cycle on old connections.
 
 The workers run as that account and read the files themselves. The role sets the folders to `0750` and the files to `0640`, with `chown` and `chmod` in two steps, before it writes the worker unit. The next converge repairs a Node whose tokens were placed as `root` `0600`. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 

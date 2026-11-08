@@ -16,8 +16,14 @@ const script =
 /** Runs the script with stub commands: `cat` prints the virtiofs tags, `sleep` counts its calls, and `mkdir` ends the run where the mount begins. */
 async function boot(
   tags: string,
+  applied = false,
 ): Promise<{ code: number; sleeps: number; stderr: string }> {
   const bin = await Deno.makeTempDir();
+  // A handoff runs inside a task VM that already has the real applied marker.
+  const marker = `${bin}/identity-applied`;
+  const markerAssignment = "applied=/var/lib/orbit/identity-applied";
+  assertStringIncludes(script, markerAssignment);
+  if (applied) await Deno.writeTextFile(marker, "");
   const stub = async (name: string, body: string) => {
     await Deno.writeTextFile(`${bin}/${name}`, `#!/bin/sh\n${body}\n`);
     await Deno.chmod(`${bin}/${name}`, 0o755);
@@ -26,7 +32,7 @@ async function boot(
   await stub("sleep", `echo x >> ${bin}/sleeps`);
   await stub("mkdir", "exit 42");
   const run = await new Deno.Command("sh", {
-    args: ["-c", script],
+    args: ["-c", script.replace(markerAssignment, `applied=${marker}`)],
     env: { PATH: `${bin}:${Deno.env.get("PATH")}` },
     stderr: "piped",
   }).output();
@@ -55,4 +61,11 @@ Deno.test("a base VM has no identity share and ends after 1 s", async () => {
   assertEquals(base.code, 0);
   assertEquals(base.sleeps, 10);
   assertStringIncludes(base.stderr, "no identity share");
+});
+
+Deno.test("a parked task VM keeps its applied identity without waiting or mounting", async () => {
+  const resumed = await boot("incus_orbit-identity\n", true);
+  assertEquals(resumed.code, 0);
+  assertEquals(resumed.sleeps, 0);
+  assertEquals(resumed.stderr, "");
 });

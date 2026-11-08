@@ -1,6 +1,6 @@
 # SPIKE. Molecule scenario `udp`: the cases protocols[udp] and protocols[both] of swamp/proof/firewall/allow.cases.yaml
 # (protocols[tcp] is protocols_tcp of the scenario `default`). Same driver, platforms and inventory as `default`; run on the task VM
-# against the nested fleet that `tasks:provision` already built, from the parent directory (firewall-allow/):
+# against the nested fleet that `task:start` already built, from the parent directory (firewall-allow/):
 #   molecule test -s udp            # prepare (listeners, test denies, "blocked before" probes) -> converge (the CLI) -> verify (state)
 # A second run on a fleet that was not restored needs `molecule reset -s udp` and another PROOF_PORT_BASE (see `default`).
 # ANSIBLE_FORKS is the limit: cases that run at a time, and probes that run at a time.

@@ -61,16 +61,16 @@ it('follows the gateway switch through the public command kernel', function (): 
 
     expect($listExit)->toBe(0)
         ->and($taskCommands)->toBe(['task:status'])
-        ->and($names)->not->toContain('ai-router:model:list', 'ai-router:status', 'ai-router:setup', 'ai-router:teardown');
+        ->and($names)->not->toContain('ai-router:model:list', 'ai-router:status', 'ai-router:setup', 'ai-router:destroy');
 
     [$defaultExit, $defaultOutput] = extension_commands_run([]);
     expect($defaultExit)->toBe(0)
         ->and($defaultOutput)->toContain('task:status')
-        ->not->toContain('task:create', 'ai-router:setup', 'ai-router:teardown');
+        ->not->toContain('task:create', 'ai-router:setup', 'ai-router:destroy');
 
     foreach ([['list', '--raw'], ['list', '--format=xml']] as $arguments) {
         [, $output] = extension_commands_run($arguments);
-        expect($output)->not->toContain('task:create', 'task:list', 'ai-router:setup', 'ai-router:teardown');
+        expect($output)->not->toContain('task:create', 'task:list', 'ai-router:setup', 'ai-router:destroy');
     }
 
     foreach ([['help', 'task:list'], ['task:list', '--help']] as $arguments) {

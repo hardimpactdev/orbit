@@ -1,5 +1,5 @@
 ---
-# The package cache of a task VM for the apt runs of a Node in its nested fleet (docs/cli/task/vm-fleet-build.mmd). `apt_proxy` is the
+# The package cache of a task VM for the apt runs of a Node in its nested fleet (swamp/ansible/tasks/task-vm-fleet-build.yml). `apt_proxy` is the
 # Gateway's value (TaskVmAptCache): the stock apt-cacher-ng of the VM for a Node inside the nested subnet, none for every other Node.
 # One drop-in of apt.conf.d, so the apt module, `apt-get` and a console read it alike. The cache proxies plain http only: https sources
 # stay a direct download. apt asks it one request at a time, because it answers some of several requests in flight with another file's body.

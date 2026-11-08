@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ansible-input'
-version: 2026.11.07.12
+version: 2026.11.08.2
 visibility: private
 license: MIT
 description: Private intent files and shipped playbooks for Ansible phases.
@@ -70,6 +70,10 @@ additionalFiles:
   - ansible/tasks/task-vm-nested-route.yml
   - ansible/tasks/task-vm-shape-gate.yml
   - ansible/tasks/task-vm-check.yml
+  - ansible/swamp-worker-renewal.yml
+  - ansible/tasks/swamp-worker-renew-slot.yml
+  - ansible/tasks/swamp-worker-renew-verify.yml
+  - ansible/tasks/swamp-worker-renewal.yml
   - ansible/tasks/swamp-start-cache.yml
   - ansible/requirements.txt
   - ansible/requirements.yml

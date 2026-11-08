@@ -11,8 +11,8 @@ use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Console\Command;
 
 /**
- * Admits `node.add` from the Gateway itself, the way `node:add` does through the API. The nested Gateway of a fleet build has no
- * CLI on its machine, so the build adds its Nodes this way (docs/cli/task/vm-fleet-build.mmd); Swamp then runs the enrollment.
+ * Admits `node.add` from the Gateway itself, the way `node:add` does through the API. The nested Gateway of a fleet has no
+ * CLI on its machine, so the fleet phase of the converge adds its Nodes this way (swamp/ansible/tasks/task-vm-fleet-build.yml); Swamp then runs the enrollment.
  */
 final class NodeAddCommand extends Command
 {

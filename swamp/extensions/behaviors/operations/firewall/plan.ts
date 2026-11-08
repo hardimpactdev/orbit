@@ -3,9 +3,10 @@
  * `@swamp/cfgmgmt/firewall` cannot insert a rule at a position (Lab #4334) or name a port range, so each change
  * runs as one `ufw` argv over `@swamp/ssh exec`, and this behavior only reads ufw's output.
  *
- * Lines match by tuple; the comment is only for people. UFW stops at the first match, so each line sits above
- * Orbit's own managed lines (comment `orbit:<name>`) and above every broader operator line, and below every
- * narrower one: one address, then a CIDR, then anywhere. Each family is placed on its own.
+ * Lines match by tuple; the comment is only for people. UFW stops at the first match, so new lines prefer
+ * positions above Orbit's managed lines (comment `orbit:<name>`) and broader operator lines, below narrower
+ * ones: one address, then a CIDR, then anywhere. Existing allows need not cross harmless managed allows.
+ * Each family is placed on its own.
  */
 import { z } from "npm:zod@4.4.3";
 
@@ -28,6 +29,7 @@ export type Row = {
     action: string;
     source: string;
     comment: string;
+    direction?: string;
 };
 type Valid = z.infer<typeof Rule> & { protocols: string[] };
 
@@ -60,33 +62,55 @@ export function inventory(stdout: string): Row[] {
         throw new Refusal("firewall.backend_inactive");
     }
     return lines.flatMap((line) => {
-        const match = line.trim().match(
-            /^\[\s*(\d+)\]\s+(.+?)\s+(ALLOW|DENY)\s+IN\s+(.+?)(?:\s+#\s*(.*))?$/,
+        const numbered = line.trim().match(/^\[\s*\d+\]\s+(.+)$/);
+        if (!numbered) return [];
+        const match = numbered[1].match(
+            /^(.+?)\s+(ALLOW|DENY|LIMIT|REJECT)(?:\s+(IN|OUT|FWD))?\s+(.+?)(?:\s+#\s*(.*))?$/,
         );
-        return match
-            ? [{
-                to: match[2].trim(),
-                action: match[3].toLowerCase(),
-                source: match[4].trim(),
-                comment: (match[5] ?? "").trim(),
-            }]
-            : [];
+        // Every numbered row occupies an insert position, including unrelated actions and directions.
+        return [
+            match
+                ? {
+                    to: match[1].trim(),
+                    action: match[2].toLowerCase(),
+                    direction: (match[3] ?? "IN").toLowerCase(),
+                    source: match[4].trim(),
+                    comment: (match[5] ?? "").trim(),
+                }
+                : { to: numbered[1], action: "", source: "", comment: "" },
+        ];
     });
 }
 
 type Network = { six: boolean; base: bigint; bits: number };
 
 function network(text: string): Network {
-    const [address, prefix] = text.split("/");
+    let [address, prefix] = text.split("/");
     const six = address.includes(":");
     const width = six ? 128 : 32;
     let value = 0n;
     if (six) {
-        const [head, tail = ""] = address.split("::");
+        if (address.includes(".")) {
+            const colon = address.lastIndexOf(":");
+            const ipv4 = network(address.slice(colon + 1));
+            address = address.slice(0, colon + 1) +
+                (ipv4.base >> 16n).toString(16) + ":" +
+                (ipv4.base & 65535n).toString(16);
+        }
+        const halves = address.split("::");
+        const [head, tail = ""] = halves;
         const left = head ? head.split(":") : [];
         const right = address.includes("::")
             ? (tail ? tail.split(":") : [])
             : [];
+        if (
+            halves.length > 2 ||
+            (halves.length === 1
+                ? left.length !== 8
+                : left.length + right.length >= 8)
+        ) {
+            throw new Refusal("firewall.input_invalid");
+        }
         const groups = [
             ...left,
             ...Array(8 - left.length - right.length).fill("0"),
@@ -150,11 +174,30 @@ function lines(rule: Valid, protocol: string): [string, Row][] {
             row("::/0", " (v6)", "Anywhere (v6)"),
         ];
     }
+    const source = network(rule.source);
+    if (source.bits === 0) {
+        return [
+            row(
+                rule.source,
+                source.six ? " (v6)" : "",
+                source.six ? "Anywhere (v6)" : "Anywhere",
+            ),
+        ];
+    }
     // ufw marks only a line for anywhere with `(v6)`; a line from one IPv6 address shows the address alone.
     return [row(rule.source, "", rule.source)];
 }
 
-const key = (row: Row) => `${row.to}\0${row.action}\0${row.source}`;
+const incoming = (row: Row) =>
+    (row.direction ?? "in") === "in" && ["allow", "deny"].includes(row.action);
+const key = (row: Row) => {
+    let source = row.source;
+    if (incoming(row) && ports(row.to) && !source.includes(" on ")) {
+        const address = scope(source);
+        source = `${address.six}:${address.base}/${address.bits}`;
+    }
+    return `${row.to}\0${row.action}\0${row.direction ?? "in"}\0${source}`;
+};
 const v6 = (row: Row) =>
     row.to.includes("(v6)") || row.source.includes("(v6)") ||
     row.source.includes(":");
@@ -170,23 +213,28 @@ function ports(to: string): [number, number, string | null] | null {
 }
 
 function scope(source: string): Network {
-    const text = source.replace(/ \(v6\)$/, "");
+    const text = source.split(" on ")[0].replace(/ \(v6\)$/, "");
     if (text === "Anywhere") {
         return network(source.endsWith("(v6)") ? "::/0" : "0.0.0.0/0");
     }
     return network(text);
 }
 
-/** `row` must sit below `other`: it is a managed line of the same family, or a broader overlapping operator line. */
+/** Prefer `row` below `other`: a managed line, or a broader overlapping operator line. */
 function below(row: Row, other: Row): boolean {
-    if (managed(row) || managed(other)) {
-        return managed(row) && !managed(other) && v6(row) === v6(other);
-    }
-    const a = ports(row.to), b = ports(other.to);
-    if (!a || !b || v6(row) !== v6(other) || a[1] < b[0] || b[1] < a[0]) {
+    if (!incoming(row) || !incoming(other) || v6(row) !== v6(other)) {
         return false;
     }
-    if (a[2] !== null && b[2] !== null && a[2] !== b[2]) return false;
+    const a = ports(row.to), b = ports(other.to);
+    if (
+        a && b &&
+        (a[1] < b[0] || b[1] < a[0] ||
+            (a[2] !== null && b[2] !== null && a[2] !== b[2]))
+    ) return false;
+    if (managed(row) || managed(other)) {
+        return managed(row) && !managed(other);
+    }
+    if (!a || !b) return false;
     const wide = scope(row.source), narrow = scope(other.source);
     return !(wide.base === narrow.base && wide.bits === narrow.bits) &&
         contains(wide, narrow);
@@ -195,10 +243,22 @@ function below(row: Row, other: Row): boolean {
 function ordered(rows: Row[], mine: Set<string>) {
     return rows.every((row, index) =>
         !mine.has(key(row)) ||
-        rows.every((other, position) =>
-            !((position < index && below(other, row)) ||
-                (position > index && below(row, other)))
-        )
+        rows.every((other, position) => {
+            if (
+                !((position < index && below(other, row)) ||
+                    (position > index && below(row, other)))
+            ) return true;
+            // Managed ALLOWs cannot change an existing ALLOW's verdict. This also holds for trust scoped
+            // to an interface/destination: the unrestricted operator rule overlaps it, but agrees with it.
+            // Do not call that scope disjoint: a similarly scoped DENY must still force a move.
+            if (
+                row.action === "allow" && other.action === "allow" &&
+                (managed(row) || managed(other))
+            ) return true;
+            // Otherwise a placement preference requires a move only when the sources overlap.
+            const a = scope(row.source), b = scope(other.source);
+            return !contains(a, b) && !contains(b, a);
+        })
     );
 }
 
@@ -325,7 +385,7 @@ const Result = z.object({
 
 export const behavior = {
     type: "@nckrtl/firewall-plan",
-    version: "2026.11.05.1",
+    version: "2026.11.07.3",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

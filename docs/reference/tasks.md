@@ -181,7 +181,11 @@ A workspace is required (`409 tasks.no_workspace`). A parked VM is woken by the 
 
 Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
 
-The steps record the start HEAD (`original`), run baseline setup in order (`setup-0`, `setup-1`, …), run the Project check (`project`), snapshot the workspace (`snapshot-before-*`), read the subtask diff from its base with `git diff-tree -r --no-renames --name-status -z` (`diff`), run each command deliverable (`deliverable-0`, …), and snapshot the checked tree again (`snapshot-after-*`, `changed`). A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against the run's own index file, and `git rev-parse HEAD`; the real index is untouched. The first snapshot follows the Project check because its formatters run in fix mode: their edits belong to the checked tree, so they do not make the check `changed`.
+The steps record the start HEAD (`original`), run baseline setup in order (`setup-0`, `setup-1`, …), run the Project check (`project`), snapshot the workspace (`snapshot-before-*`), read the subtask diff from its base with `git diff-tree -r --no-renames --name-status -z` (`diff`), run each command deliverable (`deliverable-0`, …), and snapshot the checked tree again (`snapshot-after-*`, `changed`).
+
+The result preserves the admitted subtask base as its start commit, including after a failed check. It uses `original` only when no base was admitted. A retry must not replace its base with the candidate it just checked.
+
+A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against the run's own index file, and `git rev-parse HEAD`; the real index is untouched. The first snapshot follows the Project check because its formatters run in fix mode: their edits belong to the checked tree, so they do not make the check `changed`.
 
 Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 COMPOSER_CACHE_DIR=… [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] /bin/bash -lc <command>` in the SSH account's environment. A setup step named `@orbit/ci-caches` expands to the same shared program that provision runs. Commands receive no GitHub or Gateway credentials. Their output stays out of native history ([command output](#keep-command-output-out-of-run-history)); the result keeps a redacted tail of at most 16 KiB.
 
@@ -1116,7 +1120,7 @@ The Gateway scheduler runs `task:pr-gate` every minute while the Tasks extension
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
 
-A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the resume of the task VM and a fresh reviewer turn in a new thread on the head. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
+A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A parked VM resumes before review; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
@@ -1270,21 +1274,20 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 `task:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
+Cancel is admitted under the group execution lock. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
-Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
+An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run releases the task's VM (`task_vm.slot_release`): it deletes the VM, its seed clone and its identity volume, and removes the hub peer. When the run passes, the Gateway deletes the workspace Instance and the Node, and marks the task and its open subtasks `cancelled`. Cancel runs no Project teardown: the workspace lives on the VM's disk and goes with it. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. A task without a VM is marked `cancelled` by the same run.
 
-Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
+- **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
+- **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
+- **Refused admission.** A refusal such as `tasks.not_cancellable`, `operation.target_busy` or `task_vm.release_refused` changes nothing.
+- **Failed run.** A cancel run that fails, or whose start Swamp refuses, keeps the task and marks its VM `failed`. Cancel again to release it.
 
-- **Approved work not on origin.** The cancel run pushes the latest approved commit to `task-{id}` without force. You can open a pull request from it. The VM never holds the push token.
-- **Failed push.** The run fails before any removal. The task and its VM stay.
-- **Parked VM with approved work.** A parked VM cannot push. Cancel refuses with HTTP 409 `tasks.push_failed`; publish the work first.
-- **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
-- **Confirmed VM power-off.** Cancel ends the task and keeps its Instance attached after the provider confirms power-off. It requests `removal_failure` assistance. Missing or stale Node observations do not permit this shortcut.
-- **Retry after power-off.** Once the VM is available, cancel retries preservation and removal. A failed or pending push keeps the workspace.
-- **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
+Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or a task VM. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
 
-Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
+Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
+
+A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. When Swamp refuses the cancel's start, the cancel fails and the VM is marked `failed`, so another cancel can reserve it again. Uncommitted changes and work that no review approved go with the VM.
 
 When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 
@@ -1294,9 +1297,11 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 `task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
-Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
+Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
-Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown and saves the agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
+Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown and saves the agent transcripts while the VM is `ready`, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
+
+Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a slot number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
 
 ### Direct lifecycle acknowledgement
 

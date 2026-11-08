@@ -54,19 +54,8 @@ final class OperationBudgetTable
         'node.prepare_php_packages' => 3600,
         'node.remove' => 2100,
         'node.role_add' => 2700,
-        // No run yet. Basis: the three Ansible phases at their step bounds, software 1,800 s, tools 900 s and the check 300 s, plus the
-        // short input steps and margin. A VM at its pins takes about a minute. Replace with the 14-day p95 after the first successes.
-        'task_vm.converge' => 3300,
-        // No run yet. Basis: the serial bounded steps: scan 900 s, stop 300 s, a copy 600 s, the agent wait 130 s and the scan on the stored
-        // copy 900 s, plus the shorter steps and margin. Replace with the 14-day p95 after the first successes.
-        'task_vm.ready_copies' => 3600,
-        // No run yet. Basis: the stage-2 timings of a fresh nested fleet (docs/cli/task/vm-fleet-build.mmd): the VMs and their first boot,
-        // the Gateway bootstrap (about 3 minutes), its first role and Node converges, the two Node enrollments (about 6 minutes each) and
-        // the readiness wait, plus margin. A wait ends when its Operation ends or a nested VM is not running; the literal timeouts of the
-        // waits only guard a hung connection, so this budget is the bound of the run. Replace with the 14-day p95 after the first successes.
-        'task_vm.fleet_build' => 3600,
         // Provisional. Basis: the first refresh of a new host, the longest: the first boot of its base VM (600 s at its bound), the
-        // converge from stock with the build of the nested fleet (5,400 s at its bound; the fleet build took 1,840 s as op 11816), the
+        // converge from stock with the build of the nested fleet (5,400 s at its bound; the standalone fleet build, since removed, took 1,840 s as op 11816), the
         // snapshot and the task start that proves it (tasks.provision, 3,900 s at its bound), plus margin. A refresh of a built base takes
         // about two minutes (ops 13052, 13053). Replace with the 14-day p95 after the first successes.
         'task_vm.image_refresh' => 10800,

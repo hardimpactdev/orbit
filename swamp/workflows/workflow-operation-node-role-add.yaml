@@ -638,9 +638,27 @@ jobs:
       inputs: {}}
   labels:
     role: swamp
-- name: swamp_check_job
+- name: swamp_worker_renewal_job
   dependsOn:
   - {job: swamp_workers_job, condition: {type: succeeded}}
+  steps:
+  - name: Start sequential Swamp worker renewal
+    writes: true
+    labels:
+      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "swamp-worker-renewal-"+string(inputs.node_id) }}', methodName: apply,
+      globalArgs: {nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
+          : inputs.intent.runtime.swamp).ssh_execution.target.host }}', nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
+          : inputs.intent.runtime.swamp).ssh_execution.target.user }}', nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
+          : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
+          : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-worker-renewal.timer, enabled: true, ensure: running},
+      inputs: {}}
+  labels:
+    role: swamp
+- name: swamp_check_job
+  dependsOn:
+  - {job: swamp_worker_renewal_job, condition: {type: succeeded}}
   steps:
   - name: Check Swamp serve
     labels:
@@ -937,6 +955,7 @@ jobs:
   - {job: "readiness", condition: *settled}
   - {job: "swamp_runtime_job", condition: *settled}
   - {job: "swamp_workers_job", condition: *settled}
+  - {job: "swamp_worker_renewal_job", condition: *settled}
   - {job: "swamp_check_job", condition: *settled}
   - {job: "Check Swamp runtime_job", condition: *settled}
   - {job: "phase_51", condition: *settled}

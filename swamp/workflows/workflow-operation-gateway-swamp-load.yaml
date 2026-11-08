@@ -71,6 +71,26 @@ jobs:
             group: orbit
             mode: '0640'
           inputs: {}
+      # The workers run Ansible with the collections the swamp role installed from its pin. The load only compares: a release whose
+      # requirements.yml differs from that pin warns, with the converge that installs them, and goes on. It installs nothing.
+      - name: Check the Ansible collections
+        labels: {role: swamp}
+        dependsOn: [{step: checkout, condition: {type: succeeded}}]
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "gateway-swamp-collections" }}'
+          methodName: execute
+          inputs:
+            env:
+              REQUIREMENTS: /home/orbit/apps/orbit-monorepo-staging/checkout/swamp/ansible/requirements.yml
+              PIN: /opt/orbit/ansible/requirements.yml
+              NODE_ID: '${{ string(inputs.node_id) }}'
+            run: |
+              cmp -s "$REQUIREMENTS" "$PIN" && { echo current; exit 0; }
+              echo "The Ansible collections on Node $NODE_ID were installed from another requirements.yml; run: orbit node:role:add $NODE_ID swamp --converge" >&2
+              exit 1
       - name: load
         labels: {role: swamp}
         writes: true

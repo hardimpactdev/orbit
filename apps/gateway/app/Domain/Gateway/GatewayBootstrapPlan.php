@@ -13,7 +13,7 @@ use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
 
 /**
- * What a fresh machine needs before its own Gateway app can run (docs/cli/task/vm-fleet-build.mmd, "Prepare the Gateway"):
+ * What a fresh machine needs before its own Gateway app can run (docs/reference/node-provisioning.md, "Gateway bootstrap prerequisites"):
  * the apt packages of the roles a new Gateway holds, the pinned Caddy package and the pinned PHP packages. It reads the
  * machine software recipe alone, so it needs no database, and it has the shape of the role prerequisites intent
  * (swamp/ansible/tasks/role-prerequisites.yml).
@@ -41,7 +41,7 @@ final readonly class GatewayBootstrapPlan
         foreach (self::Roles as $role) {
             $packages = [...$packages, ...$catalog->forRole($node, $role)];
         }
-        // The ready copies of a nested fleet edit the Gateway database with the sqlite3 client (task_vm.ready_copies).
+        // The waits of a nested fleet read the Gateway database with the sqlite3 client (swamp/ansible/tasks/task-vm-nested-wait.yml).
         $packages[] = 'sqlite3';
         // The queue that records the finished runs of Swamp (docs/reference/gateway-queue.md) needs a Redis server; this Gateway's own, on loopback.
         $packages[] = 'valkey-server';
@@ -56,7 +56,7 @@ final readonly class GatewayBootstrapPlan
             'php_packages' => PhpBuildInstaller::packageFiles($build),
             'environment' => self::environment((string) file_get_contents(base_path('.env.example')),
                 ['APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => $url, 'ORBIT_HOME' => $home, 'ORBIT_GATEWAY_CHECKOUT' => $checkout,
-                    // Named, not implied: the ready copies and the start of a nested fleet read the database from the `.env`.
+                    // Named, not implied: the sqlite3 client of the nested-fleet waits and the start of a nested fleet read the database from the `.env`.
                     'DB_DATABASE' => rtrim($home, '/').'/gateway.sqlite',
                     'ORBIT_GATEWAY_QUEUE_CONNECTION' => BootstrapGatewayAction::QueueConnection]),
         ];

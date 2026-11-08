@@ -11,6 +11,8 @@ covers:
 
 # Instance logs
 
+Instance, Process and Schedule logs share the [viewer lease contract](/reference/live-logs). Each command returns a bounded snapshot unless the caller passes `--follow`.
+
 The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
 
 ## Read the log

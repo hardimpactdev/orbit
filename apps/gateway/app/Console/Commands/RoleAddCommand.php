@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
 
 /**
  * Admits a role add or converge from the Gateway itself, the way `node:role:add` does through the API. A new Gateway has no web
- * site until its own `gateway` role is applied, so this is how that first role is admitted (docs/cli/task/vm-fleet-build.mmd).
+ * site until its own `gateway` role is applied, so this is how that first role is admitted (swamp/ansible/tasks/task-vm-fleet-build.yml).
  */
 final class RoleAddCommand extends Command
 {

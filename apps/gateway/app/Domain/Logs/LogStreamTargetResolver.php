@@ -7,16 +7,20 @@ namespace App\Domain\Logs;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Schedules\ScheduleSpecification;
+use App\Domain\Schedules\ScheduleTargetResolver;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Schedule;
 use SensitiveParameter;
 
 /**
- * Resolves the log source of an Instance or a Process from the Gateway's own records: the same file,
+ * Resolves the log source of an Instance, a Process or a Schedule from the Gateway's own records: the same file,
  * unit, or container that the one-shot SSH read uses (ADR 0153).
  */
 final readonly class LogStreamTargetResolver
@@ -25,6 +29,8 @@ final readonly class LogStreamTargetResolver
         private ProcessTargetResolver $processes,
         private SystemdProcessRenderer $systemd,
         private DockerProcessRenderer $docker,
+        private ScheduleTargetResolver $schedules,
+        private ScheduleSpecification $scheduleUnits,
     ) {}
 
     public function forInstance(Instance $instance): LogStreamTarget
@@ -46,6 +52,17 @@ final readonly class LogStreamTargetResolver
             // A production Instance lives in its own home, which the agent's unit hides (ADR 0151).
             sshOnly: $instance->placedOnAppProd(),
         );
+    }
+
+    public function forSchedule(#[SensitiveParameter] Schedule $schedule): LogStreamTarget
+    {
+        if ($schedule->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('schedule.state_invalid', 'The Schedule logs are unavailable in its current state.', 409);
+        }
+
+        return new LogStreamTarget(LogStreamRecordType::Schedule, $schedule->id,
+            $this->schedules->placementOf($schedule)->node,
+            LogStreamSource::journal($this->scheduleUnits->serviceName($schedule)));
     }
 
     public function forProcess(#[SensitiveParameter] Process $process): LogStreamTarget

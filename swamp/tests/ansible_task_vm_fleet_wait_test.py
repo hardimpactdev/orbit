@@ -1,4 +1,4 @@
-"""The fleet build waits end as soon as a nested container is not running, and use the tool's own retry."""
+"""The nested fleet waits end as soon as a nested container is not running, and use the tool's own retry."""
 import importlib.util
 import json
 import os
@@ -44,17 +44,16 @@ class TaskVmFleetWaitTest(unittest.TestCase):
             self.assertIn('Instance is not running', task['until'], name)
             self.assertNotIn('shell', task)
 
-    def test_the_fleet_build_and_readiness_intents_are_reached_with_their_pinned_host_key(self):
+    def test_the_readiness_intent_is_reached_with_its_pinned_host_key(self):
         intent = {'ssh_execution': {'identity_file': '/role/identity', 'target': {
             'host': '10.252.7.9', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 vm']}}, 'fleet': {'guests': GUESTS}}
-        for kind in ('task_vm.fleet_build', 'task_vm.nested_ready'):
-            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
-                folder = Path(folder)
-                (folder / 'intent.json').write_text(json.dumps(intent))
-                builder.build(folder, kind)
-                host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
-                self.assertEqual(host['ansible_host'], '10.252.7.9')
-                self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'intent.json').write_text(json.dumps(intent))
+            builder.build(folder, 'task_vm.nested_ready')
+            host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
+            self.assertEqual(host['ansible_host'], '10.252.7.9')
+            self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
 
     def wait(self, answers, listing=ALL_RUNNING, **variables):
         """Run the playbook on this machine with the stand-in `incus`; returns the exit code, the output and the number of checks."""

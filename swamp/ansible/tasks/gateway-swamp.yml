@@ -1,5 +1,5 @@
 ---
-# The Swamp control plane of a new Gateway, on its own machine (docs/cli/task/vm-fleet-build.mmd, "Converge itself").
+# The Swamp control plane of a new Gateway, on its own machine (docs/reference/node-provisioning.md, "The Swamp control plane").
 # `control` is the plan of `php artisan orbit:bootstrap-control-plan`: the units for this machine's checkout, the release grants, and the scheduler and Horizon units.
 # The tokens are minted here with the Swamp CLI and stay here: no run input or output holds one. Every file is written only when
 # it is missing, so a repeat changes nothing. The Swamp key (`api-key`) is already on the machine: the refresh VM pushes it.

@@ -7,13 +7,13 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AiRouter\DestroyAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterProvidersRequest;
 use Orbit\Sdk\Requests\AiRouter\SetupAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterProviderRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
-use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Saloon\Http\Faking\MockClient;
@@ -185,13 +185,13 @@ it('updates an account from cache after the status patch', function (): void {
 it('tears down the fleet collector with explicit consent', function (): void {
     $mock = MockClient::global([
         ListExtensionsRequest::class => ai_router_cli_extensions_response(),
-        TeardownAiRouterRequest::class => ai_router_cli_status_response(payload: [
+        DestroyAiRouterRequest::class => ai_router_cli_status_response(payload: [
             'enabled' => false,
             'collected_at' => null,
         ]),
     ]);
 
-    [$exit, $output] = ai_router_cli_display('ai-router:teardown', ['--yes' => true, '--json' => true]);
+    [$exit, $output] = ai_router_cli_display('ai-router:destroy', ['--yes' => true, '--json' => true]);
 
     expect($exit)->toBe(0)
         ->and(json_decode($output, true)['enabled'])->toBeFalse()
@@ -201,14 +201,14 @@ it('tears down the fleet collector with explicit consent', function (): void {
 it('refuses teardown without --yes when it cannot prompt', function (array $options, string $expected): void {
     $mock = MockClient::global();
 
-    [$exit, $output] = ai_router_cli_display('ai-router:teardown', $options);
+    [$exit, $output] = ai_router_cli_display('ai-router:destroy', $options);
 
     expect($exit)->toBe(1)
         ->and($output)->toContain($expected)
         ->and($mock->getLastPendingRequest())->toBeNull();
 })->with([
     'json' => [['--json' => true], '"code":"input.confirmation_required"'],
-    'noninteractive human' => [[], 'Non-interactive AiRouter teardown requires --yes.'],
+    'noninteractive human' => [[], 'Non-interactive AiRouter destruction requires --yes.'],
 ]);
 
 it('shows fleet status including a null collected_at', function (): void {

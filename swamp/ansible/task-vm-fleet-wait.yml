@@ -1,7 +1,7 @@
 ---
-# One wait of the fleet build kind, or of the readiness of a nested fleet (task-nested-ready), run from Node 209 against the task VM: the
-# nested Gateway ends one of its Operations, or its Doctor is healthy. The wait itself is tasks/task-vm-nested-wait.yml, which the fleet
-# build of the converge imports too. The step that runs this playbook gives it a `timeout` of twice `wait_seconds`.
+# One wait for the readiness of a nested fleet (task-nested-ready), run from Node 209 against the task VM: the nested Gateway's Doctor is
+# healthy. The wait itself is tasks/task-vm-nested-wait.yml, which the fleet build of the converge imports too. The step that runs this
+# playbook gives it a `timeout` of twice `wait_seconds`.
 - name: Wait for the nested fleet
   hosts: task_vm
   gather_facts: false

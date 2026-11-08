@@ -9,6 +9,7 @@
 #                                                       over app-dev, app-prod and gateway, 3 adds the fast poll and the shared facts and prepare (default 1);
 #                                                       SCENARIO is the batch (default `default`; also ufw-fault, udp, dual-stack, prompts);
 #                                                       PROOF_KEEP_LISTENERS=1 leaves the listeners of the run running (to test what a reused VM carries)
+#   scripts/molecule-verify-spike put PATH BASE64...   write one scenario file from base64 (a spike convenience: try a fix without a release)
 #   scripts/molecule-verify-spike health           load, memory, listeners and UFW rows of each container
 #   scripts/molecule-verify-spike targets          what each container accepts: ufw, the proof-network row, one firewall:allow on its Node
 #   scripts/molecule-verify-spike log FROM [TO]   print lines FROM..TO of the last Molecule log (the result keeps only 16 KiB)
@@ -91,9 +92,9 @@ run_test() {
   say "tasks run: $(grep -c '^TASK \[' "$LOG")"
   say "results on a nested Node or delegated to one: $(grep -cE '^(ok|changed|failed|fatal|skipping): \[([a-z_]+ -> )?nested-' "$LOG")"
   say "== verdicts"
-  grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-400
+  grep -E '"msg": "[a-z_0-9]+: (passed|failed)' "$LOG" | sed -E 's/^ *"msg": //' | cut -c1-400
   say "== overlap (from the verdict lines): whole cases, and the CLI call of each case"
-  grep -E '"msg": "[a-z_]+: (passed|failed)' "$LOG" | grep -v '"msg": "doctor:' | awk '
+  grep -E '"msg": "[a-z_0-9]+: (passed|failed)' "$LOG" | grep -v '"msg": "doctor:' | awk '
     function peak_of(first, last, x, y,   i, j, c, p) { p = 0; for (i = first; i <= last; i++) { c = 0; for (j = first; j <= last; j++) if (x[j] <= x[i] && x[i] < y[j]) c++; if (c > p) p = c } return p }
     { n++; for (i = 1; i <= NF; i++) { if ($i == "casewin") { cs[n] = $(i + 1); ce[n] = $(i + 2) } if ($i == "cli") { ls[n] = $(i + 1); le[n] = $(i + 2) } if ($i == "busy") busy += $(i + 1) + 0 }
           if (!cmin || cs[n] < cmin) cmin = cs[n]; if (ce[n] > cmax) cmax = ce[n] }
@@ -164,7 +165,18 @@ targets() {
   done
 }
 
+# Spike only: write one file of the scenarios into this checkout from base64 arguments, so a fix can be tried in a throwaway VM without a merge,
+# a release and a refresh. Only paths under swamp/proof/molecule/ are accepted.
+put() {
+  local path=$1; shift
+  case "$path" in swamp/proof/molecule/*/*) ;; *) say "put refuses $path"; return 2 ;; esac
+  case "$path" in *..*) say "put refuses $path"; return 2 ;; esac
+  mkdir -p "$(dirname "$ROOT/$path")"
+  printf '%s' "$*" | tr -d ' ' | base64 -d >"$ROOT/$path" && say "wrote $path ($(wc -c <"$ROOT/$path") bytes)"
+}
+
 case "${1:-test}" in
+  put) shift; put "$@" ;;
   targets) targets ;;
   health) health ;;
   diagnose) diagnose ;;

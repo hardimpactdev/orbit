@@ -29,7 +29,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
 use Throwable;
 
 /**
- * Initialises a Gateway from its own code, on the machine it runs on (docs/cli/task/vm-fleet-build.mmd, "Converge itself"):
+ * Initialises a Gateway from its own code, on the machine it runs on (docs/reference/node-provisioning.md, "Gateway bootstrap prerequisites"):
  * its Node and role records, the VPN settings, the Orbit root CA, its SSH key and the host key of its machine. Root-of-trust
  * keys are made here and stay here. It starts no service and writes nothing under `/etc`: the WireGuard hub, whose private
  * key is made on the Node, and the Gateway's roles are applied by Swamp afterwards.

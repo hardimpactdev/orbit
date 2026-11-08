@@ -1,7 +1,7 @@
 id: 4b7b23f4-b2d0-4a6b-8f93-527231d1cffd
 name: operation-task-review-round
 description: >-
-  One review round of the automatic mode in one run from full inputs on 209: resume the task VM, let a fresh reviewer judge the
+  One review round of the automatic mode in one run from full inputs on 209: resume a parked task VM, let a fresh reviewer judge the
   pull request head, post the verdict as a comment of the App, and, when the review has findings, let the author fix them, check
   the fix locally and push it to the same branch. The existing resume, turn, check and publish workflows run as children. The comment
   and the push mint their tokens when they start.
@@ -27,12 +27,13 @@ inputs:
         pr_number: {type: integer, minimum: 1}
         round: {type: integer, minimum: 1, maximum: 3}
         head: {type: string, pattern: '^[a-f0-9]{40}$'}
+        task_vm_id: {type: integer, minimum: 1}
         resume: {type: object}
         review: {type: object}
         fix: {type: object}
         check: {type: object}
         publish: {type: object}
-      required: [project_id, group_id, repository, pr_number, round, head, resume, review, publish]
+      required: [project_id, group_id, repository, pr_number, round, head, task_vm_id, review, publish]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -88,22 +89,24 @@ jobs:
   steps:
   - name: Resume the VM
     labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.resume) }}'
     writes: true
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-resume
       inputs:
         operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.intent.resume.node_id }}'
+        node_id: '${{ has(inputs.intent.resume) ? inputs.intent.resume.node_id : inputs.node_id }}'
         kind: task_vm.resume
-        intent: '${{ inputs.intent.resume }}'
+        intent: '${{ has(inputs.intent.resume) ? inputs.intent.resume : {} }}'
         execution_secrets: '${{ inputs.resume_secrets }}'
   - name: Review the head
     labels: {role: swamp}
     dependsOn:
     - step: Resume the VM
       condition:
-        type: succeeded
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: workflow
       workflowIdOrName: operation-task-turn

@@ -55,6 +55,8 @@ Receipt redaction tests must inspect the persisted response. A numeric mask can 
 
 Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
 
+Before changing a CI cache, separate hits from misses in job logs. A Cargo lock change can restore dependencies built by the same compiler on the same OS and architecture; Cargo fingerprints still decide what must rebuild.
+
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.

@@ -6,29 +6,25 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\RequireTasksExtensionAction;
-use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 /** Admission of the owning native ending DAG. Records are retained until complete cleanup. */
 final readonly class TaskCancelIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $keys,
-        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskVmSlotRuns $slots) {}
+        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskVmSlotRuns $slots, private TaskFinalReview $review) {}
 
     public function finishMaintenance(Task $group): Operation
     {
@@ -59,26 +55,23 @@ final readonly class TaskCancelIntent
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
             }
-            // A release of the group's slot that is still running, such as after a failed start, ends with the workspace; the cancel follows it.
+            // Every refusal comes before the cancel changes anything. An Operation still open on the group's VM, such as a release after a
+            // failed start or a resume, refuses it; approved work that origin does not have refuses it too: task:publish comes first.
             $slot = TaskVm::forGroup($group);
-            $release = $slot === null ? null : Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_type', 'task_vm')
-                ->where('target_id', $slot->id)->whereNotIn('status', OperationStatus::terminalValues())->value('id');
-            if ($release !== null) {
-                throw new ResourceOperationException('operation.target_busy', 'The release of the group\'s task VM is still running; cancel again when it ends.', 409,
-                    details: ['operation_id' => $release]);
+            if ($slot instanceof TaskVm) {
+                TaskVmSlotRuns::assertReleasable($slot);
             }
             if ($kind === 'tasks.cancel') {
+                self::eligible($group->refresh(), $kind);
+                $this->review->assertOnOrigin($group);
                 $this->operations->cancelOpen($group);
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }
 
-            // The push token is named here and minted by the push step.
-            $token = $kind === 'tasks.cancel' && self::pushable($group->refresh()) ? $this->pushToken($group) : null;
-
-            return DB::transaction(function () use ($group, $caller, $request, $kind, $token): Operation {
-                $input = $this->capture($group, $kind, $token);
+            return DB::transaction(function () use ($group, $caller, $request, $kind): Operation {
+                $input = $this->capture($group, $kind, reserve: true);
 
                 return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             });
@@ -93,17 +86,17 @@ final readonly class TaskCancelIntent
      */
     public function captureForProof(Task $group): array
     {
-        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel', null));
+        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel', reserve: false));
     }
 
     /**
-     * The push of approved work, when there is some, and the release of the group's slot. Nothing else ends: the claim ran no setup and
-     * published no Route, and the delete of the task VM removes the task's files.
+     * The release of the group's slot. Nothing else ends: the claim ran no setup and published no Route, origin already has the approved
+     * work, and the delete of the task VM removes the task's files. An admitted cancel reserves the VM as a release does; a proof's capture
+     * runs before its VM exists and reserves nothing.
      *
-     * @param  array{remote:string,copy:array{vault:string,key:string}}|null  $token
      * @return array<string,mixed>
      */
-    private function capture(Task $group, string $kind, ?array $token): array
+    private function capture(Task $group, string $kind, bool $reserve): array
     {
         $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
         self::eligible($group, $kind);
@@ -113,19 +106,10 @@ final readonly class TaskCancelIntent
             || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
             throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact owned slot workspace.', 409);
         }
-        $commit = $kind === 'tasks.cancel' ? TaskFinalReview::unpublishedRemovalCommit($group) : null;
-        if ($commit !== null && ! is_array($token)) {
-            throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
-        }
-        $push = $commit === null || ! $workspace instanceof Instance ? null : [
-            'commit' => $commit, 'checkout_path' => $workspace->checkout_path, 'remote' => $token['remote'],
-            'refspec' => $commit.':refs/heads/'.TaskRemoteBranch::for($group), 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
-            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($workspace->node), 'github_token' => $token['copy'],
-        ];
-        $release = $slot instanceof TaskVm && $slot->slot_number !== null ? $this->slots->release($slot) : null;
+        $release = $slot instanceof TaskVm ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
-            ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'push' => $push, 'release' => $release];
+            ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'release' => $release];
     }
 
     public static function eligible(Task $group, string $kind = 'tasks.cancel'): void
@@ -147,27 +131,6 @@ final readonly class TaskCancelIntent
             && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists()) || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $group->pr_url)) {
             throw new ResourceOperationException('tasks.not_cancellable', 'A completed group or a settling group with a PR cannot be cancelled.', 409);
         }
-        if (TaskFinalReview::reconcileRemovalPush($group) !== null && ($kind !== 'tasks.cancel' || ! self::pushable($group))) {
-            throw new ResourceOperationException('tasks.push_failed', 'Publish the approved work before removing this workspace.', 409);
-        }
-    }
-
-    /** Cancel pushes approved work only from a running VM; a parked VM keeps its work until it is published. */
-    private static function pushable(Task $group): bool
-    {
-        return TaskFinalReview::unpublishedRemovalCommit($group) !== null && $group->taskable instanceof Instance
-            && TaskVm::forGroup($group)?->state === TaskVmState::Ready;
-    }
-
-    /** @return array{remote:string,copy:array{vault:string,key:string}} */
-    private function pushToken(Task $group): array
-    {
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url)
-            ?? throw new ResourceOperationException('tasks.push_failed', 'The Project requires a GitHub repository to push approved work.', 422);
-        // Only the vault key name is admitted. The approved push mints the token when it runs ({@see TaskGitHubTokens}).
-        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
-
-        return ['remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'copy' => $copy];
     }
 
     /** @return array<string,mixed> */
@@ -181,7 +144,7 @@ final readonly class TaskCancelIntent
             throw new ResourceOperationException('operation.execution_forbidden', 'Cancellation no longer owns its admitted group workspace.', 422);
         }
 
-        return ['intent' => ['group_id' => $group->id, 'push' => $operation->input['push'] ?? null, 'release' => $operation->input['release'] ?? null],
+        return ['intent' => ['group_id' => $group->id, 'release' => $operation->input['release'] ?? null],
             'execution_secrets' => []];
     }
 }
