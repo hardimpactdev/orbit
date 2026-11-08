@@ -185,6 +185,8 @@ printf 'swamp %s key=%s\\n' "$*" "$SWAMP_API_KEY_FILE" >> "${folder}/log"
       "ansible_become=false",
       "-e",
       "ansible_python_interpreter={{ ansible_playbook_python }}",
+      "-e",
+      `incus_seed_disk=${folder}/seed-disk`,
       `${folder}/play.yml`,
     ],
     env: {
