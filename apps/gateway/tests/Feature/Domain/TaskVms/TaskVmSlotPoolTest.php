@@ -632,3 +632,34 @@ it('refuses the release of a VM whose Node has no WireGuard public key, which na
     expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no WireGuard public key')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });
+
+it('never releases the base a refresh recorded, under the name it had before the host was renamed', function (string $name): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    // The refresh recorded beast-base and beast-base-seed; the host is now named sabre.
+    $host->update(['name' => 'sabre']);
+    $vm = oldPoolVm($host->refresh(), name: $name, state: TaskVmState::Failed);
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'would delete the base')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+})->with(['beast-base', 'beast-base-seed', 'sabre-base']);
+
+it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
+    // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
+    $started = false;
+    TaskVm::retrieved(function () use (&$started, $host): void {
+        if (! $started) {
+            $started = true;
+            Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+                'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+        }
+    });
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect($started)->toBeTrue()->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Provisioning);
+});

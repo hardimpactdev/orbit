@@ -95,7 +95,7 @@ final readonly class TaskVmSlotRuns
         $host = $this->host($slot);
         $names = [$slot->name, self::seedClone($slot)];
         $node = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A slot needs its host.', 409);
-        $taken = [TaskVmPromotedImage::baseVm($node), TaskVmPromotedImage::baseSeed($node)];
+        $taken = $this->images->baseNames($node, $this->settings->host($node->id));
         foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereKeyNot($slot->id)->get() as $other) {
             array_push($taken, $other->name, self::seedClone($other));
         }

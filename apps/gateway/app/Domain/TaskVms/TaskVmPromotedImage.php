@@ -27,6 +27,27 @@ final readonly class TaskVmPromotedImage
     }
 
     /**
+     * Every name a base of the host has or had in its project: the canonical base VM and seed, and the VM and seed each of the host's
+     * refreshes recorded, which keep the names they had when the host was renamed later. A release never deletes one of them.
+     *
+     * @return list<string>
+     */
+    public function baseNames(Node $host, TaskVmHost $location): array
+    {
+        $names = [self::baseVm($host), self::baseSeed($host)];
+        foreach (TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('images->base->project', $location->project)->get() as $build) {
+            $base = $build->images['base'] ?? [];
+            foreach (['vm', 'seed'] as $key) {
+                if (($base[$key] ?? '') !== '') {
+                    $names[] = $base[$key];
+                }
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
      * The host's recorded base snapshot and the recipe identity it converged to, or null before the host's first refresh.
      *
      * @return array{recipe_identity:string,snapshot:string}|null
