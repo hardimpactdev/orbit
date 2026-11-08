@@ -246,9 +246,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     }
     implementer.onerror?.();
     await expect.element(page.getByRole("status", { name: "Failed", exact: true })).toBeVisible();
-    await expect
-        .element(page.getByLabelText("Agent connection"))
-        .toMatchTextContent("Recorded");
+    await expect.element(page.getByLabelText("Agent connection")).toMatchTextContent("Recorded");
     document.getElementById("agent-tab-2")!.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect
