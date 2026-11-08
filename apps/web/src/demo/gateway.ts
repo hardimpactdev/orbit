@@ -1192,6 +1192,13 @@ export function createDemoGateway() {
                         id: Math.max(...nodes.map((node) => node.id)) + 1,
                         name: String(body.name),
                         roles,
+                        assignments: roles.map((role, index) => ({
+                            id: index + 1,
+                            role,
+                            status: "active",
+                            failed_step: null,
+                            error_code: null,
+                        })),
                         tld: typeof body.tld === "string" ? body.tld : null,
                         status: "provisioning",
                     };

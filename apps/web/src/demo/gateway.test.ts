@@ -47,6 +47,10 @@ describe("the demo Gateway", () => {
         expect(await get<Node>(`/api/v1/nodes/${started.target_id}`)).toMatchObject({
             name: "spare",
             status: "active",
+            roles: ["app-dev"],
+            assignments: [
+                { id: 1, role: "app-dev", status: "active", failed_step: null, error_code: null },
+            ],
         });
     });
 

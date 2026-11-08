@@ -272,6 +272,47 @@ it('refuses missing input in noninteractive human mode without HTTP', function (
     $mockClient->assertNothingSent();
 });
 
+it('rejects a Node name locally even when its recorded assignment has a native failure', function (string $failedStep): void {
+    $assignment = failed_node_role_assignment_payload();
+    $assignment['failed_step'] = $failedStep;
+    $node = ['id' => 7, 'name' => 'mini', 'status' => 'active', 'roles' => ['app-prod'], 'assignments' => [$assignment]];
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [$node],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+        ListNodeRolesRequest::class => MockResponse::make([
+            'data' => [$assignment],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    expect(Artisan::call('node:role:list', ['node' => 'mini', '--json' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => ['code' => 'node.id_invalid', 'message' => 'Node ID must be a positive integer.', 'request_id' => null],
+    ]);
+    $mockClient->assertNothingSent();
+})->with([
+    'native platform guard' => 'converge:Require supported Ubuntu',
+    'native role check' => 'converge:Check the role',
+]);
+
+it('rejects an unknown node name before the role list request', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [['id' => 7, 'name' => 'app-dev', 'status' => 'active']],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:list', ['node' => 'mini'])
+        ->expectsOutputToContain('Node ID must be a positive integer. (node.id_invalid)')
+        ->assertExitCode(1);
+
+    $mockClient->assertNothingSent();
+});
+
 it('prints the request id for node role list gateway API errors', function (): void {
     MockClient::global([
         ListNodeRolesRequest::class => MockResponse::make(

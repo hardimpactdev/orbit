@@ -118,28 +118,37 @@ describe('node role assignment response transport', function (): void {
         'maximum length' => 'converge:'.str_repeat('A', 119),
     ]);
 
-    it('rejects empty or unsafe native failure labels without exposing them', function (string $step): void {
+    it('rejects unbounded blank non-string and control-bearing failed-step labels', function (mixed $failedStep): void {
         assert_node_role_boundary_exception(
             fn (): NodeRoleAssignmentResponse => NodeRoleAssignmentResponse::fromGatewayData([
                 'id' => 34,
-                'role' => 'database',
+                'role' => 'app-dev',
                 'status' => 'failed',
-                'failed_step' => $step,
-                'error_code' => 'node_role.convergence_failed',
+                'failed_step' => $failedStep,
             ], node_role_request_id()),
             message: 'Gateway response contains an invalid node role assignment failed_step.',
-            rejected: trim($step) === '' ? [] : [$step],
+            rejected: is_string($failedStep) && trim($failedStep) !== '' ? [$failedStep] : [],
         );
     })->with([
-        'empty' => '',
-        'only spaces' => '   ',
-        'newline' => "converge:Check\nthe role",
-        'carriage return' => "converge:Check\rthe role",
-        'tab' => "converge:Check\tthe role",
-        'null byte' => "converge:Check\0the role",
-        'terminal escape' => "converge:\x1b[31mCheck the role",
-        'delete control' => "converge:Check\x7fthe role",
-        'C1 control' => "converge:\x9b31mCheck the role",
+        'integer' => [1],
+        'boolean' => [false],
+        'array' => [[]],
+        'empty string' => [''],
+        'spaces only' => ['   '],
+        'Unicode spaces only' => ["\u{00A0}\u{2003}"],
+        'over maximum length' => [str_repeat('a', 129)],
+        'NUL' => ["converge:Check\0the role"],
+        'tab' => ["converge:Check\tthe role"],
+        'line feed' => ["converge:Check\nthe role"],
+        'carriage return' => ["converge:Check\rthe role"],
+        'terminal escape' => ["converge:Check\e[31mthe role"],
+        'DEL' => ["converge:Check\x7fthe role"],
+        'Unicode control' => ["converge:Check\u{0085}the role"],
+        'Unicode format control' => ["converge:Check\u{202E}the role"],
+        'Unicode line separator' => ["converge:Check\u{2028}the role"],
+        'Unicode paragraph separator' => ["converge:Check\u{2029}the role"],
+        'invalid UTF-8' => ["converge:Check\xffthe role"],
+        'C1 control' => ["converge:\x9b31mCheck the role"],
     ]);
 
     it('rejects malformed ids unsafe roles unsupported statuses and invalid failure fields', function (): void {

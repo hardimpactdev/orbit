@@ -11,9 +11,28 @@ use App\Support\Console\TerminalText;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
 
 final class NodeOutput
 {
+    /** @param list<NodeRoleAssignmentResponse> $roles */
+    public static function roles(array $roles): ?string
+    {
+        if ($roles === []) {
+            return null;
+        }
+
+        return implode(', ', array_map(static function (NodeRoleAssignmentResponse $role): string {
+            $detail = array_filter([
+                $role->status === 'active' ? null : $role->status,
+                $role->failedStep,
+                $role->errorCode,
+            ], is_string(...));
+
+            return $role->role.($detail === [] ? '' : ' ('.implode(' / ', $detail).')');
+        }, $roles));
+    }
+
     /** @param list<NodeAccessNodeResponse> $nodes */
     public static function accessList(array $nodes): string
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Nodes;
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
@@ -83,7 +84,7 @@ final readonly class NodeResponse
             updating: NodeUpdatingResponse::tryFromGatewayData($data['updating'] ?? null),
             agent: NodeAgentResponse::tryFromGatewayData($data['agent'] ?? null),
             clusterName: is_string($data['cluster_name'] ?? null) ? $data['cluster_name'] : null,
-            assignments: self::assignmentList($data['assignments'] ?? [], $requestId),
+            assignments: self::assignmentList(array_key_exists('assignments', $data) ? $data['assignments'] : [], $requestId),
         );
     }
 
@@ -133,26 +134,29 @@ final readonly class NodeResponse
     /** @return list<NodeRoleAssignmentResponse> */
     private static function assignmentList(mixed $value, string $requestId): array
     {
-        if (! is_array($value)) {
-            return [];
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new GatewayApiException('Gateway response contains invalid node role assignments.', requestId: $requestId);
         }
 
-        $assignments = [];
-        foreach ($value as $assignment) {
-            if (! is_array($assignment)) {
-                continue;
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! self::stringKeyedMap($item)) {
+                throw new GatewayApiException('Gateway response contains an invalid node role assignment.', requestId: $requestId);
             }
 
-            $fields = [];
-            foreach ($assignment as $key => $field) {
-                if (is_string($key)) {
-                    $fields[$key] = $field;
-                }
-            }
-            $assignments[] = NodeRoleAssignmentResponse::fromGatewayData($fields, $requestId);
+            $result[] = NodeRoleAssignmentResponse::fromGatewayData($item, $requestId);
         }
 
-        return $assignments;
+        return $result;
+    }
+
+    /** @phpstan-assert-if-true array<string, mixed> $value */
+    private static function stringKeyedMap(mixed $value): bool
+    {
+        return is_array($value)
+            && ! array_is_list($value)
+            && array_all(array_keys($value), static fn (int|string $key): bool => is_string($key));
     }
 
     private static function settings(mixed $value): ?NodeSettings
