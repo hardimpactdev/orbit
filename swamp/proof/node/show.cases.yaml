@@ -1,0 +1,202 @@
+# Stage 1 spec. Format: docs/reference/verification-cases.
+# The default branch has no node:show cases file; no existing ids or batches are replaced.
+command: node:show
+chart: node/show
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations]
+
+# These requests need runner capabilities, not invented steps or keys.
+uncovered:
+  cluster-name: "Add a recorded Cluster fixture with a bound name and detail-value assertions to verify the Cluster name in human and JSON output. Today NodeData and NodeResponse expose only cluster_id and ShowNodeCommand prints that ID."
+  roles-shared-projection: "Add deterministic role-assignment fixtures for active, provisioning, failed and removing, plus structured assertions comparing role, status, failed_step and error_code across node:list, node:show and node:role:list. Today node:show uses NodeData's role-name list rather than a shared assignment projection."
+  recorded-detail: "Add structured detail assertions for node:show's identity, lifecycle, addresses, settings, named access relations and recorded Node failure, plus a Node-record baseline provider. Verify JSON values and that reads leave records unchanged, including a Node retained after a partially failed write."
+  recorded-only: "Add a request-scoped outbound-contact audit to prove the read contacts no Node, Grafana or other external system. The offline case checks availability without the target's agent or SSH, but not every possible outbound contact."
+  "path:missing-values": "Add a sparse recorded-Node fixture and structured null assertions to check available detail and missing fields without live lookups. Human missing values must follow the CLI standard."
+  "path:no-agent": "Add an unmanaged recorded-Node fixture and a structured agent-null assertion to prove a successful read without an observing agent."
+  "path:agent-not-seen": "Add a never-reported managed-Node fixture and a structured agent-state assertion to check not_seen without contacting the Node."
+  "path:agent-unknown": "Add an unavailable recorded-agent-view fixture and a structured agent-state assertion to check unknown while other recorded detail still succeeds."
+  "path:agent-online": "Add a deterministic fresh recorded-agent fixture and structured agent-state assertions to check online at the 15-second boundary. Healthy read cases do not assert liveness because CLI startup can cross that window."
+  agent-offline-since: "Add structured detail assertions to check agent.state is offline and since equals the last recorded event, including the exact freshness boundary. The offline case already checks the human state and successful read."
+
+cases:
+  - id: required-id
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: Required arguments alone return the recorded Node detail without creating an Operation.
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [human]
+          expect: {exit: 0, request: none, human: ["Node: app-dev", Status, Roles, SSH, Cluster, "Access to", "Accessible by"]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: json-read
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: The JSON read succeeds without creating an Operation.
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [json]
+          expect: {exit: 0, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: repeat
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: Reading the same Node twice succeeds both times without creating Operations.
+    stages:
+      - act:
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              forms: [json, human]
+              expect: {exit: 0, request: none, human: "Node: app-dev"}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+      - act:
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              forms: [json, human]
+              expect: {exit: 0, request: none, human: "Node: app-dev"}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+
+  - id: gateway-authority-without-direct-grant
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: Gateway authority permits the read even without a direct grant to the target.
+    setup:
+      - node_access_remove: {consumer: gateway, serving: app-dev}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: "Node: app-dev"}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: ordinary-access-grant
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: An ordinary grant lets app-prod read app-dev without Gateway authority or new Operations.
+    setup:
+      # Ensure the caller cannot gain Gateway authority through a grant to the Gateway.
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+      - cli:
+          run: [node:access:add, "${app-prod.id}", "${app-dev.id}"]
+          expect: {exit: 0}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          as: app-prod
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: "Node: app-dev"}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: named-access-relations
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: Related Nodes in access grants are shown by name and ID.
+    setup:
+      - cli:
+          run: [node:access:add, "${app-prod.id}", "${app-dev.id}"]
+          expect: {exit: 0}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [human]
+          expect: {exit: 0, request: none, human: ["Accessible by", "app-prod (#${app-prod.id})"]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: apps-folder-label
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: The Node detail labels its apps root as Apps folder.
+    fails_today: ShowNodeCommand labels settings.apps.path as Projects path instead of Apps folder.
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [human]
+          expect: {exit: 0, request: none, human: "Apps folder"}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: A nonpositive, noninteger or out-of-range ID is refused locally.
+    variants:
+      - {name: zero, value: "0"}
+      - {name: name, value: app-dev}
+      - {name: fractional, value: "1.5"}
+      - {name: overflow, value: "999999999999999999999999999999"}
+    act:
+      - cli:
+          run: [node:show, "${value}"]
+          forms: [json, human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: negative-or-option-like-id
+    batch: fresh-fleet
+    covers: []
+    summary: A negative or option-like ID passed after the option terminator is refused as an invalid Node ID.
+    variants:
+      - {name: negative, value: "-1"}
+      - {name: option-like, value: "--not-a-node"}
+    act:
+      - cli:
+          run: [node:show, "--", "${value}"]
+          forms: [human]
+          expect: {exit: 1, code: node.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: unknown-node
+    batch: fresh-fleet
+    covers: [main, unknown-node]
+    summary: An unknown positive Node ID is refused without creating an Operation.
+    act:
+      - cli:
+          run: [node:show, "2147483647"]
+          forms: [json, human]
+          expect: {exit: 1, code: http.404, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: offline-node
+    batch: node-down
+    covers: [main, node-found, allowed, agent-offline]
+    summary: A Node whose agent and SSH are stopped still returns its recorded detail and offline agent state.
+    setup:
+      - agent_report: {node: app-dev}
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: ["Node: app-dev", "offline since"]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: refused-caller
+    batch: no-grant
+    covers: [main, node-found, refused-caller]
+    summary: A caller with neither Gateway authority nor a target grant is refused without a new Operation.
+    setup:
+      # The batch removes app-prod -> app-dev; this removes delegated Gateway authority too.
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+    act:
+      - cli:
+          run: [node:show, "${app-dev.id}"]
+          as: app-prod
+          forms: [json, human]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

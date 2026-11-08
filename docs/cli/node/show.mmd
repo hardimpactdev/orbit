@@ -1,0 +1,72 @@
+sequenceDiagram
+  %% Target design: node:show reads recorded Gateway state only (docs/cli/node/show.mdx).
+  %% status: draft
+  %% command: orbit node:show NODE
+  %% kind: node.show
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>recorded state
+  CLI->>GW: node:show NODE
+  %%> Command:
+  %%> - orbit node:show NODE
+  %%> - syntax: orbit node:show <node>
+  alt Node not found
+    %% path: unknown-node
+    GW--xCLI: Unknown Node<br/>http.404
+    %%> Result:
+    %%> - no records change and no Operation starts
+  else Node exists
+    %% path: node-found
+    Note over GW: Check Node authority
+    %%> Requirements:
+    %%> - apply the shared NodeAccessAuthorizer rule linked from /cli/node
+    alt Caller refused
+      %% path: refused-caller
+      GW--xCLI: Access refused<br/>node_access.required
+      %%> Result:
+      %%> - no Node detail is disclosed and no Operation starts
+    else Caller allowed
+      %% path: allowed
+      Note over GW: Read recorded detail
+      %%> What it does:
+      %%> - read Node records, named relations and recorded agent state; contact no Node, Grafana or other external system
+      %%> - use the shared role projection of node:list, node:show and node:role:list
+      %%> Result:
+      %%> - no records change and no Operation starts
+      opt Recorded values absent
+        %% path: missing-values
+        Note over GW: Keep missing values
+        %%> Result:
+        %%> - return the available detail without fetching missing facts
+        %%> - missing human display values use the CLI standard's empty-value rendering
+      end
+      alt No observing agent
+        %% path: no-agent
+        GW-->>CLI: Recorded Node<br/>agent: null
+        %%> Result:
+        %%> - the Node is not eligible for an observing agent
+      else Agent view unavailable
+        %% path: agent-unknown
+        GW-->>CLI: Recorded Node<br/>agent.state: unknown
+        %%> Result:
+        %%> - the Gateway's recorded subscriber health cannot establish liveness
+      else Agent never seen
+        %% path: agent-not-seen
+        GW-->>CLI: Recorded Node<br/>agent.state: not_seen
+        %%> Result:
+        %%> - there is no recorded last event
+      else Agent data stale
+        %% path: agent-offline
+        GW-->>CLI: Recorded Node<br/>agent.state: offline
+        %%> Result:
+        %%> - since identifies the last recorded event; stale data is not a refusal
+      else Agent data fresh
+        %% path: agent-online
+        GW-->>CLI: Recorded Node<br/>agent.state: online
+        %%> Result:
+        %%> - a recorded event arrived within the freshness window
+      end
+    end
+  end
