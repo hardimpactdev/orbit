@@ -151,7 +151,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `BCRYPT_ROUNDS` | Laravel password hashing cost. |
 | `LOG_CHANNEL`, `LOG_STACK`, `LOG_DAILY_DAYS`, `LOG_DEPRECATIONS_CHANNEL`, `LOG_LEVEL` | Laravel logging. [Gateway request logs](/reference/gateway-recovery#gateway-request-logs) describes the files. |
 | `DB_CONNECTION` | Laravel database connection. The Gateway uses SQLite. |
-| `DB_DATABASE` | Path of the SQLite database. Empty means `ORBIT_HOME/gateway.sqlite`. A bootstrapped Gateway names that path, because the ready copies and the start of a nested fleet read it here. |
+| `DB_DATABASE` | Path of the SQLite database. Empty means `ORBIT_HOME/gateway.sqlite`. A bootstrapped Gateway names that path, because the waits and the start of a nested fleet read it here. |
 | `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `SESSION_PATH`, `SESSION_DOMAIN` | Laravel sessions. The API is stateless, so the example uses the `array` driver. |
 | `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE` | Laravel storage, queue, and cache drivers. |
 | `ORBIT_GATEWAY_QUEUE_CONNECTION`, `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | The Redis Database connection and database index of the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Empty, the scheduler runs its commands itself. Tests set `ORBIT_GATEWAY_QUEUE_DRIVER=database` to keep the queue in SQLite. |

@@ -97,13 +97,13 @@ class TaskVmRoleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / 'intent.json').write_text(json.dumps(intent(nested={'subnet': '10.232.2.0/24', 'interface': 'nested'})))
-            builder.build(folder, 'task_vm.converge')
+            builder.build(folder, 'task_vm.image_refresh')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             self.assertEqual(host['ansible_host'], '10.252.7.9')
             self.assertEqual(host['ansible_ssh_private_key_file'], '/role/identity')
             self.assertNotIn('ansible_ssh_common_args', host)
             self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
-            self.assertIn('"kind": "task_vm.converge"', (folder / 'vars.yml').read_text())
+            self.assertIn('"kind": "task_vm.image_refresh"', (folder / 'vars.yml').read_text())
             for name in ['inventory.yml', 'vars.yml', 'known_hosts']:
                 self.assertEqual((folder / name).stat().st_mode & 0o777, 0o600)
 
