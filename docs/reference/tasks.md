@@ -1249,6 +1249,8 @@ Swamp records a bounded transcript on turn finalization after success, failure, 
 
 Redaction of message text is best effort. A model can write a secret in any shape, so no redactor is complete. Tool arguments and outputs are never stored. Message text loses known secret values and credential shapes: PEM blocks, JWTs, bearer and GitHub tokens, and URL credentials. It also loses the value of a secret-named field in common JSON, `key: value`, `key=value` and quoted forms. HTTP `Authorization` and `Cookie` lines lose their whole value. A field name is secret by the Gateway's secret-word rule, which includes session identifiers. Swamp mirrors that rule in `swamp/extensions/behaviors/_lib/public_output.ts`.
 
+Swamp classifies each distinct field name once per text capture. Repeated names reuse that classification; each value still follows its own quoting, header and numeric-metric rules. The classification is discarded after the capture.
+
 These forms are known to pass unredacted:
 
 - JSON with a line break between a key and its value.
