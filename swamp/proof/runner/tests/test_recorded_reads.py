@@ -75,20 +75,19 @@ class RecordedReadsTest(unittest.TestCase):
         with self.assertRaisesRegex(steps.Infra, 'no JSON'):
             steps.recorded_guest(self.run, {'mode': 'request'})
 
-    def test_supplemental_cases_plan_and_bind_fixtures_and_saved_projections(self):
+    def test_show_cases_plan_and_bind_fixtures_and_saved_projections(self):
         root = Path(__file__).resolve().parents[4]
-        approved = spec.load(root / 'swamp/proof/node/show.cases.yaml', runner.BATCHES)
-        supplemental = spec.load(root / 'swamp/proof/node/show-recorded.cases.yaml', runner.BATCHES)
-        self.assertEqual(len(approved.cases), 16)
-        self.assertEqual(len(supplemental.cases), 9)
-        self.assertTrue(all(case.lock == 'all' for case in supplemental.cases))
-        for case in supplemental.cases:
+        show = spec.load(root / 'swamp/proof/node/show.cases.yaml', runner.BATCHES)
+        self.assertEqual(len(show.cases), 25)
+        self.assertEqual(show.baseline, ['operations', 'node_records'])
+        self.assertTrue(all(case.lock == 'all' for case in show.cases))
+        for case in show.cases:
             self.assertTrue(any(step.name == 'cli' and step.args['run'][0] == 'node:show' for stage in case.stages for step in stage.act))
 
     def test_retained_case_compares_assignments_without_replacing_public_role_names(self):
         root = Path(__file__).resolve().parents[4]
-        supplemental = spec.load(root / 'swamp/proof/node/show-recorded.cases.yaml', runner.BATCHES)
-        retained = next(case for case in supplemental.cases if case.id == 'retained-recorded-detail')
+        show = spec.load(root / 'swamp/proof/node/show.cases.yaml', runner.BATCHES)
+        retained = next(case for case in show.cases if case.id == 'retained-recorded-detail')
         assignments = [{'id': 8, 'role': 'database', 'status': 'failed', 'failed_step': 'converge:Check the role', 'error_code': 'node.role_failed'}]
         self.run.names.update({'retained.id': 9, 'recorded-roles': assignments})
         node = {'id': 9, 'roles': ['database'], 'assignments': assignments}

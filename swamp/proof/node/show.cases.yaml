@@ -1,23 +1,9 @@
-# Stage 1 spec. Format: docs/reference/verification-cases.
-# The default branch has no node:show cases file; no existing ids or batches are replaced.
+# Format: docs/reference/verification-cases.
 command: node:show
 chart: node/show
 target: app-dev
 sources: [gateway, app-prod]
-baseline: [operations]
-
-# These requests need runner capabilities, not invented steps or keys.
-uncovered:
-  cluster-name: "Add a recorded Cluster fixture with a bound name and detail-value assertions to verify the Cluster name in human and JSON output. Today NodeData and NodeResponse expose only cluster_id and ShowNodeCommand prints that ID."
-  roles-shared-projection: "Add deterministic role-assignment fixtures for active, provisioning, failed and removing, plus structured assertions comparing role, status, failed_step and error_code across node:list, node:show and node:role:list. Today node:show uses NodeData's role-name list rather than a shared assignment projection."
-  recorded-detail: "Add structured detail assertions for node:show's identity, lifecycle, addresses, settings, named access relations and recorded Node failure, plus a Node-record baseline provider. Verify JSON values and that reads leave records unchanged, including a Node retained after a partially failed write."
-  recorded-only: "Add a request-scoped outbound-contact audit to prove the read contacts no Node, Grafana or other external system. The offline case checks availability without the target's agent or SSH, but not every possible outbound contact."
-  "path:missing-values": "Add a sparse recorded-Node fixture and structured null assertions to check available detail and missing fields without live lookups. Human missing values must follow the CLI standard."
-  "path:no-agent": "Add an unmanaged recorded-Node fixture and a structured agent-null assertion to prove a successful read without an observing agent."
-  "path:agent-not-seen": "Add a never-reported managed-Node fixture and a structured agent-state assertion to check not_seen without contacting the Node."
-  "path:agent-unknown": "Add an unavailable recorded-agent-view fixture and a structured agent-state assertion to check unknown while other recorded detail still succeeds."
-  "path:agent-online": "Add a deterministic fresh recorded-agent fixture and structured agent-state assertions to check online at the 15-second boundary. Healthy read cases do not assert liveness because CLI startup can cross that window."
-  agent-offline-since: "Add structured detail assertions to check agent.state is offline and since equals the last recorded event, including the exact freshness boundary. The offline case already checks the human state and successful read."
+baseline: [operations, node_records]
 
 cases:
   - id: required-id
@@ -200,3 +186,134 @@ cases:
           expect: {exit: 1, code: node_access.required, request: none}
     expect:
       - unchanged: {since: act, what: [operations]}
+
+  - id: retained-recorded-detail
+    batch: fresh-fleet
+    covers: [main, node-found, allowed, no-agent]
+    summary: A retained failed Node exposes named Cluster, settings, access and every role assignment through the shared projection.
+    setup:
+      - node_fixture: {kind: retained, as: retained, consumer: app-prod, serving: app-dev}
+    act:
+      - cli:
+          run: [node:show, "${retained.id}"]
+          forms: [json, human]
+          save: {assignments: recorded-roles}
+          expect:
+            exit: 0
+            request: none
+            human: ["${retained.name}", "${retained.cluster_name}", "Apps folder", /srv/proof-apps, provisioning, removing, "converge:database", node.role_failed, "app-prod (#${app-prod.id})", "app-dev (#${app-dev.id})"]
+            json:
+              - {path: id, equals: "${retained.id}"}
+              - {path: name, equals: "${retained.name}"}
+              - {path: cluster_name, equals: "${retained.cluster_name}"}
+              - {path: status, equals: failed}
+              - {path: platform, equals: linux}
+              - {path: architecture, equals: x86_64}
+              - {path: tld, equals: "${retained.tld}"}
+              - {path: public_ssh_host, equals: 192.0.2.99}
+              - {path: public_ssh_port, equals: 2222}
+              - {path: user, equals: orbit}
+              - {path: lan_ip, equals: 192.168.88.2}
+              - {path: wireguard_public_key, equals: recorded-proof-key}
+              - {path: wireguard_endpoint_override, equals: "192.0.2.99:51820"}
+              - {path: dns_server_override, equals: 192.168.88.1}
+              - {path: settings.apps.path, equals: /srv/proof-apps}
+              - {path: failed_step, equals: "converge:apps"}
+              - {path: error_code, equals: node.enrollment_failed}
+              - {path: agent, equals: null}
+              - {path: roles, equals: [app-dev, app-prod, metrics, database]}
+              - {path: "assignments[0].role", equals: app-dev}
+              - {path: "assignments[0].status", equals: active}
+              - {path: "assignments[1].role", equals: app-prod}
+              - {path: "assignments[1].status", equals: provisioning}
+              - {path: "assignments[2].role", equals: metrics}
+              - {path: "assignments[2].status", equals: removing}
+              - {path: "assignments[3].role", equals: database}
+              - {path: "assignments[3].status", equals: failed}
+              - {path: "assignments[3].failed_step", equals: "converge:database"}
+              - {path: "assignments[3].error_code", equals: node.role_failed}
+              - {path: "access.can_access[0].id", equals: "${app-dev.id}"}
+              - {path: "access.can_access[0].name", equals: app-dev}
+              - {path: "access.accessible_by[0].id", equals: "${app-prod.id}"}
+              - {path: "access.accessible_by[0].name", equals: app-prod}
+              - {path: skipped, absent: true}
+      - cli:
+          run: [node:role:list, "${retained.id}"]
+          expect: {exit: 0, request: none, json: [{path: roles, equals: "${recorded-roles}"}]}
+      - cli:
+          run: [node:list]
+          expect: {exit: 0, request: none, json: [{path: "nodes[id=${retained.id}].assignments", equals: "${recorded-roles}"}]}
+      - cli:
+          run: [node:show, "${retained.id}"]
+          expect: {exit: 0, request: none, json: [{path: assignments, equals: "${recorded-roles}"}, {path: skipped, absent: true}]}
+      - recorded_request:
+          node: "${retained.id}"
+          caller: gateway
+          expect: [{path: status, equals: 200}, {path: body.data.status, equals: failed}, {path: body.data.assignments, equals: "${recorded-roles}"}]
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}
+
+  - id: sparse-recorded-detail
+    batch: fresh-fleet
+    covers: [main, node-found, allowed, no-agent]
+    summary: Sparse and unmanaged records preserve null values, have no assigned roles and use the standard empty human rendering.
+    variants:
+      - {name: sparse, kind: sparse}
+      - {name: unmanaged, kind: unmanaged}
+    setup:
+      - node_fixture: {kind: "${kind}", as: sparse}
+    act:
+      - cli:
+          run: [node:show, "${sparse.id}"]
+          forms: [json, human]
+          expect:
+            exit: 0
+            request: none
+            human: ["${sparse.name}", "Apps folder", "—"]
+            json:
+              - {path: cluster_id, equals: null}
+              - {path: cluster_name, equals: null}
+              - {path: agent, equals: null}
+              - {path: architecture, equals: null}
+              - {path: wireguard_ip, equals: null}
+              - {path: lan_ip, equals: null}
+              - {path: settings, equals: null}
+              - {path: roles, equals: []}
+              - {path: assignments, equals: []}
+              - {path: skipped, absent: true}
+      - recorded_request:
+          node: "${sparse.id}"
+          caller: gateway
+          expect: [{path: status, equals: 200}, {path: body.data.agent, equals: null}]
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}
+
+  - id: recorded-agent-state
+    batch: fresh-fleet
+    covers: [main, node-found, allowed]
+    summary: A request-local recorded view proves exact freshness boundaries and offline last-seen retention without any outbound contact.
+    variants:
+      - {name: fresh, state: online, age: 0, since: null}
+      - {name: exact-boundary, state: online, age: 15, since: null}
+      - {name: stale, state: offline, age: 16, since: "2026-01-01T11:59:44Z"}
+      - {name: entry-expired, state: offline, age: 120, since: "2026-01-01T11:58:00Z"}
+      - {name: never-seen, state: not_seen, age: null, since: null}
+      - {name: unavailable-view, state: unknown, age: 0, since: null}
+    setup:
+      - node_fixture: {kind: managed, as: managed}
+    act:
+      - cli:
+          run: [node:show, "${managed.id}"]
+          expect: {exit: 0, request: none, json: [{path: name, equals: "${managed.name}"}, {path: skipped, absent: true}]}
+      - recorded_request:
+          node: "${managed.id}"
+          caller: gateway
+          agent: "${state}"
+          age: "${age}"
+          expect:
+            - {path: status, equals: 200}
+            - {path: body.data.name, equals: "${managed.name}"}
+            - {path: body.data.agent.state, equals: "${state}"}
+            - {path: body.data.agent.since, equals: "${since}"}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}

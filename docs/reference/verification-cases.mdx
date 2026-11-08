@@ -160,17 +160,18 @@ A placeholder that holds a list expands the step or row that uses it, once per i
 
 For this isolated kernel request, Laravel HTTP/process fakes refuse and count attempted outbound calls, and PHP disables native curl, socket, and process entry points. It cannot obtain a live Node or external service answer. This is a guarded request, not a network trace of PHP-FPM. The same cases also call the real CLI over HTTPS for transport and rendering; Gateway feature tests check the no-contact rule independently. Neither fixture nor helper is shipped as a production route.
 
-Node list and show keep role names under `roles` and complete assignment records under `assignments`. Save and compare `assignments` to check shared lifecycle and failure detail against `node:role:list`. The checked-in proof-selection rules retain list and both show proofs for shared Node code, while reporting Node-family commands without cases as uncovered. A change to either show cases file selects both show proofs.
+Node list and show keep role names under `roles` and complete assignment records under `assignments`. Save and compare `assignments` to check shared lifecycle and failure detail against `node:role:list`. The checked-in proof-selection rules select the list and show cases for shared Node code, while reporting Node-family commands without cases as uncovered. A change to the show cases file selects the show proof.
 
-The approved `node:show` cases remain in `swamp/proof/node/show.cases.yaml`. The companion `swamp/proof/node/show-recorded.cases.yaml` makes the retained-detail and agent examples runnable with the same runner. The command selector does not automatically include companions. On a fresh task-owned nested fleet, run both files explicitly:
+All `node:show` cases, including the retained-detail and recorded-agent cases, live in `swamp/proof/node/show.cases.yaml`. On a fresh task-owned nested fleet, validate the file and run its batches:
 
 ```bash
 python3 swamp/proof/runner/runner.py plan --file swamp/proof/node/show.cases.yaml
-python3 swamp/proof/runner/runner.py plan --file swamp/proof/node/show-recorded.cases.yaml
-python3 swamp/proof/runner/runner.py batch fresh-fleet --file swamp/proof/node/show-recorded.cases.yaml
+python3 swamp/proof/runner/runner.py batch fresh-fleet --file swamp/proof/node/show.cases.yaml
+python3 swamp/proof/runner/runner.py batch node-down --file swamp/proof/node/show.cases.yaml
+python3 swamp/proof/runner/runner.py batch no-grant --file swamp/proof/node/show.cases.yaml
 ```
 
-Restore before running another batch, especially after `node-down` or `no-grant`. A plan validates the cases; it is not proof that they passed on the fleet.
+Restore before each batch and after the last batch, especially after `node-down` or `no-grant`. A plan validates the cases; it is not proof that they passed on the fleet.
 
 ## Fixtures
 

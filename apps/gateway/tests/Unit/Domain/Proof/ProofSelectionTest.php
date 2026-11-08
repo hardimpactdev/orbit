@@ -214,7 +214,7 @@ it('carries the merge base of the commit into the selection, for the proof of a 
     expect($byCommand->mergeBase)->toBe(str_repeat('a', 40))->and($everything->mergeBase)->toBe(str_repeat('a', 40));
 });
 
-it('keeps both Node detail proofs and shared list coverage for an owning path changed on its own', function (string $path, bool $family = true, bool $list = true): void {
+it('keeps the Node detail proof and shared list coverage for an owning path changed on its own', function (string $path, bool $family = true, bool $list = true): void {
     $root = dirname(base_path(), 2);
     if (! is_file($root.'/swamp/proof/selection.txt')) {
         $this->markTestSkipped('Needs the repository checkout.');
@@ -227,7 +227,6 @@ it('keeps both Node detail proofs and shared list coverage for an owning path ch
     expect($selected->files())->toBe([
         ...($list ? ['swamp/proof/node/list.cases.yaml'] : []),
         'swamp/proof/node/show.cases.yaml',
-        'swamp/proof/node/show-recorded.cases.yaml',
     ])->and(array_column($selected->uncovered, 'reason'))->toBe($family ? array_map(
         static fn (string $command): string => 'no cases file for '.$command,
         ['node:access:add', 'node:access:remove', 'node:add', 'node:converge', 'node:metrics', 'node:remove',
@@ -264,8 +263,7 @@ it('keeps both Node detail proofs and shared list coverage for an owning path ch
     'SDK role request' => 'packages/php-sdk/src/Requests/Nodes/ListNodeRolesRequest.php',
     'SDK detail projection' => 'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
     'SDK role projection' => 'packages/php-sdk/src/Responses/Nodes/NodeRoleAssignmentResponse.php',
-    'approved cases alone' => ['swamp/proof/node/show.cases.yaml', false, false],
-    'supplemental cases alone' => ['swamp/proof/node/show-recorded.cases.yaml', false, false],
+    'show cases alone' => ['swamp/proof/node/show.cases.yaml', false, false],
 ]);
 
 const FIREWALL_COMMANDS = ['firewall:allow', 'firewall:deny', 'firewall:list', 'firewall:remove'];
