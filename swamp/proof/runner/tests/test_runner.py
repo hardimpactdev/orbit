@@ -177,7 +177,7 @@ class CommandTest(unittest.TestCase):
 
     def test_case_prints_one_verdict_line_and_exits_with_the_verdict(self):
         fleet = FakeFleet()
-        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'from_environment', lambda facts=None: fleet), \
+        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'from_environment', lambda: fleet), \
                 patch.object(runner.Run, 'sleep', lambda self, seconds: None):
             code, out, err = self.call(['case', CASE, '--file', str(CASES), '--evidence', directory])
             self.assertEqual(len(list(Path(directory).glob(CASE + '/*/receipt.json'))), 1)
@@ -192,7 +192,7 @@ class CommandTest(unittest.TestCase):
         self.assertIn('unknown case', err)
 
     def test_a_fleet_that_cannot_be_found_is_infrastructure(self):
-        def missing(facts=None):
+        def missing():
             raise fleet_module.FleetError('expected one complete nested fleet')
         with patch.object(fleet_module, 'from_environment', missing):
             code, out, _ = self.call(['case', CASE, '--file', str(CASES)])

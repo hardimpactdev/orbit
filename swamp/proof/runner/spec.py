@@ -15,6 +15,8 @@ NODES = ('gateway', 'app-dev', 'app-prod')
 SECTIONS = ('setup', 'act', 'expect', 'negative')
 PLACEHOLDER = re.compile(r'\$\{([^}]+)\}')
 NODE_VALUE = re.compile(r'(%s)\.(id|src|src6)$' % '|'.join(NODES))
+# Step keys whose value is a Node name, or a list of them.
+NODE_KEYS = {'on', 'from', 'to', 'node', 'nodes', 'consumer', 'serving', 'choose'}
 NODE_PLACEHOLDER = re.compile(r'\$\{(%s)\.(id|src|src6)\}' % '|'.join(NODES))
 # step -> (sections it may stand in, required keys, optional keys)
 STEPS = {
@@ -40,7 +42,8 @@ DEFAULT_PARALLEL = 4
 # Steps that change something every case shares (a Node's `ufw`, the Gateway lock, a Node's agent, the addresses): the case runs alone.
 GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses'}
 # Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
-NODE_STEPS = {'unchanged', 'doctor'}
+# Steps that name the Node they work on under `on` or `node`.
+NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor'}
 # Step keys whose list value means one step per item.
 EXPAND = {'probe': ('from', 'proto', 'port', 'family'), 'ufw_rule': ('proto', 'family')}
 
@@ -321,34 +324,42 @@ def case_steps(case):
     return case.setup + [step for stage in case.stages for step in stage.act + stage.expect] + (case.negative['do'] if case.negative else [])
 
 
-def lock_of(case):
+def lock_of(case, target):
     """What the case needs of the fleet while it runs. `all`: it alone (it changes or compares what every case shares: the Operation
-    list, a fault, a stalled lock, the addresses). `node`: it alone on its Node (it compares or waits on the whole state of that Node, and
-    the firewall write lock of the Gateway lets one write run on a Node at a time anyway)."""
+    list, the records of every Node, a fault, a stalled lock, the addresses, a Node other than its own). `node`: it alone on its Node (it
+    compares or waits on the whole state of that Node, and the firewall write lock of the Gateway lets one write run on a Node at a time)."""
     steps = case_steps(case)
     names = {step.name for step in steps}
     compares_operations = any(step.name == 'unchanged' and 'operations' in (step.args.get('what') or []) for step in steps)
     no_request = any(step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none' for step in steps)
-    if case.exclusive or names & GLOBAL_STEPS or compares_operations or no_request:
+    reads_every_node = any(step.name == 'record' and 'node' not in step.args for step in steps)
+    other_node = any(step.args.get(key) not in (None, target) for step in steps if step.name in NODE_WORK for key in ('on', 'node'))
+    if case.exclusive or names & GLOBAL_STEPS or compares_operations or no_request or reads_every_node or other_node:
         return 'all'
     return 'node'
 
 
-def swap_roles(value, first, second):
-    """Exchange two Node roles in resolved step arguments: a value that is a role, and the `${role.id}`, `${role.src}` and `${role.src6}`
-    placeholders in a string."""
+def swap_roles(value, first, second, key=None):
+    """Exchange two Node roles in resolved step arguments: a value under a key that names a Node (`NODE_KEYS`), and the `${role.id}`,
+    `${role.src}` and `${role.src6}` placeholders in any string. Names a case binds (`as`, `ports`, `id`) stay."""
     pair = {first: second, second: first}
     if isinstance(value, str):
-        return pair.get(value) or NODE_PLACEHOLDER.sub(lambda found: '${%s.%s}' % (pair.get(found[1], found[1]), found[2]), value)
+        value = pair.get(value) if key in NODE_KEYS and value in pair else value
+        return NODE_PLACEHOLDER.sub(lambda found: '${%s.%s}' % (pair.get(found[1], found[1]), found[2]), value)
     if isinstance(value, dict):
-        return {key: swap_roles(item, first, second) for key, item in value.items()}
+        return {name: swap_roles(item, first, second, name) for name, item in value.items()}
     if isinstance(value, list):
-        return [swap_roles(item, first, second) for item in value]
+        return [swap_roles(item, first, second, key) for item in value]
     return value
 
 
 def exchange(items, first, second):
-    return [Step(step.name, swap_roles(step.args, first, second), step.where) for step in items]
+    """The steps with the two roles traded. `as` names a Node only in `cli`; in `ufw_rule` and `listener` it names what the step binds."""
+    def args_of(step):
+        if step.name != 'cli':
+            return swap_roles(step.args, first, second)
+        return {name: swap_roles(item, first, second, 'node' if name == 'as' else name) for name, item in step.args.items()}
+    return [Step(step.name, args_of(step), step.where) for step in items]
 
 
 def place(cases, target, spread):
@@ -357,7 +368,7 @@ def place(cases, target, spread):
     two roles trade places in every step."""
     turn = 0
     for case in cases:
-        case.lock = lock_of(case)
+        case.lock = lock_of(case, target)
         if case.node is None:
             case.node = target
             if case.lock != 'all' and spread:

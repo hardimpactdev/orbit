@@ -2,7 +2,6 @@
 import contextlib
 import io
 import json
-import os
 import sys
 import tempfile
 import threading
@@ -16,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
 import runner
 import spec
+import steps
 from fakes import NODE_IDS, FakeFleet
 
 PROOF = Path(__file__).resolve().parents[2]
@@ -37,12 +37,12 @@ def writing(case_id, extra=''):
 '''
 
 
-def observer(case_id):
+def observer(case_id, extra=''):
     return f'''  - id: {case_id}
     batch: fresh-fleet
     covers: [main]
     summary: A case that compares the Node.
-    act:
+{extra}    act:
       - cli: {{run: [firewall:allow, "80"], expect: {{exit: 1}}}}
     expect:
       - unchanged: {{since: act}}
@@ -97,6 +97,33 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual(steps['cli']['run'], ['firewall:allow', '80', '--node=${gateway.id}', '--from=${app-dev.src}'])
         self.assertEqual((steps['probe']['from'], steps['probe']['to']), (['app-dev', 'app-prod'], 'gateway'))
 
+    def test_names_a_case_binds_stay_when_the_roles_trade_places(self):
+        loaded = load_text(writing('a', '    node: app-prod\n').replace('    act:\n', '    setup:\n      - listener: {on: app-dev, ports: [app-dev]}\n    act:\n'))
+        setup = {step.name: step.args for step in loaded.case('a').setup}
+        self.assertEqual(setup['listener'], {'on': 'app-prod', 'ports': ['app-dev']})
+
+    def test_as_names_a_node_in_cli_and_a_binding_in_ufw_rule(self):
+        text = writing('a', '    node: app-prod\n').replace('    act:\n', '    setup:\n      - ufw_rule: {as: app-dev, on: app-dev, action: deny, proto: tcp, port: "80"}\n    act:\n')
+        text = text.replace('"--from=${gateway.src}"], expect', '"--from=${gateway.src}"], as: app-dev, expect')
+        loaded = load_text(text)
+        case = loaded.case('a')
+        self.assertEqual(case.setup[0].args['as'], 'app-dev')
+        self.assertEqual(case.stages[0].act[0].args['as'], 'app-prod')
+
+    def test_a_prompt_choice_follows_the_placed_node(self):
+        text = writing('a', '    node: gateway\n').replace('expect: {exit: 0}}', 'tty: [{see: Node, choose: app-dev}], expect: {exit: 0}}')
+        self.assertEqual(load_text(text).case('a').stages[0].act[0].args['tty'], [{'see': 'Node', 'choose': 'gateway'}])
+
+    def test_a_read_of_every_nodes_records_runs_alone(self):
+        text = writing('a').replace('    expect:\n', '    expect:\n      - record: {list: firewall:list, count: 0}\n')
+        self.assertEqual(load_text(text).cases[0].lock, 'all')
+        text = writing('a').replace('    expect:\n', '    expect:\n      - record: {list: firewall:list, node: app-dev, count: 0}\n')
+        self.assertEqual(load_text(text).cases[0].lock, 'node')
+
+    def test_a_case_that_works_on_another_node_than_its_own_runs_alone(self):
+        text = writing('a').replace('    expect:\n', '    expect:\n      - ufw: {on: gateway, rows: []}\n')
+        self.assertEqual(load_text(text).cases[0].lock, 'all')
+
     def test_locks(self):
         loaded = load_text(writing('writes') + observer('observes') + refusal('no-request') + writing('asks', '    exclusive: true\n'))
         self.assertEqual({case.id: case.lock for case in loaded.cases}, {'writes': 'node', 'observes': 'node', 'no-request': 'all', 'asks': 'all'})
@@ -141,6 +168,39 @@ class RunOnAnotherNodeTest(unittest.TestCase):
             self.assertEqual(result['verdict'], 'passed', (node, result))
             self.assertIn(f'--node={NODE_IDS[node]}', [item for call in fleet.cli_calls for item in call])
             self.assertTrue(any(row[0].endswith('/tcp') and row[3] == 'orbit' for row in fleet.ufw[node]), node)
+
+
+class BaselineFollowsThePlacementTest(unittest.TestCase):
+    def test_the_state_a_case_compares_is_the_state_of_its_own_node(self):
+        loaded = spec.load(CASES, BATCHES)
+        fleet = FakeFleet()
+        run = runner.Run(fleet, loaded, tempfile.gettempdir(), 'app-prod')
+        before = steps.snapshot(run, 'ufw')
+        fleet.ufw['app-prod'].append(('9999/tcp', 'ALLOW', 'Anywhere', 'x'))
+        self.assertNotEqual(steps.snapshot(run, 'ufw'), before)
+        fleet.ufw['app-dev'].append(('8888/tcp', 'ALLOW', 'Anywhere', 'y'))
+        self.assertEqual(len(steps.snapshot(run, 'ufw')), len(before) + 1)
+
+    def run_observer(self, node, stray_on):
+        loaded = load_text(observer('watch', '    node: %s\n' % node), HEADER + 'baseline: [ufw]\n')
+        case = loaded.case('watch')
+        fleet = FakeFleet()
+        original = fleet.cli
+
+        def cli(args, timeout=240, form='json', node=None):
+            fleet.ufw[stray_on].append(('9999/tcp', 'ALLOW', 'Anywhere', 'stray'))
+            return original(args, timeout, form, node)
+        fleet.cli = cli
+        with tempfile.TemporaryDirectory() as directory:
+            return runner.execute(case, fleet, loaded, directory)[0]
+
+    def test_a_case_placed_on_a_node_fails_when_that_node_changes_without_a_reason(self):
+        result = self.run_observer('app-prod', 'app-prod')
+        self.assertEqual(result['verdict'], 'failed', result)
+        self.assertTrue(any('unchanged ufw' in message for message in result['failed']), result)
+
+    def test_a_change_on_another_node_does_not_fail_a_case_placed_elsewhere(self):
+        self.assertEqual(self.run_observer('app-prod', 'gateway')['verdict'], 'passed')
 
 
 class SchedulerTest(unittest.TestCase):
@@ -196,7 +256,7 @@ class BatchTest(unittest.TestCase):
         return code, [json.loads(line) for line in out.getvalue().splitlines()], err.getvalue()
 
     def test_a_batch_prints_one_verdict_line_a_case_and_exits_with_the_worst(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'from_environment', lambda facts=None: FakeFleet()), \
+        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'from_environment', lambda: FakeFleet()), \
                 patch.object(runner.Run, 'sleep', lambda self, seconds: None):
             code, lines, _ = self.call(['batch', 'dual-stack', '--file', str(CASES), '--evidence', directory, '--parallel', '1'])
             receipts = len(list(Path(directory).glob('*/*/receipt.json')))
@@ -209,14 +269,14 @@ class BatchTest(unittest.TestCase):
     def test_the_exit_status_is_the_worst_verdict(self):
         for verdicts, expected in ((['passed', 'passed'], 0), (['passed', 'unrun'], 2), (['unrun', 'failed', 'passed'], 1)):
             results = iter(verdicts)
-            with patch.object(fleet_module, 'from_environment', lambda facts=None: FakeFleet()), \
+            with patch.object(fleet_module, 'from_environment', lambda: FakeFleet()), \
                     patch.object(runner, 'run_case', lambda case, fleet, spec, root, negative=False, discovery=0: {'id': case.id, 'verdict': next(results), 'secs': 0}), \
                     patch.object(runner, 'schedule', lambda cases, limit, work: [(case, work(case)) for case in cases[:len(verdicts)]]):
                 code, _, _ = self.call(['batch', 'fresh-fleet', '--file', str(CASES), '--evidence', tempfile.gettempdir()])
             self.assertEqual(code, expected, verdicts)
 
     def test_a_fleet_that_cannot_be_found_fails_every_case_of_the_batch_as_infrastructure(self):
-        def missing(facts=None):
+        def missing():
             raise fleet_module.FleetError('expected one complete nested fleet')
         with patch.object(fleet_module, 'from_environment', missing):
             code, lines, _ = self.call(['batch', 'dual-stack', '--file', str(CASES), '--evidence', tempfile.gettempdir()])
@@ -232,59 +292,9 @@ class BatchTest(unittest.TestCase):
     def test_a_case_whose_receipt_cannot_be_written_is_a_failed_case(self):
         def broken(case, fleet, loaded, root, negative=False, discovery=0):
             raise OSError('disk full')
-        with patch.object(fleet_module, 'from_environment', lambda facts=None: FakeFleet()), patch.object(runner, 'run_case', broken):
+        with patch.object(fleet_module, 'from_environment', lambda: FakeFleet()), patch.object(runner, 'run_case', broken):
             code, lines, _ = self.call(['batch', 'dual-stack', '--file', str(CASES), '--evidence', tempfile.gettempdir()])
         self.assertEqual(code, 1)
         self.assertEqual({(line['verdict'], line['cause']) for line in lines}, {('failed', 'infrastructure')})
 
-    def test_a_batch_setup_forgets_the_facts_of_the_batch(self):
-        with tempfile.TemporaryDirectory() as directory:
-            facts = runner.facts_file(directory, 'dual-stack')
-            facts.write_text('{}')
-            with patch.object(fleet_module, 'from_environment', lambda facts=None: FakeFleet()), patch.object(runner.Run, 'sleep', lambda self, seconds: None):
-                self.call(['setup', 'dual-stack', '--file', str(CASES), '--evidence', directory])
-            self.assertFalse(facts.exists())
 
-
-class FactsTest(unittest.TestCase):
-    def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.facts = Path(self.directory.name) / 'facts-fresh-fleet.json'
-        self.asked = []
-        patches = [patch.object(fleet_module, 'listed_node_ids', self.listed), patch.object(fleet_module, 'discover', lambda guests=None, node_ids=None: node_ids)]
-        for patcher in patches:
-            patcher.start()
-            self.addCleanup(patcher.stop)
-
-    def listed(self):
-        self.asked.append(1)
-        return dict(NODE_IDS)
-
-    def test_the_nested_gateway_is_asked_once_for_the_cases_of_a_batch(self):
-        for _ in range(3):
-            self.assertEqual(fleet_module.from_environment(self.facts), NODE_IDS)
-        self.assertEqual(len(self.asked), 1)
-
-    def test_without_a_facts_file_it_asks_each_time(self):
-        fleet_module.from_environment()
-        fleet_module.from_environment()
-        self.assertEqual(len(self.asked), 2)
-
-    def test_old_facts_are_asked_for_again(self):
-        fleet_module.from_environment(self.facts)
-        old = time.time() - fleet_module.FACTS_SECONDS - 1
-        os.utime(self.facts, (old, old))
-        fleet_module.from_environment(self.facts)
-        self.assertEqual(len(self.asked), 2)
-
-    def test_a_damaged_or_incomplete_file_is_asked_for_again(self):
-        for text in ('{"gateway": 1', '{"gateway": 209}', '[]'):
-            self.facts.write_text(text)
-            self.asked.clear()
-            self.assertEqual(fleet_module.from_environment(self.facts), NODE_IDS)
-            self.assertEqual(len(self.asked), 1, text)
-
-
-if __name__ == '__main__':
-    unittest.main()

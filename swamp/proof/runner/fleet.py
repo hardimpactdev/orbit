@@ -30,7 +30,6 @@ PROFILE = 'nested'
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
 GUEST_PREFIX = 'nested-'
-FACTS_SECONDS = 900   # how long the Node IDs of the nested Gateway are kept for the cases of a batch
 
 
 class FleetError(Exception):
@@ -177,23 +176,8 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
-def from_environment(facts=None):
-    """The nested fleet. The Node IDs, which only the nested Gateway knows and a CLI call reads, are kept in the file `facts` for
-    FACTS_SECONDS, so that the cases of one batch read them once. The guests and their addresses are read each time: a batch setup changes them."""
-    ids = None
-    if facts and facts.exists() and time.time() - facts.stat().st_mtime < FACTS_SECONDS:
-        try:
-            ids = json.loads(facts.read_text())
-        except ValueError:
-            ids = None
-    if not isinstance(ids, dict) or not set(ROLES) <= set(ids):
-        ids = listed_node_ids()
-        if facts:
-            facts.parent.mkdir(parents=True, exist_ok=True)
-            partial = facts.with_name(f'{facts.name}.{os.getpid()}')
-            partial.write_text(json.dumps(ids))
-            partial.replace(facts)   # a case that starts meanwhile reads a whole file or none
-    return discover(node_ids=ids)
+def from_environment():
+    return discover()
 
 
 def evidence_root(env=os.environ):

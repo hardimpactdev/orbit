@@ -198,10 +198,6 @@ def command_plan(args):
     return 0
 
 
-def facts_file(root, batch):
-    return Path(root) / f'facts-{batch}.json'
-
-
 def run_case(case, fleet, spec, root, negative=False, discovery=0):
     """Run one case and write its receipt under `root/<case id>/<time>`. Returns the result."""
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -219,7 +215,7 @@ def command_case(args):
     root = Path(args.evidence or fleet_module.evidence_root())
     discovered = time.time()
     try:
-        fleet = fleet_module.from_environment(facts_file(root, case.batch))
+        fleet = fleet_module.from_environment()
     except fleet_module.FleetError as error:
         result = {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}
         print(verdict_line(result))
@@ -255,7 +251,7 @@ def schedule(cases, limit, work):
 
 
 def command_batch(args):
-    """Run the cases of one batch with the fleet read once. One verdict line a case, as each ends; the exit status is the worst verdict."""
+    """Run the cases of one batch with the fleet (guests, addresses, Node IDs) read once. One verdict line a case, as each ends; the exit status is the worst verdict."""
     spec = spec_module.load(args.file, args.batches)
     if args.batch not in spec.batches:
         raise spec_module.SpecError('unknown batch: ' + args.batch)
@@ -264,7 +260,7 @@ def command_batch(args):
     limit = args.parallel or spec.parallel
     discovered = time.time()
     try:
-        fleet = fleet_module.from_environment(facts_file(root, args.batch))
+        fleet = fleet_module.from_environment()
     except fleet_module.FleetError as error:
         for case in cases:
             print(verdict_line({'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}), flush=True)
@@ -292,7 +288,6 @@ def command_setup(args):
     started = time.time()
     failures = []
     root = Path(args.evidence or fleet_module.evidence_root())
-    facts_file(root, args.batch).unlink(missing_ok=True)   # the setup changes the fleet: the cases read it afresh
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
         run = Run(fleet_module.from_environment(), spec, root / ('batch-' + args.batch))

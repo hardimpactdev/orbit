@@ -60,7 +60,7 @@ class SetupTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        patcher = patch.object(fleet_module, 'from_environment', lambda facts=None: FakeFleet())
+        patcher = patch.object(fleet_module, 'from_environment', lambda: FakeFleet())
         patcher.start()
         self.addCleanup(patcher.stop)
 
