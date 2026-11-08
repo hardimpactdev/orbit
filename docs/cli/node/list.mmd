@@ -1,0 +1,39 @@
+sequenceDiagram
+  %% Target design: Gateway-only reads (docs/cli/README.md) and the CLI design standard (docs/reference/cli-ux.md).
+  %% status: draft
+  %% command: node:list
+  %% kind: node.list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  CLI->>GW: node:list
+  %%> Command:
+  %%> - `orbit node:list`
+  %%> - syntax: `orbit node:list`
+  alt caller has access
+    %% path: authorized
+    alt Gateway authority
+      %% path: gateway-authority
+      Note over GW: Read all Nodes
+      %%> Requirements:
+      %%> - the caller is the active Gateway Node, the serving host, or has an access grant to the active Gateway Node
+    else direct access grants
+      %% path: granted-nodes
+      Note over GW: Read granted Nodes
+      %%> What it does:
+      %%> - filters by the calling Node's access grants; being a Node does not by itself grant access to its own record
+    end
+    GW-->>CLI: Recorded Nodes
+    %%> Result:
+    %%> - ordered by name, then ID, with recorded agent liveness
+    %%> - reads no Node and creates no Operation; an unreachable Node remains in the list
+    %%> Retry:
+    %%> - another call reads the current records again; there is no mutation or partial change to resume
+  else no authority or grants
+    %% path: no-access
+    GW--xCLI: node_access.required
+    %%> Result:
+    %%> - refuses the collection read without changing records
+  end

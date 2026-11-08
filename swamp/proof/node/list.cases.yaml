@@ -1,0 +1,92 @@
+# Spec: docs/cli/node/list.mmd and docs/cli/node/list.mdx.
+# Format and supported steps: docs/reference/verification-cases.
+# A collection read has no target argument; target is only the runner's fixture Node.
+command: node:list
+chart: node/list
+target: app-dev
+sources: []
+baseline: [operations]
+
+uncovered:
+  "path:granted-nodes": "Need node:list row assertions with caller selection, exact counts and absent rows to prove a restricted caller sees only its grants, with no implicit self-access. The existing record step supports only firewall:list."
+  "scope:gateway-authority": "Need the same caller-aware Node row assertions and an isolated authority fixture to distinguish the active Gateway, its serving host and a caller granted access to it. The main case checks only that the Gateway caller can see the three fleet Nodes."
+  "order:name-id": "Need node:list row assertions and isolated renamed-Node fixtures to check name/ID ordering and identical human/machine order. The current CLI step can check human substrings but not row order or JSON fields."
+  "result:recorded-fields": "Need Node row assertions and controlled record fixtures for status, failed_step, error_code and addresses, including provisioning, removing and failed Nodes. These checks must compare the list to recorded values, not infer them from exit zero."
+  "result:active-roles": "Need Node row assertions and an isolated role-status fixture to prove only active roles appear in ROLES and the JSON roles array. The current NodeData projection includes all recorded role assignments, so filtering is a code gap too."
+  "result:cluster-name": "Need returned-ID binding, a Cluster membership fixture and Node row assertions to check Cluster names in human output and JSON. The current API, SDK and human renderer provide only cluster_id, so the name is a code gap too."
+  "result:agent-states": "Need nested Node field assertions and isolated liveness fixtures for online, offline, not_seen, unknown and agent:null. The offline case checks visibility and the human offline label, not their association with a particular JSON row."
+  "result:empty-and-missing": "Need a controlled list-response fixture to check No nodes., an empty nodes array and missing display values. A caller without grants is refused, so revoking grants cannot create an authorized empty response."
+  "read:no-side-effects": "Need Node-record baselines and Swamp-run/Node-contact assertions to prove the complete read-only contract. Existing Operation baselines and the stopped-SSH case cover only part of it."
+  "failure:read-retry": "Need an isolated Gateway read-fault fixture to prove a failed read changes no Node records and a later read succeeds. Failure after a partial mutation does not apply: this command makes no mutation."
+  "negative:read-assertions": "Need named CLI and Node-row assertions with safe response mutations to prove these new cases fail when a Node is omitted or a read creates an Operation. Existing negative steps mutate UFW, which is not this command's result."
+
+cases:
+  - id: recorded-nodes
+    batch: fresh-fleet
+    covers: [main, authorized, gateway-authority]
+    summary: With no arguments, the Gateway caller sees the fleet Nodes and the list columns without creating an Operation.
+    act:
+      - cli:
+          run: [node:list]
+          forms: [json, human]
+          expect:
+            exit: 0
+            request: none
+            human: [ID, NAME, STATUS, AGENT, ROLES, PLATFORM, TLD, USER, CLUSTER, WIREGUARD, LAN, gateway, app-dev, app-prod]
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: repeat-list
+    batch: fresh-fleet
+    covers: [main, authorized, gateway-authority]
+    summary: Each repeated read succeeds without creating an Operation; a read is not an already-applied skip.
+    stages:
+      - act:
+          - cli:
+              run: [node:list]
+              forms: [human]
+              expect: {exit: 0, request: none, human: [gateway, app-dev, app-prod]}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+      - act:
+          - cli:
+              run: [node:list]
+              forms: [human]
+              expect: {exit: 0, request: none, human: [gateway, app-dev, app-prod]}
+        expect:
+          - unchanged: {since: act, what: [operations]}
+
+  - id: offline-node-visible
+    batch: node-down
+    covers: [main, authorized, gateway-authority]
+    summary: A Node remains listed with an offline agent while its agent and SSH are stopped.
+    setup:
+      - node_down: {node: app-dev}
+    act:
+      - cli:
+          run: [node:list]
+          forms: [json, human]
+          expect: {exit: 0, request: none, human: [app-dev, offline]}
+    expect:
+      - unchanged: {since: act, what: [operations]}
+
+  - id: node-access-required
+    batch: no-grant
+    covers: [no-access]
+    summary: A caller with no authority or access grants is refused without creating an Operation.
+    # This batch already removes app-prod -> app-dev; remove its other possible grants too.
+    setup:
+      - cli:
+          run: [node:access:remove, "${app-prod.id}", "${gateway.id}", --force]
+          expect: {exit: 0}
+      - cli:
+          run: [node:access:remove, "${app-prod.id}", "${app-prod.id}", --force]
+          expect: {exit: 0}
+    act:
+      - cli:
+          as: app-prod
+          run: [node:list]
+          forms: [json, human]
+          expect: {exit: 1, code: node_access.required, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
