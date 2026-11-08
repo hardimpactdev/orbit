@@ -49,8 +49,8 @@ jobs:
         hosts: name:target
         timeoutSec: 130
         argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?head.orValue("") }}']
-  # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. The forEach below reads it.
-  - name: plan
+  # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. Keep that original interface for older heads.
+  - name: Read the runner plan
     dependsOn: [{step: Restore the head checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     labels: {role: swamp}
     task:
@@ -78,10 +78,22 @@ jobs:
         - ${{ inputs.intent.checkout_path + "/swamp/proof/runner/runner.py" }}
         - plan
         - --lines
-        - --only-batch
-        - '${{ inputs.intent.?batch.orValue("") }}'
         - --file
         - ${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}
+  # Every later consumer reads this scoped plan, including new-case checks and missing-verdict reporting.
+  - name: plan
+    dependsOn: [{step: Read the runner plan, condition: {type: succeeded}}]
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: proof-verify-assigned-plan
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$PLAN"
+        env:
+          PLAN: '${{ steps["Read the runner plan"].outputs.stdout.trim().split("\n").filter(l, inputs.intent.?batch.orValue("") == "" || l.startsWith(inputs.intent.?batch.orValue("") + " ")).join("\n") }}'
 # Before the first batch (3-proof.mmd): the fleet is made ready for the cases. A step that fails stops the run, and every case is unrun with cause infrastructure.
 - name: prepare
   labels: {role: swamp}

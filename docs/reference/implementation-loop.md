@@ -55,8 +55,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and every night, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Only for changes under `swamp/proof/` or shared CI inputs: run the case runner unit tests and lint the proof programs with `ruff` |
-| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success for a branch PR; see [the proof run job](#the-proof-run-job) |
-| Required checks | Require every selected build, static check and branch PR proof to succeed; only an explicitly untouched job may skip |
+| CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success, including the outside proof for a fork; see [the proof run job](#the-proof-run-job) |
+| Required checks | Require every selected build, static check and PR proof to succeed; only an explicitly untouched job may skip |
 
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
@@ -66,7 +66,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 ### The proof run job
 
-`proof-run` in `.github/workflows/ci.yml` is part of `Required checks` when a pull request comes from this repository and its changed paths select commands. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork still needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner.
+`proof-run` in `.github/workflows/ci.yml` is part of `Required checks` when a pull request's changed paths select commands. It passes only the full head SHA and an idempotency key to Orbit. A new push cancels the previous proof. A fork needs the trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
 
 CI proofs join one FIFO admission queue. Its front takes every free usable CI place up to its number of batches. Orbit balances whole batches by measured case time, runs them on fresh VMs, merges the verdicts and deletes the VMs. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 
@@ -134,7 +134,7 @@ Rust CI caches the Cargo registry, Git dependencies and `apps/agent/target`. An 
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The planned proof CI job `Proofs` will be part of the one CI result and is not built yet; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
+The proof CI is part of the one CI result; [the proof CI](/reference/feature-flow#the-proof-ci) describes it. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks. The complete CI run must also finish successfully before the CLI release workflow publishes.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 

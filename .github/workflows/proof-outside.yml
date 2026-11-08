@@ -18,6 +18,13 @@ permissions:
 jobs:
   proof-run:
     name: Proof run (outside pull request)
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+      PROOF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     if: >-
       github.event.action == 'labeled'
       && github.event.label.name == 'run-proofs'
@@ -32,6 +39,14 @@ jobs:
       group: proof-run-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
+      - name: Mark the outside proof pending on this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          timeout 60 gh api --method POST "repos/$GH_REPO/statuses/$PROOF_SHA"
+          -f state=pending -f context='Orbit outside proof'
+          -f description='The approved outside proof is running'
+          -f target_url="$PROOF_RUN_URL"
       # In `pull_request_target`, `github.sha` is the tip of the base branch, never a commit of the fork.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,9 +55,18 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Run orbit proof:run on the pull request head
-        env:
-          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+        id: proof
         run: python3 -I bin/ci-proof-run
+      - name: Publish the outside proof result on this head
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_STATE: ${{ steps.proof.outcome == 'success' && 'success' || 'failure' }}
+        run: >-
+          timeout 60 gh api --method POST "repos/$GH_REPO/statuses/$PROOF_SHA"
+          -f state="$PROOF_STATE" -f context='Orbit outside proof'
+          -f description='Rerun Required checks to read this proof result'
+          -f target_url="$PROOF_RUN_URL"
 
   # A push moves the head, and the approval belongs to the old head. The label goes with it, so the new head needs an approval and the label again.
   # Removing a label that is not there changes nothing. The job takes the group of the proof run, so it also cancels the proof run of the old head.
@@ -63,4 +87,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: gh pr edit "$PULL_REQUEST" --remove-label run-proofs
+        run: timeout 60 gh pr edit "$PULL_REQUEST" --remove-label run-proofs

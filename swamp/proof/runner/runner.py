@@ -183,10 +183,6 @@ def plan_lines(spec):
 
 def command_plan(args):
     spec = spec_module.load(args.file, args.batches)
-    if args.only_batch:
-        spec.cases = [case for case in spec.cases if case.batch == args.only_batch]
-        if not spec.cases:
-            raise spec_module.SpecError('assigned batch has no cases: ' + args.only_batch)
     if args.lines:
         print('\n'.join(plan_lines(spec)))
         return 0
@@ -318,7 +314,6 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='runner')
     commands = parser.add_subparsers(dest='command', required=True)
     plan = commands.add_parser('plan', help='print the ordered batches and cases; no fleet')
-    plan.add_argument('--only-batch', default='', help='plan only this whole admitted batch')
     plan.add_argument('--steps', action='store_true', help='also print the resolved steps')
     plan.add_argument('--lines', action='store_true', help='print one line a batch, `BATCH SETUP CASE...`, for the workflow')
     case = commands.add_parser('case', help='run one case on the nested fleet')

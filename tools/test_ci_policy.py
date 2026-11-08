@@ -73,10 +73,53 @@ class RequiredGateTest(unittest.TestCase):
                 needs[component]['result'] = result
                 needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
                 env = {**os.environ, 'NEEDS': json.dumps(needs),
-                       'PROOF_REQUIRED': str(component == 'proof-run' and selected).lower()}
+                       'PROOF_REQUIRED': str(component == 'proof-run' and selected).lower(), 'FORK_PROOF': 'false'}
                 done = subprocess.run(['python3', '-c', code], env=env,
                                       capture_output=True, timeout=10)
                 self.assertEqual(done.returncode == 0, success, (component, selected, result, done.stderr))
+
+    def test_fork_gate_requires_the_latest_trusted_outside_proof_on_the_exact_head(self):
+        import json
+        import os
+        import subprocess
+        import textwrap
+        from unittest.mock import patch
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        block = caller.split('  required:\n', 1)[1]
+        self.assertIn("PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}", block)
+        self.assertIn('PROOF_SHA: ${{ github.event.pull_request.head.sha }}', block)
+        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
+        jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
+        prefix = 'https://github.com/hardimpactdev/orbit/actions/runs/'
+        good = {'context': 'Orbit outside proof', 'state': 'success',
+                'creator': {'login': 'github-actions[bot]'}, 'target_url': prefix + '123'}
+        examples = [(True, [], False), (True, [good], True), (False, [], True),
+                    (True, [good, {**good, 'state': 'failure'}], True)]
+        examples += [(True, [{**good, 'state': state}, good], False) for state in ('pending', 'failure', 'error')]
+        examples += [(True, [{**good, 'creator': {'login': 'contributor'}}], False),
+                     (True, [{**good, 'target_url': 'https://github.com/fork/orbit/actions/runs/123'}], False)]
+        for selected, statuses, passed in examples:
+            with self.subTest(statuses=statuses):
+                needs = {job: {'result': 'success'} for job in jobs}
+                needs['proof-run']['result'] = 'skipped'
+                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release', 'proof-run')}
+                needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
+                env = {'NEEDS': json.dumps(needs), 'PROOF_REQUIRED': str(selected).lower(), 'FORK_PROOF': 'true',
+                       'PROOF_SHA': 'a' * 40, 'GH_REPO': 'hardimpactdev/orbit', 'PROOF_RUN_URL_PREFIX': prefix}
+                with patch.dict(os.environ, env), patch.object(subprocess, 'check_output', return_value=json.dumps([statuses]).encode()) as github:
+                    result = None
+                    try:
+                        exec(code, {})
+                    except SystemExit as error:
+                        result = error.code
+                    self.assertEqual(result is None, passed, result)
+                    if selected:
+                        github.assert_called_once_with([
+                            'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+                            'repos/hardimpactdev/orbit/commits/' + 'a' * 40 + '/statuses?per_page=100',
+                        ], timeout=65)
+                    else:
+                        github.assert_not_called()
 
     def test_units_use_one_pool_job_with_deno_parallelism(self):
         block = SOURCE.split('  tests:\n')[1]

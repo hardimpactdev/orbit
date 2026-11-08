@@ -62,7 +62,7 @@ sequenceDiagram
       %%> - the Gateway side, `proof:run` refusing an untrusted commit with `proof.commit_untrusted`
       %%> Decided by the orchestrator, for Nick's review:
       %%> - a workflow of its own, not a trigger on `ci.yml`: `pull_request_target` on `ci.yml` would run every job of the PR with the secrets and the write token of the base repository
-      %%> - the result is a run of that workflow; `Required checks` does not wait for it, unlike the required proof CI of a branch PR
+      %%> - the outside workflow publishes its proof status on the exact fork head; `Required checks` reads that status and fails unless it succeeded. After the outside proof succeeds, rerun the failed Required job. A new head needs its own proof status.
     end
     CI->>GW: Run the proof CI<br/>proof:run COMMIT
     %%> What it does:

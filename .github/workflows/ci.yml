@@ -514,14 +514,22 @@ jobs:
     if: always()
     needs: [php, gateway-static, cli, cli-static, sdk-static, e2e-static, docs, api-reference, web, pi, agent, swamp, proof, proof-run, gateway-release, changes]
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      statuses: read
     steps:
       - name: Require builds and static checks
         env:
           NEEDS: ${{ toJSON(needs) }}
-          PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.proof_run == 'true' }}
+          PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
+          FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROOF_RUN_URL_PREFIX: ${{ github.server_url }}/${{ github.repository }}/actions/runs/
         run: |
           python3 - <<'PYTHON'
-          import json, os, sys
+          import json, os, subprocess, sys
           needs = json.loads(os.environ['NEEDS'])
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
@@ -531,6 +539,18 @@ jobs:
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')
+          if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+              pages = json.loads(subprocess.check_output([
+                  'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
+                  f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
+              ], timeout=65))
+              status = next((status for page in pages for status in page
+                             if status['context'] == 'Orbit outside proof'
+                             and status.get('creator', {}).get('login') == 'github-actions[bot]'
+                             and (status.get('target_url') or '').startswith(os.environ['PROOF_RUN_URL_PREFIX'])), None)
+              if status is None or status['state'] != 'success':
+                  sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
+              needs['proof-run']['result'] = 'success'
           failed = {job: needs[job]['result'] for job, touched in selected.items()
                     if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
           if failed:

@@ -44,3 +44,18 @@ Deno.test("no case runs before the check: the proof of the command depends on it
     assert(prove.some((dependency) => dependency.step === "Check the workspace commit" && dependency.condition.type === "succeeded"));
     assert(check.dependsOn!.some((dependency) => dependency.step === "Read the workspace commit" && dependency.condition.type === "succeeded"));
 });
+
+Deno.test("assigned batches use the old runner plan interface and filter its whole batch lines", async () => {
+    const verify = parse(await Deno.readTextFile(new URL("../workflows/workflow-proof-fleet-verify.yaml", import.meta.url))) as Workflow;
+    const read = verify.jobs.flatMap(job => job.steps).find(step => step.name === "Read the runner plan")!;
+    const args = (read.task.inputs as { argv: string[] }).argv;
+    assert(args.length === 6 && args[2] === "plan" && args[3] === "--lines" && args[4] === "--file");
+    const plan = verify.jobs.flatMap(job => job.steps).find(step => step.name === "plan")!;
+    const expression = (plan.task.inputs as { env: { PLAN: string } }).env.PLAN.slice(3, -2).trim();
+    const select = (intent: Record<string, unknown>) => environment.evaluate(expression, {
+        inputs: { intent }, steps: { "Read the runner plan": { outputs: { stdout: "first 1 a b\nsecond 0 c\nfirst-more 0 d\n" } } },
+    }) as string;
+    assert(select({ batch: "first" }) === "first 1 a b");
+    assert(select({}) === "first 1 a b\nsecond 0 c\nfirst-more 0 d");
+    assert(select({ batch: "absent" }) === "");
+});

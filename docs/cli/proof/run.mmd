@@ -30,9 +30,11 @@ sequenceDiagram
   loop each assigned whole batch, in order
     SW->>VM: Restore the head checkout
     %%> A prior new-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
-    SW->>VM: Plan the assigned batch
+    SW->>VM: Read the command batches
+    SW->>SW: Select the assigned batch
     SW->>VM: Restore the base snapshot
-    SW->>VM: Run the batch<br/>prove new cases fail
+    SW->>VM: Run the batch
+    SW->>VM: Prove new cases fail
     VM-->>SW: Verdict lines
   end
   SW->>VM: Release the slot
@@ -44,3 +46,4 @@ sequenceDiagram
   GW-->>CLI: One merged report
   CLI->>CLI: Require the proof verdict
   %%> The proof job is in Required checks. A selected command with a failed case or no verdict fails. No selected command passes. Capacity is only a bounded wait, never a successful no-case result.
+  %%> A fork uses the outside proof's status on this exact head. A missing, pending or failed status fails Required checks; rerun the failed Required job after the approved outside proof succeeds.
