@@ -801,4 +801,3 @@ def test_missing_node_cancel(proof):
     p.observe()
     p.unchanged(since='act', what=['ufw', 'firewall_records', 'operations'])
     p.finish()
-

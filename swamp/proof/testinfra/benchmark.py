@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -103,12 +104,21 @@ def run(engine, temperature, output, negative=False):
     result['total_seconds'] = result['wall_seconds'] + result['install_seconds']
     result['returncodes'] = statuses
     receipts = [json.loads(path.read_text()) for path in evidence.rglob('receipt.json')]
+    xml_cases = {}
+    if engine == 'pytest' and (output / 'junit.xml').exists():
+        for case in ET.parse(output / 'junit.xml').iter('testcase'):
+            name = case.attrib['name']
+            if name.startswith('firewall:allow[') and name.endswith(']'):
+                xml_cases[name[len('firewall:allow['):-1]] = ('failed' if case.find('failure') is not None or case.find('error') is not None else 'passed')
     result['cases'] = [{'id': row['id'], 'seconds': row.get('seconds', row.get('secs')),
                         'wait_seconds': row.get('wait_seconds', 0), 'failed': row.get('failed', []),
-                        'verdict': row.get('verdict')} for row in receipts]
+                        'verdict': xml_cases.get(row['id']) if engine == 'pytest' else row.get('verdict')} for row in receipts]
     wanted = 13 if negative else 50
     result['complete'] = len(receipts) == wanted and len({row['id'] for row in receipts}) == wanted
-    result['passed'] = result['complete'] and not any(statuses)
+    if engine == 'pytest':
+        result['complete'] = result['complete'] and len(xml_cases) == wanted
+    result['failures'] = sum(row['verdict'] != 'passed' for row in result['cases'])
+    result['passed'] = result['complete'] and not any(statuses) and not result['failures']
     (output / 'measurement.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({key: value for key, value in result.items() if key != 'cases'}), flush=True)
     return result

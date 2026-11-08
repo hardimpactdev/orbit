@@ -637,4 +637,3 @@ def cleanup(run):
     run.background.clear()
     for node in sorted(run.shimmed):
         remove_shim(run, node)
-

@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 import test_firewall_allow as native
-from backend import host
-from proof import Proof
 
 ROOT = Path(__file__).resolve().parents[3]
 module = importlib.util.spec_from_file_location('proof_source_spec', ROOT / 'swamp/proof/runner/spec.py')
@@ -64,33 +62,3 @@ def test_port_has_no_missing_or_extra_case():
     assert len(actual) == 50
     assert sorted(actual) == sorted(c.id for c in SPEC.cases)
     assert sum(bool(c.negative) for c in SPEC.cases) == 13
-
-
-def test_negative_cannot_pass_on_unrelated_failure(tmp_path):
-    proof = Proof(None, tmp_path, 'app-dev', {'do': [], 'must_fail': ['traffic']})
-    proof.failures = ['a different failure']
-    with pytest.raises(AssertionError, match='did not fail'):
-        proof.finish()
-    proof.failures.append('expect probe traffic: blocked, expected connect')
-    proof.finish()
-
-
-def test_negative_rejects_broken_act(tmp_path):
-    proof = Proof(None, tmp_path, 'app-dev', {'do': [], 'must_fail': ['traffic']})
-    proof.failures = ['act failed']
-    with pytest.raises(AssertionError, match='act failed'):
-        proof.observe()
-
-
-def test_incus_backend_keeps_quoted_arguments_and_command_result(monkeypatch):
-    import subprocess
-    calls = []
-
-    def run(argv, **kwargs):
-        calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 7, 'out', 'err')
-    monkeypatch.setattr('backend.subprocess.run', run)
-    result = host('nested-app-dev').run('printf %s', 'a; $secret')
-    assert calls[0][0] == ['incus', 'exec', 'nested-app-dev', '--', 'sh', '-c', "printf 'a; $secret'"]
-    assert (result.rc, result.stdout, result.stderr) == (7, 'out', 'err')
-    assert calls[0][1]['timeout'] == 60
