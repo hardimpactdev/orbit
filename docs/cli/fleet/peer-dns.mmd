@@ -28,7 +28,8 @@ sequenceDiagram
   SW->>N: Apply member DNS policy<br/>Ansible phase
   %%> What it does:
   %%> - checks systemd-resolved delegate support and the LAN route; the vpn Node answers WireGuard addresses and the Router resolver answers its LAN members with LAN addresses
-  %%> - snapshots owned policy, persists the Cluster-only delegate and remaining WireGuard hook and marker, applies both scopes, and checks them in the same phase
+  %%> - snapshots owned policy, persists and activates VPN coverage for old and new private domains, reloads the replacement delegate, then persists and applies the final VPN scope; brief private overlap prevents a public-DNS gap
+  %%> - checks both scopes and publishes its member receipt only after persistence and snapshot cleanup succeed; a rolled-back selection cannot pass a retirement barrier
   %%> - leaves LAN-link DNS, addresses, routes, DHCP, resolv.conf and global resolved settings alone; reloads resolved only when the delegate file or live scope differs
   %%> Runtime failure:
   %%> - the delegate has no VPN server; Cluster DNS or LAN failure makes its Cluster lookups fail until repair, and Doctor reports it

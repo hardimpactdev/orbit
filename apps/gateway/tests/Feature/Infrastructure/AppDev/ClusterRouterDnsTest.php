@@ -18,6 +18,8 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\NodeRole;
+use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
 
@@ -65,6 +67,28 @@ it('selects the Router for a roleless managed LAN member and keeps a foreign nam
         ->and($selection['delegate'])->toMatchArray(['server' => '192.168.6.20', 'domains' => ['test']])
         ->and($selection['domains'])->toContain('orbit', 'foreign.test')->not->toContain('test')
         ->and($selection['all_domains'])->toContain('test');
+});
+
+it('keeps an owned exact domain more specific than a foreign VPN namespace', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'test', 'state' => ClusterState::Active]);
+    $router = clusterDnsMember('router', '10.44.0.7', $cluster, '192.168.6.20');
+    $router->roles()->create(['role' => RoleName::Router, 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $vpn = clusterDnsMember('vpn', '10.44.0.1');
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $foreign = clusterDnsMember('foreign', '10.44.0.8');
+    $foreign->update(['tld' => 'foreign.test']);
+    $foreign->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'site', 'slug' => 'site', 'repository_url' => 'https://example.test/site.git', 'default_branch' => 'main', 'root' => 'public']);
+    Route::query()->create([
+        'project_id' => $project->id, 'cluster_id' => $cluster->id, 'domain' => 'app.foreign.test',
+        'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending',
+    ]);
+    $member = clusterDnsMember('member', '10.44.0.10', $cluster, '192.168.6.21');
+
+    $selection = app(PeerDnsPolicy::class)->selection($member);
+
+    expect($selection['domains'])->toContain('foreign.test')->not->toContain('test', 'app.foreign.test')
+        ->and($selection['delegate']['domains'])->toBe(['app.foreign.test', 'test']);
 });
 
 it('keeps VPN selection for a member without LAN and for an inactive Cluster', function (): void {

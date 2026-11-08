@@ -1,4 +1,7 @@
 ---
+- name: Require a completed member attempt before publishing its receipt
+  ansible.builtin.set_fact:
+    dns_member_committed: false
 - name: Read resolved capability
   ansible.builtin.command:
     argv: [resolvectl, --version]
@@ -133,6 +136,18 @@
     - name: Capture durable member recovery state
       ansible.builtin.import_tasks: dns-member-snapshot.yml
       when: member_changed
+    - name: Render private VPN coverage for the delegate handover
+      ansible.builtin.set_fact:
+        member_coverage: "{{ lookup('ansible.builtin.template', 'dns-member-policy.j2') | from_json }}"
+      vars:
+        member_version: 258
+        member_previous_domains: >-
+          {{ (((member_old_delegate.content | default('') | b64decode)
+          | regex_findall('(?m)^Domains=(.*)$') | first | default('')).split()
+          + (member_live_delegate | regex_findall('(?m)^\s*DNS Domain: (.*)$') | first | default('')).split())
+          | map('regex_replace', '^~', '') | list }}
+        policy: "{{ dns_member_policy | combine({'delegate': none,
+          'all_domains': (dns_member_policy.all_domains + member_previous_domains) | unique | list}) }}"
     - name: Persist the selected scopes and verify them
       block:
         - name: Make the delegate directory
@@ -140,10 +155,12 @@
             path: /etc/systemd/dns-delegate.d
             state: directory
             mode: "0755"
-        # Persist and activate complete VPN policy before delegate removal, including reboot hooks.
-        - name: Apply complete VPN policy before withdrawal
+        # Keep every withdrawn private suffix covered across reload and a possible reboot.
+        - name: Apply complete VPN coverage before replacing or withdrawing a delegate
           ansible.builtin.import_tasks: dns-member-vpn.yml
-          when: member_effective.delegate is none
+          vars:
+            member_vpn_policy: "{{ member_coverage }}"
+          when: member_changed
         - name: Write the selected Cluster delegate
           ansible.builtin.copy:
             content: "{{ member_effective.delegate_content }}"
@@ -168,7 +185,8 @@
           ansible.builtin.meta: flush_handlers
         - name: Apply the VPN scope after the delegate is ready
           ansible.builtin.import_tasks: dns-member-vpn.yml
-          when: member_effective.delegate is not none
+          vars:
+            member_vpn_force_domains: "{{ member_changed }}"
         - name: Flush cached answers before checking selection
           ansible.builtin.command:
             argv: [resolvectl, flush-caches]
@@ -216,9 +234,9 @@
             argv: [date, +%s]
           register: member_commit_time
           changed_when: false
-        - name: Record the effective policy receipt
+        - name: Prepare the effective policy receipt
           ansible.builtin.set_fact:
-            dns_member_receipt:
+            member_pending_receipt:
               revision: "{{ dns_member_policy.revision | default('0') }}"
               checked_at: "{{ member_commit_time.stdout }}"
               effective: "{{ member_effective }}"
@@ -226,7 +244,7 @@
               digest: "{{ member_effective | to_json | hash('sha256') }}"
         - name: Commit the member policy
           ansible.builtin.copy:
-            content: "{{ dns_member_receipt | to_json }}"
+            content: "{{ member_pending_receipt | to_json }}"
             dest: /var/lib/orbit/peer-dns/applied.json
             mode: "0600"
           changed_when: false
@@ -265,3 +283,8 @@
       ansible.builtin.async_status:
         jid: "{{ member_lock.ansible_job_id }}"
         mode: cleanup
+- name: Publish the successfully committed member receipt
+  ansible.builtin.set_fact:
+    dns_member_receipt: "{{ member_pending_receipt }}"
+    dns_member_committed: true
+  when: dns_member_failure is not defined

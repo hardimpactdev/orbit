@@ -10,7 +10,9 @@
 {%- endif -%}
 {%- endfor -%}
 {%- for host in result_groups['dns_member'] | default([]) -%}
-{%- set r = result_hosts[host].dns_member_receipt | default({}) -%}
+{%- set h = result_hosts[host] -%}
+{%- set committed = h.dns_member_committed | default(false) and h.dns_member_failure is not defined -%}
+{%- set r = (h.dns_member_receipt | default({})) if committed else {} -%}
 {%- set ns.members = ns.members + [dict(r, node_id=result_hosts[host].dns_member_node_id | default(0))] -%}
 {%- if r.effective is not defined -%}{%- set ns.error = ns.error or result_hosts[host].dns_member_failure | default('dns.member_selection_failed') -%}{%- endif -%}
 {%- endfor -%}

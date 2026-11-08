@@ -140,6 +140,8 @@
       register: member_repeat
       changed_when: false
       failed_when: "member_repeat.rc != 0 or member_repeat.stdout is not search('node[ ]+:[ ]+ok=[0-9]+[ ]+changed=0[ ]')"
+    - name: Prove failed commits and delegate replacements
+      ansible.builtin.import_tasks: review-regressions.yml
     - name: Take a fresh member withdrawal revision
       ansible.builtin.command:
         argv: [date, +%s%6N]

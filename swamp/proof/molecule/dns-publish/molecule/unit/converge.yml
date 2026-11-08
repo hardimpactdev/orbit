@@ -870,3 +870,35 @@
           - partial.resolvers[0].digest == 'current'
           - partial.resolvers[0].selected_at == 100
           - partial.members[0].effective is not defined
+    - name: Aggregate prepared receipts after failed persistence or rollback
+      ansible.builtin.set_fact:
+        rejected_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: "{{ item }}"
+            dns_member_failure: dns.member_selection_failed
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+      loop: [false, true]
+      register: rejected_members
+    - name: A prepared or failed receipt never confirms movement
+      ansible.builtin.assert:
+        that:
+          - item.ansible_facts.rejected_member.error_code == 'dns.member_selection_failed'
+          - item.ansible_facts.rejected_member.members[0].effective is not defined
+      loop: "{{ rejected_members.results }}"
+    - name: Aggregate a successfully persisted member
+      ansible.builtin.set_fact:
+        committed_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: true
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+    - name: Only a committed receipt without a member failure confirms movement
+      ansible.builtin.assert:
+        that:
+          - committed_member.error_code is not defined
+          - committed_member.members[0].effective.delegate is none

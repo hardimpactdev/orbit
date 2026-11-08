@@ -3,26 +3,29 @@
   ansible.builtin.lineinfile:
     path: /etc/wireguard/orbit.conf
     regexp: "^PostUp\\s*=\\s*resolvectl dns %i "
-    line: "{{ member_effective.hook }}"
+    line: "{{ (member_vpn_policy | default(member_effective)).hook }}"
     insertafter: "^\\[Interface\\]"
   no_log: true
 - name: Keep the DNS marker
   ansible.builtin.copy:
-    content: "{{ member_effective.marker }}"
+    content: "{{ (member_vpn_policy | default(member_effective)).marker }}"
     dest: /etc/wireguard/orbit.dns-link
     owner: root
     group: root
     mode: "0600"
 - name: Set the VPN server
   ansible.builtin.command:
-    argv: [resolvectl, dns, orbit, "{{ member_effective.server }}"]
+    argv: [resolvectl, dns, orbit, "{{ (member_vpn_policy | default(member_effective)).server }}"]
   changed_when: true
-  when: (member_old_server.stdout.split(':', 1)[1] | trim) != member_effective.server
+  when: (member_old_server.stdout.split(':', 1)[1] | trim) != (member_vpn_policy | default(member_effective)).server
 - name: Set the remaining VPN routing domains
   ansible.builtin.command:
-    argv: "{{ ['resolvectl', 'domain', 'orbit'] + (member_effective.domains | map('regex_replace', '^', '~') | list) }}"
+    argv: "{{ ['resolvectl', 'domain', 'orbit'] + ((member_vpn_policy | default(member_effective)).domains | map('regex_replace', '^', '~') | list) }}"
   changed_when: true
-  when: (member_old_domains.stdout.split(':', 1)[1] | trim) != (member_effective.domains | map('regex_replace', '^', '~') | join(' '))
+  when: >-
+    member_vpn_force_domains | default(false) or
+    (member_old_domains.stdout.split(':', 1)[1] | trim) !=
+    ((member_vpn_policy | default(member_effective)).domains | map('regex_replace', '^', '~') | join(' '))
 - name: Keep private DNS out of the default route
   ansible.builtin.command:
     argv: [resolvectl, default-route, orbit, "no"]

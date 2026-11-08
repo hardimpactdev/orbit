@@ -949,7 +949,9 @@
     - name: Require every member selection before retirement
       ansible.builtin.set_fact:
         dns_ready: false
-      when: hostvars[item].dns_member_receipt is not defined
+      when: >-
+        not (hostvars[item].dns_member_committed | default(false)) or
+        hostvars[item].dns_member_failure is defined or hostvars[item].dns_member_receipt is not defined
       loop: "{{ groups['dns_member'] | default([]) }}"
     - name: Start the shared selection deadline
       ansible.builtin.set_fact:

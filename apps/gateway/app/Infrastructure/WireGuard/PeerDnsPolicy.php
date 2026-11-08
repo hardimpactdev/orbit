@@ -84,8 +84,8 @@ final readonly class PeerDnsPolicy
                     throw new NodeProvisioningException('private-dns-policy', 'vpn.peer_dns_policy_invalid', 'A Cluster DNS delegate conflicts with the explicit DNS override.');
                 }
                 $overlay = app(DevelopmentDnsConfigRenderer::class)->routerState($cluster, $router);
-                $owned = Route::query()->where('cluster_id', $cluster->id)->where('publication', RoutePublication::Private)
-                    ->pluck('domain')->all();
+                $owned = array_values(array_filter(Route::query()->where('cluster_id', $cluster->id)->where('publication', RoutePublication::Private)
+                    ->pluck('domain')->all(), is_string(...)));
                 $tld = array_key_exists('tld', $pending) ? $pending['tld'] : $cluster->tld;
                 $domains = array_values(array_unique(array_filter([$tld, ...$owned], is_string(...))));
                 // Minimize each destination scope separately. Preserve foreign exceptions on VPN.
@@ -103,6 +103,15 @@ final readonly class PeerDnsPolicy
                             $vpn[] = (string) $name;
                         }
                     }
+                    // Keep owned islands that outrank a foreign VPN scope inside the delegated suffix.
+                    foreach ($owned as $name) {
+                        if (array_any($vpn, static fn (string $foreign): bool => str_ends_with($name, '.'.$foreign)
+                            && array_any($domains, static fn (string $local): bool => str_ends_with($foreign, '.'.$local)))) {
+                            $delegate['domains'][] = $name;
+                        }
+                    }
+                    $delegate['domains'] = array_values(array_unique($delegate['domains']));
+                    sort($delegate['domains']);
                     $all = self::suffixes([...$all, ...$vpn, ...$domains]);
                 }
             }
