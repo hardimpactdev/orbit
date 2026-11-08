@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewOverflowException;
@@ -147,7 +148,8 @@ final readonly class TaskPullRequestEvidence
             }
             $name = $project->mergeCheckName();
             $token = $name === null ? null : $this->access->checksToken($repository);
-            $state = $name === null ? 'not_configured' : ($token === null ? 'unreadable' : RequiredCheckState::of($this->github->checkRuns($token, $repository, $head, $name), $head, $name)->value);
+            $runs = $token === null ? [] : $this->github->checkRuns($token, $repository, $head, $name);
+            $state = $name === null ? 'not_configured' : ($token === null ? 'unreadable' : RequiredCheckState::of($runs, $head, $name)->value);
         } catch (GitHubApiException $exception) {
             throw $this->unreadable($exception);
         }
@@ -155,7 +157,12 @@ final readonly class TaskPullRequestEvidence
             throw new ResourceOperationException('tasks_pr.checks_not_passed', 'The Project merge check did not pass on this head.', 409, details: ['state' => $state]);
         }
 
-        return new TaskPullRequestTarget($repository, $number, $pull);
+        // Explicit public fields only: GitHub output summaries, URLs and credentials never enter a turn.
+        $conclusions = array_values(array_map(static fn (GitHubCheckRun $run): array => [
+            'name' => $run->name, 'conclusion' => $run->conclusion, 'status' => $run->status, 'head' => $run->headSha, 'app' => $run->appSlug,
+        ], array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $name)));
+
+        return new TaskPullRequestTarget($repository, $number, $pull, $conclusions);
     }
 
     private function unreadable(GitHubApiException|GitHubReviewOverflowException $exception): ResourceOperationException

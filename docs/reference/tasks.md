@@ -181,7 +181,9 @@ Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 Ki
 
 `task:check <task> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/tasks/{task}/check` with `{ phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
 
-The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows, and `Report the result` prints the result and fails the run on its error code. A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
+The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Project check`, `Snapshot the workspace`, `Run each deliverable`, `Snapshot the checked tree`, `Commit the candidate` and `Push the candidate` are child workflows. `Read the result` exposes the complete receipt as a direct behavior output, and `Check the result` fails the run on its execution error code. Swamp propagates only one level of child behavior outputs, so a review round reads the direct receipt rather than reaching through the push child.
+
+A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
 A workspace is required (`409 tasks.no_workspace`). A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
@@ -1128,6 +1130,8 @@ A round is one Swamp run, `tasks.review_round`, with the workflow `operation-tas
 
 Admission requires a green merge check on the head. The head must be a passed handoff candidate of the current subtask, or the commit that an earlier round pushed.
 
+Admission captures the passed handoff check result (including the local check of an earlier pushed fix) and the hosted Required-check conclusions read with the Gateway App token. Only check identities and result fields reach the reviewer, never logs or GitHub credentials. The evidence names the reviewed head and checked tree. Before sending the reviewer prompt, Swamp rejects evidence for another candidate head or workspace tree.
+
 The run resumes the VM and lets the reviewer judge the head. It posts the verdict and the findings as a comment of the Orbit App, so the owner can read them. The comment mints its own token when it runs. A comment that GitHub refuses does not fail the run.
 
 When the reviewer ends with `approved`, the Gateway records a pass for that head from the end of the run. The next tick admits the merge step. In automatic mode the step requires that pass on the exact head, not an approving review. A run that ends in error never records a pass.
@@ -1248,6 +1252,8 @@ The Agents section lists started threads and their recorded metrics. Any unfinis
 Swamp records a bounded transcript on turn finalization after success, failure, disconnect or EOF. It keeps user and assistant message text, redacted before any bound applies. Tool entries keep only the name, status and duration when known. Tool arguments, outputs and raw errors are not kept; a failed tool says `tool failed: <class>`, where the class is one of `timeout`, `aborted`, `exit_nonzero`, `permission`, `not_found` or `error`. Assistant diagnostics are omitted. Structural fields are never redacted. Missing terminal usage stays unknown. Native cancellation skips finalization and keeps the previous recorded transcript.
 
 Redaction of message text is best effort. A model can write a secret in any shape, so no redactor is complete. Tool arguments and outputs are never stored. Message text loses known secret values and credential shapes: PEM blocks, JWTs, bearer and GitHub tokens, and URL credentials. It also loses the value of a secret-named field in common JSON, `key: value`, `key=value` and quoted forms. HTTP `Authorization` and `Cookie` lines lose their whole value. A field name is secret by the Gateway's secret-word rule, which includes session identifiers. Swamp mirrors that rule in `swamp/extensions/behaviors/_lib/public_output.ts`.
+
+Swamp classifies each distinct field name once per text capture. Repeated names reuse that classification; each value still follows its own quoting, header and numeric-metric rules. The classification is discarded after the capture.
 
 These forms are known to pass unredacted:
 

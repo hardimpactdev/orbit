@@ -75,6 +75,10 @@ sequenceDiagram
     %%> - export, import, mint, push and revoke as in `task:publish`; the run then ends with CI pending
     %%> - a native schedule reads the Checks once a minute, snapshots the workspace again and settles the check
   end
+  Note over SW: Read the result
+  %%> What it does:
+  %%> - a direct data step exposes the push producer's result JSON to a calling workflow; Swamp propagates only one level of child behavior outputs
+  %%> - it keeps the complete check receipt on passed, failed and changed outcomes
   Note over SW: Check the result
   %%> What it does:
   %%> - native assert checks the push producer receipt for an execution error

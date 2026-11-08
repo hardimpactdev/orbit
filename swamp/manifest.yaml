@@ -61,6 +61,7 @@ additionalFiles:
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
   - ansible/task-vm-host.yml
+  - ansible/tasks/task-vm-host-prepare.yml
   - ansible/task-vm-start.yml
   - ansible/tasks/task-vm-boot.yml
   - ansible/tasks/task-vm-checkout.yml
@@ -93,6 +94,7 @@ additionalFiles:
   - ansible/tasks/task-vm-check.yml
   - ansible/swamp-worker-renewal.yml
   - ansible/tasks/swamp-worker-renew-slot.yml
+  - ansible/tasks/swamp-worker-connections.yml
   - ansible/tasks/swamp-worker-renew-verify.yml
   - ansible/tasks/swamp-worker-renewal.yml
   - ansible/tasks/swamp-start-cache.yml

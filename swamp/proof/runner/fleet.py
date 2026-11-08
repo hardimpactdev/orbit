@@ -15,7 +15,9 @@ import terminal  # noqa: E402
 
 # The candidate CLI of the checkout this runner runs from, with the profile `nested` that the fleet start adds on the outer VM.
 ORBIT = ['php', str(Path(__file__).resolve().parents[3] / 'apps/cli/orbit')]
-CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit'}
+# Fixed columns keep human text assertions independent of the runner's terminal (including wide Node tables).
+COLUMNS = '240'
+CLI_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit', 'COLUMNS': COLUMNS}
 NODE_HOME = '/home/orbit'
 NODE_USER = '1000'   # the managed user `orbit` of a Node
 # The tested checkout, where the nested Nodes see it (the fleet start mounts it on the Gateway and the app-dev Node; a case that runs the CLI
@@ -70,7 +72,7 @@ class Fleet:
 
     def incus_exec(self, node, argv, timeout=60):
         """A program on a Node as its managed user, with the home of that user."""
-        return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--', *argv],
+        return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--env', 'COLUMNS=' + COLUMNS, '--', *argv],
                               capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
 
     def prepare_node_cli(self, node):

@@ -37,7 +37,6 @@
   "incus.instance-images": "action",
   "incus.instances": "action",
   "incus.inventory": "action",
-  "incus.prepare-host": "action",
   "incus.vm": "action",
   "incus.vm-state": "action",
   "incus.volumes": "action",

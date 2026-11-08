@@ -53,6 +53,21 @@ describe('node:list', function (): void {
             ->toBe('https://10.44.0.1/api/v1/nodes');
     });
 
+    it('lists recorded native failure labels without losing the Node or assignment', function (): void {
+        $payload = list_node_payload();
+        $payload['assignments'][0]['status'] = 'failed';
+        $payload['assignments'][0]['failed_step'] = 'converge:Require supported Ubuntu';
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload], 'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:list', ['--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['nodes' => [$payload], 'request_id' => request_id()]);
+    });
+
     it('shows a concise node table', function (): void {
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
@@ -74,9 +89,45 @@ describe('node:list', function (): void {
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
         expect(preg_replace('/[ \t]+/', ' ', $output))
-            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
+            ->toContain('│ 2 │ app-dev │ active │ — │ app-dev (active) │ linux │ .app-dev.orbit │ orbit │ development │ 10.44.0.3 │ 10.0.0.3 │');
         expect($output)->toContain('Request ID: '.request_id());
     });
+
+    it('renders recorded assignment status without inferring it from role names', function (string $status): void {
+        $payload = list_node_payload();
+        $payload['assignments'][0]['status'] = $status;
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload], 'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:list'))->toBe(0);
+        expect(Artisan::output())->toContain("app-dev ({$status})", 'development');
+    })->with(['active', 'provisioning', 'failed', 'removing']);
+
+    it('keeps Nodes with unavailable agent or attachment information in the table', function (?array $agent, string $label): void {
+        $payload = list_node_payload();
+        $payload['agent'] = $agent;
+        $payload['assignments'] = [];
+        $payload['roles'] = [];
+        $payload['cluster_id'] = null;
+        $payload['cluster_name'] = null;
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload], 'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('node:list'))->toBe(0);
+        expect(preg_replace('/[ \\t]+/', ' ', Artisan::output()))
+            ->toContain("│ 2 │ app-dev │ active │ {$label} │ — │ linux │ .app-dev.orbit │ orbit │ — │ 10.44.0.3 │ 10.0.0.3 │");
+    })->with([
+        'no observer' => [null, '—'],
+        'never seen' => [['state' => 'not_seen', 'since' => null], 'not seen'],
+        'offline' => [['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'], 'offline'],
+        'subscriber unavailable' => [['state' => 'unknown', 'since' => null], 'unknown'],
+    ]);
 
     it('does not invent a missing public SSH port', function (): void {
         $payload = list_node_payload();
@@ -120,7 +171,7 @@ describe('node:list', function (): void {
         expect($output)->toContain('WIREGUARD');
         expect($output)->toContain('LAN');
         expect(preg_replace('/[ \t]+/', ' ', $output))
-            ->toContain('│ 2 │ app-dev │ active │ app-dev │ linux │ .app-dev.orbit │ orbit │ 3 │ 10.44.0.3 │ 10.0.0.3 │');
+            ->toContain('│ 2 │ app-dev │ active │ — │ app-dev (active) │ linux │ .app-dev.orbit │ orbit │ development │ 10.44.0.3 │ 10.0.0.3 │');
     });
 
     it('reports when no nodes are registered', function (): void {
@@ -337,7 +388,7 @@ describe('node:show', function (): void {
     });
 });
 
-/** @return array<string, int|string|list<string>|null> */
+/** @return array<string, mixed> */
 function list_node_payload(): array
 {
     return [
@@ -362,6 +413,9 @@ function list_node_payload(): array
         'roles' => ['app-dev'],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
+        'cluster_name' => 'development',
+        'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
     ];
 }
 
@@ -439,6 +493,9 @@ function show_node_expected_json_payload(): array
         'roles' => ['app-dev'],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
+        'cluster_name' => 'development',
+        'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => null, 'error_code' => null]],
         'request_id' => request_id(),
         'access' => [
             'can_access' => [
