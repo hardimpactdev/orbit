@@ -9,7 +9,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
-use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -43,9 +42,50 @@ it('registers the exact node role list command signature surface', function (): 
         ->and(array_keys($command?->getDefinition()->getArguments() ?? []))
         ->toBe(['node'])
         ->and($command?->getDefinition()->getArgument('node')->getDescription())
-        ->toBe('Node ID or name')
+        ->toBe('Positive numeric Node ID')
+        ->and($command?->getDefinition()->getArgument('node')->isRequired())
+        ->toBeFalse()
         ->and(node_role_command_options($command))
         ->toBe(['json' => false]);
+});
+
+it('validates locally even without a Gateway profile', function (): void {
+    new Filesystem()->deleteDirectory($this->orbitHome);
+    $mockClient = MockClient::global();
+
+    expect(Artisan::call('node:role:list', ['node' => 'app-dev', '--json' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => ['code' => 'node.id_invalid', 'message' => 'Node ID must be a positive integer.', 'request_id' => null],
+    ]);
+    $mockClient->assertNothingSent();
+});
+
+it('retains assignment order and nullable failures in both output forms', function (): void {
+    $assignments = [
+        ['id' => 4, 'role' => 'app-dev', 'status' => 'active', 'failed_step' => 'converge:check', 'error_code' => 'check.failed'],
+        ['id' => 3, 'role' => 'app-prod', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null],
+        ['id' => 2, 'role' => 'database', 'status' => 'failed', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed'],
+        ['id' => 1, 'role' => 'websocket', 'status' => 'removing', 'failed_step' => null, 'error_code' => null],
+    ];
+    $mockClient = MockClient::global([
+        ListNodeRolesRequest::class => MockResponse::make(['data' => $assignments, 'meta' => ['request_id' => node_role_command_request_id()]]),
+    ]);
+    expect(Artisan::call('node:role:list', ['node' => '7', '--json' => true]))->toBe(0);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'assignments' => $assignments, 'request_id' => node_role_command_request_id(),
+    ]);
+
+    expect(Artisan::call('node:role:list', ['node' => '7']))->toBe(0);
+    $human = Artisan::output();
+    $offset = 0;
+    foreach ($assignments as $assignment) {
+        $position = strpos($human, $assignment['role'], $offset);
+        expect($position)->not->toBeFalse();
+        $offset = $position + strlen($assignment['role']);
+        expect($human)->toContain($assignment['status']);
+    }
+    expect($human)->toContain('converge:check', 'check.failed', 'converge:packages', 'packages.failed', '—');
+    $mockClient->assertSentCount(2);
 });
 
 it('lists node roles from the active gateway as JSON', function (): void {
@@ -152,52 +192,39 @@ it('rejects an invalid node role list node id before connector io', function (st
 
     $this
         ->artisan('node:role:list', ['node' => $nodeId])
-        ->expectsOutputToContain('Node ID must be a positive integer.')
+        ->expectsOutputToContain('Node ID must be a positive integer. (node.id_invalid)')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'zero' => '0',
     'negative' => '-1',
+    'name' => 'app-dev',
+    'option-like' => '--not-a-node',
+    'fraction' => '1.5',
+    'overflow' => '999999999999999999999',
 ]);
 
-it('resolves a node name through the node list before listing roles', function (): void {
-    $assignment = node_role_assignment_payload();
-    $mockClient = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_list_node_payload(id: 7, name: 'mini')],
-            'meta' => ['request_id' => node_role_command_request_id()],
-        ]),
-        ListNodeRolesRequest::class => MockResponse::make([
-            'data' => [$assignment],
-            'meta' => ['request_id' => node_role_command_request_id()],
-        ]),
-    ]);
+it('refuses missing and invalid input as JSON without any HTTP request', function (?string $node): void {
+    $mockClient = MockClient::global();
+    $arguments = ['--json' => true];
+    if ($node !== null) {
+        $arguments['node'] = $node;
+    }
 
-    $this
-        ->artisan('node:role:list', ['node' => 'mini', '--json' => true])
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:list', $arguments))->toBe(1);
+    $error = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($error['error']['code'])->toBe('node.id_invalid')
+        ->and($error['error']['request_id'])->toBeNull();
+    $mockClient->assertNothingSent();
+})->with([null, '0', '-1', 'app-dev', '--not-a-node', '1.5', '999999999999999999999']);
 
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(ListNodeRolesRequest::class)
-        ->and($mockClient->getLastRequest()?->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/roles');
-});
+it('refuses missing input in noninteractive human mode without HTTP', function (): void {
+    $mockClient = MockClient::global();
 
-it('rejects an unknown node name before the role list request', function (): void {
-    $mockClient = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_list_node_payload(id: 7, name: 'app-dev')],
-            'meta' => ['request_id' => node_role_command_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:list', ['node' => 'mini'])
-        ->expectsOutputToContain('Node [mini] is not registered.')
-        ->assertExitCode(1);
-
-    $mockClient->assertNotSent(ListNodeRolesRequest::class);
+    expect(Artisan::call('node:role:list', ['--no-interaction' => true]))->toBe(1);
+    expect(Artisan::output())->toContain('Node ID must be a positive integer.');
+    $mockClient->assertNothingSent();
 });
 
 it('prints the request id for node role list gateway API errors', function (): void {
@@ -271,28 +298,4 @@ function failed_node_role_assignment_payload(): array
 function node_role_command_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
-}
-
-/** @return array<string, mixed> */
-function node_role_list_node_payload(int $id, string $name): array
-{
-    return [
-        'id' => $id,
-        'name' => $name,
-        'status' => 'active',
-        'platform' => 'linux',
-        'architecture' => 'x86_64',
-        'tld' => null,
-        'public_ssh_host' => '203.0.113.7',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'wireguard_ip' => '10.44.0.7',
-        'wireguard_public_key' => 'key',
-        'wireguard_endpoint_override' => null,
-        'dns_server_override' => null,
-        'ssh_host_fingerprint' => null,
-        'failed_step' => null,
-        'error_code' => null,
-        'roles' => [],
-    ];
 }

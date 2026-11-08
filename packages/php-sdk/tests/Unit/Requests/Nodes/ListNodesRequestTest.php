@@ -101,6 +101,7 @@ function list_nodes_gateway_data(): array
             'failed_step' => null,
             'error_code' => null,
             'roles' => ['app-dev'],
+            'role_assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null]],
             'settings' => null,
             'updating' => [
                 'kind' => 'gateway_release',
@@ -129,6 +130,7 @@ function list_nodes_gateway_data(): array
             'failed_step' => 'wireguard-server-validate',
             'error_code' => 'vpn.server_config_invalid',
             'roles' => ['app-prod'],
+            'role_assignments' => [['id' => 14, 'role' => 'app-prod', 'status' => 'failed', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed']],
             'settings' => null,
             'updating' => null,
             'agent' => null,

@@ -26,7 +26,7 @@ The command shows what Orbit has recorded for the Node. It does not contact the 
 | --- | --- |
 | `ID`, `Status` | The Node's ID and recorded status. |
 | `Agent` | The Node agent's liveness, below. |
-| `Roles` | The Node's active roles. |
+| `Roles` | Every assigned role, including assignments that are not active. |
 | `SSH` | The managed user, public address and port. |
 | `Cluster` | The name of the Cluster the Node belongs to. |
 | `WireGuard`, `LAN` | The Node's addresses. |
@@ -36,6 +36,8 @@ The command shows what Orbit has recorded for the Node. It does not contact the 
 | `Apps folder` | The [apps folder](/reference/node-settings#set-the-apps-root) where Instances live. |
 | `Access to`, `Accessible by` | The Nodes this Node has an access grant to, and the Nodes that have one to it, each as name and ID. |
 | `Failure` | The failed step and error code, only when the Node has a recorded failure. |
+
+JSON includes `role_assignments` with the [shared recorded lifecycle and failure details](/cli/node#recorded-role-assignments).
 
 A missing value shows `—`.
 

@@ -45,6 +45,16 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
+## Node access
+
+The Gateway enforces one shared authority rule. Its active Gateway Node and its recorded serving host have fleet-wide authority. A Node with an access grant to the active Gateway also has fleet-wide authority. Otherwise, the caller needs an access grant to the target Node. Without either authority or a target grant, Orbit refuses with `node_access.required`.
+
+## Recorded role assignments
+
+[`node:role:list`](/cli/node/role-list) reads every assignment, including `active`, `provisioning`, `failed`, and `removing` records. It starts no Operation and contacts no Node or external service. Missing or stale agent facts do not change the result.
+
+The JSON field `role_assignments` on [`node:list`](/cli/node/list) and [`node:show`](/cli/node/show) uses the same projection as the role list's `assignments`: `id`, `role`, `status`, `failed_step`, and `error_code`. Unset failure fields are `null`; recorded failure details stay visible even on an active assignment. All three lists use role-registry order, then assignment ID. The Node's `roles` field remains the role-name summary in that order.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

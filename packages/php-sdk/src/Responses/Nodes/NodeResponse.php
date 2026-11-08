@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Nodes;
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
 final readonly class NodeResponse
 {
-    /** @param list<string> $roles */
+    /**
+     * @param  list<string>  $roles
+     * @param  list<NodeRoleAssignmentResponse>  $roleAssignments
+     */
     public function __construct(
         public int $id,
         public string $name,
@@ -35,6 +39,7 @@ final readonly class NodeResponse
         public ?NodeSettings $settings = null,
         public ?NodeUpdatingResponse $updating = null,
         public ?NodeAgentResponse $agent = null,
+        public array $roleAssignments = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -72,6 +77,7 @@ final readonly class NodeResponse
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             roles: self::stringList($data['roles'] ?? []),
+            roleAssignments: self::assignments($data['role_assignments'] ?? [], $requestId),
             requestId: $requestId,
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
             settings: self::settings($data['settings'] ?? null),
@@ -105,6 +111,10 @@ final readonly class NodeResponse
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
             'roles' => $this->roles,
+            'role_assignments' => array_map(
+                static fn (NodeRoleAssignmentResponse $assignment): array => $assignment->toArray(),
+                $this->roleAssignments,
+            ),
             'settings' => $this->settings?->toArray(),
             'updating' => $this->updating?->toArray(),
             'agent' => $this->agent?->toArray(),
@@ -116,6 +126,30 @@ final readonly class NodeResponse
         }
 
         return $data;
+    }
+
+    /** @return list<NodeRoleAssignmentResponse> */
+    private static function assignments(mixed $value, string $requestId): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new GatewayApiException('Gateway response contains invalid Node role assignments.', requestId: $requestId);
+        }
+
+        $assignments = [];
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                throw new GatewayApiException('Gateway response contains an invalid Node role assignment.', requestId: $requestId);
+            }
+            $data = [];
+            foreach ($item as $key => $field) {
+                if (is_string($key)) {
+                    $data[$key] = $field;
+                }
+            }
+            $assignments[] = NodeRoleAssignmentResponse::fromGatewayData($data, $requestId);
+        }
+
+        return $assignments;
     }
 
     private static function settings(mixed $value): ?NodeSettings

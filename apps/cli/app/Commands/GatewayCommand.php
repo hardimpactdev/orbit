@@ -224,7 +224,7 @@ abstract class GatewayCommand extends Command
         return $profile;
     }
 
-    protected function positiveId(string $argument, string $label, string $errorCode): ?int
+    protected function positiveId(string $argument, string $label, string $errorCode, ?string $humanMessage = null): ?int
     {
         $id = filter_var(
             $this->argument($argument),
@@ -233,7 +233,7 @@ abstract class GatewayCommand extends Command
         );
 
         if (! is_int($id)) {
-            $this->renderGatewayFailure($errorCode, "{$label} ID must be a positive integer.");
+            $this->renderGatewayFailure($errorCode, "{$label} ID must be a positive integer.", humanMessage: $humanMessage);
 
             return null;
         }

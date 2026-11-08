@@ -6,7 +6,6 @@ namespace App\Data\Nodes;
 
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\Nodes\NodeUpdates;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
@@ -18,7 +17,10 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class NodeData extends Data
 {
-    /** @param list<string> $roles */
+    /**
+     * @param  list<string>  $roles
+     * @param  list<NodeRoleAssignmentData>  $roleAssignments
+     */
     public function __construct(
         public int $id,
         public ?int $clusterId,
@@ -39,6 +41,7 @@ final class NodeData extends Data
         public ?string $failedStep,
         public ?string $errorCode,
         public array $roles,
+        public array $roleAssignments,
         public ?NodeSettingsData $settings = null,
         public ?NodeUpdatingData $updating = null,
         public bool $swampWorkerSelected = false,
@@ -63,6 +66,7 @@ final class NodeData extends Data
         $sshHostFingerprint = $node->getAttribute('ssh_host_fingerprint');
         $failedStep = $node->getAttribute('failed_step');
         $errorCode = $node->getAttribute('error_code');
+        $assignments = NodeRoleAssignmentData::forNode($node);
 
         return new self(
             id: $node->id,
@@ -83,32 +87,12 @@ final class NodeData extends Data
             sshHostFingerprint: ValidatedData::nullableString($sshHostFingerprint),
             failedStep: ValidatedData::nullableString($failedStep),
             errorCode: ValidatedData::nullableString($errorCode),
-            roles: self::roles($node),
+            roles: array_map(static fn (NodeRoleAssignmentData $assignment): string => $assignment->role, $assignments),
+            roleAssignments: $assignments,
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
             updating: $updating,
             swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
             agent: app(NodeAgentLiveness::class)->for($node),
         );
-    }
-
-    /** @return list<string> */
-    private static function roles(Node $node): array
-    {
-
-        $roleOrder = array_flip(array_map(
-            static fn (RoleName $role): string => $role->value,
-            RoleName::cases(),
-        ));
-        $roles = [];
-        foreach ($node->roles as $nodeRole) {
-            $roles[] = $nodeRole->role;
-        }
-        usort(
-            $roles,
-            static fn (RoleName $left, RoleName $right): int => $roleOrder[$left->value]
-                <=> $roleOrder[$right->value],
-        );
-
-        return array_map(static fn (RoleName $role): string => $role->value, $roles);
     }
 }

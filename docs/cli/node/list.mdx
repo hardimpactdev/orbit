@@ -19,9 +19,11 @@ The list shows what Orbit has recorded for each Node. It does not contact the No
 | `ID`, `NAME` | The Node's ID and its unique name. |
 | `STATUS` | The Node's recorded status. A Node whose add or removal failed keeps `failed_step` and `error_code` in JSON. |
 | `AGENT` | The Node agent's liveness: `online`, `offline`, `not seen`, or `unknown`. [`node:show`](/cli/node/show) also shows since when an agent is offline. A Node without an agent shows `—`. |
-| `ROLES` | The Node's active roles, comma-separated. |
+| `ROLES` | Every assigned role, comma-separated, including assignments that are not active. |
 | `PLATFORM`, `TLD`, `USER` | The Node's platform, its development TLD with a leading dot, and its managed user. |
 | `CLUSTER` | The name of the Cluster the Node belongs to. |
 | `WIREGUARD`, `LAN` | The Node's WireGuard and LAN addresses. |
+
+JSON includes each Node's `role_assignments` with the [shared recorded lifecycle and failure details](/cli/node#recorded-role-assignments).
 
 A missing value shows `—`. In JSON the Cluster has its `cluster_id` and its name, and each Node carries its `agent` state. An empty list says `No nodes.`.

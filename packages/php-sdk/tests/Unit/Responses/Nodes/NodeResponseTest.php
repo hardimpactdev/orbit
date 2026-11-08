@@ -2,10 +2,41 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+
+it('preserves every typed role assignment and its recorded failure in both Node response forms', function (): void {
+    $assignments = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $assignments[] = [
+            'id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
+            'failed_step' => $status === 'failed' ? 'converge:packages' : null,
+            'error_code' => $status === 'failed' ? 'packages.failed' : null,
+        ];
+    }
+    $data = node_response_gateway_data(['role_assignments' => $assignments]);
+    $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $node = NodeResponse::fromGatewayData($data, $requestId);
+    $nodes = new NodesResponse([$node], $requestId);
+
+    expect($node->roleAssignments)->toHaveCount(4)
+        ->and($node->roleAssignments[2]->failedStep)->toBe('converge:packages')
+        ->and($node->roleAssignments[2]->requestId)->toBe($requestId)
+        ->and($node->toArray()['role_assignments'])->toBe($assignments)
+        ->and($nodes->toArray()['nodes'][0]['role_assignments'])->toBe($assignments);
+});
+
+it('rejects malformed nested role assignments', function (mixed $assignments): void {
+    NodeResponse::fromGatewayData(node_response_gateway_data(['role_assignments' => $assignments]), 'request-id');
+})->with([
+    'scalar' => 'invalid',
+    'object instead of list' => [['role' => 'app-dev']],
+    'scalar item' => [[42]],
+    'malformed assignment' => [[['id' => 0]]],
+])->throws(GatewayApiException::class);
 
 it('preserves the original positional constructor contract', function (): void {
     $response = new NodeResponse(
@@ -273,6 +304,7 @@ function node_response_public_data(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'role_assignments' => [],
         'settings' => null,
         'updating' => null,
         'agent' => null,

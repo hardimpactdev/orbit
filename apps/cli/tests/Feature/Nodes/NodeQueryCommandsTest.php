@@ -360,8 +360,12 @@ function list_node_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'role_assignments' => [
+            ['id' => 12, 'role' => 'app-dev', 'status' => 'provisioning', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed'],
+        ],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
     ];
 }
 
@@ -437,8 +441,12 @@ function show_node_expected_json_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'role_assignments' => [
+            ['id' => 12, 'role' => 'app-dev', 'status' => 'provisioning', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed'],
+        ],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
         'request_id' => request_id(),
         'access' => [
             'can_access' => [
