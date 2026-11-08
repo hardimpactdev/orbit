@@ -37,9 +37,10 @@ final readonly class TaskVmHost
         public ?string $zfsDataset = null,
         public array $operatorOwned = [],
         public string $imageAlias = self::BaseImage,
+        public bool $ciOnly = false,
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'operator_owned', 'image_alias'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'operator_owned', 'image_alias', 'ci_only'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -70,6 +71,7 @@ final readonly class TaskVmHost
             'pool' => $name('/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D'),
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
             'zfs_dataset' => ($entry['zfs_dataset'] ?? null) === null ? [] : ['required', 'string', 'regex:/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D'],
+            'ci_only' => ['sometimes', 'boolean:strict'],
             'operator_owned' => ['list'],
             'operator_owned.*' => ['required', 'string', 'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\/(?:\*|[A-Za-z0-9][A-Za-z0-9._-]{0,253})\z/D'],
         ], [
@@ -84,6 +86,7 @@ final readonly class TaskVmHost
             'pool' => "{$key}.pool is invalid.",
             'image_alias' => "{$key}.image_alias is invalid.",
             'zfs_dataset' => "{$key}.zfs_dataset is invalid.",
+            'ci_only' => "{$key}.ci_only must be a boolean.",
             'operator_owned' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
             'operator_owned.*' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
         ]);
@@ -103,6 +106,7 @@ final readonly class TaskVmHost
             zfsDataset: is_string($zfsDataset) ? $zfsDataset : null,
             operatorOwned: array_values(array_unique(TaskVmConfig::strings($entry['operator_owned'] ?? []))),
             imageAlias: $valid->string('image_alias')->value(),
+            ciOnly: ($entry['ci_only'] ?? false) === true,
         );
     }
 
