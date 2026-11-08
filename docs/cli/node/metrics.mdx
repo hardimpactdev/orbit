@@ -20,7 +20,7 @@ orbit node:metrics <node> [--json]
 orbit node:metrics 7
 ```
 
-Access follows the [shared Node authority rule](/cli/node), implemented by [NodeAccessAuthorizer](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php).
+Access follows the [shared Node authority rule](/cli/node#authority).
 
 ## How it works
 
@@ -49,5 +49,5 @@ Human output shows the Node's name and ID, `Observed at` time, `Agent` state, an
 | --- | --- | --- |
 | `node.id_invalid` | n/a | The supplied Node ID is not a positive integer, or the required ID is omitted in [noninteractive or machine mode](/reference/cli-ux#input-and-output-modes). |
 | `http.404` | 404 | The Node is unknown. |
-| `node_access.required` | 403 | The [shared Node authority rule](/cli/node) refuses the caller. |
+| `node_access.required` | 403 | The [shared Node authority rule](/cli/node#authority) refuses the caller. |
 | `node.metrics_unavailable` | 422 | No metrics snapshot has been recorded for the Node yet. |
