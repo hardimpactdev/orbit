@@ -1,0 +1,50 @@
+sequenceDiagram
+  %% Target design: node:role:list reads recorded Gateway state only. No request-time Node or external-system contact.
+  %% status: draft
+  %% command: node:role:list
+  %% kind: node.role_list
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>caller
+  participant GW as Gateway<br/>recorded state
+  CLI->>GW: node:role:list NODE
+  %%> Command:
+  %%> - `orbit node:role:list NODE`
+  %%> - syntax: `<node> [--json]`
+  Note over GW: Resolve and authorize NODE
+  %%> Requirements:
+  %%> - Node access follows the shared [NodeAccessAuthorizer rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php).
+  alt unknown Node
+    %% path: node-not-found
+    GW--xCLI: Refused<br/>http.404
+    %%> Result:
+    %%> - no assignments are returned
+  else caller refused by shared authority rule
+    %% path: access-refused
+    GW--xCLI: Refused<br/>node_access.required
+    %%> Result:
+    %%> - no assignments are returned
+  else known Node and authorized caller
+    %% path: main
+    Note over GW: Read role assignments<br/>shared Node role projection
+    %%> What it does:
+    %%> - includes every assigned role and its recorded lifecycle state, with the same role, status, failed_step and error_code values as node:list and node:show
+    %%> - reads records only; starts no Operation and contacts no Node, Grafana or other system
+    alt no role assignments recorded
+      %% path: no-roles
+      GW-->>CLI: Empty role list
+      %%> Result:
+      %%> - an empty assignment list is a successful result, not missing agent data
+    else Node unreachable or agent facts missing or stale
+      %% path: recorded-only
+      GW-->>CLI: Recorded role assignments
+      %%> Result:
+      %%> - assignments do not depend on agent liveness or fact freshness; no refresh or wait is needed
+    else assignments recorded
+      %% path: roles
+      GW-->>CLI: Role assignments<br/>state and failure details
+      %%> Result:
+      %%> - includes active, provisioning, failed and removing assignments
+    end
+  end
