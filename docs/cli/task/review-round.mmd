@@ -43,7 +43,9 @@ sequenceDiagram
   SW->>VM: Review the head<br/>operation-task-turn
   %%> What it does:
   %%> - a new reviewer thread, with the role `reviewer`: an agent that took no part in the spec, the code or an earlier round
-  %%> - it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the review rules; it changes no file
+  %%> - admission supplies sanitized handoff result and hosted Required-check conclusions read with the Gateway App token, bound to the reviewed head and checked tree; no GitHub token reaches the VM
+  %%> - before sending the prompt, Swamp rejects evidence for another candidate head or workspace tree
+  %%> - the reviewer reads this evidence with the chart, page and cases and judges them against the review rules; it changes no file
   VM-->>SW: Pass<br/>or findings
   Note over SW: Settle the review<br/>verdict · findings
   %%> What it does:
@@ -75,7 +77,7 @@ sequenceDiagram
     %%> - the handoff check of the Project on the workspace, as `task:check` runs it, without hosted CI (`check_name` is null): the PR runs its own CI on the pushed head
     Note over SW: Settle the check<br/>commit · tree
     %%> What it does:
-    %%> - the new `checked` method of `@nckrtl/task-turn-data` reads the output of the check: passed, and the commit and tree to push
+    %%> - the `checked` method of `@nckrtl/task-turn-data` reads the direct `Read the result` output of the check: passed, and the commit and tree to push; grandchildren's outputs are not propagated by Swamp
     %%> Refuses:
     %%> - a check that did not pass, or that ends `changed`, because the author must make the commit; the step `Check the fix passed` fails with `tasks.review_fix_not_passed`: nothing is pushed
     SW->>GW: Mint the push token<br/>operation:direct:github-token

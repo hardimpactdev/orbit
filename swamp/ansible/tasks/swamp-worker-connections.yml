@@ -1,0 +1,48 @@
+---
+# Pinned connect.ts logs this receipt after every enrollment, including same-process
+# reconnects. Swamp's durable enrolledAt does not reset for those reconnects.
+- name: Read the latest connection receipt of each worker on this boot
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - '10'
+      - journalctl
+      - --boot=0
+      - "--unit=orbit-swamp-worker@{{ item }}.service"
+      - '--grep=Enrolled as '
+      - --lines=1
+      - --output=json
+      - --no-pager
+      - --quiet
+  loop: "{{ renewal_slots }}"
+  register: renewal_receipts
+  changed_when: false
+  failed_when: false
+  no_log: true
+- name: Resolve the actual names and connection times from the journal
+  ansible.builtin.set_fact:
+    renewal_names: "{{ renewal_names | default({}) | combine({item.item: renewal_receipt_name}) }}"
+    renewal_connections: >-
+      {{ renewal_connections | default({}) | combine({renewal_receipt_name:
+      ((renewal_receipt.__REALTIME_TIMESTAMP | default(0) | int) // 1000000)}) }}
+  loop: "{{ renewal_receipts.results }}"
+  loop_control: {label: "{{ item.item }}"}
+  vars:
+    renewal_receipt: >-
+      {{ (item.stdout | default('{}', true) | from_json) if item.rc | default(-1) in [0, 1] else {} }}
+    renewal_receipt_name: >-
+      {{ renewal_receipt.MESSAGE | default('') | regex_replace('\x1b\[[0-9;]*m', '')
+      | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default('') }}
+- name: Require distinct names and valid timestamps for the required units
+  ansible.builtin.assert:
+    that:
+      - renewal_names[item] | length > 0
+      - >-
+        renewal_names.values() | reject('equalto', '') | unique | length ==
+        renewal_names.values() | reject('equalto', '') | list | length
+      - renewal_connections[renewal_names[item]] | int > 0
+    fail_msg: >-
+      Worker renewal stopped: cannot resolve required unit names and connection times from enrollment journals.
+      The eight-hour session cap can still abort active dispatches.
+      No worker was drained; retry in five minutes
+  loop: "{{ renewal_required_slots | default(renewal_slots) }}"

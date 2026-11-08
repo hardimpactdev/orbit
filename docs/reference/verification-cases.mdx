@@ -111,7 +111,7 @@ The vocabulary is fixed. The first set is small and covers the `firewall` comman
 Details that a case author needs:
 
 - **`listener`** starts listeners on free ports and binds each name in `ports`. `proto` is `tcp`, `udp` or a list of both: a list uses the same port for each protocol. `family` is 4 or 6; an IPv6 listener takes IPv6 only. `block: {as: range, size: 5}` starts `size` consecutive ports (2 to 50) and binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}`. The step fails if a port does not answer on the Node itself.
-- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
+- **`cli`** appends `--json`. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer VM and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
   - `exit`: the exit code.
   - `status`: the status of the Operation. In the JSON form it is the `status` of the document; in a human run it is read from the Operation named on the `Operation:` line.
   - `code`: an error code, read from the JSON form. A human run that has no JSON form takes the text instead: the output must contain the code.

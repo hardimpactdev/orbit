@@ -49,6 +49,23 @@ apps/gateway/routes/api/firewall.php                       firewall:allow firewa
 packages/php-sdk/src/Requests/Firewall/**                  firewall:allow firewall:deny firewall:list firewall:remove
 packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewall:deny firewall:list firewall:remove
 
+# The Node family. Only node:list has cases so far; the remaining commands are reported as uncovered.
+swamp/proof/node/list.cases.yaml                          node:list
+apps/cli/app/Commands/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/cli/app/Support/CommandVocabulary/node.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Actions/Nodes/**                            node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Data/Nodes/**                               node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Domain/Nodes/**                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Domain/Nodes/SwampRoleUnits.php             none: service unit definitions, not a command request
+apps/gateway/app/Http/Controllers/Api/Node*.php              node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Http/Requests/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Infrastructure/Nodes/**                     node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Models/Node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/app/Models/NodeRole.php                         node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+apps/gateway/routes/api/node.php                             node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+packages/php-sdk/src/Requests/Nodes/**                       node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+packages/php-sdk/src/Responses/Nodes/**                      node:access:add node:access:remove node:add node:converge node:list node:metrics node:remove node:role:add node:role:list node:role:relocate node:role:remove node:show node:update node:wireguard-key
+
 # Code that every command runs through: the Operation machinery of the Gateway, the CLI base classes and the SDK core. A change to it can break
 # any command, so it runs every case (`*`), which is every command that has a cases file. The shared files are named, so code that only some
 # commands use (schedules, logs, project definitions) stays out. The table of run budgets (data) and two checks that no request path calls select nothing; the rules that read the table select every case.
