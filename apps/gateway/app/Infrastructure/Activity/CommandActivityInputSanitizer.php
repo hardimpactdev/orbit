@@ -19,7 +19,8 @@ final readonly class CommandActivityInputSanitizer
     private const string INVALID_PROPERTY_NAME = '[INVALID_PROPERTY_NAME]';
 
     /**
-     * A field is secret when one of its name segments is one of these words.
+     * A field is secret when one of its name segments is one of these words. Swamp mirrors this list
+     * and `NON_SECRET_KEYS` in `swamp/extensions/behaviors/_lib/public_output.ts`; change both together.
      *
      * @var list<string>
      */

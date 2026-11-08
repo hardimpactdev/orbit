@@ -34,7 +34,7 @@ const expected = [
     "[REDACTED] [REDACTED]",
     "MODEL_KEY=[REDACTED] next",
     "head ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccx and [REDACTED]",
-    "red Authorization: [REDACTED]\nAuthorization: [REDACTED]",
+    "red Authorization: [REDACTED]\nProxy-Authorization: [REDACTED]",
     "Bearer [REDACTED] and Bearer [REDACTED]",
     '{"api_key": [REDACTED], "name": "public", \'SECRET\'=[REDACTED]}',
     "DB_PASSWORD=[REDACTED] APP_KEYS: [REDACTED] PATH=/usr/bin",
