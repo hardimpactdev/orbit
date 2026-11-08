@@ -355,7 +355,8 @@ export async function localResult(
                 commands,
             }
             : null,
-        subtask_start_commit: (run(steps, "original").stdout ?? "").trim(),
+        subtask_start_commit: input.base ||
+            (run(steps, "original").stdout ?? "").trim(),
     });
     const deliverables = deliverableResults(input, local);
     return {
