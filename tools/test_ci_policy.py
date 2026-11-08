@@ -62,16 +62,19 @@ class RequiredGateTest(unittest.TestCase):
         block = caller.split('  required:\n', 1)[1]
         code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
         jobs = block.split('needs: [', 1)[1].split(']', 1)[0].split(', ')
-        for component in ('pi', 'agent'):
+        for component in ('pi', 'agent', 'proof-run'):
             self.assertIn(component, jobs)
             for selected, result, success in ((True, 'success', True), (True, 'failure', False),
                                               (True, 'skipped', False), (False, 'skipped', True)):
                 needs = {job: {'result': 'success'} for job in jobs}
-                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release')}
-                selection[component] = selected
+                selection = {job: False for job in jobs if job not in ('changes', 'gateway-release', 'proof-run')}
+                if component != 'proof-run':
+                    selection[component] = selected
                 needs[component]['result'] = result
                 needs['changes']['outputs'] = {'jobs': json.dumps(selection), 'gateway_release': 'false'}
-                done = subprocess.run(['python3', '-c', code], env={**os.environ, 'NEEDS': json.dumps(needs)},
+                env = {**os.environ, 'NEEDS': json.dumps(needs),
+                       'PROOF_REQUIRED': str(component == 'proof-run' and selected).lower()}
+                done = subprocess.run(['python3', '-c', code], env=env,
                                       capture_output=True, timeout=10)
                 self.assertEqual(done.returncode == 0, success, (component, selected, result, done.stderr))
 
