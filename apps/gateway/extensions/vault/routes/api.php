@@ -17,5 +17,5 @@ Route::middleware([
     Route::get('vault', [VaultController::class, 'status'])->name('vault:status');
     Route::put('vault', [VaultController::class, 'setup'])->name('vault:setup');
     Route::post('vault/sync', [VaultController::class, 'sync'])->name('vault:sync');
-    Route::delete('vault', [VaultController::class, 'teardown'])->name('vault:teardown');
+    Route::delete('vault', [VaultController::class, 'destroy'])->name('vault:destroy');
 });

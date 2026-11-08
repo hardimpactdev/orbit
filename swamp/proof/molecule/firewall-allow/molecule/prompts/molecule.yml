@@ -1,0 +1,81 @@
+# SPIKE. The prompt cases of swamp/proof/firewall/allow.cases.yaml (missing-input-prompts, missing-input-cancel, and the human form of
+# missing-input-noninteractive), as a second Molecule scenario next to `default`. Same driver, platforms and inventory as default.
+# Prerequisite: pexpect==4.9.0 in the same venv as Molecule (scripts/molecule-verify-spike installs it). The expect tasks run with that venv's python.
+# Run from the parent directory (firewall-allow/), in the task VM:
+#   molecule test -s prompts        # prepare (the target Node and its listeners) -> converge (the CLI in a terminal) -> verify (state)
+# The three cases run one after the other: two of them assert that the whole Gateway created no Operation.
+driver:
+  name: default
+  options:
+    managed: false
+
+# Molecule needs a platform list even when it manages none; these are the existing Nodes.
+platforms:
+  - name: nested-gateway
+  - name: nested-app-dev
+  - name: nested-app-prod
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      stdout_callback: ansible.builtin.default
+      callbacks_enabled: ansible.posix.profile_tasks
+      gathering: explicit
+      interpreter_python: auto_silent
+      # converge.yml leaves its results as cacheable facts; verify.yml reads them in the next ansible-playbook run. Own directory: the
+      # case hosts of this scenario have other names than those of default, but the stale `failures` of a run must not leak into the next.
+      fact_caching: jsonfile
+      fact_caching_connection: /tmp/molecule-firewall-allow-prompts-facts
+      fact_caching_timeout: 3600
+  inventory:
+    hosts:
+      all:
+        vars:
+          # The nested Gateway, as the outer VM reaches it. The caller is identified by its WireGuard address, so no token is needed.
+          gateway_url: https://10.45.0.1/api/v1
+          gateway_ca: /home/orbit/.orbit/nested-ca.pem
+          # The CLI under test, as the outer VM runs it: the checkout of the VM, the nested profile in ORBIT_HOME.
+          checkout: "{{ lookup('ansible.builtin.env', 'ORBIT_CHECKOUT') | default('/home/orbit/apps/orbit/workspace', true) }}"
+          orbit: [php, "{{ checkout }}/apps/cli/orbit"]
+          cli_env: {PATH: /usr/local/bin:/usr/bin:/bin, HOME: /home/orbit, ORBIT_HOME: /home/orbit/.orbit}
+          # In a terminal the CLI draws coloured, repainted prompts unless it is told not to (NO_COLOR wins over TERM and COLORTERM). The
+          # plain form is a log of frames, which the patterns of cases.yml read.
+          tty_env: "{{ cli_env | combine({'NO_COLOR': '1', 'TERM': 'xterm-256color'}) }}"
+          # Same switches as default (facts.yml reads `fast`). PROOF_FAST=1 reads the container facts once; it also polls every 1 s.
+          fast: "{{ lookup('ansible.builtin.env', 'PROOF_FAST') | default('0', true) == '1' }}"
+          poll_delay: "{{ 1 if fast else 5 }}"
+          # One port range per case, above the ranges of default (its offsets are 1..30 from the same base), so both can share a base.
+          port_base: "{{ lookup('ansible.builtin.env', 'PROOF_PORT_BASE') | default(47100, true) | int }}"
+          cases:
+            missing_input_prompts:        {port: "{{ port_base | int + 41 }}", port2: "{{ port_base | int + 42 }}"}
+            missing_input_cancel:         {}
+            missing_input_noninteractive: {port: "{{ port_base | int + 51 }}"}
+          # Listeners on the target: the setup step `listener` of the cases that name a port.
+          listener_ports: "{{ [cases.missing_input_prompts.port, cases.missing_input_prompts.port2, cases.missing_input_noninteractive.port] }}"
+        children:
+          control:
+            hosts:
+              localhost:
+                ansible_connection: local
+          # One host per case. They run serially (converge.yml): "no Operation was created" reads the Operation list of the whole Gateway.
+          case_hosts:
+            vars:
+              ansible_connection: local
+            hosts:
+              missing_input_noninteractive: {}
+              missing_input_cancel: {}
+              missing_input_prompts: {}
+          nodes:
+            vars:
+              ansible_connection: community.general.incus
+            hosts:
+              nested-gateway:  {ansible_incus_host: nested-gateway}
+              nested-app-dev:  {ansible_incus_host: nested-app-dev}
+              nested-app-prod: {ansible_incus_host: nested-app-prod}
+
+scenario:
+  test_sequence:
+    - prepare
+    - converge
+    - verify

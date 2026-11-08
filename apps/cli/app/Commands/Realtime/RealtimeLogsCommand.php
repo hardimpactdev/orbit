@@ -16,10 +16,11 @@ use App\Support\Realtime\RealtimeState;
 use App\Support\Realtime\RealtimeSubscriber;
 use App\Support\Realtime\WebSocketTransport;
 
-final class RealtimeTailCommand extends GatewayCommand
+final class RealtimeLogsCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'realtime:tail
+    protected $signature = 'realtime:logs
+        {--follow : Stream new events; realtime has no retained history}
         {--types= : Comma-separated event type filters, for example node.*,process.status}
         {--json : Print each event envelope as JSON}';
 
@@ -31,12 +32,16 @@ final class RealtimeTailCommand extends GatewayCommand
         GatewayConnectorFactory $connectors,
         WebSocketTransport $transport,
     ): int {
+        if ($this->option('follow') !== true) {
+            return $this->renderGatewayFailure('realtime.follow_required', 'Realtime has no retained history. Use orbit realtime:logs --follow.');
+        }
+
         $json = $this->option('json') === true;
 
         if (! $json && ! $this->consoleMode()->mayPrompt) {
             return $this->renderGatewayFailure(
                 'input.noninteractive_required',
-                'orbit realtime:tail requires an interactive terminal or --json in a non-interactive context.',
+                'orbit realtime:logs --follow requires an interactive terminal or --json in a non-interactive context.',
             );
         }
 

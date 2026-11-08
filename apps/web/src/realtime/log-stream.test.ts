@@ -550,3 +550,17 @@ it("shows the newer of the streamed and the polled lines", () => {
     expect(pickLogLines(streamed, ["polled"], 1_000)).toEqual(["streamed"]);
     expect(pickLogLines(streamed, ["polled"], 3_000)).toEqual(["polled"]);
 });
+
+it("opens and closes the Schedule UUID stream path", async () => {
+    const id = "123e4567-e89b-42d3-a456-426614174000";
+    const schedule = new LogTail({ kind: "schedules", id, lines: 100 }, () => undefined);
+    answers.POST!.push(opened(1));
+    schedule.connect(socket());
+    await vi.advanceTimersByTimeAsync(0);
+    schedule.dispose();
+    expect(calls("POST")[0]).toMatchObject({
+        path: `/api/v1/schedules/${id}/log-streams`,
+        body: { socket_id: "123.456", lines: 100 },
+    });
+    expect(calls("DELETE")[0]!.path).toBe(`/api/v1/schedules/${id}/log-streams/${streamId(1)}`);
+});

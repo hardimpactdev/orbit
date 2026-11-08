@@ -52,3 +52,5 @@ Instance runtime preparation installs captured Schedule definition copies throug
 - [`process`](/cli/process) manages long-running services. Process commands do not operate on Schedules.
 - [`doctor`](/cli/doctor) with `--family=schedule` reports Schedule drift.
 - [`instance:destroy`](/cli/instance/destroy) removes every Schedule of the Instance.
+
+[`schedule:logs`](/cli/schedule/logs) reads a bounded snapshot. `--follow` refuses until the fixed Agent release is pinned.

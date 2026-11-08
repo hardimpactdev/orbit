@@ -1,0 +1,15 @@
+---
+# missing-input-noninteractive, human form (firewall.node_id_invalid, no request). Exclusive, like cancel.
+- name: missing-input-noninteractive
+  block:
+    - name: No Operation was created, and UFW and the records did not change
+      ansible.builtin.assert:
+        that: [ops_before == ops_after, ufw_before == ufw_after, records_before == records_after]
+        quiet: true
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

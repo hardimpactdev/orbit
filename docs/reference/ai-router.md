@@ -17,7 +17,7 @@ The extension has one switch and one fleet setup. They are separate.
 
 - `orbit extension:enable ai-router` shows the `ai-router:*` commands, MCP tools, API operations, and the AI router section to every client. It deploys nothing. See [`extension`](/cli/extension).
 - `orbit ai-router:setup` deploys the collector Process and publishes `https://collector.ai-router.orbit`.
-- `orbit ai-router:teardown` stops the collector and withdraws the hostname.
+- `orbit ai-router:destroy` stops the collector and withdraws the hostname.
 - `orbit extension:disable ai-router` hides and refuses the extension. It does not tear down the collector.
 
 Certificate publication uses the shared [Node agent](/reference/node-agent#commands) Caddy commands. The extension keeps ownership of the collector hostname, publication intent, and error mapping.
@@ -62,7 +62,7 @@ Setup can run again. It keeps the read and control tokens, installs the delivere
 
 The Gateway records the delivered agent digest as the collector revision. Before changing that revision, it records pending activation on the Process. It clears that intent only after activation succeeds. An interrupted activation therefore retries even when the binary is already current. A completed unchanged retry does not restart the collector. Agent installation restarts running services that use the agent binary; a stopped collector stays stopped. Collector setup and teardown use fixed extension commands to remove the previous Python source files. The Gateway sends no program source or file paths.
 
-Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `ai-router:teardown` first.
+Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `ai-router:destroy` first.
 
 ## Follow the cache connection
 
@@ -238,7 +238,7 @@ Rotate the task key only on an incident, never on a schedule. Delete the setting
 Tear down the collector when collection should stop for the whole fleet.
 
 ```bash
-orbit ai-router:teardown
+orbit ai-router:destroy
 ```
 
 Teardown removes the collector Process and the previous Python source files, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.

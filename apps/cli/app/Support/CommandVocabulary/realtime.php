@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'actions' => ['tail'],
+    'actions' => ['logs'],
     'noun_endings' => [],
     'route_exceptions' => [],
 ];

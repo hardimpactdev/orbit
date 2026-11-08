@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Vault\DestroyVaultRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\SyncVaultRequest;
-use Orbit\Sdk\Requests\Vault\TeardownVaultRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -14,7 +14,7 @@ it('returns the admitted Vault Operation and preserves the retry key without exp
     $request = match ($action) {
         'setup' => new SetupVaultRequest('https://vault.orbit', 'client', 'client-secret-sentinel', 'password-sentinel', 'Orbit', 'Database', 'vault-retry'),
         'sync' => new SyncVaultRequest('vault-retry'),
-        'teardown' => new TeardownVaultRequest(false, 'vault-retry'),
+        'teardown' => new DestroyVaultRequest(false, 'vault-retry'),
     };
     $mock = new MockClient([$request::class => MockResponse::make([
         'data' => ['id' => 12, 'kind' => 'vault.'.$action, 'target_type' => 'vault', 'target_id' => 7, 'input' => [], 'status' => 'queued', 'sequence' => 1],

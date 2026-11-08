@@ -1,17 +1,17 @@
 ---
-title: "orbit ai-router:teardown"
-sidebarTitle: "ai-router:teardown"
+title: "orbit ai-router:destroy"
+sidebarTitle: "ai-router:destroy"
 description: "Stop the collector for the whole fleet, remove its Process, and withdraw `collector.ai-router.orbit` and its certificate. The Gateway also deletes the stored management key and the read and control tokens."
 ---
 
 ```bash
-orbit ai-router:teardown [--yes] [--json]
+orbit ai-router:destroy [--yes] [--json]
 ```
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--yes` | in noninteractive and JSON modes | Confirm the teardown without a prompt. |
+| `--yes` | in noninteractive and JSON modes | Confirm the destruction without a prompt. |
 
 In a terminal the command asks a default-No question that names the fleet effect. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing. To collect again, run `ai-router:setup` with the key file.
 
-The Gateway refuses the teardown and changes nothing while the `tasks` extension is enabled (`extension.required`). Task VMs hold no key that only the router could revoke, so a running task VM does not block it. See [Teardown](/reference/ai-router#teardown).
+The Gateway refuses destruction and changes nothing while the `tasks` extension is enabled (`extension.required`). Task VMs hold no key that only the router could revoke, so a running task VM does not block it. See [Teardown](/reference/ai-router#teardown).

@@ -1,0 +1,50 @@
+---
+# interrupted-reorder (changes-needed, failed, succeeded). Stage 1: the command stopped after it deleted the misplaced line. Stage 2: the repeat
+# put the line back above the deny. The stages are read from the snapshots of converge (s0 before, s1 after stage 1, s2 after stage 2); the final
+# state is the live read of verify.yml (`rows`, `rules`), and the probe is checked in verify.yml.
+- name: interrupted-reorder
+  vars:
+    allow_re: "{{ c.port }}/tcp +ALLOW IN +{{ src }}"
+    deny_re: 'proof:deny-interrupted_reorder$'
+    ports: ["{{ c.port | int }}", "{{ c.port | string }}"]
+    s0_rows: "{{ snaps.s0.ufw.split('\n') | select('search', '^\\[') | reject('search', '\\(v6\\)') | list }}"
+    s1_rows: "{{ snaps.s1.ufw.split('\n') | select('search', '^\\[') | reject('search', '\\(v6\\)') | list }}"
+    s0_allow: "{{ s0_rows | select('search', allow_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s0_deny: "{{ s0_rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s1_allow: "{{ s1_rows | select('search', allow_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s1_deny: "{{ s1_rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    allow: "{{ rows | select('search', allow_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    deny: "{{ rows | select('search', deny_re) | map('regex_replace', row_pattern, '\\1') | map('int') | list }}"
+    s1_failed: "{{ snaps.s1.records | selectattr('status', 'equalto', 'failed') | selectattr('port', 'in', ports) | list }}"
+    active: "{{ rules | selectattr('status', 'equalto', 'active') | selectattr('port', 'in', ports) | list }}"
+  block:
+    - name: The fixture was right, the allow line sat below its deny when the command started
+      ansible.builtin.assert:
+        that: [s0_allow | length == 1, s0_deny | length == 1, s0_allow | first > s0_deny | first]
+        quiet: true
+
+    - name: Stage 1, the deny is there, the allow line is gone, and one record says failed
+      ansible.builtin.assert:
+        that: [s1_deny | length == 1, s1_allow | length == 0, s1_failed | length == 1]
+        quiet: true
+
+    - name: Stage 1, nothing else changed
+      ansible.builtin.include_tasks: unchanged.yml
+      vars: {from_snap: s0, to_snap: s1, except_port: "{{ c.port }}"}
+
+    - name: Stage 2, the allow line is back above the deny, and one record is active
+      ansible.builtin.assert:
+        that: [allow | length == 1, deny | length == 1, allow | first < deny | first, active | length == 1]
+        quiet: true
+
+    - name: Stage 2, nothing else changed
+      ansible.builtin.include_tasks: unchanged.yml
+      vars: {from_snap: s1, to_snap: s2, except_port: "{{ c.port }}"}
+
+    - name: "{{ inventory_hostname }}: the checks of the case ended"
+      ansible.builtin.set_fact:
+        verified: true
+  rescue:
+    - name: "{{ inventory_hostname }}: record the failed check"
+      ansible.builtin.set_fact:
+        verify_failures: "{{ ansible_failed_task.name ~ ' | ' ~ (ansible_failed_result.assertion | default(ansible_failed_result.msg | default('?'))) }}"

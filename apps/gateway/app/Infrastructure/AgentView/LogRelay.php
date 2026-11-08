@@ -12,9 +12,11 @@ use App\Domain\Logs\LogStreamEndReason;
 use App\Domain\Logs\LogStreamRecordType;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Schedule;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -208,11 +210,12 @@ final readonly class LogRelay
         }
     }
 
-    private function record(LogStream $stream): Instance|Process|null
+    private function record(LogStream $stream): Instance|Process|Schedule|null
     {
         return match ($stream->recordType) {
             LogStreamRecordType::Instance => Instance::query()->with('environmentValues')->find($stream->recordId),
             LogStreamRecordType::Process => Process::query()->find($stream->recordId),
+            LogStreamRecordType::Schedule => Schedule::query()->where('status', LifecycleStatus::Active->value)->find($stream->recordId),
         };
     }
 

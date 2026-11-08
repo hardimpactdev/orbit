@@ -1,0 +1,11 @@
+# The command of the case family-ipv6, run on the task VM (the operator side) with the real CLI against the nested Gateway:
+# `orbit firewall:allow PORT --node=ID --from=<IPv6 source of the Gateway> --protocol=tcp --json`. Swamp does not run it. One host per case
+# (molecule.yml); prepare.yml has left the IPv6 addresses as cacheable facts.
+- ansible.builtin.import_playbook: ../default/facts.yml
+
+- name: Run the case
+  hosts: case_hosts
+  gather_facts: false
+  vars_files: [cases.yml]
+  tasks:
+    - ansible.builtin.import_tasks: act.yml

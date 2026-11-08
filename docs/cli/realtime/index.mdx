@@ -7,13 +7,13 @@ covers:
   - apps/cli/app/Support/Realtime/**
 ---
 
-The Gateway publishes [realtime events](/reference/events) on a private WebSocket channel. `realtime:show` shows where that channel is. `realtime:tail` connects to it and prints each event as it arrives. Realtime needs an active `websocket` role, as [Realtime events with Reverb](/solutions/realtime-reverb) describes.
+The Gateway publishes [realtime events](/reference/events) on a private WebSocket channel. `realtime:show` shows where that channel is. `realtime:logs --follow` connects to it and prints each event as it arrives. Realtime needs an active `websocket` role, as [Realtime events with Reverb](/solutions/realtime-reverb) describes.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`realtime:show`](/cli/realtime/show) | Show the Gateway's Reverb connection. |
-| [`realtime:tail`](/cli/realtime/tail) | Stream realtime Gateway events as they arrive. |
+| [`realtime:logs --follow`](/cli/realtime/logs) | Stream realtime Gateway events as they arrive. |
 
 Both commands accept `--json`.

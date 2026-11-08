@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Support\Realtime\WebSocketTransport;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -12,7 +13,7 @@ use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
 
 beforeEach(function (): void {
-    $this->orbitHome = sys_get_temp_dir().'/orbit-cli-realtime-tail-'.Str::uuid();
+    $this->orbitHome = sys_get_temp_dir().'/orbit-cli-realtime-logs-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
 });
 
@@ -28,11 +29,11 @@ afterEach(function (): void {
  * additionally requires a real interactive terminal, which a Pest process does not have, and
  * verifying it needs PTY evidence per the verifying-cli-output skill instead of an assertion here.
  */
-describe('realtime:tail', function (): void {
+describe('realtime:logs', function (): void {
     it('refuses in a non-interactive context without --json', function (): void {
         app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
 
-        $exitCode = Artisan::call('realtime:tail');
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true]);
 
         expect($exitCode)->toBe(1)
             ->and(str_replace("\n", '', Artisan::output()))->toContain('requires an interactive terminal or --json');
@@ -42,7 +43,7 @@ describe('realtime:tail', function (): void {
         app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
         MockClient::global(gateway_fixture_mock('realtime/realtime-show/unconfigured'));
 
-        $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true, '--json' => true]);
 
         expect($exitCode)->toBe(1)
             ->and(Artisan::output())->toContain('"code":"realtime.not_configured"');
@@ -54,7 +55,7 @@ describe('realtime:tail', function (): void {
         Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
-        $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true, '--json' => true]);
 
         expect($exitCode)->toBe(130)
             ->and(Artisan::output())->toContain('"type":"node.created"');
@@ -63,7 +64,7 @@ describe('realtime:tail', function (): void {
     it('rejects an invalid --types filter', function (): void {
         app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
 
-        $exitCode = Artisan::call('realtime:tail', ['--json' => true, '--types' => 'Not Valid!']);
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true, '--json' => true, '--types' => 'Not Valid!']);
 
         expect($exitCode)->toBe(1)
             ->and(Artisan::output())->toContain('"code":"input.invalid"');
@@ -79,7 +80,7 @@ describe('realtime:tail', function (): void {
         Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
-        $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true, '--json' => true]);
         $lines = array_values(array_filter(explode("\n", trim(Artisan::output()))));
 
         expect($exitCode)->toBe(130);
@@ -112,7 +113,7 @@ describe('realtime:tail', function (): void {
         Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
-        $exitCode = Artisan::call('realtime:tail', ['--json' => true, '--types' => 'node.*,process.status']);
+        $exitCode = Artisan::call('realtime:logs', ['--follow' => true, '--json' => true, '--types' => 'node.*,process.status']);
         $lines = array_values(array_filter(explode("\n", trim(Artisan::output()))));
         $decoded = array_map(fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR), $lines);
 
@@ -130,10 +131,18 @@ describe('realtime:tail', function (): void {
         Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('handshake'));
 
-        Artisan::call('realtime:tail', ['--json' => true]);
+        Artisan::call('realtime:logs', ['--follow' => true, '--json' => true]);
 
         Http::assertSent(fn ($request): bool => $request->url() === 'https://gateway.test/api/v1/broadcasting/auth'
             && $request['socket_id'] === '123.456'
             && $request['channel_name'] === 'private-orbit');
     });
+});
+
+it('requires follow for realtime logs because no history is retained', function (): void {
+    $mock = MockClient::global();
+    expect(Artisan::call('realtime:logs', ['--json' => true]))->toBe(1)
+        ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('realtime.follow_required');
+    $mock->assertNothingSent();
+    expect(app(Kernel::class)->all())->not->toHaveKey('realtime:tail');
 });
