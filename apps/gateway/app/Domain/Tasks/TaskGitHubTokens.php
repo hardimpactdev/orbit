@@ -38,7 +38,7 @@ use Illuminate\Support\Str;
  *   A sync run gets the same header without asking: the Gateway writes it as it starts the run ({@see self::writeClone()}).
  * - `dependencies` writes the Composer `auth.json` and the `.npmrc` of the setup steps: a read token of the installation, or an empty configuration,
  *   and the token alone for the step that revokes it.
- * - `publish` writes the write token for the pull request and its Git authorization header. An approved push of a cancel takes the token only.
+ * - `publish` writes the write token for the pull request and its Git authorization header.
  * - `pull_request` writes the write token of one pull request step: ready, merge, or the comment of a review round.
  * - `dependency_merge` writes the write and read tokens of a dependency batch squash.
  * - no purpose, for a `tasks.check` handoff, writes the write token, the Checks read token and the Git authorization header of its CI wait.
@@ -239,13 +239,9 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     private function publish(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
         // A publish holds the token names in its own intent; a prep run, a prep fix and a review round hold them in the intent of their publish step.
-        // The approved push of a cancel holds the token name beside its remote and takes no Git authorization header.
-        $push = ValidatedData::object($operation->input['push'] ?? []);
-        $cancelled = GitHubRepository::fromOrigin(is_string($push['remote'] ?? null) ? $push['remote'] : '');
         [$name, $references, $members] = match ($operation->kind) {
             'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
             'tasks.prep', 'tasks.prep_fix', 'tasks.review_round' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
-            'tasks.cancel' => [$cancelled === null ? null : $cancelled->owner.'/'.$cancelled->name, isset($push['github_token']) ? ['github_token' => $push['github_token']] : null, ['github_token']],
             default => throw $this->forbidden(),
         };
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);

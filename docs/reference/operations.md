@@ -107,7 +107,7 @@ A `tasks.script` and a `tasks.check` capture their budget at admission in `input
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
-The other task VM workflows (`task-vm-workspace`, `task-approved-push` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
+The other task VM workflows (`task-vm-workspace` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
@@ -485,8 +485,8 @@ The Gateway does not load those deleted interfaces.
 Synchronous Cluster changes that would move an Analytics tracking Route return
 `route.analytics_native_required` before changing records, LAN rules or DNS.
 Those changes require the native Route workflow.
-Task workspace removal waits for native publication when approved work has not
-been pushed.
+Task workspace removal never pushes or wakes a task VM: cancel and complete first
+refuse while origin lacks the latest approved commit.
 
 The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. CI never applies grants or reads credentials. The swamp role applies this manifest to serve: its convergence and every release Swamp load render it into serve's grants directory and run `swamp access reload` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)).
 

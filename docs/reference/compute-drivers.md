@@ -434,11 +434,11 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task), then runs the release as the last step of its own run.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/tasks/vm-release.mmd`). `tasks:cancel` and `tasks:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `tasks:cancel` runs the release as the last step of its own run.
 
-Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains the transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM starts before preservation is attempted.
+Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
 
-The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A failed push or a refused teardown keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
+The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
 A row without a slot number, such as a VM of the old pool, has no release; its removal is refused with `task_vm.release_unavailable` and an operator deletes the VM on its host. Rows the old pool left in `destroying` were recorded `destroyed`.
 

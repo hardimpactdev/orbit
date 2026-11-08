@@ -1248,21 +1248,23 @@ A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.age
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel runs under the group execution lock before it pushes approved work or removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
+Cancel runs under the group execution lock before it removes the checkout. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also removes the unattached workspace that the task [owns](#workspace-ownership).
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
-- **Approved work not on origin.** The cancel run pushes the latest approved commit to `task-{id}` without force. You can open a pull request from it. The VM never holds the push token.
-- **Failed push.** The run fails before any removal. The task and its VM stay.
-- **Parked VM with approved work.** A parked VM cannot push. Cancel refuses with HTTP 409 `tasks.push_failed`; publish the work first.
-- **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
+- **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `tasks:publish` first; it resumes a parked VM.
+- **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
 - **Confirmed VM power-off.** Cancel ends the task and keeps its Instance attached after the provider confirms power-off. It requests `removal_failure` assistance. Missing or stale Node observations do not permit this shortcut.
-- **Retry after power-off.** Once the VM is available, cancel retries preservation and removal. A failed or pending push keeps the workspace.
+- **Retry after power-off.** Once the VM is available, cancel retries removal.
 - **Removal refused.** Cancel returns the error and keeps the task. The task requests `removal_failure` assistance in every status.
 
-Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
+Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or a task VM. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
+
+Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
+
+A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. When Swamp refuses the cancel's start, the cancel fails and the VM is marked `failed`, so another cancel can reserve it again. Uncommitted changes and work that no review approved go with the VM.
 
 When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 
@@ -1272,9 +1274,9 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 `tasks:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
-Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
+Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
-Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown, retains recorded agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
+Task VM cleanup is the release `task_vm.slot_release`. `tasks:cancel` runs it as the last step of its own run. `tasks:complete` runs the Project teardown and retains recorded agent transcripts, admits the release, and answers `tasks.workspace_waiting` until the release has deleted the VM, the Node and the workspace Instance. Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`; a later complete retries. A VM without a slot number has no release and refuses with `task_vm.release_unavailable`.
 
 ### Direct lifecycle acknowledgement
 
