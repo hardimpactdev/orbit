@@ -15,7 +15,7 @@ The `database-server-update` fixtures replay [`database:server:update --require-
 
 Node enrollment fixtures record the real HTTP 202 admission and a separate terminal Operation read. The CLI replays both, so a queued response cannot be mistaken for an active Node. Native identity observations supply the completion fixture.
 
-The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists.
+The `node-show` and `project-show` fixtures hold the record, and for a Node its `access`. They carry no exclusion lists. Node list and show also carry `cluster_name` and the same `assignments` projection as `node:role:list`. `NodeQueryFixturesTest` records these two responses from the Gateway; the CLI contract tests replay them.
 
 The `nodes/node-metrics` fixture carries a retained agent snapshot with its original `observed_at`, shared `agent` state, and `possibly_outdated` flag. SDK and CLI tests replay the whole snapshot. Gateway tests cover offline retention, missing snapshots, access refusals, and replacement by later agent reports.
 

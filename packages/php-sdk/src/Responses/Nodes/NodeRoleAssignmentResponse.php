@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Nodes;
 
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
@@ -113,6 +114,7 @@ final readonly class NodeRoleAssignmentResponse
             || is_string($value)
             && $value !== ''
             && strlen($value) <= self::MAX_FAILED_STEP_LENGTH
-            && preg_match('/\A[^\p{Cc}\p{Cf}]+\z/uD', $value) === 1;
+            && preg_match('/\A[^\p{Cc}\p{Cf}]+\z/uD', $value) === 1
+            && new CredentialRedactor()->redactText($value) === $value;
     }
 }

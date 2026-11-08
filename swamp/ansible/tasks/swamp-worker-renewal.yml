@@ -1,5 +1,5 @@
 ---
-# The native cfgmgmt step applies the worker template after this phase. It starts the timer only after both workers are started.
+# The native cfgmgmt step applies the worker template after this phase. It starts the timer only after all three workers are started.
 - name: Make the Swamp runtime folder
   ansible.builtin.file: { path: /usr/local/lib/orbit-swamp/tasks, state: directory, owner: root, group: root, mode: '0755' }
 - name: Install sequential worker renewal
@@ -12,6 +12,7 @@
   loop:
     - {src: swamp-worker-renewal.yml, dest: worker-renewal.yml}
     - {src: tasks/swamp-worker-renew-slot.yml, dest: tasks/swamp-worker-renew-slot.yml}
+    - {src: tasks/swamp-worker-connections.yml, dest: tasks/swamp-worker-connections.yml}
     - {src: tasks/swamp-worker-renew-verify.yml, dest: tasks/swamp-worker-renew-verify.yml}
   loop_control: {label: "{{ item.dest }}"}
 - name: Write worker renewal units

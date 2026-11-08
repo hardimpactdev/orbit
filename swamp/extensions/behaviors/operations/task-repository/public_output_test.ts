@@ -222,6 +222,23 @@ Deno.test("adversarial 256 KiB text is redacted in linear time", () => {
     }
 });
 
+Deno.test("repeated field names keep each value's quoting, header and metric rules", () => {
+    assertEquals(
+        redactText([
+            'token=first token="two words" token={"nested":"private"}',
+            '"Cookie": "first"\nCookie: second and third',
+            'token_count=12 token_count=private token_count=null',
+            'public_key=visible public_key="still visible" key=prose',
+        ].join("\n")),
+        [
+            'token=[REDACTED] token=[REDACTED] token=[REDACTED]',
+            '"Cookie": [REDACTED]\nCookie: [REDACTED]',
+            'token_count=12 token_count=[REDACTED] token_count=null',
+            'public_key=visible public_key="still visible" key=prose',
+        ].join("\n"),
+    );
+});
+
 Deno.test("session identifiers are secret fields in text", () => {
     assertEquals(
         redactText(

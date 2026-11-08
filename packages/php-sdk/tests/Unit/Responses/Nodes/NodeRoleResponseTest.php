@@ -93,6 +93,9 @@ describe('node role assignment response transport', function (): void {
         'malformed UTF-8' => ["converge:Check \xFF"],
         'Unicode control' => ["converge:Check\u{009B}Ubuntu"],
         'Unicode formatting' => ["converge:Check\u{202E}Ubuntu"],
+        'credential assignment' => ['converge:password=step-secret-sentinel'],
+        'credential header' => ['converge:Authorization:step-secret-sentinel'],
+        'bearer credential' => ['converge:Bearer step-secret-sentinel'],
         ...array_map(
             static fn (int $byte): array => ['converge:Check'.chr($byte).'Ubuntu'],
             [...range(0, 31), 127],

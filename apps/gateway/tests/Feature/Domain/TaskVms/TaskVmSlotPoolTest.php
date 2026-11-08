@@ -71,7 +71,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 uses(LazilyRefreshDatabase::class);
 
 /** A task VM host of `$maxVms` slots, with a base snapshot unless `$snapshot` is false. */
-function slotPoolHost(int $maxVms = 6, bool $snapshot = true): array
+function slotPoolHost(int $maxVms = 9, bool $snapshot = true, ?int $taskMaxVms = null): array
 {
     $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
     $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux',
@@ -80,7 +80,7 @@ function slotPoolHost(int $maxVms = 6, bool $snapshot = true): array
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     config(['proof.project' => $project->id]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB')],
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $maxVms, 4, '8GiB', '20GiB', taskMaxVms: $taskMaxVms)],
         '/pi', str_repeat('a', 64), ['gpt-6']));
     $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
         : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
@@ -176,8 +176,8 @@ it('takes the lowest free slot number and mints a fresh identity, its Node activ
     $first = $pool->take(slotPoolGroup($project));
     $second = $pool->take(slotPoolGroup($project));
 
-    expect($first->name)->toBe('beast-tvm-1')->and($first->slot_number)->toBe(1)->and($first->state)->toBe(TaskVmState::Provisioning)
-        ->and($second->name)->toBe('beast-tvm-2')->and($second->wireguard_ip)->not->toBe($first->wireguard_ip);
+    expect($first->name)->toBe('beast-tvm-2')->and($first->slot_number)->toBe(2)->and($first->state)->toBe(TaskVmState::Provisioning)
+        ->and($second->name)->toBe('beast-tvm-3')->and($second->wireguard_ip)->not->toBe($first->wireguard_ip);
     $node = $first->node;
     expect($node)->toBeInstanceOf(Node::class)->and($node->status)->toBe(LifecycleStatus::Active)
         ->and($node->agent_secret_hash)->toBe(hash('sha256', (string) $first->agent_secret))
@@ -191,18 +191,18 @@ it('takes the lowest free slot number and mints a fresh identity, its Node activ
     $old = [$first->wireguard_private_key, $first->agent_secret];
     app(TaskVmSlotReleaseProjection::class)->record($first, true, null);
     $third = $pool->take(slotPoolGroup($project));
-    expect($third->slot_number)->toBe(1)->and($third->id)->not->toBe($first->id)
+    expect($third->slot_number)->toBe(2)->and($third->id)->not->toBe($first->id)
         ->and([$third->wireguard_private_key, $third->agent_secret])->not->toBe($old);
 });
 
-it('refuses when no host has room, and leaves the asked number of slots free, as a report-only proof asks', function (): void {
+it('keeps the reserve free when tasks fill the host', function (): void {
     [, $project] = slotPoolHost(maxVms: 6);
     $pool = app(TaskVmSlotPool::class);
-
-    expect(fn () => $pool->take(slotPoolGroup($project), keepFree: 1))->not->toThrow(TaskCapacityException::class)
-        ->and(fn () => $pool->take(slotPoolGroup($project), keepFree: 1))->toThrow(TaskCapacityException::class);
     $pool->take(slotPoolGroup($project));
-    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class, 'outside the CI/refresh reserve');
+    $pool->take(slotPoolGroup($project), proof: true);
+    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
 });
 
 it('starts a group only from a base snapshot, while a refresh takes a slot on its own host before the host has one', function (): void {
@@ -961,4 +961,159 @@ it('ends a removal failure assistance when the release deletes the group\'s work
 
     expect($failed->refresh()->assistance_requested)->toBeFalse()->and($failed->assistance_kind)->toBeNull()->and($failed->taskable_id)->toBeNull()
         ->and($other->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)->and($other->assistance_requested)->toBeTrue();
+});
+
+it('never lets task work take the reserved VM place', function (): void {
+    [, $project] = slotPoolHost(maxVms: 9);
+    $pool = app(TaskVmSlotPool::class);
+    $pool->take(slotPoolGroup($project));
+    $pool->take(slotPoolGroup($project));
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    expect(TaskVm::query()->live()->pluck('slot_number')->all())->toBe([2, 3]);
+});
+
+it('lets CI use the reserve while task work fills the task places', function (): void {
+    [, $project] = slotPoolHost(maxVms: 9);
+    $pool = app(TaskVmSlotPool::class);
+    $pool->take(slotPoolGroup($project));
+    $pool->take(slotPoolGroup($project));
+
+    $ci = $pool->take(slotPoolGroup($project), proof: true);
+
+    expect($ci->slot_number)->toBe(1);
+    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
+});
+
+it('lets a refresh use the shared reserve while task work fills the task places', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 9);
+    $pool = app(TaskVmSlotPool::class);
+    $pool->take(slotPoolGroup($project));
+    $pool->take(slotPoolGroup($project));
+
+    $refresh = $pool->take(null, $host->id);
+
+    expect($refresh->slot_number)->toBe(1)->and($refresh->group_id)->toBeNull();
+});
+
+it('counts an occupied reserve once and keeps the full task budget available', function (): void {
+    [, $project] = slotPoolHost(maxVms: 9);
+    $pool = app(TaskVmSlotPool::class);
+    $ci = $pool->take(slotPoolGroup($project), proof: true);
+
+    expect($ci->slot_number)->toBe(1);
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2)
+        ->and($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('exposes no CI-only host capacity to task work or operator proofs', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 6);
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    $pool = app(TaskVmSlotPool::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    expect(TaskVm::query()->count())->toBe(0);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($host->id);
+    expect($pool->take(null, $host->id)->slot_number)->toBe(2);
+    expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+});
+
+it('prefers CI-only capacity before a shared host with more room and keeps refresh pinned', function (): void {
+    [$beast, $project, $build] = slotPoolHost(maxVms: 12);
+    $sabre = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
+    $copy = $build->replicate();
+    $copy->host_node_id = $sabre->id;
+    $copy->save();
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [...$settings->hosts, new TaskVmHost($sabre->id, 'orbit-tasks', 'orbittask0', '10.252.12.0/24', 6, 6, '12GiB', '20GiB', ciOnly: true)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
+    expect($pool->take(null, $beast->id)->host_node_id)->toBe($beast->id);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($sabre->id);
+    expect($pool->take(slotPoolGroup($project), null, true)->host_node_id)->toBe($beast->id);
+    expect(fn () => $pool->take(null, $sabre->id))->toThrow(TaskCapacityException::class);
+});
+
+it('limits task claims by VM count while CI and refresh can use the remaining capacity', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
+    $pool = app(TaskVmSlotPool::class);
+    $first = $pool->take(slotPoolGroup($project));
+    $first->update(['state' => TaskVmState::Parked]);
+    $pool->take(slotPoolGroup($project));
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    expect($pool->take(slotPoolGroup($project), proof: true)->host_node_id)->toBe($host->id);
+    expect($pool->take(null, $host->id)->host_node_id)->toBe($host->id);
+    expect(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
+});
+
+it('does not charge CI or refresh claims to the task limit', function (bool $refresh): void {
+    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
+    $pool = app(TaskVmSlotPool::class);
+    $ciGroup = slotPoolGroup($project);
+    $proof = $pool->take($refresh ? null : $ciGroup, $host->id, proof: ! $refresh);
+    if (! $refresh) {
+        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $ciGroup->id,
+            'status' => OperationStatus::Succeeded, 'input' => ['ci_reserve' => true], 'triggered_by' => 'proof-run']);
+    }
+    expect($proof->slot_number)->toBe(1);
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2);
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+})->with(['CI' => false, 'base refresh' => true]);
+
+it('keeps task limits independent on each host', function (): void {
+    [$beast, $project, $build] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
+    $shark = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '10.44.0.11', 'user' => 'orbit']));
+    $copy = $build->replicate();
+    $copy->host_node_id = $shark->id;
+    $copy->save();
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [...$settings->hosts, new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.252.11.0/24', 12, 6, '12GiB', '20GiB', taskMaxVms: 2)], '/pi', str_repeat('a', 64), ['gpt-6']));
+    $pool = app(TaskVmSlotPool::class);
+    $pool->take(slotPoolGroup($project), $beast->id);
+    $pool->take(slotPoolGroup($project), $beast->id);
+    expect(fn () => $pool->take(slotPoolGroup($project), $beast->id))->toThrow(TaskCapacityException::class);
+    expect($pool->take(slotPoolGroup($project))->host_node_id)->toBe($shark->id);
+});
+
+it('counts small task VMs individually and frees their task claim only on release', function (): void {
+    [, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
+    $pool = app(TaskVmSlotPool::class);
+    $first = $pool->take(slotPoolGroup($project));
+    $first->update(['size' => TaskVmSize::Normal, 'state' => TaskVmState::Parked]);
+    $pool->take(slotPoolGroup($project))->update(['size' => TaskVmSize::Normal]);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    app(TaskVmSlotReleaseProjection::class)->record($first, true, null);
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(2);
+});
+
+it('does not charge CI claims in public slots to task work', function (): void {
+    [, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 2);
+    $pool = app(TaskVmSlotPool::class);
+    foreach ([1, 2] as $number) {
+        $group = slotPoolGroup($project);
+        expect($pool->take($group, proof: true)->slot_number)->toBe($number);
+        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id,
+            'status' => OperationStatus::Running, 'input' => ['ci_reserve' => true], 'triggered_by' => 'proof-run']);
+    }
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(3);
+    expect($pool->take(slotPoolGroup($project))->slot_number)->toBe(4);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('allows only proofs when the task count limit is zero', function (): void {
+    [$host, $project] = slotPoolHost(maxVms: 12, taskMaxVms: 0);
+    $pool = app(TaskVmSlotPool::class);
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+    expect($pool->take(slotPoolGroup($project), proof: true)->slot_number)->toBe(1);
+    expect($pool->take(null, $host->id)->slot_number)->toBe(2);
 });

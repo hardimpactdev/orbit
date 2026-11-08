@@ -35,13 +35,13 @@ final readonly class TaskVmSlotPool
         private ProofSettings $proof) {}
 
     /**
-     * Takes a slot in the admission transaction: on the host with the most room that has a base snapshot, or on `$host`, with `$keepFree`
-     * slots of it left free as a report-only proof asks. It records the task VM and mints its identity: the Node with its `app-dev` role
+     * Takes a slot in the admission transaction: on the host with the most room that has a base snapshot, or on `$host`. Only an authenticated CI
+     * proof (`$proof`) or a refresh (no group) may take the reserve, slot 1, or use a CI-only host. CI prefers CI-only hosts; a refresh stays on its own host. It records the task VM and mints its identity: the Node with its `app-dev` role
      * and `pi-server` Process, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node now so nothing is read back.
      *
      * @throws TaskCapacityException when no host has room, or the group's Project is not the one whose checkout the base carries
      */
-    public function take(?Task $group, ?int $host = null, int $keepFree = 0): TaskVm
+    public function take(?Task $group, ?int $host = null, bool $proof = false): TaskVm
     {
         // The base VM carries the checkout of the proof Project only, so a task VM can serve no other Project.
         if ($group !== null && $group->project_id !== $this->proof->projectId()) {
@@ -51,21 +51,25 @@ final readonly class TaskVmSlotPool
         // A group needs a host with a base snapshot; a refresh proves the snapshot it just took, before the Gateway records it.
         $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
             && ($group === null || $this->currentImage($pair[1], $pair[0]) !== null)));
-        $free = $this->capacity->freeSlots($hosts, $keepFree * $size->slots());
-        arsort($free);
+        $free = $this->capacity->freeSlots($hosts, $proof || $group === null);
+        $ciOnly = [];
+        foreach ($hosts as [$location]) {
+            $ciOnly[$location->nodeId] = $location->ciOnly;
+        }
+        uksort($free, static fn (int $a, int $b): int => ($ciOnly[$b] <=> $ciOnly[$a]) ?: ($free[$b] <=> $free[$a]));
         $room = array_filter($free, static fn (int $slots): bool => $slots >= $size->slots());
         // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
         $skipped = $group === null ? [] : array_filter($room, static fn (int $slots, int $id): bool => ! app(TaskVmSeedFloor::class)->allows($id), ARRAY_FILTER_USE_BOTH);
         $room = array_diff_key($room, $skipped);
         if ($room === []) {
             $names = Node::query()->whereKey(array_keys($skipped))->get()->mapWithKeys(static fn (Node $node): array => [$node->id => $node->name])->all();
-            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: no host has room for another task VM'.($keepFree > 0 ? " with {$keepFree} more left free" : '').'.'
+            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: no host has room for another task VM'.($proof || $group === null ? ' (including the shared CI/refresh reserve).' : ' within the task VM limit and outside the CI/refresh reserve.')
                 .($names === [] ? '' : self::staleImages($names)));
         }
         $node = Node::query()->findOrFail(array_key_first($room));
         $used = TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotNull('slot_number')->get(['slot_number'])
             ->map(static fn (TaskVm $vm): ?int => $vm->slot_number)->all();
-        $number = 1;
+        $number = $proof || $group === null ? 1 : 2;
         while (in_array($number, $used, true)) {
             $number++;
         }

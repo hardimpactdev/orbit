@@ -56,8 +56,14 @@ describe('node metrics contract', function (): void {
             'columns' => 120,
             'replies' => [
                 ['class' => ListNodesRequest::class, 'body' => ['data' => $outcome === 'empty' ? [] : [
-                    ['id' => 17, 'name' => 'app-dev'],
-                    ['id' => 94, 'name' => 'app-prod'],
+                    ['id' => 17, 'name' => 'app-dev', 'roles' => ['app-dev'], 'assignments' => [[
+                        'id' => 12, 'role' => 'app-dev', 'status' => 'failed',
+                        'failed_step' => 'converge:Require supported Ubuntu', 'error_code' => 'node_role.convergence_failed',
+                    ]]],
+                    ['id' => 94, 'name' => 'app-prod', 'roles' => ['app-prod'], 'assignments' => [[
+                        'id' => 13, 'role' => 'app-prod', 'status' => 'failed',
+                        'failed_step' => 'converge:Check the role', 'error_code' => 'node_role.convergence_failed',
+                    ]]],
                 ]]],
                 ['class' => ShowNodeMetricsRequest::class, 'body' => $body],
             ],
@@ -107,6 +113,13 @@ describe('node metrics contract', function (): void {
     });
 
     it('resolves a failed Node by name before looking up metrics with its numeric ID', function (string $label): void {
+        $assignment = [
+            'id' => 12,
+            'role' => 'app-dev',
+            'status' => 'failed',
+            'failed_step' => $label,
+            'error_code' => 'node_role.convergence_failed',
+        ];
         $body = json_decode(gateway_fixture('nodes/node-metrics/default')['body'], true, flags: JSON_THROW_ON_ERROR);
         $mock = MockClient::global([
             ListNodesRequest::class => MockResponse::make([
@@ -115,6 +128,7 @@ describe('node metrics contract', function (): void {
                     'name' => 'app-dev',
                     'status' => 'active',
                     'roles' => ['app-dev'],
+                    'assignments' => [$assignment],
                     'failed_step' => $label,
                     'error_code' => 'node_role.convergence_failed',
                 ]],
@@ -125,7 +139,10 @@ describe('node metrics contract', function (): void {
         $connector = new GatewayConnector('https://10.44.0.1');
         $nodes = $connector->send(new ListNodesRequest)->dtoOrFail();
         expect($nodes)->toBeInstanceOf(NodesResponse::class)
-            ->and($nodes->nodes[0]->failedStep)->toBe($label);
+            ->and($nodes->nodes[0]->failedStep)->toBe($label)
+            ->and($nodes->nodes[0]->roles)->toBe(['app-dev'])
+            ->and($nodes->nodes[0]->assignments[0]->failedStep)->toBe($label)
+            ->and($nodes->nodes[0]->toArray()['assignments'])->toBe([$assignment]);
 
         // Exercise the inherited resolver without changing metrics' numeric-only input contract.
         $nodeId = new ReflectionMethod(ShowNodeMetricsCommand::class, 'resolveNodeId')->invoke(

@@ -16,25 +16,6 @@ final readonly class IncusHost
 {
     public function __construct(private AgentCommandRunner $agents) {}
 
-    public function prepare(TaskVmHost $host, Node $node): void
-    {
-        try {
-            $result = $this->agents->run($node, 'incus.prepare-host', [
-                'project' => $host->project, 'network' => $host->network, 'cidr' => $host->cidr,
-                'pool' => $host->pool, 'zfs_dataset' => $host->zfsDataset,
-            ]);
-        } catch (AgentCommandRefused $error) {
-            if ($error->errorCode !== 'task_vm.setup_failed') {
-                throw $error;
-            }
-            $reason = is_string($error->details['reason'] ?? null) ? $error->details['reason'] : $error->getMessage();
-            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup failed on Node [{$node->name}]: {$reason}");
-        }
-        if (($result['ready'] ?? null) !== true) {
-            throw new TaskVmException('task_vm.setup_failed', "Task VM host setup did not confirm readiness on Node [{$node->name}].");
-        }
-    }
-
     /** @return list<string> */
     public function volumeNames(TaskVmHost $host, Node $node): array
     {
