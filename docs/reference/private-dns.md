@@ -15,7 +15,7 @@ covers:
 
 Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It is one stock dnsmasq on the Node with the `vpn` role. The Gateway renders the complete private DNS from its database, and one Ansible phase writes it. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the vpn Node's dnsmasq, the answers it gives, and how to inspect or repair one peer.
 
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) holds the VPN design. Its [draft Cluster Router amendment](/decisions/0248-render-private-dns-as-desired-state#cluster-router-resolver) adds LAN resolvers and member selection before cutover. The [publication chart](/cli/dns/publish) and peer chart below show that target design; implementation waits for their review. The VPN endpoint itself gives every caller the Router WireGuard address.
+[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) holds the VPN design. Its [Cluster Router amendment](/decisions/0248-render-private-dns-as-desired-state#cluster-router-resolver) adds LAN resolvers and member selection before cutover. The [publication chart](/cli/dns/publish) and peer chart below show the approved design being implemented. The VPN endpoint itself gives every caller the Router WireGuard address.
 
 Each Route, Node, Cluster or role change stores its rows first, then publishes the whole state through the shared `dns-publish` child of its native run. A Gateway code path that must have DNS live before it goes on admits a `dns.publish` operation and waits for its end. Private DNS publication starts no other Operation.
 
@@ -30,7 +30,7 @@ Managed Linux peers send only Orbit names to private DNS. The Gateway renders th
 
 A routing domain for an outside-TLD Route, such as `~app.example.com`, also captures descendants. It creates no private wildcard answer: VPN DNS still forwards descendants that have no private record. Resolver routing cannot select only the exact name. A private Route on an apex such as `example.com` also moves every descendant lookup to VPN DNS; choose a narrower name when those descendants must keep public resolution.
 
-Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. A peer needs `fleet.peer_dns` only while its policy differs from the one its last successful `fleet.peer_dns` run applied. The digest covers the effective DNS server, peer public key and routing domains.
+Provisioning, `node:converge`, and [repair](#repair-one-peer) apply the render. A peer needs `fleet.peer_dns` only while its policy differs from the one its last successful `fleet.peer_dns` run applied. The digest covers the effective VPN and Cluster scopes, delegate capability, Router identity and LAN address, peer public key and routing domains. Reconcile and Doctor use the same policy. Repair restores that policy without switching an unhealthy Cluster to VPN.
 
 No schedule admits peer DNS. After a policy change, run `orbit:peer-dns-reconcile`, which admits every peer whose policy differs. A failed peer stays changed until you fix the cause and run it again.
 
@@ -52,7 +52,7 @@ When repair moves an old underlay selection to `orbit`, it first requires a netw
 
 Every managed split apply requires a usable non-`orbit` per-link or global resolver before switching. If none exists, it refuses with `vpn.peer_dns_uplink_missing` and retains or restores the previous DNS state. A durable transaction snapshot restores all preceding uplink resolver settings, including its default-route flag, if migration fails. Successful migration leaves the uplink default-route decision with networkd.
 
-A [Node without roles](/reference/node-provisioning#nodes-without-roles) keeps its client-owned `DNS =` line. macOS, the VPN holder, and the Gateway's separate bootstrap resolver are outside this managed peer policy. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override.
+A managed Linux Cluster member is eligible without roles when it has managed SSH enrollment. Other [Nodes without roles](/reference/node-provisioning#nodes-without-roles) keep their client-owned `DNS =` line. macOS, the VPN holder, and the Gateway's separate bootstrap resolver are outside this managed peer policy. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override.
 
 ### Inspect a peer
 
@@ -178,11 +178,11 @@ In both cases, publication still finds the `vpn` Node and publishes there. The r
 
 Private DNS answers select an address. They do not change how application traffic is routed. [Routes](/reference/routes#set-up-private-traffic) explains how a resolved Route reaches its workload.
 
-Every caller gets the same answer. A Cluster name resolves to the Router's WireGuard address, also for a Cluster member that shares the Router's LAN. Such a member reaches the Router through the WireGuard hub. The Router's LAN address is never published.
+The vpn Node answers every caller with WireGuard addresses. Each Cluster Router resolver answers its LAN members with LAN addresses for that Cluster. Eligible managed Linux members select it through a Cluster-only systemd-resolved DNS delegate; public DNS stays on its existing scope. Other names and unsupported members use VPN DNS.
 
-This changed the A answers of two groups of callers, as [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#consequences) lists:
+The address comparison is as [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#consequences) lists:
 
-- Beast, sabre and shark: `test` and 119 exact `*.test` names go from `192.168.6.20` to `10.44.0.7`. The round trip from shark to beast grows from 0.18 ms over the LAN to 8.9 ms through the WireGuard hub.
+- Beast, sabre and shark: Cluster names keep the LAN path through the Router resolver (`192.168.6.20`). Direct VPN queries return `10.44.0.7`. Route ownership decides more specific exceptions.
 - App-prod: 13 public names go from `10.0.0.4` to its own WireGuard address `10.44.0.4`. No traffic path changes.
 
 Whether the first change is wanted is Nick's decision. The phase and the renderer data keep both outcomes possible.
@@ -277,11 +277,11 @@ The former `~.` default is rejected because a VPN DNS outage also breaks public 
 
 The Gateway repairs VPN DNS, so it must resolve ordinary names while VPN DNS is down. It therefore routes only the private domain to VPN DNS. `~.` on the Gateway machine is rejected for that reason. Resolving private names inside the CLI is rejected, because every other tool on the machine would still fail. Static `/etc/hosts` entries are rejected, because the records move with their roles.
 
-### One answer for every caller
+### Resolver selection gives LAN answers
 
-dnsmasq cannot choose an answer by the source of a query: `localise-queries` keys on the receiving interface, and every WireGuard query arrives on `orbit`. A custom listener could, but it needs its own codec, sockets, release and requester catalog. [ADR 0248](/decisions/0248-render-private-dns-as-desired-state) removes them. The cost is that a Cluster member on the Router's LAN reaches the Router through the WireGuard hub.
+dnsmasq answers from one projection per resolver. The VPN projection uses WireGuard addresses. A Cluster Router projection uses LAN addresses for its Cluster and forwards unmatched queries to VPN DNS. One Gateway address-selection rule renders both in the same revision.
 
-A Cluster DNS on each Router that answers the LAN address, with a member step that selects it first, is rejected. It needs a unit and a phase on every Router, a systemd-resolved delegate on every member, and automatic recovery after a fallback, and a failure of one Router's dnsmasq stops its names.
+Managed Linux members with LAN addresses and systemd 258 or newer select a Cluster-only DNS delegate. Unsupported members keep the complete VPN policy and Doctor reports the missing capability. There is no automatic fallback when the LAN or Router resolver fails: Cluster lookups fail until repaired, and Doctor reports it. Public DNS is unchanged. See [member selection](/decisions/0248-render-private-dns-as-desired-state#member-selection-and-persistence) for persistence and withdrawal ordering.
 
 ### Complete state, newest revision wins
 

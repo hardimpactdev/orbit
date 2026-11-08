@@ -49,7 +49,7 @@ sequenceDiagram
   %%> When:
   %%> - only changed member policies, after their required resolver projections pass; the lifecycle caller waits for every affected member
   %%> What it does:
-  %%> - persists one Cluster-only DNS delegate with the Router LAN address as its sole server, plus the remaining WireGuard policy; never leaves equal suffixes on both scopes
+  %%> - persists one Cluster-only DNS delegate with the Router LAN address as its sole server, plus the remaining WireGuard policy; leaves no equal suffixes on both scopes at steady state; withdrawal activates the full VPN policy before removing the delegate, allowing brief private overlap
   %%> - checks uncached Cluster A and AAAA, another private name, public resolution and the actual selected scope in the same phase
   %%> Unsupported members:
   %%> - systemd below 258 or missing delegate support keeps VPN selection; returns dns.cluster_delegate_unsupported and Doctor reports it
@@ -57,9 +57,11 @@ sequenceDiagram
   %%> - Cluster resolver or LAN failure makes selected Cluster lookups fail until repair; Doctor reports it and no automatic VPN fallback runs
   opt replacing or withdrawing
     %% path: retire
-    Note over SW: Wait the DNS grace<br/>existing 31-second grace
+    Note over SW: Wait the DNS grace<br/>one shared 31-second grace
     %%> Why:
     %%> - every affected member has confirmed its new policy before cached answers to the old address can expire
+    %%> - persist the last successful DNS selection time; retries wait only the remaining grace, while any newer successful selection resets the deadline
+    %%> - this shared barrier alone owns the wait; Route reconciliation and Router transitions consume it without another grace
     %%> - if any member fails or is offline, no retirement runs and the old resolver, sites and LAN rules remain
     SW->>N: Retire unused resolvers<br/>dns-publish.yml · absent
     %%> What it does:

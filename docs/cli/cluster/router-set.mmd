@@ -133,7 +133,8 @@ sequenceDiagram
       %%> - a setup, certificate, firewall or Caddy step fails, a workload probe fails, or the DNS selection fails
       SW->>M: Restore the before state<br/>Caddy · LAN rules · DNS
       %%> What it does:
-      %%> - before member selection, restores the owned candidate changes; if selection partly applied, retains both Routers and their DNS access for retry or a fresh-revision rollback
+      %%> - before any DNS target successfully selects the candidate, restores only the owned candidate changes; any successful VPN or Router publication or member selection is the cutover, even if another parallel publication fails
+      %%> - after any such success, retains both Routers, sites and DNS access until forward recovery or a fresh-revision rollback moves every consumer back and completes the shared grace
       SW--xGW: Run failed<br/>error_code, failed step
       %%> The Gateway reads:
       %%> - which step failed, its error code, and whether the restore passed

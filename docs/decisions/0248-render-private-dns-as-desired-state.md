@@ -12,7 +12,7 @@ Every DNS publication renders the whole private DNS from the Gateway database. O
 
 In progress.
 
-The VPN desired-state build is in PR #3165 and is not merged. The Cluster Router amendment and its charts are draft. The member mechanism is a Cluster-only DNS delegate with no automatic VPN fallback. Implementation and live cutover wait for design review.
+The VPN desired-state build is in PR #3165 and is not merged. The Cluster Router amendment is approved after the review fixes of 2026-11-08; implementation is in progress. The member mechanism is a Cluster-only DNS delegate with no automatic VPN fallback. The orchestrator owns the live cutover after implementation and proof.
 
 Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces the publication machinery of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), retains its Router LAN DNS firewall families, and defines the simpler Cluster resolver below. Members use the Cluster-only DNS delegate below; the old automatic fallback plan is superseded.
 
@@ -122,7 +122,7 @@ Domains=<Cluster route-only domains>
 DefaultRoute=no
 ```
 
-Write `/etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate` and persist the remaining VPN domains in the existing WireGuard hook and DNS marker. Stage, apply and check both scopes under the member's peer lock. Reload systemd-resolved only when the delegate file or live scope differs; apply changed WireGuard link policy and flush affected cached answers in the same phase. On withdrawal, prepare the complete VPN split policy, remove the delegate, reload resolved, apply the VPN link policy and check selection before retiring the old Router. The delegate survives reboot, and the WireGuard hook cannot recreate a competing domain on tunnel restart.
+Write `/etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate` and persist the remaining VPN domains in the existing WireGuard hook and DNS marker. Stage, apply and check both scopes under the member's peer lock. Reload systemd-resolved only when the delegate file or live scope differs; apply changed WireGuard link policy and flush affected cached answers in the same phase. On withdrawal, persist and activate the complete VPN split policy first, then remove the delegate and reload resolved, flush caches and verify VPN selection before retiring the old Router. A brief overlap of both private scopes is allowed during this handover; an interruption must leave a private scope for every Cluster name, never a gap to public DNS. The delegate survives reboot, and the WireGuard hook cannot recreate a competing domain on tunnel restart.
 
 One shared member phase serves `fleet.peer_dns`, Node convergence, explicit DNS repair and Cluster lifecycle work. Its digest includes Cluster and Router identity, LAN address, both domain sets, VPN address and delegate capability. Record the revision separately so an unchanged effective policy stays unchanged. Lifecycle runs wait for affected members in their own Swamp graph; an asynchronous peer reconcile is not the handover barrier. The phase checks that the recorded LAN address has a route to the Router. There is no LAN-link DNS, global `resolved.conf`, `resolv.conf`, address, route or DHCP change. Doctor and peer reconciliation use this same effective policy, so they cannot undo a healthy delegate.
 
@@ -136,7 +136,7 @@ A member without delegate support keeps the complete VPN split policy and receiv
 
 ### Membership and Router lifecycle
 
-The lifecycle caller supplies its stored pending state to the shared publication. Serving sites and LAN access exist before a resolver selects them. Expansion writes and checks DNS targets before selecting members. Withdrawal or replacement confirms every affected member has moved, waits the existing 31-second positive-TTL grace, and only then removes the old resolver, sites or LAN rules. Removal failures retain their target identities for retry; absence from a render is not authority to delete a daemon.
+The lifecycle caller supplies its stored pending state to the shared publication. Serving sites and LAN access exist before a resolver selects them. Expansion writes and checks DNS targets before selecting members. Withdrawal or replacement confirms every affected member has moved, waits the shared DNS publication grace (31 seconds from the last successful DNS selection), and only then removes the old resolver, sites or LAN rules. Removal failures retain their target identities for retry; absence from a render is not authority to delete a daemon.
 
 | Event | Required DNS work |
 | --- | --- |
@@ -146,9 +146,12 @@ The lifecycle caller supplies its stored pending state to the shared publication
 | Change or remove Cluster TLD | Publish the new projection and member domains together; remove old domains after selection and grace; exact Routes remain without a TLD |
 | `cluster:router:set` | Prepare candidate sites and DNS, publish selected VPN and LAN projections, move every eligible member, wait grace, then retire the old Router |
 | `cluster:router:unset` | Keep existing active-TLD and Route refusals; restore members to VPN and remove owned DNS before clearing the assignment and pruning ingress |
+| `node:remove`, including `--offline` | Refuse until Cluster detach and, for a Router, router unset have completed through their existing flows. Membership, Router assignments and retained or unfinished transitions all block removal. An offline member retains the detach transition and cannot be removed until its policy withdrawal is verified; `--force` and `--offline` do not bypass this barrier. |
 | Deactivate | Reconcile Routes to their remaining scope, publish VPN state, restore every LAN member to VPN, then retire Cluster DNS and its ingress |
 | Router LAN or VPN address changes | Treat as replacement: prepare new endpoint, update dependent projections and members, retain old endpoint until every dependent target confirms |
 | Route outside TLD changes | Publish the complete affected resolver projections and changed member routing domains; keep the existing Route withdrawal grace |
+
+The shared DNS publication owns the grace once for all affected Routes and members. It records the last successful DNS selection time and waits its remaining 31 seconds before authorizing retirement. A retry reuses that time when selection is unchanged; any later successful selection resets the deadline. Route reconciliation and Router transitions consume this barrier and add no second wait. Any successful VPN or Router publication or member selection is the cutover, including success before another parallel target fails. Retain candidate serving resources after that point until forward recovery or a fresh-revision rollback has moved all consumers back and passed the same barrier.
 
 ### Consistency, failure and rollback
 
