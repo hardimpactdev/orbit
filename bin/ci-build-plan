@@ -55,101 +55,6 @@ def selection_rules(text):
     return rules
 
 
-def case_ids(before, after, code_changed=False, before_batches=None, after_batches=None):
-    """Select expanded case ids by definition and transitive dependencies. Shared fixtures exercise the PHP twin."""
-    def same(a, b):
-        return json.dumps(a, sort_keys=True, separators=(',', ':')) == json.dumps(b, sort_keys=True, separators=(',', ':'))
-
-    def entries(spec):
-        cases = spec.get('cases')
-        if not isinstance(cases, list) or not cases:
-            raise ValueError('Selected command has no valid cases')
-        found = {}
-        for case in cases:
-            if not isinstance(case, dict) or not isinstance(case.get('id'), str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', case['id']) or not isinstance(case.get('batch'), str) or case['id'] in found:
-                raise ValueError('Invalid or duplicate case id')
-            variants = case.get('variants')
-            if variants is not None and (not isinstance(variants, list) or not variants or any(
-                    not isinstance(v, dict) or not isinstance(v.get('name'), str) or not re.fullmatch(r'[a-zA-Z0-9_-]+', v['name']) for v in variants)
-                    or len({v['name'] for v in variants}) != len(variants)):
-                raise ValueError('Invalid or duplicate variant')
-            found[case['id']] = case
-        return found
-
-    def dependencies(case, spec):
-        used = {'fixtures': set(), 'vars': set()}
-        fixtures, variables = spec.get('fixtures') or {}, spec.get('vars') or {}
-
-        def resolve(value, context):
-            if isinstance(value, str):
-                whole = re.fullmatch(r'\$\{([^}]+)\}', value)
-                if whole and whole[1] in context:
-                    return context[whole[1]]
-                return re.sub(r'\$\{([^}]+)\}', lambda m: str(context.get(m[1], m[0])), value)
-            if isinstance(value, list):
-                return [resolve(item, context) for item in value]
-            if isinstance(value, dict):
-                return {key: resolve(item, context) for key, item in value.items()}
-            return value
-
-        def walk(value, context, visiting=()):
-            value = resolve(value, context)
-            if isinstance(value, str):
-                if value.startswith('@'):
-                    name = value[1:]
-                    if name not in overrides and name in variables:
-                        if '@' + name in visiting:
-                            raise ValueError('Recursive var')
-                        used['vars'].add(name)
-                        walk(variables[name], context, visiting + ('@' + name,))
-            elif isinstance(value, list):
-                for item in value:
-                    walk(item, context, visiting)
-            elif isinstance(value, dict):
-                if 'use' in value:
-                    args = value['use']
-                    args = {'fixture': args} if isinstance(args, str) else args
-                    if not isinstance(args, dict):
-                        raise ValueError('Invalid fixture use')
-                    name = args.get('fixture')
-                    if isinstance(name, str):
-                        name = re.sub(r'\$\{([^}]+)\}', lambda m: str(context.get(m[1], m[0])), name)
-                    if not isinstance(name, str) or name not in fixtures or name in visiting:
-                        raise ValueError('Missing or recursive fixture')
-                    used['fixtures'].add(name)
-                    fixture = fixtures[name]
-                    walk(fixture.get('steps') or [], {**context, **(fixture.get('params') or {}), **{k: v for k, v in args.items() if k != 'fixture'}}, visiting + (name,))
-                for item in value.values():
-                    walk(item, context, visiting)
-
-        for variant in case.get('variants') or [{}]:
-            overrides = {k: v for k, v in variant.items() if k != 'name'}
-            walk(case, overrides)
-        return used
-
-    current = entries(after)
-    previous = entries(before) if before else {}
-    file_changed = any(not same((before or {}).get(key), after.get(key)) for key in ('target', 'sources', 'baseline', 'spread', 'parallel'))
-    selected = {}
-    for name, case in current.items():
-        reason = 'command code changed' if code_changed else 'added' if name not in previous else 'changed' if not same(previous[name], case) else None
-        if reason is None:
-            old_uses, uses = dependencies(previous[name], before), dependencies(case, after)
-            for kind, label in (('fixtures', 'uses changed fixture'), ('vars', 'uses changed var')):
-                if any(not same((before.get(kind) or {}).get(key), (after.get(kind) or {}).get(key)) for key in old_uses[kind] | uses[kind]):
-                    reason = label
-                    break
-            batch = case.get('batch')
-            if reason is None and not same(((before_batches or {}).get(batch) or {}).get('setup'), ((after_batches or {}).get(batch) or {}).get('setup')):
-                reason = 'batch setup changed'
-            if reason is None and file_changed:
-                reason = 'file settings changed'
-        if reason is not None:
-            for variant in case.get('variants') or [None]:
-                selected[name + (f"[{variant['name']}]" if variant is not None else '')] = reason
-    return selected
-
-
 def proof_run(paths, selection):
     """Whether a changed path selects a command in the list that `orbit proof:run` reads: the last matching line wins.
 
@@ -170,21 +75,12 @@ def proof_run(paths, selection):
 
 
 def proof_cases(paths, selection, read, files):
-    """Read trusted base/head YAML and keep only commands with selected cases. None means Gateway must refuse an unmapped path."""
-    # The runner's loader and Symfony both use YAML 1.2 boolean spellings.
+    """Use the runner to plan every candidate, retaining verified empty selections. None means Gateway must refuse an unmapped path."""
     import sys
     sys.path.insert(0, str(ROOT / 'swamp/proof/runner'))
+    from selection import select as select_cases
     from spec import Loader
     import yaml
-
-    def document(ref, path):
-        text = read(ref, path)
-        if text is None:
-            return None
-        value = yaml.load(text, Loader=Loader)
-        if not isinstance(value, dict):
-            raise ValueError(f'Malformed proof YAML: {path}')
-        return value
 
     rules = selection_rules(selection) if selection is not None else []
     # Keep the parser's validation and glob semantics; retain each value for command ownership.
@@ -204,22 +100,21 @@ def proof_cases(paths, selection, read, files):
     if everything or batch_path in paths:
         for file in files:
             if file not in candidates:
-                candidates[file] = (document('head', file) or {}).get('command')
+                try:
+                    candidates[file] = yaml.load(read('head', file), Loader=Loader)['command']
+                except Exception:
+                    candidates[file] = file.removeprefix('swamp/proof/').removesuffix('.cases.yaml').replace('/', ':', 1)
     if not candidates:
         return []
-    before_batches = (document('base', batch_path) or {}).get('batches') or {}
-    after_batches = (document('head', batch_path) or {}).get('batches') or {}
     result = []
     for file, command in candidates.items():
         if file not in files:
-            continue  # Same uncovered command as the Gateway; no executable cases.
-        after = document('head', file)
-        if not after or not isinstance(command, str) or after.get('command') != command:
-            raise ValueError(f'Selected command has no valid cases: {command}')
+            continue
         code_changed = everything or any(path not in (file, batch_path) for path in commands.get(command, []))
-        ids = case_ids(document('base', file), after, code_changed, before_batches, after_batches)
-        if ids:
-            result.append({'command': command, 'file': file, 'only': list(ids), 'reasons': ids})
+        chosen = select_cases(read('base', file), read('head', file), code_changed,
+                              read('base', batch_path), read('head', batch_path))
+        # Keep empty entries in the artifact: the Gateway must distinguish verified zero from missing data.
+        result.append({'command': command, 'file': file, **chosen})
     return sorted(result, key=lambda entry: entry['command'])
 
 
@@ -390,6 +285,7 @@ def main():
     p.add_argument('--main', action='store_true')
     p.add_argument('--proof-cases', action='store_true', help='Compare case definitions at the merge base and head')
     p.add_argument('--github-output', type=Path)
+    p.add_argument('--proof-selection-output', type=Path)
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, a.head], timeout=60).decode().rstrip('\0').split('\0')
@@ -409,7 +305,10 @@ def main():
         files = subprocess.check_output(['timeout', '60', 'git', 'ls-tree', '-r', '--name-only', a.head, '--', 'swamp/proof'], text=True).splitlines()
         files = [file for file in files if re.fullmatch(r'swamp/proof/[a-z][a-z0-9_]*/[a-z][a-z0-9_-]*\.cases\.yaml', file)]
         result['proof_cases'] = proof_cases(paths, read('head', SELECTION), read, files)
-        result['proof_run'] = result['proof_cases'] is None or bool(result['proof_cases'])
+        result['proof_run'] = result['proof_cases'] is None or any(entry['only'] is None or entry['only'] for entry in result['proof_cases'])
+        if a.proof_selection_output:
+            head = subprocess.check_output(['timeout', '60', 'git', 'rev-parse', a.head], text=True).strip()
+            a.proof_selection_output.write_text(json.dumps({'version': 1, 'base': base, 'head': head, 'files': result['proof_cases']}))
     if a.swamp_base and result['jobs']['swamp']:
         result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
     print(json.dumps(result))

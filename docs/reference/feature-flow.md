@@ -106,14 +106,12 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 
 After choosing commands, choose their cases:
 
-1. Read each cases file at the merge base and head. A change to the command's code selects every head case with reason `command code changed`.
-2. For cases-only changes, compare parsed entries by id. Select changed entries (`changed`) and new entries (`added`) with all their variants. Deleted entries select nothing.
-3. Follow nested fixture uses and var references. Select their users with reason `uses changed fixture` or `uses changed var`. Unused definitions select nothing.
-4. Select users of changed batch setup with reason `batch setup changed`. A change to the file’s fleet settings selects every case with reason `file settings changed`.
-5. Keep selected cases in their batches and balance the batches across CI VMs. Each batch restores the fleet and runs its setup before the selected cases.
-6. Report each case id, reason and verdict. No selected cases succeeds without a VM; a selected command with no verdict fails.
+1. Expand the merge-base and head files with the proof runner, including fixtures, list vars, variants, fleet settings and batch setup. Compare canonical per-case definitions by id. A command code change selects the whole file. Any parse error or unknown construct also selects the whole file.
+2. CI consumes that one runner result and publishes `proof-selection.json`, bound to the exact head and merge base. Record every considered file, including files with zero selected cases.
+3. The Gateway reads that result from the CI workflow artifact. It does not parse YAML to decide whether a definition changed. A missing, expired, invalid or mismatched result selects the whole file.
+4. Record selected case ids and reasons: `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
 
-Comments, formatting, case order and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` use the same comparison rules, checked with shared fixtures.
+Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.
 
 The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. The Node family selects `node:list` and reports the remaining Node commands as uncovered until they have cases. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
 

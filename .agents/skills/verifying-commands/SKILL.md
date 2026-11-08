@@ -46,3 +46,5 @@ Run the cases selected by `swamp/proof/selection.txt` and definition comparison 
 ## Report
 
 State the commit, the cases selected and run, the verdicts, the functional assertions and the Doctor result. Name unsupported cases and harness limits.
+
+The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.

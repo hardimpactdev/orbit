@@ -308,32 +308,18 @@ final readonly class ProofRunIntent
 
         $selection = ProofSelection::select($list, $changes, $all, $casesFiles);
         try {
-            $read = function (string $sha, string $path): ?array {
-                $text = $this->source->file($sha, $path);
-                if ($text === null) {
-                    return null;
-                }
-                $value = Yaml::parse($text);
-                if (! is_array($value) || array_is_list($value)) {
-                    throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML: '.$path.'.', 409);
-                }
-
-                return ValidatedData::object($value);
-            };
             $batchPath = 'swamp/proof/batches.yaml';
-            $batchChanged = in_array($batchPath, $changes->paths(), true);
             $candidates = $selection->cases;
-            if ($batchChanged) {
+            if (in_array($batchPath, $changes->paths(), true)) {
                 foreach (array_diff($casesFiles, $selection->files()) as $file) {
-                    $spec = $read($commit, $file);
-                    $candidates[] = ['command' => ValidatedData::string($spec['command'] ?? null), 'file' => $file];
+                    $spec = Yaml::parse($this->source->file($commit, $file) ?? '');
+                    $candidates[] = ['command' => ValidatedData::string(ValidatedData::object($spec)['command'] ?? null), 'file' => $file];
                 }
             }
             if ($candidates === []) {
                 return $selection;
             }
-            $beforeBatches = ValidatedData::object($read($changes->mergeBase, $batchPath)['batches'] ?? []);
-            $afterBatches = ValidatedData::object($read($commit, $batchPath)['batches'] ?? []);
+            $result = $this->source->caseSelection($changes->mergeBase, $commit);
             $rules = $list === null ? null : ProofSelectionList::parse($list);
             $selected = [];
             foreach ($candidates as $candidate) {
@@ -342,12 +328,10 @@ final readonly class ProofRunIntent
 
                     return $path !== $candidate['file'] && $path !== $batchPath && $rule?->kind === ProofRuleKind::Commands && in_array($candidate['command'], $rule->commands, true);
                 });
-                $head = $read($commit, $candidate['file']);
-                if ($head === null || ($head['command'] ?? null) !== $candidate['command']) {
-                    throw new ResourceOperationException('proof.selection_invalid', 'Selected command has no valid cases: '.$candidate['command'].'.', 409);
-                }
-                $ids = ProofCaseSelection::select($read($changes->mergeBase, $candidate['file']), $head, $codeChanged, $beforeBatches, $afterBatches);
-                if ($ids !== []) {
+                $ids = $codeChanged ? null : ProofCaseSelection::select($result, $changes->mergeBase, $commit, $candidate);
+                if ($ids === null) {
+                    $selected[] = [...$candidate, 'reasons' => ['*' => $codeChanged ? 'command code changed' : 'selection uncertain']];
+                } elseif ($ids !== []) {
                     $selected[] = [...$candidate, 'only' => array_keys($ids), 'reasons' => $ids];
                 }
             }

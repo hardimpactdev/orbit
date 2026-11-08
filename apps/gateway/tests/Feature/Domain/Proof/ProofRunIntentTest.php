@@ -126,6 +126,13 @@ function proofSource(): object
             };
         }
 
+        public ?array $selection = null;
+
+        public function caseSelection(string $base, string $head): ?array
+        {
+            return $this->selection;
+        }
+
         public function proofPaths(string $sha): array
         {
             return $this->paths;
@@ -498,7 +505,7 @@ describe('proof:run admission', function (): void {
         $source = proofSource();
         $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
         app()->instance(ProofCommitSource::class, Mockery::mock($source::class, function ($mock) use ($source): void {
-            foreach (['commitExists', 'branchesWithHead', 'pullRequestsWithHead', 'canWrite', 'reviews', 'changes', 'file', 'proofPaths'] as $method) {
+            foreach (['commitExists', 'branchesWithHead', 'pullRequestsWithHead', 'canWrite', 'reviews', 'changes', 'file', 'proofPaths', 'caseSelection'] as $method) {
                 $mock->shouldReceive($method)->andReturnUsing(static fn (...$arguments) => $source->{$method}(...$arguments));
             }
             $mock->shouldReceive('range')->andThrow(GitHubApiException::unavailable());
@@ -653,6 +660,8 @@ describe('case definition selection at admission', function (): void {
         $after = $change === 'changed' ? str_replace('summary: old', 'summary: new', $before) : "command: firewall:allow\ncases:\n  - {id: b, batch: fresh-fleet}\n";
         $source->documents[str_repeat('a', 40).':'.$file] = $before;
         $source->documents[PROOF_SHA.':'.$file] = $after;
+        $source->selection = ['version' => 1, 'base' => str_repeat('a', 40), 'head' => PROOF_SHA,
+            'files' => [['command' => 'firewall:allow', 'file' => $file, 'only' => array_keys($expected), 'reasons' => $expected]]];
         proofWorld($source);
         $proof = proofAdmitted();
         expect($proof->input['runs'])->toBe([]);
@@ -663,4 +672,35 @@ describe('case definition selection at admission', function (): void {
                 ->and($proof->error_code)->toBe('proof.execution_disabled');
         }
     })->with([['changed', ['a' => 'changed']], ['deleted', []]]);
+});
+
+it('records the runner selection for both P1 regressions without a successful no-proof result', function (string $name): void {
+    config(['proof.execution' => false]);
+    $fixtures = json_decode(file_get_contents(dirname(__DIR__, 6).'/tools/fixtures/proof-case-selection.json'), true, flags: JSON_THROW_ON_ERROR);
+    $test = array_first(array_filter($fixtures['tests'], static fn (array $test): bool => $test['name'] === $name));
+    $source = proofSource();
+    $file = 'swamp/proof/firewall/allow.cases.yaml';
+    $source->files = [new ProofChangedFile($file, 'modified')];
+    $source->documents[str_repeat('a', 40).':'.$file] = str_replace('demo:run', 'firewall:allow', $test['before']);
+    $source->documents[PROOF_SHA.':'.$file] = str_replace('demo:run', 'firewall:allow', $test['after']);
+    $source->documents[PROOF_SHA.':swamp/proof/batches.yaml'] = $test['after_batches'];
+    $source->selection = ['version' => 1, 'base' => str_repeat('a', 40), 'head' => PROOF_SHA, 'files' => [
+        ['command' => 'firewall:allow', 'file' => $file, 'only' => array_keys($test['expected']), 'reasons' => $test['expected']],
+    ]];
+    proofWorld($source);
+    $proof = proofAdmitted();
+    expect($proof->input['cases'][0]['only'])->toBe(['b'])
+        ->and($proof->input['cases'][0]['reasons'])->toBe($test['expected'])
+        ->and($proof->error_code)->toBe('proof.execution_disabled');
+})->with(['list fixture parameter expands referenced vars', 'numeric YAML spelling follows runner types']);
+
+it('selects every case when the runner selection is unavailable', function (): void {
+    config(['proof.execution' => false]);
+    $source = proofSource();
+    $source->files = [new ProofChangedFile('swamp/proof/firewall/allow.cases.yaml', 'modified')];
+    proofWorld($source);
+    $proof = proofAdmitted();
+    expect($proof->input['cases'][0])->not->toHaveKey('only')
+        ->and($proof->input['cases'][0]['reasons'])->toBe(['*' => 'selection uncertain'])
+        ->and($proof->error_code)->toBe('proof.execution_disabled');
 });

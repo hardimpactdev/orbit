@@ -104,8 +104,8 @@ final readonly class ProofRunSettlement
                 if (str_ends_with($id, '@merge-base')) {
                     $id = substr($id, 0, -11);
                 }
-                if (isset($reasons[$command][$id])) {
-                    $case['reason'] = $reasons[$command][$id];
+                if (isset($reasons[$command][$id]) || isset($reasons[$command]['*'])) {
+                    $case['reason'] = $reasons[$command][$id] ?? $reasons[$command]['*'];
                 }
             }
             unset($case);

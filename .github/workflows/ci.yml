@@ -419,7 +419,14 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
-          python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --swamp-base --github-output "$GITHUB_OUTPUT"
+          python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
+      - name: Publish runner case selection
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proof-selection-${{ github.event.pull_request.head.sha || github.sha }}
+          path: proof-selection.json
+          retention-days: 7
+          if-no-files-found: error
 
   proof:
     name: Proof harness

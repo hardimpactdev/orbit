@@ -35,7 +35,7 @@ The review records enough evidence for another maintainer to assess the result.
 
 Store detailed logs in CI artifacts or in shared evidence outside the checkout, and link them from the review. Share only sanitized records. When no machines are available, the reviewer returns code findings and marks the Incus review as pending. For documentation and tooling changes, verify the behavior that the change affects.
 
-CI compares proof case definitions at the merge base and head before starting the proof job. It uses the same selection rules as the Gateway. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
+CI compares proof case definitions at the merge base and head before starting the proof job. The runner expands both files once; CI publishes its selection for the Gateway to consume. Missing or invalid results select whole files. [Choose the cases](/reference/feature-flow#choose-the-cases) defines those rules.
 
 ## After review
 

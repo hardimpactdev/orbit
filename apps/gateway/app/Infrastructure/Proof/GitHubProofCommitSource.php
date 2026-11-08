@@ -17,9 +17,11 @@ use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofSettings;
+use App\Infrastructure\GitHub\GitHubActionsReader;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use PharData;
 use SensitiveParameter;
 use Throwable;
 
@@ -37,7 +39,7 @@ final class GitHubProofCommitSource implements ProofCommitSource
     /** @var array<string,string> One token per permission set, for the life of this request. */
     private array $tokens = [];
 
-    public function __construct(private readonly GitHubAppStore $store, private readonly GitHubApi $github, private readonly ProofSettings $settings) {}
+    public function __construct(private readonly GitHubAppStore $store, private readonly GitHubApi $github, private readonly ProofSettings $settings, private readonly GitHubActionsReader $actions) {}
 
     public function commitExists(string $sha): bool
     {
@@ -159,6 +161,67 @@ final class GitHubProofCommitSource implements ProofCommitSource
         $blob = $this->child($tree, $name, 'blob');
 
         return $blob === null ? null : $this->github->blobContents($this->contentsToken(), $this->settings->repository(), $blob);
+    }
+
+    public function caseSelection(string $base, string $head): ?array
+    {
+        $temporary = null;
+        try {
+            $repository = $this->settings->repository();
+            $token = $this->actions->token($repository);
+            $name = 'proof-selection-'.$head;
+            $listing = $this->actions->json($this->path('/actions/artifacts?').http_build_query(['name' => $name, 'per_page' => 100]), $token);
+            $artifacts = $listing['artifacts'] ?? null;
+            if (! is_array($artifacts)) {
+                return null;
+            }
+            foreach ($artifacts as $artifact) {
+                if (! is_array($artifact) || ($artifact['name'] ?? null) !== $name || ($artifact['expired'] ?? null) !== false
+                    || ! is_int($artifact['id'] ?? null) || ! is_array($artifact['workflow_run'] ?? null)
+                    || ! is_int($artifact['workflow_run']['id'] ?? null)
+                    || ($artifact['workflow_run']['head_sha'] ?? null) !== $head) {
+                    continue;
+                }
+                $run = $this->actions->json($this->path('/actions/runs/'.$artifact['workflow_run']['id']), $token);
+                if (($run['path'] ?? null) !== '.github/workflows/ci.yml' || ($run['head_sha'] ?? null) !== $head
+                    || ! in_array($run['event'] ?? null, ['pull_request', 'push', 'workflow_dispatch'], true)
+                    || ! is_array($run['repository'] ?? null) || ($run['repository']['full_name'] ?? null) !== $repository->owner.'/'.$repository->name) {
+                    continue;
+                }
+                $location = $this->actions->archiveLocation($repository, $artifact['id'], $token);
+                $archive = $this->actions->body($location, null, 1048576);
+                if (($artifact['digest'] ?? null) !== 'sha256:'.hash('sha256', $archive)) {
+                    return null;
+                }
+                $temporary = tempnam(sys_get_temp_dir(), 'orbit-proof-selection-');
+                if ($temporary === false || ! rename($temporary, $temporary.'.zip')) {
+                    return null;
+                }
+                $temporary .= '.zip';
+                if (file_put_contents($temporary, $archive) !== strlen($archive)) {
+                    return null;
+                }
+                $zip = new PharData($temporary);
+                if (count($zip) !== 1 || ! isset($zip['proof-selection.json']) || $zip['proof-selection.json']->getSize() > 1048576) {
+                    return null;
+                }
+                $result = json_decode($zip['proof-selection.json']->getContent(), true);
+                if (! is_array($result) || ($result['base'] ?? null) !== $base || ($result['head'] ?? null) !== $head) {
+                    return null;
+                }
+
+                return $result;
+            }
+        } catch (Throwable) {
+            // An unavailable or invalid plan must select the whole file, never a passing empty proof.
+            return null;
+        } finally {
+            if (is_string($temporary) && is_file($temporary)) {
+                unlink($temporary);
+            }
+        }
+
+        return null;
     }
 
     public function proofPaths(string $sha): array

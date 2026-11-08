@@ -14,14 +14,14 @@ sequenceDiagram
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
-  GW->>GH: Read cases at<br/>merge base and head
-  %%> Read the selected command files and batch definitions at both commits. A command code change selects its whole cases file. Empty or malformed selected files fail.
-  GW->>GW: Compare case<br/>definitions by id
-  %%> For cases-only changes, select added and changed entries and every variant of each. Deleted entries select nothing. Ignore YAML formatting and comments.
-  GW->>GW: Include users of<br/>changed dependencies
-  %%> Follow fixture uses and file vars, including nested uses. A changed batch setup selects its users; changed fleet settings select all users. Keep the selected cases in their batches with the required setup.
+  CLI->>CLI: Expand base and head<br/>with the runner
+  %%> The runner validates and expands fixtures, list vars, variants and batch setup. Compare its canonical per-case definitions by id. Command code changes select the whole file; any planning doubt also selects the whole file.
+  CLI->>GH: Publish the selection<br/>for this base and head
+  %%> CI consumes this same result and uploads proof-selection.json before proof admission. Include every considered file, even when it selects zero cases.
+  GW->>GH: Read the runner selection<br/>for this base and head
+  %%> Accept only the exact version, head, merge base and cases file. Missing, expired, malformed or mismatched results select the whole file. The Gateway does not compare YAML definitions.
   GW->>GW: Record case ids<br/>and reasons
-  %%> Gateway and CI planning use the same rules and shared test fixtures. Report changed, added, uses changed fixture, uses changed var, batch setup changed or command code changed for each selected case. Zero selected cases succeeds without a VM.
+  %%> Select added and changed cases and their variants, and users whose expanded dependencies changed. Deleted cases select nothing. Report changed, added, uses changed fixture, uses changed var, batch setup changed or command code changed. A verified zero-case selection succeeds without a VM.
   GW->>GW: Plan selected cases<br/>in batches
   %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id

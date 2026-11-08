@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
+import selection
 import spec as spec_module
 import steps
 
@@ -183,6 +184,9 @@ def plan_lines(spec):
 
 def command_plan(args):
     spec = spec_module.load(args.file, args.batches)
+    if args.json:
+        print(json.dumps(selection.definitions(Path(args.file).read_text(), Path(args.batches).read_text())[0], sort_keys=True))
+        return 0
     if args.lines:
         print('\n'.join(plan_lines(spec)))
         return 0
@@ -314,6 +318,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='runner')
     commands = parser.add_subparsers(dest='command', required=True)
     plan = commands.add_parser('plan', help='print the ordered batches and cases; no fleet')
+    plan.add_argument('--json', action='store_true', help='print canonical expanded case definitions; no fleet')
     plan.add_argument('--steps', action='store_true', help='also print the resolved steps')
     plan.add_argument('--lines', action='store_true', help='print one line a batch, `BATCH SETUP CASE...`, for the workflow')
     case = commands.add_parser('case', help='run one case on the nested fleet')
