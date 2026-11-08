@@ -1,0 +1,32 @@
+---
+# A deterministic public uplink in the disposable container, independent of VPN/Cluster DNS.
+- name: Add the proof public resolver address
+  ansible.builtin.command:
+    argv: [ip, address, replace, 192.0.2.53/32, dev, lo]
+  changed_when: false
+- name: Keep the public fixture configuration
+  ansible.builtin.copy:
+    content: |
+      listen-address=192.0.2.53
+      bind-interfaces
+      no-resolv
+      no-hosts
+      host-record=example.com,93.184.216.34
+    dest: /tmp/orbit-public-proof.conf
+    mode: "0644"
+- name: Keep the independent public fixture unit
+  ansible.builtin.copy:
+    content: |
+      [Service]
+      ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/tmp/orbit-public-proof.conf --conf-dir= --pid-file=
+    dest: /etc/systemd/system/orbit-public-proof.service
+    mode: "0644"
+- name: Start the public uplink
+  ansible.builtin.systemd:
+    name: orbit-public-proof.service
+    daemon_reload: true
+    state: started
+- name: Select the disposable public uplink on eth0
+  ansible.builtin.command:
+    argv: [resolvectl, dns, eth0, 192.0.2.53]
+  changed_when: false

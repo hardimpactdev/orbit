@@ -29,6 +29,8 @@ sequenceDiagram
   %%> - the Gateway, VPN and control Nodes are protected
   %%> - no Instances, Database servers, Schedules, Routes or user firewall rules remain; an online removal also has no Processes and no role dependents
   %%> - a task VM host is drained and its task VM settings cleared
+  %%> - completed Cluster detach and Router unset are prerequisites, including retained or unfinished transitions; reuse those flows before admission, never duplicate delegate teardown here
+  %%> - an offline member whose DNS withdrawal is unverified stays retained; `--offline` and `--force` cannot bypass this prerequisite
   %%> - no other removal runs for the Node (`node.removal_busy`)
   %%> Builds:
   %%> - the pinned SSH targets, the publication changes for the fleet, and the exact managed paths

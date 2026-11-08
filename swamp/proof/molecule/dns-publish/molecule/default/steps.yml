@@ -146,11 +146,12 @@ steps:
     pid: same
     queries: *answers_base
 
-  - name: an older revision is superseded
+  - name: an older differing revision cannot authorize downstream retirement
+    succeeds: false
     revision: "1762540000000000"
     tlds: [*tld_test]
     records: [*rec_gateway]
-    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded}
+    result: {revision: "1762540000000001", dnsmasq: unchanged, skipped: dns.revision_superseded, error_code: dns.resolver_selection_incomplete}
     changed: 0
     pid: same
     queries: *answers_base

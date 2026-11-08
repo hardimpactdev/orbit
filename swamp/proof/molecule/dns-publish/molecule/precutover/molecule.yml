@@ -1,0 +1,18 @@
+driver:
+  name: default
+  options:
+    managed: false
+platforms:
+  - name: localhost
+provisioner:
+  name: ansible
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+        vars:
+          dns_address: 10.99.99.1
+scenario:
+  test_sequence: [prepare, converge]

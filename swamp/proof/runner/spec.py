@@ -15,6 +15,9 @@ NODES = ('gateway', 'app-dev', 'app-prod')
 SECTIONS = ('setup', 'act', 'expect', 'negative')
 PLACEHOLDER = re.compile(r'\$\{([^}]+)\}')
 NODE_VALUE = re.compile(r'(%s)\.(id|src|src6)$' % '|'.join(NODES))
+# Step keys whose value is a Node name, or a list of them.
+NODE_KEYS = {'on', 'from', 'to', 'node', 'nodes', 'consumer', 'serving', 'choose'}
+NODE_PLACEHOLDER = re.compile(r'\$\{(%s)\.(id|src|src6)\}' % '|'.join(NODES))
 # step -> (sections it may stand in, required keys, optional keys)
 STEPS = {
     'listener': (('setup',), {'on'}, {'proto', 'family', 'ports', 'block'}),
@@ -33,8 +36,14 @@ STEPS = {
     'node_down': (('setup',), {'node'}, set()),
     'node_access_remove': (('setup',), {'consumer', 'serving'}, set()),
 }
-FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases'}
-CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'negative', 'timeout'}
+FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'cases', 'spread', 'parallel'}
+CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'negative', 'timeout', 'node', 'exclusive'}
+DEFAULT_PARALLEL = 4
+# Steps that change something every case shares (a Node's `ufw`, the Gateway lock, a Node's agent, the addresses): the case runs alone.
+GLOBAL_STEPS = {'fault', 'busy_node', 'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses'}
+# Steps that compare or wait on the whole state of their Node: no other case may work on that Node meanwhile.
+# Steps that name the Node they work on under `on` or `node`.
+NODE_WORK = {'listener', 'ufw_rule', 'ufw_delete', 'ufw', 'record', 'doctor'}
 # Step keys whose list value means one step per item.
 EXPAND = {'probe': ('from', 'proto', 'port', 'family'), 'ufw_rule': ('proto', 'family')}
 
@@ -67,6 +76,9 @@ class Case:
     negative: dict | None
     timeout: int
     fails_today: str | None = None
+    node: str | None = None   # the Node that plays the target of the file; set by `load`
+    lock: str = 'node'        # `all` runs alone, `node` is the only case on its Node (see `lock_of`)
+    exclusive: bool = False   # the case asked to run alone
 
 
 @dataclass
@@ -78,6 +90,8 @@ class Spec:
     baseline: list
     cases: list
     batches: dict = field(default_factory=dict)
+    spread: list = field(default_factory=list)
+    parallel: int = DEFAULT_PARALLEL
 
     def case(self, case_id):
         for case in self.cases:
@@ -298,7 +312,73 @@ def build_case(raw, file_vars, fixtures, static, batches):
         negative = dict(negative, do=expand_steps(negative.get('do') or [], 'negative', f'{where} negative', file_vars, fixtures, static))
     all_steps = setup + [step for stage in stages for step in stage.act + stage.expect] + (negative['do'] if negative else [])
     check_names(case_id, all_steps, set())
-    return Case(case_id, raw['batch'], raw['covers'], raw['summary'], setup, stages, negative, int(raw.get('timeout', 180)), raw.get('fails_today'))
+    if raw.get('node') is not None and raw['node'] not in NODES:
+        raise SpecError(f"{where}: node is one of {NODES}")
+    if not isinstance(raw.get('exclusive', False), bool):
+        raise SpecError(f'{where}: exclusive is true or false')
+    return Case(case_id, raw['batch'], raw['covers'], raw['summary'], setup, stages, negative, int(raw.get('timeout', 180)), raw.get('fails_today'),
+                raw.get('node'), exclusive=raw.get('exclusive', False))
+
+
+def case_steps(case):
+    return case.setup + [step for stage in case.stages for step in stage.act + stage.expect] + (case.negative['do'] if case.negative else [])
+
+
+def lock_of(case, target):
+    """What the case needs of the fleet while it runs. `all`: it alone (it changes or compares what every case shares: the Operation
+    list, the records of every Node, a fault, a stalled lock, the addresses, a Node other than its own). `node`: it alone on its Node (it
+    compares or waits on the whole state of that Node, and the firewall write lock of the Gateway lets one write run on a Node at a time)."""
+    steps = case_steps(case)
+    names = {step.name for step in steps}
+    compares_operations = any(step.name == 'unchanged' and 'operations' in (step.args.get('what') or []) for step in steps)
+    no_request = any(step.name == 'cli' and (step.args.get('expect') or {}).get('request') == 'none' for step in steps)
+    reads_every_node = any(step.name == 'record' and 'node' not in step.args for step in steps)
+    other_node = any(step.args.get(key) not in (None, target) for step in steps if step.name in NODE_WORK for key in ('on', 'node'))
+    if case.exclusive or names & GLOBAL_STEPS or compares_operations or no_request or reads_every_node or other_node:
+        return 'all'
+    return 'node'
+
+
+def swap_roles(value, first, second, key=None):
+    """Exchange two Node roles in resolved step arguments: a value under a key that names a Node (`NODE_KEYS`), and the `${role.id}`,
+    `${role.src}` and `${role.src6}` placeholders in any string. Names a case binds (`as`, `ports`, `id`) stay."""
+    pair = {first: second, second: first}
+    if isinstance(value, str):
+        value = pair.get(value) if key in NODE_KEYS and value in pair else value
+        return NODE_PLACEHOLDER.sub(lambda found: '${%s.%s}' % (pair.get(found[1], found[1]), found[2]), value)
+    if isinstance(value, dict):
+        return {name: swap_roles(item, first, second, name) for name, item in value.items()}
+    if isinstance(value, list):
+        return [swap_roles(item, first, second, key) for item in value]
+    return value
+
+
+def exchange(items, first, second):
+    """The steps with the two roles traded. `as` names a Node only in `cli`; in `ufw_rule` and `listener` it names what the step binds."""
+    def args_of(step):
+        if step.name != 'cli':
+            return swap_roles(step.args, first, second)
+        return {name: swap_roles(item, first, second, 'node' if name == 'as' else name) for name, item in step.args.items()}
+    return [Step(step.name, args_of(step), step.where) for step in items]
+
+
+def place(cases, target, spread):
+    """Give each case its Node and its lock. A case that names a Node keeps it. Cases that run alone stay on the file's target; the others
+    take the Nodes of `spread` in turn, in file order. A case placed on another Node than the target plays the same story there: the
+    two roles trade places in every step."""
+    turn = 0
+    for case in cases:
+        case.lock = lock_of(case, target)
+        if case.node is None:
+            case.node = target
+            if case.lock != 'all' and spread:
+                case.node = spread[turn % len(spread)]
+                turn += 1
+        if case.node != target:
+            case.setup = exchange(case.setup, target, case.node)
+            case.stages = [Stage(exchange(stage.act, target, case.node), exchange(stage.expect, target, case.node)) for stage in case.stages]
+            if case.negative:
+                case.negative = dict(case.negative, do=exchange(case.negative['do'], target, case.node))
 
 
 def load(cases_file, batches_file):
@@ -324,7 +404,14 @@ def load(cases_file, batches_file):
                 raise SpecError(f'case {case.id} appears twice')
             seen.add(case.id)
             cases.append(case)
-    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches)
+    spread = data.get('spread') or []
+    if not isinstance(spread, list) or not set(spread) <= set(NODES):
+        raise SpecError(f'{cases_file}: spread is a list of {NODES}')
+    parallel = data.get('parallel', DEFAULT_PARALLEL)
+    if type(parallel) is not int or not 1 <= parallel <= 16:
+        raise SpecError(f'{cases_file}: parallel is a whole number from 1 to 16')
+    place(cases, data['target'], spread)
+    return Spec(data['command'], data['chart'], data['target'], list(data['sources']), data.get('baseline') or [], cases, batches, spread, parallel)
 
 
 def plan(spec):

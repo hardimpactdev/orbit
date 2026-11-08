@@ -1,0 +1,26 @@
+---
+- name: Name the pinned DNS target
+  ansible.builtin.set_fact:
+    dns_target_key_host: >-
+      {{ dns_target.connection.nodeHost if dns_target.connection.nodePort == 22
+      else '[' ~ dns_target.connection.nodeHost ~ ']:' ~ dns_target.connection.nodePort }}
+- name: Pin the additional DNS target
+  ansible.builtin.known_hosts:
+    path: "{{ run }}/known_hosts"
+    name: "{{ dns_target_key_host }}"
+    key: "{{ dns_target_key_host }} {{ item }}"
+    state: present
+  loop: "{{ dns_target.host_keys }}"
+- name: Address the additional DNS target
+  ansible.builtin.add_host:
+    name: "{{ dns_target_group }}-{{ dns_target.node_id }}-{{ dns_target.cluster_id | default(dns_target.dns.cluster_id | default(0)) }}"
+    groups: ["{{ dns_target_group }}"]
+    ansible_host: "{{ dns_target.connection.nodeHost }}"
+    ansible_user: "{{ dns_target.connection.nodeUser }}"
+    ansible_port: "{{ dns_target.connection.nodePort }}"
+    ansible_ssh_private_key_file: "{{ dns_target.connection.nodeIdentityFile }}"
+    dns_projection: "{{ dns_target.dns | default({}) }}"
+    dns_member_node_id: "{{ dns_target.node_id }}"
+    dns_member_policy: "{{ dns_target.policy | default({}) }}"
+    dns_retirement: "{{ dns_target }}"
+    dns_result_file: "{{ run }}/{{ dns_target_group }}-{{ dns_target.node_id }}.json"

@@ -122,3 +122,9 @@ jobs:
         labels: {role: swamp}
         dependsOn: [{step: Prepare the key, condition: *ref_0}, {step: Check the key, condition: *ref_0}, {step: Write the hub peer file, condition: *ref_0}, {step: Load the hub peer, condition: *ref_0}, {step: Drop the old key, condition: *ref_0}, {step: Write the peer config, condition: *ref_0}, {step: Write the peer list, condition: *ref_0}, {step: Start the tunnel, condition: *ref_0}, {step: Load the peer, condition: *ref_0}, {step: Trust WireGuard peers, condition: *ref_0}, {step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}, {step: Clear the old link, condition: *ref_0}, {step: Read the DNS policy again, condition: *ref_0}]
         task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-network-net-" + string(inputs.node_id) }}', methodName: networkResult, inputs: {stdout: '${{ steps["Read the DNS policy again"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps["Check the key"].outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+      - name: Apply member DNS policy
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Check the network, condition: *ref_0}]
+        guard: '${{ inputs.intent.peer.operator_dns != null }}'
+        task: {type: workflow, workflowIdOrName: operation-fleet-peer-dns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: fleet.peer_dns, intent: {ssh: '${{ inputs.intent.ssh }}', selection: '${{ inputs.intent.peer.selection }}'}, execution_secrets: {}}}

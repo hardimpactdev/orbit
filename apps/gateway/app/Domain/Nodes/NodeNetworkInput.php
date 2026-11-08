@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Clusters\ClusterDnsEvidence;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\PrivateDnsRevision;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
@@ -38,11 +40,18 @@ final readonly class NodeNetworkInput
             || ! is_string($hub->wireguard_ip) || ! $subnet->containsUsableAddress($hub->wireguard_ip)) {
             throw $this->invalid();
         }
-        $roleless = $rolelessOperator;
-        $snapshot = ['schema_version' => 1, 'node_id' => $node->id, 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
+        $roleless = $rolelessOperator && $node->cluster_id === null;
+        $selection = $this->dns->selection($node);
+        $receipt = $node->settings[ClusterDnsEvidence::Key] ?? null;
+        $evidence = is_array($receipt) ? ($receipt['effective'] ?? null) : null;
+        $domains = is_array($evidence) && ($evidence['delegate'] ?? null) !== null && $evidence['delegate'] === $selection['delegate']
+            ? $selection['domains'] : $this->dns->domains($node);
+        $snapshot = [
+            'schema_version' => 1, 'node_id' => $node->id, 'hub_id' => $hub->id, 'existing_key' => $node->wireguard_public_key, 'architecture' => $node->architecture,
             'peer' => ['server_public_key' => $publicKey, 'endpoint' => $endpoint, 'address' => $node->wireguard_ip.'/'.$subnet->prefixLength(),
                 'subnet' => $subnet->value(), 'dns_server' => $this->dns->server($node, $hub->wireguard_ip),
-                'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domains($node),
+                'domains' => $roleless ? [$this->vpn->domain()] : $domains,
+                'selection' => [...$selection, 'revision' => app(PrivateDnsRevision::class)->next()],
                 'operator_dns' => $roleless ? $hub->wireguard_ip : null, 'retain' => $node->wireguard_public_key !== null],
             'trust' => $this->firewall->trust($node)];
 

@@ -41,6 +41,8 @@ Nothing to do. The release ([stage 5](../../../docs/reference/pipeline/5-automat
 
 ## Lessons
 
+Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.
+
 For a command namespace change, audit model route bindings and operation fingerprints. A selector may span rows hidden by a global scope; public names must not change stored operation or retry identity.
 
 When parallelizing CI commands, bound their nested worker pools as well as the outer executor. Keep prerequisite setup and ratchets ordered, and give each command its own output and temporary directory.
@@ -60,3 +62,5 @@ Before changing a CI cache, separate hits from misses in job logs. A Cargo lock 
 ## Report
 
 The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.
+
+A per-host proof reserve is a whole Large VM place (three max_vms units). Task admission must exclude it, and an occupied reserve must count once. Keep CI proof capacity separate from its report-only assertion policy. Derive reserve eligibility from the authenticated Node’s active ci-runner role, persist it before queueing, and preserve it in allocation and preemption. A ci_only host exposes no task/operator capacity; prefer it for CI and keep its own refresh pinned there. Bind proof idempotency to caller identity.

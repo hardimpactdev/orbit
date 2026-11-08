@@ -17,7 +17,7 @@ sequenceDiagram
   %%> What it does:
   %%> - reads the draft PR and its reviews with a read-only App token; in manual mode the latest review of the reviewer must approve the exact head, and in automatic mode no review is read
   %%> - changes nothing on GitHub
-  Note over GW: Admit the build<br/>parked prep group · head
+  Note over GW: Admit the build<br/>prep group · head
   %%> Requirements:
   %%> - the group is open and external, with a succeeded `tasks.prep` run and no other subtask than its completed spec subtask: `waiting_for_review` after a manual prep, `running` after an automatic one or after a park that was refused
   %%> - its task VM is parked or ready with its Pi credential, and no build was admitted for it before
@@ -25,8 +25,8 @@ sequenceDiagram
   %%> - no other task runs on the group; the Gateway holds one lock per group
   %%> What it does:
   %%> - records the approval (the head, the mode and the reviewer) in the intent
-  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; deliverables are that the runner plan of the cases file passes and that the Project check passes (the check command of the Project, or a review deliverable when the Project has none)
-  %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the resume, the sync and the first turn
+  %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; the runner plan of the cases file is a command deliverable; handoff runs the configured Project check once, before the deliverables; when the Project has no check command, the subtask also has a review deliverable for the Project check
+  %%> - moves the group to `running` and clears its settled time, creates the implementer thread, and captures the task VM identity, its resume only when parked, the sync and the first turn
   %%> - names the vault keys of the Pi token and of the read token
   %%> Refuses:
   %%> - a group that has started its build, a head that is not the approved one, a missing approval, or a busy group; the gate check skips it quietly and reads again at the next tick
@@ -35,9 +35,12 @@ sequenceDiagram
   %%> - the whole intent above and the vault key names of the Pi, VM and read-token credentials, never their values
   %%> Decided by the orchestrator, for Nick's review:
   %%> - no step of the run calls the Gateway: as it starts the run, the Gateway mints the read token of the sync child, writes it and the Pi token to their vault keys, and passes only the key names
-  SW->>VM: Resume the VM<br/>operation-task-vm-resume
-  %%> What it does:
-  %%> - starts the parked VM and waits for its agent and Pi; the workspace is as the park left it
+  opt the VM is parked
+    SW->>VM: Resume the VM<br/>operation-task-vm-resume
+    %%> What it does:
+    %%> - starts the parked VM and waits for its agent and Pi; the workspace is as the park left it
+    %%> - a ready VM skips this step and goes straight to the sync
+  end
   SW->>VM: Sync the refs<br/>operation-task-sync
   %%> What it does:
   %%> - brings the default branch and the branch of the PR into `refs/remotes/origin` of the workspace, so the approved head is there; the read token comes from its vault key

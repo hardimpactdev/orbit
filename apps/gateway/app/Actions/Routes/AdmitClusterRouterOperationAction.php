@@ -9,6 +9,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementStep;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
@@ -43,7 +44,9 @@ final readonly class AdmitClusterRouterOperationAction
             $assignments = NodeRole::query()->where('cluster_id', $cluster->id)->where('role', RoleName::Router)->lockForUpdate()->get();
             foreach ($assignments as $assignment) {
                 if ($assignment->node_id !== $node->id && in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Failed, LifecycleStatus::Active], true)
-                    && ClusterRouterReplacementStep::isReplacementProgress($assignment->failed_step)) {
+                    && ClusterRouterReplacementStep::isReplacementProgress($assignment->failed_step)
+                    && ! ($assignment->status === LifecycleStatus::Failed && ClusterRouterTransition::candidateAnswersDns($assignment)
+                        && $assignments->contains(static fn (NodeRole $row): bool => $row->node_id === $node->id && $row->status === LifecycleStatus::Active))) {
                     throw new ResourceOperationException('cluster.router_transition_conflict', 'Another Cluster Router replacement is in progress.', 409);
                 }
             }
@@ -52,7 +55,7 @@ final readonly class AdmitClusterRouterOperationAction
             $candidate ??= NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
             if ($candidate->status !== LifecycleStatus::Active) {
                 $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null,
-                    ...($candidate->status === LifecycleStatus::Failed ? ['failed_step' => null] : [])]);
+                    ...($candidate->status === LifecycleStatus::Failed && ! ClusterRouterTransition::candidateAnswersDns($candidate) ? ['failed_step' => null] : [])]);
             }
             $routeIds = Route::query()->where('cluster_id', $cluster->id)->orderBy('id')->pluck('id')->map(StoredInteger::from(...))->values()->all();
             $workloadNodes = Node::query()->whereHas('instances.routeTargets', static fn (Builder $q): Builder => $q->whereIn('route_id', $routeIds))->pluck('id')->map(StoredInteger::from(...))->all();
@@ -92,7 +95,7 @@ final readonly class AdmitClusterRouterOperationAction
             $input = [...$admitted, 'cluster_router' => $intent, ...app(NativeClusterRouterPublicationInput::class)->capture($draft, $intent)];
             $input['cluster_router_plan'] = app(NativeClusterRouterSteps::class)->build($input, true);
             // R1: a Router that left no site, certificate or LAN rule on any Node clears with no run.
-            if ($input['cluster_router_plan']['check_nodes'] === []) {
+            if ($input['cluster_router_plan']['check_nodes'] === [] && $input['cluster_router_plan']['dns'] === []) {
                 $result = ['ready' => true, 'selected' => true, 'cleanup_complete' => true];
                 $operation = $this->operations->record('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId, $input, $result, 'operator', $requestId);
                 if ($operation->wasRecentlyCreated) {

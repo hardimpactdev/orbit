@@ -153,6 +153,7 @@ final readonly class TaskVmImageRefreshIntent
                 // The base VM holds the nested fleet, so it has the resources of a large task VM; a task start copies its snapshot. A host
                 // without a base VM gets it in the `base-start` phase, once, from the stock image and an empty seed volume.
                 'host' => ['node_id' => $host->id, 'ssh' => $jump, 'project' => $location->project, 'pool' => $location->pool, 'network' => $location->network,
+                    'cidr' => $location->cidr, 'zfs_dataset' => $location->zfsDataset, 'pool_size' => $location->poolSize,
                     'image' => TaskVmHost::SourceImage, 'current' => $base['snapshot'] ?? null, 'snapshot' => $snapshot, 'rebuild' => $fromStock,
                     'clean' => TaskVmHostLeftovers::intent(),
                     'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'seed_size' => TaskVmVolumes::SeedSize,

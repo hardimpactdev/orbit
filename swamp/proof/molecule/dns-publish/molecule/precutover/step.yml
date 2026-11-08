@@ -1,0 +1,75 @@
+---
+- name: Take the current stage revision
+  ansible.builtin.command:
+    argv: [date, +%s%6N]
+  register: revision
+  changed_when: false
+- name: Write one complete desired-state publication
+  ansible.builtin.copy:
+    content: >-
+      {{ {'node': node, 'dns': {'revision': revision.stdout, 'cluster_only': cluster_only, 'listen': ['10.99.99.1'],
+      'tlds': [{'name': 'test', 'address': '10.44.0.7'}], 'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}],
+      'routers': [{'node_id': 7, 'connection': connection, 'host_keys': node.host_keys,
+      'dns': {'revision': revision.stdout, 'kind': 'cluster', 'cluster_id': 999, 'listen': ['192.0.2.20'], 'upstream': ['10.99.99.1'],
+      'tlds': [{'name': 'test', 'address': '192.0.2.20'}], 'records': []}}],
+      'members': [{'node_id': 10, 'connection': connection, 'host_keys': node.host_keys,
+      'policy': {'revision': revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit'], 'all_domains': ['orbit', 'test'],
+      'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['test']}}}]}} | to_json }}
+    dest: "{{ run_dir }}/intent.json"
+    mode: "0600"
+- name: Apply the same publication phase for this stage
+  ansible.builtin.command:
+    argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+  environment:
+    ORBIT_RUN: "{{ run_dir }}"
+  register: stage_phase
+  changed_when: true
+- name: Query the member through its persistent delegate
+  ansible.builtin.command:
+    argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, app.test]
+  register: lan_answer
+  changed_when: false
+  failed_when: "'192.0.2.20' not in lan_answer.stdout"
+- name: Read the stage receipt
+  ansible.builtin.slurp:
+    src: "{{ run_dir }}/result.json"
+  register: stage_result
+- name: Keep the first successful member selection time
+  ansible.builtin.set_fact:
+    original_selected_at: "{{ (stage_result.content | b64decode | from_json).members[0].selected_at }}"
+  when: cluster_only
+- name: Read the original listener identities after preparation
+  ansible.builtin.command:
+    argv: [systemctl, show, --property=MainPID, --value, orbit-private-dns.service, dnsmasq]
+  register: prepared_pids
+  changed_when: false
+  failed_when: prepared_pids.stdout != legacy_pids.stdout
+  when: cluster_only
+- name: Inspect the untouched VPN publication paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.revision]
+  register: untouched_vpn
+  failed_when: untouched_vpn.stat.exists
+  when: cluster_only
+- name: Query the original VPN listener before cutover
+  ansible.builtin.command:
+    argv: [dig, '@10.99.99.1', +short, app.test, A]
+  register: original_answer
+  changed_when: false
+  failed_when: original_answer.stdout != '10.99.99.9'
+  when: cluster_only
+- name: Confirm cutover kept the member selection and full publication evidence
+  ansible.builtin.assert:
+    that:
+      - (stage_result.content | b64decode | from_json).members[0].selected_at == original_selected_at
+      - (stage_result.content | b64decode | from_json).resolvers | length == 2
+    quiet: true
+  when: not cluster_only
+- name: Query canonical VPN DNS after cutover
+  ansible.builtin.command:
+    argv: [dig, '@10.99.99.1', +short, app.test, A]
+  register: canonical_answer
+  changed_when: false
+  failed_when: canonical_answer.stdout != '10.44.0.7'
+  when: not cluster_only

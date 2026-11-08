@@ -62,6 +62,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 - A new task file must be listed in `swamp/manifest.yaml` `additionalFiles`. Otherwise the playbook fails on the worker in about a second, before any task runs, and the step records no stderr. `swamp/bin/source_test.ts` checks every file under `swamp/ansible/`.
 - `incus query` takes the Project in the URL (`?project=...`), not `--project`.
 - A file bind-mounted into a container keeps its old inode when `copy` replaces the host file atomically. Recreate the container on change, or validate the new public config, compare its checksum, write it in place through stdin and reload. `unsafe_writes` permits a fallback; it does not force an in-place write.
+- Preserve original file modes in a snapshot protected by a private directory. Restoring a readable daemon config from a mode-0600 copy can leave the service unable to load it. Prove resolution after rollback, not only that the service is active.
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.
 - `include_tasks` in a loop runs the hosts one at a time. To give each host its own item, set the item as a play variable and use `import_tasks`.
@@ -89,13 +90,13 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 
 ## Prove it
 
-Molecule proves a command with the delegated driver (`default` with `managed: false`; it creates and destroys nothing). A command has a folder `swamp/proof/molecule/<family>-<command>/molecule/` with two scenarios. The [porting guide](../../../docs/swamp/porting.md#5-prove-it-with-molecule) has the layout.
+Two things prove a command. The [porting guide](../../../docs/swamp/porting.md#5-prove-it) has the layout.
 
 1. **`unit`:** run `molecule test -s unit` on any machine. It proves the templates on fixed text.
-2. **`default`:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), run `molecule test`. `converge` runs the real CLI, `php apps/cli/orbit <command> --json`, and asserts the answer; `verify` asserts the machine state and the Gateway records.
+2. **Cases file:** in the nested fleet of your task VM (stage 2 of the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx)), the case runner runs `swamp/proof/<family>/<command>.cases.yaml` against the real CLI, `php apps/cli/orbit <command> --json`. Follow [verifying-commands](../verifying-commands/SKILL.md).
 3. **Idempotence:** run the command twice. The second run is `succeeded` with its skip reason and changes nothing on the Node. A phase run directly (`ansible-playbook -i inventory.yml -e @vars.yml --tags <phase> <playbook>` from the run folder) must report zero `changed` on a second run.
 4. **Negative:** break the effect and check that only that case fails.
-5. Run the whole path through Swamp as one Molecule step per batch, and attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
+5. Attach the verdicts as [swamp-flow](../swamp-flow/SKILL.md) asks.
 
 Report the time on fresh Nodes, the time with nothing to change, and the phase times of `profile_tasks` (`ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks`).
 
@@ -104,3 +105,5 @@ Report the time on fresh Nodes, the time with nothing to change, and the phase t
 When a phase teaches a new rule or pitfall, add it here in the same PR. Replace superseded text.
 
 Incus boot configuration must converge on an existing base before it starts, not only at `incus init`. Snapshot copies inherit that configuration. Test a stale existing base and an already-current base as well as a new base.
+
+Detect a ZFS loop pool from its actual source file, not only a missing `zfs_dataset` setting: an existing native pool may omit that setting. Apply a loop host's ARC limit both in the running module and its boot configuration; leave native host ARC intent unchanged. Host capacity must include measured VM memory and a separate margin for host services.

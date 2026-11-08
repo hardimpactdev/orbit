@@ -55,7 +55,7 @@ final readonly class ProofRunIntent
      * the groups and VMs and the hand-over to Swamp run in the job {@see AdmitProofRun}, which a release drains with the queue workers
      * (docs/cli/proof/run.mmd). The outcome of a refused or failed admission is on the proof Operation, with its code and message.
      */
-    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false): Operation
+    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false, ?Node $authenticatedCaller = null): Operation
     {
         if (($existing = $this->idempotency->replay(OperationKinds::ProofRun)) !== null) {
             return $existing;
@@ -65,7 +65,11 @@ final readonly class ProofRunIntent
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
-            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, 'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
+            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly,
+                'caller_node_id' => $authenticatedCaller?->id,
+                'ci_reserve' => $authenticatedCaller?->status === LifecycleStatus::Active && $authenticatedCaller->roles()
+                    ->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
+                'runs' => [], ...($keepFailed ? ['keep_failed' => true] : [])], $caller, $requestId);
         $this->store->change($proof, ['status' => OperationStatus::Running, 'started_at' => now()]);
         try {
             app(Dispatcher::class)->dispatch(new AdmitProofRun($proof->id));
@@ -113,7 +117,7 @@ final readonly class ProofRunIntent
             // One transaction holds every group, VM and run, so a command that cannot start (no host has room) leaves nothing behind:
             // the groups roll back with it, and Swamp starts no run before the whole proof is admitted.
             $fresh = $this->freshHosts($selection->mergeBase);
-            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $reportOnly, $intent): array {
+            app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, fn () => DB::transaction(function () use ($proof, $commit, $selection, $intent): array {
                 // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
                 // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
                 if (Operation::query()->lockForUpdate()->find($proof->id)?->status->terminal() !== false) {
@@ -124,7 +128,8 @@ final readonly class ProofRunIntent
                 foreach ($selection->cases as $case) {
                     $group = $this->group($commit, $case['command']);
                     $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(TaskProvisionIntent::class)->admit($group, $commit, 'proof.command',
-                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null, keepFree: $reportOnly ? 1 : 0));
+                        fn (array $input, Task $group, Instance $instance, TaskVm $vm): array => $this->runInput($proof, $commit, $selection->mergeBase, $case, $input, $group, $instance), 'proof-run', null,
+                        ciReserve: ($intent['ci_reserve'] ?? false) === true));
                     $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id];
                 }
 
@@ -134,7 +139,10 @@ final readonly class ProofRunIntent
                 return $runs;
             }));
         } catch (Throwable $exception) {
-            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable' && $this->waitForRoom($proof, $reportOnly || ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))) {
+            $hasFreshHosts = $fresh?->hosts !== [] && app(TaskVmCapacity::class)->activeHosts() !== [];
+            if ($exception instanceof ResourceOperationException && $exception->errorCode === 'tasks.capacity_unavailable'
+                && ($reportOnly ? $hasFreshHosts : ! ($fresh?->hosts === [] && app(TaskVmCapacity::class)->activeHosts() !== []))
+                && $this->waitForRoom($proof, $reportOnly)) {
                 return;
             }
             $this->fail($proof, $exception instanceof ResourceOperationException ? $exception->errorCode : ProofCommandProjection::RunFailed,
@@ -160,20 +168,19 @@ final readonly class ProofRunIntent
 
     /**
      * A proof that cannot be placed takes the room back from the VMs that yield to it, and tries again in a few seconds: the VMs that failed
-     * runs kept (`--keep-failed`), and the running report-only proofs, which are cancelled. A report-only proof does neither: it yields
-     * capacity, and the report-only job of every pull request would destroy the VM somebody is reading. Nor does a proof for which hosts
-     * exist but none has fresh enough copies: a freed slot would not help it.
+     * runs kept (`--keep-failed`), and the running non-CI report-only proofs, which are cancelled. A report-only proof waits without either action,
+     * so CI can use the reserve when its current proof or refresh ends. Stale copies are refused without preemption.
      *
      * @return bool whether the admission goes on: a VM is on its way out, the proof is young enough to wait, and the new try is queued
      */
     private function waitForRoom(Operation $proof, bool $yields): bool
     {
-        if ($yields || $proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
+        if ($proof->created_at === null || $proof->created_at->lt(now()->subSeconds(self::WaitSeconds))) {
             return false;
         }
         try {
             // A proof that was cancelled while the job ran is left alone, and nothing is released or cancelled for it.
-            if (! $this->whileOpen($proof->id, static fn () => null) || app(ProofKeptVms::class)->releaseAll() + app(ProofReportOnlyProofs::class)->preempt($proof->id) === 0) {
+            if (! $this->whileOpen($proof->id, static fn () => null) || (! $yields && app(ProofKeptVms::class)->releaseAll() + app(ProofReportOnlyProofs::class)->preempt($proof->id) === 0)) {
                 return false;
             }
             $this->whileOpen($proof->id, fn (Operation $current) => $this->store->change($current, ['current_step' => self::WaitStep]));
@@ -236,6 +243,7 @@ final readonly class ProofRunIntent
 
         return [
             'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'],
+            'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_reserve' => ($proof->input['ci_reserve'] ?? false) === true,
             'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $input['node_id'],
             'execution_secrets' => $input['execution_secrets'] ?? [],
             'provision' => array_diff_key($input, ['execution_secrets' => true]),

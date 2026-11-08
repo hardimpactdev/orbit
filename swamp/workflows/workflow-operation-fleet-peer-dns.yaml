@@ -2,7 +2,7 @@
 # Generated from network-command/workflows.ts
 id: f05d2ee0-5aa7-4271-9924-fda8b65a786d
 name: operation-fleet-peer-dns
-description: Pinned official SSH from209; full public input and typed terminal output.
+description: One shared Ansible member phase selects the Cluster delegate and remaining VPN scope.
 vaults: []
 queueTimeout: 60
 labels:
@@ -16,7 +16,8 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, const: fleet.peer_dns}
+    kind:
+      type: string
     intent:
       type: object
     execution_secrets:
@@ -31,22 +32,24 @@ inputs:
   additionalProperties: false
 jobs:
   - name: dns
+    labels:
+      role: swamp
     steps:
-      - name: Keep the DNS hook
+      - name: Write the intent
         labels: {role: swamp}
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/line', behaviorName: '${{ ("network-dns-hook-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /etc/wireguard/orbit.conf, regexp: '^PostUp\s*=\s*resolvectl dns %i ', line: '${{ inputs.intent.dns_hook }}', insertAfter: '^\[Interface\]', createFile: false}, inputs: {}}
-      - name: Write the DNS marker
+        task: {type: behavior, behaviorType: '@nckrtl/ansible-input', behaviorName: ansible-input, methodName: write, inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-peer-dns-" + run.id + "/intent.json" }}'}}
+      - name: Apply member DNS policy
         labels: {role: swamp}
-        dependsOn: [{step: Keep the DNS hook, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("network-dns-link-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /etc/wireguard/orbit.dns-link, ensure: present, content: '${{ "orbit\n" + inputs.intent.server + "\n" + inputs.intent.domains.join("\n") + "\n" }}', owner: root, group: root, mode: '0600'}, inputs: {}}
-      - name: Set the DNS policy
-        labels: {role: swamp}
-        dependsOn: [{step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}]
-        writes: true
-        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/exec', behaviorName: '${{ ("network-dns-policy-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, command: '${{ "resolvectl dns orbit " + inputs.intent.server + " && resolvectl domain orbit " + inputs.intent.domains.map(d,"''~"+d+"''").join(" ") + " && resolvectl default-route orbit no" }}', notIf: '${{ "test \"$(resolvectl dns orbit | cut -d: -f2- | xargs)\" = " + inputs.intent.server + " && test \"$(resolvectl domain orbit | cut -d: -f2- | xargs)\" = ''" + inputs.intent.domains.map(d,"~"+d).join(" ") + "'' && test \"$(resolvectl default-route orbit | cut -d: -f2- | xargs)\" = no" }}'}, inputs: {}}
+        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "peer-dns-apply-member-dns-policy-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: 'timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags member "$ORBIT_ANSIBLE/peer-dns.yml"', env: {ORBIT_RUN: '${{ "/tmp/orbit-peer-dns-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-peer-dns-" + run.id + "/known_hosts" }}'}}}
+        dependsOn: [{step: Write the intent, condition: {type: succeeded}}]
       - name: Check resolution
         labels: {role: swamp}
-        dependsOn: [{step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","20","sh","-c","p=$(resolvectl query --cache=no \"$1\") || { echo \"dns.private_unresolved: $1\" >&2; exit 3; }\ncase \"$p\" in *\"-- link: orbit\"*) ;; *) echo \"dns.private_not_on_orbit: $1\" >&2; exit 3;; esac\nq=$(resolvectl query --cache=no \"$2\") || { echo \"dns.public_unresolved: $2\" >&2; exit 4; }\ncase \"$q\" in *\"-- link: orbit\"*) echo \"dns.public_on_orbit: $2\" >&2; exit 4;; esac","sh",inputs.intent.probe,"example.com"] }}'}}
+        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "peer-dns-check-resolution-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 10 cat "$ORBIT_RUN/result.json", env: {ORBIT_RUN: '${{ "/tmp/orbit-peer-dns-" + run.id }}'}}}
+        dependsOn: [{step: Apply member DNS policy, condition: {type: always}}]
+      - name: Remove the run folder
+        labels: {role: swamp}
+        writes: true
+        task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "peer-dns-remove-the-run-folder-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 30 rm -rf -- "$ORBIT_RUN", env: {ORBIT_RUN: '${{ "/tmp/orbit-peer-dns-" + run.id }}'}}}
+        dependsOn: [{step: Check resolution, condition: {type: always}}]

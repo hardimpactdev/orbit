@@ -1,0 +1,66 @@
+---
+- name: Publish VPN and LAN projections and select the delegate
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_dir: "{{ playbook_dir }}/../../../../../ansible"
+    run_dir: /tmp/orbit-cluster-proof
+    node: {host: 127.0.0.1, user: root, port: 22, identity_file: /nonexistent, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA"]}
+  tasks:
+    - name: Take a newer proof revision
+      ansible.builtin.command:
+        argv: [date, +%s%6N]
+      register: proof_revision
+      changed_when: false
+    - name: Write the canonical VPN publication
+      ansible.builtin.copy:
+        content: "{{ {'node': node, 'dns': {'revision': proof_revision.stdout, 'listen': ['10.99.99.1'], 'tlds': [{'name': 'test', 'address': '10.44.0.7'}, {'name': 'foreign.test', 'address': '10.44.0.8'}], 'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}]}} | to_json }}"
+        dest: "{{ run_dir }}/intent.json"
+        mode: "0600"
+    - name: Apply canonical VPN DNS
+      ansible.builtin.command:
+        argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+      environment:
+        ORBIT_RUN: "{{ run_dir }}"
+      register: vpn_phase
+      changed_when: "'changed=0 ' not in vpn_phase.stdout"
+    - name: Write the isolated Router publication
+      ansible.builtin.copy:
+        content: "{{ {'node': node, 'dns': {'revision': proof_revision.stdout, 'kind': 'cluster', 'cluster_id': 999, 'listen': ['192.0.2.20'], 'upstream': ['10.99.99.1'], 'tlds': [{'name': 'test', 'address': '192.0.2.20'}, {'name': 'foreign.test', 'address': '10.44.0.8'}], 'records': [{'name': 'app.example.org', 'address': '192.0.2.20', 'pair': true}]}} | to_json }}"
+        dest: "{{ run_dir }}/intent.json"
+        mode: "0600"
+    - name: Apply the dedicated Router resolver
+      ansible.builtin.command:
+        argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+      environment:
+        ORBIT_RUN: "{{ run_dir }}"
+      register: router_phase
+      changed_when: "'changed=0 ' not in router_phase.stdout"
+    - name: Repeat the Router phase without a reload
+      ansible.builtin.command:
+        argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, publish, "{{ ansible_dir }}/dns-publish.yml"]
+      environment:
+        ORBIT_RUN: "{{ run_dir }}"
+      register: router_repeat
+      changed_when: false
+      failed_when: "router_repeat.rc != 0 or 'changed=0 ' not in router_repeat.stdout"
+    - name: Write the member selection
+      ansible.builtin.copy:
+        content: "{{ {'ssh': {'target': node, 'identity_file': '/nonexistent'}, 'selection': {'revision': proof_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'foreign.test'], 'all_domains': ['orbit', 'test'], 'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['test', 'app.example.org']}}} | to_json }}"
+        dest: "{{ run_dir }}/intent.json"
+        mode: "0600"
+    - name: Select the Cluster-only delegate
+      ansible.builtin.command:
+        argv: [timeout, "300", ansible-playbook, -i, "{{ run_dir }}/inventory.yml", --tags, member, "{{ ansible_dir }}/peer-dns.yml"]
+      environment:
+        ORBIT_RUN: "{{ run_dir }}"
+      register: member_phase
+      changed_when: "'changed=0 ' not in member_phase.stdout"
+    - name: Report measured preparation times
+      ansible.builtin.debug:
+        msg:
+          vpn_publication: "{{ vpn_phase.delta }}"
+          router_publication: "{{ router_phase.delta }}"
+          router_unchanged: "{{ router_repeat.delta }}"
+          member_selection: "{{ member_phase.delta }}"

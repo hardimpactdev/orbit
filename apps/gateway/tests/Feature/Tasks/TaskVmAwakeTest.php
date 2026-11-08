@@ -12,9 +12,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskVmAwake;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmResumeIntent;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -24,6 +28,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -40,7 +45,7 @@ function awakeWorld(TaskVmState $state): array
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
     $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
         'state' => $state, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => null]);
-    $vm->update(['name' => 'tvm-'.$vm->id]);
+    $vm->update(['name' => 'shark-tvm-2', 'slot_number' => 2]);
     Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
 
@@ -54,6 +59,62 @@ it('lets work go on while the task VM runs', function (): void {
 
     expect(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
 });
+
+/** A parkable slot VM with the runtime configuration needed by resume admission. */
+function awakeProviderWorld(TaskVmState $state): array
+{
+    [$group, $vm] = awakeWorld($state);
+    SwampNodeFixture::ensure();
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [new TaskVmHost($vm->host_node_id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 5, 4, '8GiB', '40GiB')],
+        '/pi', str_repeat('a', 64), ['gpt-6']));
+    $vm->update(['pi_token' => str_repeat('p', 64)]);
+    $instance = Instance::query()->where('task_workspace_owner_id', $group->id)->sole();
+    $instance->update(['status' => InstanceState::SourceResolved]);
+    $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3223', 'watched_pr_state' => 'open']);
+
+    return [$group, $vm];
+}
+
+it('admits park and resume for a slot VM, including its original host name after a rename', function (TaskVmState $state): void {
+    [$group, $vm] = awakeProviderWorld($state);
+    Node::withoutEvents(fn () => Node::query()->findOrFail($vm->host_node_id)->update(['name' => 'renamed-host']));
+
+    $park = app(TaskParkIntent::class)->capture($group);
+    $resume = app(TaskVmResumeIntent::class)->capture($vm);
+
+    expect($park['task_vm_id'])->toBe($vm->id)
+        ->and($park['provider_input']['vm']['name'])->toBe('shark-tvm-2')
+        ->and($resume['task_vm_id'])->toBe($vm->id)
+        ->and($resume['provider_input']['vm']['name'])->toBe('shark-tvm-2')
+        ->and($resume['mode'])->toBe($state === TaskVmState::Parked ? 'resume' : 'converge');
+})->with([TaskVmState::Parked, TaskVmState::Ready]);
+
+it('admits park and resume for an old-pool VM without a slot number', function (): void {
+    [$group, $vm] = awakeProviderWorld(TaskVmState::Parked);
+    $vm->update(['slot_number' => null, 'name' => 'tvm-'.$vm->id]);
+
+    expect(app(TaskParkIntent::class)->capture($group)['provider_input']['name'])->toBe($vm->name)
+        ->and(app(TaskVmResumeIntent::class)->capture($vm)['provider_input']['name'])->toBe($vm->name);
+});
+
+it('refuses park and resume with 409 for any name outside the task VM allow-list', function (?int $slot, string $name): void {
+    [$group, $vm] = awakeProviderWorld(TaskVmState::Parked);
+    $vm->update(['slot_number' => $slot, 'name' => $name]);
+    $refused = fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('task_vm.provider_identity_invalid')
+        ->and($exception->status)->toBe(409);
+
+    expect(fn () => app(TaskParkIntent::class)->capture($group))->toThrow($refused);
+    expect(fn () => app(TaskVmResumeIntent::class)->capture($vm))->toThrow($refused);
+})->with([
+    'base VM' => [2, 'shark-base'],
+    'seed VM' => [2, 'shark-tvm-2-seed'],
+    'wrong slot' => [2, 'shark-tvm-3'],
+    'old name on a slot' => [2, 'tvm-123'],
+    'slot name without a slot' => [null, 'shark-tvm-2'],
+    'invalid host shape' => [2, '-shark-tvm-2'],
+    'unrelated old pool name' => [null, 'shark-base'],
+]);
 
 it('refuses the call, with the reason, when the resume of a parked VM cannot be admitted', function (): void {
     [$group] = awakeWorld(TaskVmState::Parked);

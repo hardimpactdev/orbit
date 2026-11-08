@@ -46,7 +46,7 @@ final readonly class ClusterTldTargets
      *
      * @param  array{tld?: ?string, state?: string, router_node_id?: ?int}  $pending
      */
-    private function router(Cluster $cluster, array $pending): ?Node
+    public function router(Cluster $cluster, array $pending): ?Node
     {
         if (array_key_exists('router_node_id', $pending)) {
             return is_int($pending['router_node_id']) ? Node::query()->find($pending['router_node_id']) : null;

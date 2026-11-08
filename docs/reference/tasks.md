@@ -105,6 +105,10 @@ A resource observation job checks every parked VM once a minute, including group
 
 `task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/tasks/{task}/start`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
+Task work and operator proofs never use a `ci_only` host, even when it is the only free host. Authenticated CI proofs prefer it over shared hosts.
+
+Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
+
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
 A run that provisions its own VM as one step can pin the VM to one task VM host. The [refresh of a host's base snapshot](/reference/compute-drivers#refresh-the-base-snapshot) does: its proof start goes to that host only and copies the base snapshot the host promoted last.
@@ -144,6 +148,8 @@ Each read and command on the VM is one official `@swamp/ssh exec` argument list;
 Early in the workspace run, beside the clone credential, a step asks the Gateway for a read token (`purpose: dependencies`). Two parallel steps write the Composer and npm configuration of the task account from it, right before the first setup command. After the last setup command, on success or failure, two parallel steps remove both files and revoke the token. The revoke step reports the outcome in the receipt as `dependency_token`. A revoke that could not run says so: `The revoke step could not run.` Any other failed revoke says `The revoke request did not complete.`
 
 Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
+
+Each shared task VM host keeps one Large VM place for authenticated CI proofs, shared with its refresh candidate proof. CI-only hosts admit only authenticated CI proofs and their own refresh proofs. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and slot numbers.
 
 Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. A host without a recorded base snapshot cannot serve a new VM. See [Image fallback](/reference/compute-drivers#image-fallback).
 
@@ -367,7 +373,7 @@ The Gateway projects the terminal event once. A succeeded run records the worksp
 
 #### Apply the corrections
 
-`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/tasks/{task}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes, and the parked prep group resumes. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
+`task:prep-fix` starts `tasks.prep_fix` through `POST /api/v1/tasks/{task}/prep-fix` with `{ corrections }`. It is the "Apply the corrections" step of [stage 1](/reference/command-development-pipeline#1-prep): the owner reviewed the spec in its draft PR and asked for changes. A parked VM resumes first; a ready VM runs the corrections directly. `corrections` is the review as text, up to 40,000 characters, with any decision made since. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request; the MCP tool `task-prep-fix` is the caller, and so is the gate check of stage 4.
 
 Every minute the gate reads the reviews of a draft pull request whose group has a succeeded `tasks.prep` run, a parked task VM and a build that has not started, and the owner has not approved the head. When the latest decision of the reviewer is a request for changes on exactly that head, the gate admits `task:prep-fix` with the review text and the inline comments of the reviewer as `corrections`.
 
@@ -375,15 +381,15 @@ The admission is keyed by group and review, so a repeat tick starts nothing and 
 
 The group must be a prep group: a succeeded `tasks.prep` run, its task VM parked or still running with its Pi credential, an open pull request, and no running operation. Otherwise admission returns `409 tasks.prep_fix_refused`. The Gateway captures the whole intent in one transaction. It holds:
 
-- the resume of the VM;
+- the task VM identity and a parked VM's resume;
 - the author turn, with the corrections as its prompt;
 - two new review threads and the fix turn;
 - the path of the cases file;
 - the vault key names of the Pi token and the push token.
 
-The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children:
+The native `operation-task-prep-fix` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the author turn directly:
 
-- `Resume the VM` runs `operation-task-vm-resume`.
+- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
 - `Apply the corrections` runs the author turn on the author thread of the prep run. The author changes only the three files of the spec, in one new commit. It never amends a pushed commit.
 - `Plan the cases` and the review follow as in the prep run, for at most two rounds.
   - The reviewer also checks that each correction is applied or has a reason.
@@ -407,11 +413,11 @@ In manual mode it acts when the latest review of the reviewer approves the exact
 
 In one transaction the Gateway records the approval (the head, the mode and the reviewer) in the intent, appends the build subtask, moves the group to `running` and admits one run.
 
-The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the resume of the VM, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
+The subtask has a fixed brief that names the approved chart, page and cases of the command and the approved head. Its deliverables are that the runner plan of the cases file passes and that the Project check passes, as the check command of the Project or, without one, a review deliverable. The intent also holds the task VM identity, its resume only when parked, the sync of the workspace, the first implementer turn on a new thread, and the vault key names of the Pi token and the read token.
 
-The native `operation-task-build` workflow is one parent run, with existing workflows as children:
+The native `operation-task-build` workflow is one parent run, with existing workflows as children. A ready VM skips resume and starts the sync directly:
 
-- `Resume the VM` runs `operation-task-vm-resume`.
+- `Resume the VM` wakes a parked VM through `operation-task-vm-resume`.
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
@@ -1001,7 +1007,7 @@ On Node 209 the run makes a bare clone of the default branch, fetches the task b
 
 ## Project check
 
-A `tasks.check` operation runs the Project's configured check. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
+A `tasks.check` operation runs the Project's configured check once, before the subtask's deliverables. Command builds add the runner plan as a command deliverable; they do not repeat the configured Project check as another command deliverable. Without a configured command, the build adds a Project-check review deliverable. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
 
 ### Check output
 

@@ -21,7 +21,6 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
     /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
     public const array StepCodes = [
         'Remove private DNS' => 'private_dns.publication_failed',
-        'Wait the DNS grace' => 'route.dns_grace_failed',
         'Withdraw site, remove cert' => 'route.withdraw_failed',
         'Converge PHP-FPM pools' => 'route.pool_converge_failed',
         'Remove unused LAN rules' => 'route.lan_firewall_failed',

@@ -1,0 +1,234 @@
+---
+- name: Check real resolver selection and isolated service ownership
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check the unrelated unit survived publication
+      ansible.builtin.stat:
+        path: /etc/systemd/system/orbit-dns-unowned-proof.service
+      register: unowned_unit
+      failed_when: not unowned_unit.stat.exists
+    - name: Ask the member stub for a Cluster name
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --type=A, app.test]
+      register: member_answer
+      changed_when: false
+      failed_when: "'192.0.2.20' not in member_answer.stdout"
+    - name: Ask VPN DNS directly for the same name
+      ansible.builtin.command:
+        argv: [dig, '@10.99.99.1', +short, app.test, A]
+      register: vpn_answer
+      changed_when: false
+      failed_when: vpn_answer.stdout != '10.44.0.7'
+    - name: Ask the member for a foreign nested namespace
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --type=A, app.foreign.test]
+      register: foreign_answer
+      changed_when: false
+      failed_when: "'10.44.0.8' not in foreign_answer.stdout or '-- link: orbit' not in foreign_answer.stdout"
+    - name: Ask the Router over TCP
+      ansible.builtin.command:
+        argv: [dig, '@192.0.2.20', +tcp, +short, app.test, A]
+      register: tcp_answer
+      changed_when: false
+      failed_when: tcp_answer.stdout != '192.0.2.20'
+    - name: Ask the Router for an absent address family
+      ansible.builtin.command:
+        argv: [dig, '@192.0.2.20', +noall, +comments, +answer, app.example.org, AAAA]
+      register: aaaa_answer
+      changed_when: false
+      failed_when: "'status: NOERROR' not in aaaa_answer.stdout or 'ANSWER: 0' not in aaaa_answer.stdout"
+    - name: Read the actual delegate scope
+      ansible.builtin.command:
+        argv: [resolvectl, status]
+      register: resolver_status
+      changed_when: false
+    - name: Check public DNS and the delegate are separate scopes
+      ansible.builtin.assert:
+        that:
+          - "'192.0.2.20' in resolver_status.stdout"
+          - "'~test' in resolver_status.stdout"
+          - "'Link ' in resolver_status.stdout"
+    - name: Check forwarding from Router to VPN
+      ansible.builtin.command:
+        argv: [dig, '@192.0.2.20', +short, gateway.orbit, A]
+      register: forwarded_private
+      changed_when: false
+      failed_when: forwarded_private.stdout != '10.44.0.2'
+    - name: Restart resolved to prove it reloads the persistent delegate
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+    - name: The Cluster delegate survives resolver restart without repair
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, persisted.test]
+      register: persisted_answer
+      changed_when: false
+      failed_when: "'192.0.2.20' not in persisted_answer.stdout"
+    - name: Replay the persisted WireGuard hook after link DNS is lost
+      ansible.builtin.shell: |
+        hook=$(sed -n 's/^PostUp = //p' /etc/wireguard/orbit.conf)
+        test -n "$hook"
+        printf '%s\n' "$hook" | sed 's/%i/orbit/g' | sh
+        resolvectl default-route orbit no
+      changed_when: true
+    - name: Restore the disposable public uplink runtime policy after restart
+      ansible.builtin.command:
+        argv: [resolvectl, dns, eth0, 192.0.2.53]
+      changed_when: true
+    - name: The replayed hook preserves the delegate's exclusive Cluster scope
+      ansible.builtin.command:
+        argv: [resolvectl, domain, orbit]
+      register: replayed_domains
+      changed_when: false
+      failed_when: "'~test' in replayed_domains.stdout or '~orbit' not in replayed_domains.stdout"
+    - name: Stop VPN DNS inside the disposable proof
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: stopped
+    - name: Cluster answers remain local during a VPN outage
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, local-during-vpn-outage.test]
+      register: local_without_vpn
+      changed_when: false
+      failed_when: "'192.0.2.20' not in local_without_vpn.stdout"
+    - name: Public DNS remains independent during a VPN outage
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --type=A, example.com]
+      register: public_without_vpn
+      changed_when: false
+      failed_when: "'93.184.216.34' not in public_without_vpn.stdout or '-- link: orbit' in public_without_vpn.stdout"
+    - name: Restore the proof VPN resolver
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: started
+    - name: Stop the proof Cluster Router resolver
+      ansible.builtin.systemd:
+        name: orbit-cluster-dns-999.service
+        state: stopped
+    - name: A Router outage fails instead of falling back
+      ansible.builtin.command:
+        argv: [timeout, '25', resolvectl, query, --cache=no, --stale-data=no, --type=A, no-fallback.test]
+      register: no_fallback
+      changed_when: false
+      failed_when: no_fallback.rc == 0 or '10.44.0.7' in no_fallback.stdout
+    - name: The read-only health unit records the outage
+      ansible.builtin.command:
+        argv: [timeout, '30', systemctl, start, orbit-cluster-dns-check.service]
+      register: failed_observation
+      changed_when: false
+      failed_when: failed_observation.rc == 0
+    - name: The delegate remains selected throughout the outage
+      ansible.builtin.slurp:
+        src: /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+      register: retained_delegate
+      failed_when: "'DNS=192.0.2.20' not in (retained_delegate.content | b64decode)"
+    - name: Restore the Router after the deliberate outage
+      ansible.builtin.systemd:
+        name: orbit-cluster-dns-999.service
+        state: started
+    - name: Verify the health observation recovers without a selection change
+      ansible.builtin.command:
+        argv: [timeout, '30', systemctl, start, orbit-cluster-dns-check.service]
+      changed_when: false
+    - name: Repeat the member phase with no policy change
+      ansible.builtin.command:
+        argv: [timeout, '300', ansible-playbook, -i, /tmp/orbit-cluster-proof/inventory.yml, --tags, member, '{{ playbook_dir }}/../../../../../ansible/peer-dns.yml']
+      environment:
+        ORBIT_RUN: /tmp/orbit-cluster-proof
+      register: member_repeat
+      changed_when: false
+      failed_when: "member_repeat.rc != 0 or member_repeat.stdout is not search('node[ ]+:[ ]+ok=[0-9]+[ ]+changed=0[ ]')"
+    - name: Prove failed commits and delegate replacements
+      ansible.builtin.import_tasks: review-regressions.yml
+    - name: Take a fresh member withdrawal revision
+      ansible.builtin.command:
+        argv: [date, +%s%6N]
+      register: proof_revision
+      changed_when: false
+    - name: Keep an explicit withdrawal intent
+      ansible.builtin.copy:
+        content: >-
+          {{ {'ssh': {'target': {'host': '127.0.0.1', 'user': 'root', 'port': 22,
+          'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA']},
+          'identity_file': '/nonexistent'}, 'selection': {'revision': proof_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'],
+          'all_domains': ['orbit', 'test'], 'delegate': none}} | to_json }}
+        dest: /tmp/orbit-cluster-proof/intent.json
+        mode: '0600'
+    - name: Withdraw the delegate with full VPN coverage first
+      ansible.builtin.command:
+        argv: [timeout, '300', ansible-playbook, -i, /tmp/orbit-cluster-proof/inventory.yml, --tags, member, '{{ playbook_dir }}/../../../../../ansible/peer-dns.yml']
+      environment:
+        ORBIT_RUN: /tmp/orbit-cluster-proof
+      changed_when: true
+    - name: Verify the withdrawn member uses WireGuard answers
+      ansible.builtin.command:
+        argv: [resolvectl, query, --cache=no, --type=A, app.test]
+      register: withdrawn_answer
+      changed_when: false
+      failed_when: "'10.44.0.7' not in withdrawn_answer.stdout or '-- link: orbit' not in withdrawn_answer.stdout"
+    - name: Verify only the owned delegate was withdrawn
+      ansible.builtin.stat:
+        path: /etc/systemd/dns-delegate.d/orbit-cluster.dns-delegate
+      register: withdrawn_file
+      failed_when: withdrawn_file.stat.exists
+    - name: Verify public DNS remained on its original link
+      ansible.builtin.command:
+        argv: [resolvectl, dns, eth0]
+      register: public_link_after
+      changed_when: false
+      failed_when: "'192.0.2.53' not in public_link_after.stdout or '192.0.2.20' in public_link_after.stdout"
+    - name: Take a fresh revision for coordinated withdrawal and retirement
+      ansible.builtin.command:
+        argv: [date, +%s%6N]
+      register: retire_revision
+      changed_when: false
+    - name: Write the complete multi-target retirement publication
+      ansible.builtin.copy:
+        content: >-
+          {{ {'node': {'host': '127.0.0.1', 'user': 'root', 'port': 22, 'identity_file': '/nonexistent',
+          'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA']},
+          'dns': {'revision': retire_revision.stdout, 'listen': ['10.99.99.1'],
+          'tlds': [{'name': 'test', 'address': '10.44.0.7'}, {'name': 'foreign.test', 'address': '10.44.0.8'}],
+          'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}],
+          'members': [{'node_id': 10, 'connection': {'nodeHost': '127.0.0.1', 'nodeUser': 'root', 'nodePort': 22, 'nodeIdentityFile': '/nonexistent'},
+          'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA'],
+          'policy': {'revision': retire_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'], 'all_domains': ['orbit', 'test'], 'delegate': none}}],
+          'retired': [{'node_id': 7, 'cluster_id': 999, 'revision': retire_revision.stdout,
+          'connection': {'nodeHost': '127.0.0.1', 'nodeUser': 'root', 'nodePort': 22, 'nodeIdentityFile': '/nonexistent'},
+          'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA']}]}} | to_json }}
+        dest: /tmp/orbit-cluster-proof/intent.json
+        mode: '0600'
+    - name: Complete the shared grace and retire the old resolver
+      ansible.builtin.command:
+        argv: [timeout, '300', ansible-playbook, -i, /tmp/orbit-cluster-proof/inventory.yml, --tags, publish, '{{ playbook_dir }}/../../../../../ansible/dns-publish.yml']
+      environment:
+        ORBIT_RUN: /tmp/orbit-cluster-proof
+      register: retire_phase
+      changed_when: true
+    - name: Read the complete publication receipt
+      ansible.builtin.slurp:
+        src: /tmp/orbit-cluster-proof/result.json
+      register: complete_receipt
+    - name: Check that all targets contributed evidence
+      ansible.builtin.assert:
+        that:
+          - (complete_receipt.content | b64decode | from_json).error_code is not defined
+          - (complete_receipt.content | b64decode | from_json).members | length == 1
+          - (complete_receipt.content | b64decode | from_json).members[0].effective.delegate is none
+    - name: Verify the owned resolver unit was retired
+      ansible.builtin.stat:
+        path: /etc/systemd/system/orbit-cluster-dns-999.service
+      register: retired_unit
+      failed_when: retired_unit.stat.exists
+    - name: Verify the unrelated resolver ownership sentinel remains
+      ansible.builtin.stat:
+        path: /etc/systemd/system/orbit-dns-unowned-proof.service
+      register: retired_sentinel
+      failed_when: not retired_sentinel.stat.exists
+    - name: Report measured phase times
+      ansible.builtin.debug:
+        msg:
+          member_unchanged: "{{ member_repeat.delta }}"
+          retirement_publication: "{{ retire_phase.delta }}"

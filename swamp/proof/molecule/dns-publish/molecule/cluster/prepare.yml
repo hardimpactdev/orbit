@@ -1,0 +1,94 @@
+---
+- name: Prepare the disposable Ubuntu resolver proof
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Prepare the independent public uplink
+      ansible.builtin.import_tasks: ../../public-resolver.yml
+    - name: Require delegate support
+      ansible.builtin.command:
+        argv: [resolvectl, --version]
+      register: resolved_version
+      changed_when: false
+      failed_when: (resolved_version.stdout | regex_findall('^systemd ([0-9]+)') | first | int) < 258
+    - name: Remove the VPN-only fixture global resolver policy
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d/30-orbit-local-dns.conf
+        state: absent
+      register: old_vpn_global
+    - name: Reload the independent member resolver
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: reloaded
+      when: old_vpn_global.changed
+    - name: Read proof addresses
+      ansible.builtin.command:
+        argv: [ip, -4, -o, address, show]
+      register: proof_addresses
+      changed_when: false
+    - name: Add isolated proof addresses
+      ansible.builtin.command:
+        argv: [ip, addr, add, "{{ item }}/32", dev, lo]
+      loop: [10.99.99.1, 192.0.2.20]
+      when: item ~ '/32' not in proof_addresses.stdout
+      changed_when: true
+    - name: Read proof links
+      ansible.builtin.command:
+        argv: [ip, -o, link, show]
+      register: proof_links
+      changed_when: false
+    - name: Make the proof WireGuard resolver link
+      ansible.builtin.command:
+        argv: [ip, link, add, orbit, type, dummy]
+      when: "'orbit:' not in proof_links.stdout"
+      changed_when: true
+    - name: Activate the proof resolver link
+      ansible.builtin.command:
+        argv: [ip, link, set, orbit, up]
+      changed_when: false
+    - name: Place the VPN proof address on its DNS link
+      ansible.builtin.command:
+        argv: [ip, address, del, 10.99.99.1/32, dev, lo]
+      when: "proof_addresses.stdout is search('lo[ ]+inet 10[.]99[.]99[.]1/32')"
+      changed_when: true
+    - name: Give the private DNS link its own address
+      ansible.builtin.command:
+        argv: [ip, address, replace, 10.99.99.1/32, dev, orbit]
+      changed_when: false
+    - name: Make the proof peer directory
+      ansible.builtin.file:
+        path: /etc/wireguard
+        state: directory
+        mode: "0700"
+    - name: Keep the public proof WireGuard configuration
+      ansible.builtin.copy:
+        content: "[Interface]\n# Proof only: no private key or WireGuard traffic.\n"
+        dest: /etc/wireguard/orbit.conf
+        force: false
+        mode: "0600"
+    - name: Keep an unrelated unit as an ownership sentinel
+      ansible.builtin.copy:
+        content: "# Unmanaged proof sentinel.\n[Service]\nExecStart=/bin/true\n"
+        dest: /etc/systemd/system/orbit-dns-unowned-proof.service
+        mode: "0644"
+    - name: Make the phase run directory
+      ansible.builtin.file:
+        path: /tmp/orbit-cluster-proof
+        state: directory
+        mode: "0700"
+    - name: Write the local proof inventory
+      ansible.builtin.copy:
+        content: |
+          all:
+            vars:
+              ansible_connection: local
+            hosts:
+              node:
+                ansible_connection: local
+            children:
+              dns_node:
+                hosts:
+                  node: {}
+        dest: /tmp/orbit-cluster-proof/inventory.yml
+        mode: "0600"

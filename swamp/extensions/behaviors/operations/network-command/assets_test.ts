@@ -121,7 +121,7 @@ Deno.test("public peer keys must match existing identity and not collide", () =>
     assertThrows(() => publicKey(key, null, [key]));
     assertThrows(() => publicKey("not a key", null, []));
 });
-Deno.test("both direct roots run on 209 with official behaviors only", () => {
+Deno.test("both direct roots keep Swamp placement for native children and machine phases", () => {
     for (const network of [true, false]) {
         const w = workflow(network);
         assertEquals(w.labels, { role: "swamp" });
@@ -129,11 +129,19 @@ Deno.test("both direct roots run on 209 with official behaviors only", () => {
             assertEquals(step.labels, { role: "swamp" });
             assertEquals(Object.hasOwn(step, "target"), false);
             const task = step.task as {
+                type: string;
                 behaviorType: string;
                 methodName: string;
+                workflowIdOrName?: string;
             };
+            if (task.type === "workflow") {
+                assertEquals(task.workflowIdOrName, "operation-fleet-peer-dns");
+                continue;
+            }
             assertEquals(
                 task.behaviorType === "@nckrtl/network-command" ||
+                    task.behaviorType === "@nckrtl/ansible-input" ||
+                    task.behaviorType === "command/shell" ||
                     task.behaviorType === "@swamp/ssh" &&
                         task.methodName === "exec" ||
                     task.behaviorType.startsWith("@swamp/cfgmgmt/"),

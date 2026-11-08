@@ -58,7 +58,7 @@ A TLD is one DNS label. Case is ignored and the value is stored lowercase. The C
 | `route.generation_basis_invalid` | A generated Route cannot be reconciled from its stored basis. |
 | `route.scope_invalid` | A Route without a target cannot leave its Cluster scope. |
 | `route.domain_change_conflict` | An affected Route already has another domain change in progress. |
-| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.dns_grace_failed`, `route.withdraw_failed` | The run failed at that step. |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed`, `route.probe_failed`, `route.publish_failed`, `route.app_url_failed`, `route.lan_firewall_failed`, `private_dns.publication_failed`, `route.withdraw_failed` | The run failed at that step. |
 | `http.404` | The Cluster is unknown. |
 | `node_access.required` | The caller has no access grant to a member Node of the Cluster, or to the Gateway Node when the Cluster has no members. |
 

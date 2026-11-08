@@ -1,0 +1,147 @@
+---
+# Faults alter private copies of the phase assets, never production inputs or code.
+- name: Prove review regressions against real member selection
+  vars:
+    review_assets: /tmp/orbit-cluster-review
+    review_run: /tmp/orbit-cluster-proof
+    review_ansible: "{{ playbook_dir }}/../../../../../ansible"
+    review_node: {host: 127.0.0.1, user: root, port: 22, identity_file: /nonexistent, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderPlaceholderPlaceholderPlaceholderAA"]}
+    review_connection: {nodeHost: 127.0.0.1, nodeUser: root, nodePort: 22, nodeIdentityFile: /nonexistent}
+  block:
+    - name: Prove private coverage at delegate replacement
+      tags: [review-replacement]
+      block:
+        - name: Copy phase assets for a replacement observation
+          ansible.builtin.copy:
+            src: "{{ review_ansible }}/"
+            dest: "{{ review_assets }}/replacement/"
+            remote_src: true
+            mode: preserve
+        - name: Observe the exact point after delegate reload and before final VPN policy
+          ansible.builtin.replace:
+            path: "{{ review_assets }}/replacement/tasks/dns-member.yml"
+            regexp: '(?m)^        - name: Apply the VPN scope after the delegate is ready$'
+            replace: |2
+                      - name: Observe withdrawn private resolution at the reload boundary
+                        ansible.builtin.command:
+                          argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, app.test]
+                        register: review_withdrawn_answer
+                        changed_when: false
+                        failed_when: "'10.44.0.7' not in review_withdrawn_answer.stdout or '-- link: orbit' not in review_withdrawn_answer.stdout"
+                      - name: Observe persisted withdrawn-domain coverage at the reload boundary
+                        ansible.builtin.command:
+                          argv: [grep, -F, '~test', /etc/wireguard/orbit.conf]
+                        changed_when: false
+                      - name: Apply the VPN scope after the delegate is ready
+        - name: Take a replacement revision
+          ansible.builtin.command:
+            argv: [date, +%s%6N]
+          register: review_revision
+          changed_when: false
+        - name: Replace the delegate suffix while keeping the old private name on VPN
+          ansible.builtin.copy:
+            content: >-
+              {{ {'ssh': {'target': review_node, 'identity_file': '/nonexistent'},
+              'selection': {'revision': review_revision.stdout, 'server': '10.99.99.1',
+              'domains': ['orbit', 'test'], 'all_domains': ['orbit', 'test', 'app.example.org'],
+              'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['app.example.org']}}} | to_json }}
+            dest: "{{ review_run }}/intent.json"
+            mode: "0600"
+        - name: Check private coverage through the replacement reload
+          ansible.builtin.command:
+            argv: [timeout, "300", ansible-playbook, -i, "{{ review_run }}/inventory.yml", --tags, member, "{{ review_assets }}/replacement/peer-dns.yml"]
+          environment:
+            ORBIT_RUN: "{{ review_run }}"
+          changed_when: true
+        - name: Take a revision to restore the initial proof selection
+          ansible.builtin.command:
+            argv: [date, +%s%6N]
+          register: review_restore_revision
+          changed_when: false
+        - name: Keep the initial member selection for the remaining proof
+          ansible.builtin.copy:
+            content: >-
+              {{ {'ssh': {'target': review_node, 'identity_file': '/nonexistent'},
+              'selection': {'revision': review_restore_revision.stdout, 'server': '10.99.99.1',
+              'domains': ['orbit', 'foreign.test'], 'all_domains': ['orbit', 'test', 'app.example.org'],
+              'delegate': {'cluster_id': 999, 'router_id': 7, 'server': '192.0.2.20', 'domains': ['test', 'app.example.org']}}} | to_json }}
+            dest: "{{ review_run }}/intent.json"
+            mode: "0600"
+        - name: Restore the initial delegate through the ordinary phase
+          ansible.builtin.command:
+            argv: [timeout, "300", ansible-playbook, -i, "{{ review_run }}/inventory.yml", --tags, member, "{{ review_ansible }}/peer-dns.yml"]
+          environment:
+            ORBIT_RUN: "{{ review_run }}"
+          changed_when: true
+    - name: Prove a failed member commit cannot retire its restored resolver
+      tags: [review-commit]
+      block:
+        - name: Copy phase assets for a commit fault
+          ansible.builtin.copy:
+            src: "{{ review_ansible }}/"
+            dest: "{{ review_assets }}/commit/"
+            remote_src: true
+            mode: preserve
+        - name: Refuse only the policy commit in the private phase copy
+          ansible.builtin.replace:
+            path: "{{ review_assets }}/commit/tasks/dns-member.yml"
+            regexp: 'dest: /var/lib/orbit/peer-dns/applied.json'
+            replace: 'dest: /proc/orbit-dns-proof-unwritable'
+        # Keep the sole proof member in the play after rollback, as a second successful
+        # fleet member would. The actual commit, rollback and barrier run unchanged.
+        - name: Continue to the aggregate barrier after the injected member failure
+          ansible.builtin.replace:
+            path: "{{ review_assets }}/commit/tasks/dns-member.yml"
+            regexp: '(?m)(- name: Fail the member phase with its serving paths retained\n\s+)ansible.builtin.fail:'
+            replace: '\1ansible.builtin.debug:'
+        - name: Take a failed withdrawal revision
+          ansible.builtin.command:
+            argv: [date, +%s%6N]
+          register: review_commit_revision
+          changed_when: false
+        - name: Admit member withdrawal and explicit old resolver retirement
+          ansible.builtin.copy:
+            content: >-
+              {{ {'node': review_node, 'dns': {'revision': review_commit_revision.stdout,
+              'listen': ['10.99.99.1'], 'tlds': [{'name': 'test', 'address': '10.44.0.7'}, {'name': 'foreign.test', 'address': '10.44.0.8'}],
+              'records': [{'name': 'gateway.orbit', 'address': '10.44.0.2', 'pair': true}],
+              'members': [{'node_id': 10, 'connection': review_connection, 'host_keys': review_node.host_keys,
+              'policy': {'revision': review_commit_revision.stdout, 'server': '10.99.99.1', 'domains': ['orbit', 'test'],
+              'all_domains': ['orbit', 'test', 'app.example.org'], 'delegate': none}}],
+              'retired': [{'node_id': 7, 'cluster_id': 999, 'revision': review_commit_revision.stdout,
+              'connection': review_connection, 'host_keys': review_node.host_keys}]}} | to_json }}
+            dest: "{{ review_run }}/intent.json"
+            mode: "0600"
+        - name: Fail the commit after selection and recover the member
+          ansible.builtin.command:
+            argv: [timeout, "300", ansible-playbook, -i, "{{ review_run }}/inventory.yml", --tags, publish, "{{ review_assets }}/commit/dns-publish.yml"]
+          environment:
+            ORBIT_RUN: "{{ review_run }}"
+          register: review_failed_commit
+          changed_when: true
+          failed_when: false
+        - name: Keep the injected commit transcript
+          ansible.builtin.copy:
+            content: "{{ review_failed_commit.stdout }}\n{{ review_failed_commit.stderr }}"
+            dest: "{{ review_run }}/review-commit.log"
+            mode: "0600"
+        - name: Read the failed commit aggregate result
+          ansible.builtin.slurp:
+            src: "{{ review_run }}/result.json"
+          register: review_commit_result
+        - name: Refuse a prepared receipt after failed persistence and rollback
+          ansible.builtin.assert:
+            that:
+              - review_failed_commit.rc != 0
+              - (review_commit_result.content | b64decode | from_json).error_code | default('') == 'dns.member_selection_failed'
+              - (review_commit_result.content | b64decode | from_json).members[0].effective is not defined
+        - name: The restored resolver is still serving
+          ansible.builtin.command:
+            argv: [systemctl, is-active, orbit-cluster-dns-999.service]
+          changed_when: false
+        - name: The restored member still selects its old resolver
+          ansible.builtin.command:
+            argv: [resolvectl, query, --cache=no, --stale-data=no, --type=A, app.test]
+          register: review_restored_answer
+          changed_when: false
+          failed_when: "'192.0.2.20' not in review_restored_answer.stdout"

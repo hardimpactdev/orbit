@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
-  %% status: reviewed
+  %% status: draft
   %% command: cluster:deactivate
   %% kind: cluster.deactivate
   autonumber
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Cluster Nodes<br/>Router · members
-  participant V as VPN Node<br/>private DNS
+  participant V as DNS targets<br/>resolvers · peers
   CLI->>GW: cluster:deactivate<br/>CLUSTER
   %%> Consent:
   %%> - the CLI resolves the Cluster, then asks to confirm with its name and the effect; `--force` skips the prompt (`cluster.confirmation_required` without it)
@@ -33,6 +33,10 @@ sequenceDiagram
       %%> - returns every affected Route to its Node scope, with generated domains on the Node TLDs; the cutover is inside the child
     end
     SW->>V: Drop the Router from DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
+    %%> DNS lifecycle:
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
     %%> - private DNS stops answering Cluster names with the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent

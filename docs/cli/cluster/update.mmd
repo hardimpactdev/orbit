@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
-  %% status: reviewed
+  %% status: draft
   %% command: cluster:update
   %% kind: cluster.update
   autonumber
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Cluster Nodes<br/>Router · members
-  participant V as VPN Node<br/>private DNS
+  participant V as DNS targets<br/>resolvers · peers
   CLI->>GW: cluster:update<br/>CLUSTER options
   Note over GW: Validate, lock, plan<br/>transitions stored
   %%> Requirements:
@@ -28,16 +28,22 @@ sequenceDiagram
     GW->>SW: Start run, full intent<br/>operation-cluster-update
     GW-->>CLI: 202 Accepted<br/>task ID
     SW->>V: Add the new TLD in DNS<br/>child dns-publish
+    %%> DNS answers:
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its LAN members with LAN addresses through a DNS delegate
+    %%> DNS lifecycle:
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> Why first:
     %%> - the new names must resolve before the child withdraws the old sites; the old TLD keeps answering
     %%> Managed peers:
-    %%> - they learn the new TLD from the peer DNS policy in a separate run, one peer at a time; until then a peer resolves the new name through its public resolver
+    %%> - affected LAN members receive the new domains inside this shared publication before cleanup; unrelated peers keep their normal reconcile path
     opt Routes change
       SW->>N: Reconcile the Routes<br/>child route-reconcile
       %%> What it does:
       %%> - moves every generated Route to the new TLD, or back to its Node TLD when the TLD is unset; the cutover is inside the child
     end
     SW->>V: Prune old DNS answers<br/>child dns-publish
+    %%> DNS lifecycle:
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> Why it always runs:
     %%> - it removes only what the stored state does not need, so after a failure before the cutover it removes the new TLD again
     alt every step succeeds

@@ -29,6 +29,7 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         'Open LAN paths' => 'route.lan_firewall_failed',
         'Install certs, publish' => 'route.publish_failed',
         'Probe the workloads' => 'route.probe_failed',
+        'Withdraw the Router from DNS' => 'private_dns.publication_failed',
         'Select the Router in DNS' => 'private_dns.publication_failed',
         'Retire the old Router' => 'cluster.router_retire_failed',
         'Withdraw the Router sites' => 'route.withdraw_failed',
@@ -77,16 +78,23 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
             }
             $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
             $restored = (ValidatedData::object($steps['Restore the before state'] ?? [])['status'] ?? null) === 'succeeded';
+            $dnsMayBeSelected = $step === 'Select the Router in DNS';
+            foreach ($steps as $label => $state) {
+                if (($label === 'Select the Router in DNS' || str_starts_with($label, 'Select the Router in DNS-'))
+                    && in_array(ValidatedData::object($state)['status'] ?? null, ['running', 'succeeded', 'failed', 'interrupted', 'cancelled'], true)) {
+                    $dnsMayBeSelected = true;
+                }
+            }
             // A failed retire comes after the selection: the candidate serves and a rerun finishes the old Router.
             $result = match ($data['status']) {
                 'succeeded' => ['ready' => true, 'selected' => true, 'cleanup_complete' => true],
-                'failed' => ['ready' => false, 'selected' => $step === 'Retire the old Router', 'restored' => $restored, 'failed_step' => $step, 'error_code' => $data['error_code']],
+                'failed', 'interrupted', 'cancelled' => ['ready' => false, 'selected' => $step === 'Retire the old Router', 'dns_may_be_selected' => $dnsMayBeSelected, 'restored' => $restored, 'failed_step' => $step, 'error_code' => $data['error_code'] ?? 'cluster.router_failed'],
                 default => [],
             };
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
                 $this->project($projected, [...$data, 'result' => $result]);
-                // Router set and unset both restore the DNS they changed, with an older revision than a publication admitted meanwhile may hold.
+                // Reconcile retained intent with a fresh revision; never restore an older DNS snapshot.
                 if ($projected->status->terminal() && $projected->status !== OperationStatus::Succeeded) {
                     PublishPrivateDns::dispatch()->afterCommit();
                 }
@@ -124,7 +132,7 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         } elseif (is_array($candidate)) {
             $role = NodeRole::query()->find(ValidatedData::integer($candidate['assignment_id']));
             $role?->update(['status' => $role->status === LifecycleStatus::Active ? LifecycleStatus::Active : LifecycleStatus::Failed,
-                'failed_step' => $result['failed_step'] ?? 'router-preparation',
+                'failed_step' => (($candidate['dns_selected'] ?? false) === true || ($result['dns_may_be_selected'] ?? false) === true || ($result['failed_step'] ?? null) === 'Select the Router in DNS') ? ClusterRouterReplacementStep::DnsPublished->value : ($result['failed_step'] ?? 'router-preparation'),
                 'error_code' => $data['error_code'] ?? 'cluster.router_failed']);
         }
 

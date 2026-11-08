@@ -1,0 +1,13 @@
+---
+title: "Private DNS publication"
+sidebarTitle: "Publication design"
+description: "Draft shared flow for VPN and Cluster Router DNS, member selection, and safe withdrawal."
+---
+
+This is an internal shared flow, not a new CLI command. [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#cluster-router-resolver) holds the draft contract. Route, Node, Cluster and role changes supply the stored desired state to this flow.
+
+## How it works
+
+<div className="flow-at" data-chart="dns/publish"></div>
+
+Member selection uses the [shared peer DNS phase](/reference/private-dns#resolver-selection). A systemd-resolved DNS delegate selects the Cluster Router while leaving LAN-link public DNS unchanged. Members without delegate support keep WireGuard answers and Doctor reports it. Selected Cluster lookups fail until repair when their resolver or LAN is down; no automatic fallback runs. Implementation waits for chart approval.

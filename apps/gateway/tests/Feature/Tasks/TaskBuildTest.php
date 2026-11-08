@@ -69,7 +69,7 @@ function buildWorld(TaskReviewMode $mode = TaskReviewMode::Manual, TaskVmState $
         'status' => $mode === TaskReviewMode::Manual ? TaskGroupStatus::WaitingForReview : TaskGroupStatus::Running, 'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
     $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
         'state' => $vmState, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
-    $vm->update(['name' => 'tvm-'.$vm->id]);
+    $vm->update(['name' => 'shark-tvm-2', 'slot_number' => 2]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
@@ -113,7 +113,7 @@ it('never acts on a group that has more than its spec subtask, no prep run, or a
 });
 
 it('appends the build subtask, moves the group to running and records the whole intent of one run', function (): void {
-    [$group, $vm] = buildWorld();
+    [$group, $vm] = buildWorld(vmState: TaskVmState::Parked);
 
     // Swamp is not there: the admission is recorded, and the start is refused after it.
     expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
@@ -126,30 +126,52 @@ it('appends the build subtask, moves the group to running and records the whole 
         ->and($subtask->title)->toBe('Build firewall:deny')
         ->and($subtask->status)->toBe(TaskStatus::Todo)
         ->and($subtask->brief)->toContain(BUILD_HEAD, 'docs/cli/firewall/deny.mmd', 'docs/cli/firewall/deny.mdx', 'swamp/proof/firewall/deny.cases.yaml', 'task-'.$group->id)
-        ->and(array_column($subtask->deliverables, 'id'))->toBe(['runner-plan', 'project-check'])
+        ->and(array_column($subtask->deliverables, 'id'))->toBe(['runner-plan'])
         ->and($subtask->deliverables[0]['command'])->toBe($prompts->plan())
-        ->and($subtask->deliverables[1]['command'])->toBe('composer check')
         ->and($subtask->implementer_agent_thread_id)->not->toBeNull()
         ->and($operation->input['approval'])->toBe(['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => TaskPullRequestEvidence::reviewer()])
         ->and($operation->input['subtask'])->toBe($subtask->id)
         ->and($operation->input['resume']['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input['resume']['provider_input']['name'])->toBe('shark-tvm-2')
+        ->and($operation->input['resume']['mode'])->toBe('resume')
         ->and($operation->input['sync']['workspace']['branch'])->toBe('task-'.$group->id)
         ->and($operation->input['turn'])->toMatchArray(['subtask' => $subtask->id, 'role' => 'implementer', 'new_session' => true, 'thread_id' => $subtask->implementer_agent_thread_id])
         ->and($operation->input['turn']['prompt'])->toStartWith("Subtask: Build firewall:deny\n\nBrief:\nThe owner approved the spec")->toContain('Deliverables:', 'Prompt of this turn:')
         ->and($operation->input['execution_secrets'])->toBe(['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]]);
 });
 
-it('builds an automatic group that is running with a running VM, and records no reviewer', function (): void {
-    [$group] = buildWorld(TaskReviewMode::Automatic);
+it('keeps a Project-check review deliverable when the Project has no check command', function (): void {
+    [$group] = buildWorld();
+    $group->project->update(['task_check' => null]);
+
+    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
+
+    $subtask = Task::query()->where('parent_id', $group->id)->where('position', 2)->sole();
+
+    expect(array_column($subtask->deliverables, 'id'))->toBe(['runner-plan', 'project-check'])
+        ->and($subtask->deliverables[1]['type'])->toBe('review')
+        ->and($subtask->deliverables[1])->not->toHaveKey('command');
+});
+
+it('builds a group with a ready slot VM without capturing a resume', function (TaskReviewMode $mode): void {
+    [$group, $vm] = buildWorld($mode);
 
     expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class);
 
     $operation = Operation::query()->where('kind', OperationKinds::TasksBuild)->sole();
 
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($operation->input['approval'])->toBe(['head' => BUILD_HEAD, 'mode' => 'automatic', 'reviewer' => null])
-        ->and($operation->input['resume']['mode'])->toBe('converge');
-});
+        ->and($operation->input['approval'])->toBe(['head' => BUILD_HEAD, 'mode' => $mode->value, 'reviewer' => $mode === TaskReviewMode::Manual ? TaskPullRequestEvidence::reviewer() : null])
+        ->and($operation->input['task_vm_id'])->toBe($vm->id)
+        ->and($operation->input)->not->toHaveKey('resume')
+        ->and($operation->input)->not->toHaveKey('resume_secrets');
+
+    $input = app(TaskBuildProjection::class)->input($operation);
+    expect($input['intent'])->not->toHaveKey('resume')
+        ->and($input['intent']['task_vm_id'])->toBe($vm->id)
+        ->and(json_encode($input['resume_secrets']))->toBe('{}');
+})->with([TaskReviewMode::Automatic, TaskReviewMode::Manual]);
 
 it('refuses a build that has no workspace of its own and leaves the group as it was', function (): void {
     [$group] = buildWorld();
@@ -161,10 +183,10 @@ it('refuses a build that has no workspace of its own and leaves the group as it 
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
 });
 
-it('writes nothing when the resume of the VM cannot be captured', function (): void {
+it('writes nothing when the VM is neither ready nor parked', function (): void {
     [$group] = buildWorld(vmState: TaskVmState::Provisioning);
 
-    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'Resume requires')
+    expect(fn () => app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null))->toThrow(ResourceOperationException::class, 'parked or running')
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
         ->and(AgentThread::query()->count())->toBe(0)
@@ -242,14 +264,15 @@ function buildSwampSocket(): object
     return $socket;
 }
 
-/** A build run as the Gateway records it at admission, with the VM parked. */
-function buildRun(): array
+/** A build run as the Gateway records it at admission. */
+function buildRun(TaskVmState $state = TaskVmState::Parked): array
 {
-    [$group, $vm] = buildWorld(vmState: TaskVmState::Parked);
+    [$group, $vm] = buildWorld(vmState: $state);
     $operation = Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => $vm->host_node_id,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'], 'input' => [
-            'group_id' => $group->id, 'approval' => ['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => 'nick'],
-            'resume' => ['task_vm_id' => $vm->id], 'sync' => ['git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a']], 'turn' => ['thread_id' => 11],
+            'group_id' => $group->id, 'task_vm_id' => $vm->id, 'approval' => ['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => 'nick'],
+            ...($state === TaskVmState::Parked ? ['resume' => ['task_vm_id' => $vm->id]] : []),
+            'sync' => ['git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-6b69badf-4f06-4f2e-82d7-21b62c1f587a']], 'turn' => ['thread_id' => 11],
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]], 'resume_secrets' => [],
         ]]);
 
@@ -272,6 +295,16 @@ it('records the VM as ready and the branch with the approved head when the run s
         ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'head' => BUILD_HEAD])
         ->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview);
+});
+
+it('projects a build that skipped resume and keeps the running slot VM ready', function (): void {
+    [$operation, $group, $vm] = buildRun(TaskVmState::Ready);
+
+    $projected = app(TaskBuildProjection::class)->apply($operation, buildEnd('succeeded', ['steps' => ['Resume the VM' => ['status' => 'skipped']]]));
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'head' => BUILD_HEAD])
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
 });
 
 it('names the failed step of a run, and keeps the VM parked when the resume itself failed', function (string $step, string $code, TaskVmState $vm): void {
@@ -302,15 +335,15 @@ it('projects the end of a run once, and a replay of the terminal event changes n
     expect($first->status)->toBe(OperationStatus::Succeeded)->and($again->status)->toBe(OperationStatus::Succeeded)->and($again->result)->toBe($first->result);
 });
 
-it('reads the Operation without writing a credential, and writes the Pi token and the read token of the sync once at run start', function (): void {
-    [$operation, , $vm] = buildRun();
+it('reads the Operation without writing a credential, and writes the Pi token and the read token of the sync once at run start', function (TaskVmState $state): void {
+    [$operation, , $vm] = buildRun($state);
     Project::query()->update(['source_access' => 'github_app']);
     $socket = buildSwampSocket();
     $projection = app(TaskBuildProjection::class);
 
     $read = $projection->input($operation);
     expect($socket->frames)->toBe([])
-        ->and(array_keys($read['intent']))->toBe(['resume', 'sync', 'turn'])
+        ->and(array_keys($read['intent']))->toBe($state === TaskVmState::Parked ? ['task_vm_id', 'resume', 'sync', 'turn'] : ['task_vm_id', 'sync', 'turn'])
         ->and(json_encode($read['resume_secrets']))->toBe('{}');
 
     $start = app(DirectOperation::class)->workflowInputs($operation);
@@ -324,7 +357,7 @@ it('reads the Operation without writing a credential, and writes the Pi token an
 
     $vm->update(['pi_token' => null]);
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
-});
+})->with([TaskVmState::Parked, TaskVmState::Ready]);
 
 it('fails a sync and a build run closed when the read-token vault write fails, and starts no run', function (string $kind): void {
     [$operation, , $vm] = buildRun();

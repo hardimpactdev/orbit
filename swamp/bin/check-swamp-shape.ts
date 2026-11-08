@@ -45,14 +45,6 @@ export type Entry = {
 };
 export type Baseline = { schema: number; entries: Entry[] };
 
-/** Keep the frozen HTTP allowance only for the exact public Task rename. */
-export function taskQueueComparison(old: string, current: string): string {
-    const renamed = old.replaceAll("/api/v1/task-groups", "/api/v1/tasks")
-        .replace("tasks: plan.tasks.map(", "subtasks: plan.tasks.map(");
-    return old.includes('"/api/v1/task-groups"') && current === renamed
-        ? old
-        : current;
-}
 type Analysis = {
     findings: Finding[];
     imports: string[];
@@ -1547,36 +1539,6 @@ export function analyzeYaml(
         }
         return [...names, ...Object.values(v).flatMap(descriptorVaults)];
     };
-    // The binding guide approves one visible Route private-DNS TTL grace.
-    // This is an exact source contract, never a file/rule grandfather cap.
-    const routeDnsGrace = (path: string[]) => {
-        if (
-            file !== "workflows/workflow-route-dns-grace.yaml" ||
-            path.join(".") !== "jobs.0.steps.0.task.inputs.run" ||
-            !Array.isArray(data.jobs) || data.jobs.length !== 1
-        ) return false;
-        const job = object(data.jobs[0]);
-        if (
-            job.name !== "grace" || !Array.isArray(job.steps) ||
-            job.steps.length !== 1
-        ) return false;
-        const step = object(job.steps[0]);
-        const labels = object(step.labels), task = object(step.task);
-        const inputs = object(task.inputs);
-        return step.name === "wait-private-dns-ttl" &&
-            (step.target !== undefined || step.labels !== undefined) &&
-            worker209(path) &&
-            (step.labels === undefined ||
-                Object.keys(labels).join() === "role" &&
-                    labels.role === "swamp") &&
-            Object.keys(task).sort().join() ===
-                "behaviorName,behaviorType,inputs,methodName,type" &&
-            task.type === "behavior" && task.behaviorType === "command/shell" &&
-            task.behaviorName === "route-dns-grace" &&
-            task.methodName === "execute" &&
-            Object.keys(inputs).join() === "run" &&
-            inputs.run === "/usr/bin/sleep 31";
-    };
     const officialSshTask = (path: string[]) => {
         if (
             !file.startsWith("workflows/") || path[0] !== "jobs" ||
@@ -1820,11 +1782,9 @@ export function analyzeYaml(
                         block[2].replace(/[^\n]/g, " ") +
                         shellControls.slice(start + block[2].length);
                 }
-                const controlsFound = routeDnsGrace(path)
-                    ? []
-                    : shellControls.match(
-                        /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
-                    ) ?? [];
+                const controlsFound = shellControls.match(
+                    /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
+                ) ?? [];
                 for (const _ of controlsFound) {
                     add("custom-control");
                     result.loops++;
@@ -2606,16 +2566,6 @@ if (import.meta.main) {
                 );
             }
         }
-        // This caller keeps exactly its existing HTTP sites during the public
-        // Task rename. Compare its unchanged source in the old vocabulary so
-        // neither the count nor the permitted calls can grow.
-        const taskQueue =
-            "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts";
-        const oldQueue = base.get(taskQueue);
-        const newQueue = head.get(taskQueue);
-        if (oldQueue && newQueue) {
-            head.set(taskQueue, taskQueueComparison(oldQueue, newQueue));
-        }
         const analyses = analyze(head, inventory);
         const external = await toolFindings(head);
         for (const f of external) {
@@ -2745,7 +2695,16 @@ if (import.meta.main) {
             ...ratchet([], baseline, {
                 ...prior,
                 entries: [
-                    ...prior.entries,
+                    ...prior.entries.map((entry) => {
+                        // Correct stale labels only from immutable base source;
+                        // the recorded count cap still cannot grow.
+                        const actual = baseEntries.find((row) =>
+                            row.file === entry.file && row.rule === entry.rule
+                        );
+                        return actual && actual.count <= entry.count
+                            ? { ...entry, evidence: actual.evidence }
+                            : entry;
+                    }),
                     ...baseEntries.filter((e) =>
                         [
                             "foreach-shared-identity",

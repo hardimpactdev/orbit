@@ -1,6 +1,6 @@
 id: d20ef954-1554-5201-973a-6f61376700e0
 name: cluster-router-revert
-description: "cluster.router_set: the captured Caddy, LAN and DNS state back, so the old Router keeps serving."
+description: "cluster.router_set: the captured candidate Caddy and LAN state back before any DNS selection, so the old Router keeps serving."
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -46,30 +46,3 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
       inputs: {}
-    # Each VPN Node's before DNS, as a newer revision (dns-publish).
-  - name: 'dns'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'sites', condition: {type: always}}
-    - {step: 'lan', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    writes: true
-    forEach: {item: vpn, in: '${{ inputs.intent.restore_dns_plan.dns }}'}
-    task:
-      type: workflow
-      workflowIdOrName: dns-publish
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ self.vpn.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent:
-          node_id: '${{ self.vpn.node_id }}'
-          connection:
-            nodeHost: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].host }}'
-            nodeUser: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].user }}'
-            nodePort: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].port }}'
-            nodeIdentityFile: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].identity_file }}'
-            become: true
-          host_keys: '${{ inputs.intent.restore_dns_plan.nodes[string(self.vpn.node_id)].host_keys }}'
-          dns: '${{ self.vpn.dns }}'
-        execution_secrets: {}

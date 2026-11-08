@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterTldTargets;
 use App\Domain\AppDev\PrivateDnsState;
+use App\Domain\Clusters\ClusterDnsEvidence;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\ContributedPrivateHostnames;
@@ -16,7 +17,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
+use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -103,6 +106,48 @@ final readonly class DevelopmentDnsConfigRenderer
         }
 
         return PrivateDnsState::from(listen: $this->listen(), tlds: $tlds, hosts: $hosts);
+    }
+
+    /**
+     * The Cluster overlay uses the same selected canonical records. Keep foreign exact names and
+     * nested namespaces beneath its wildcard, so a LAN wildcard cannot capture another target.
+     */
+    public function routerState(Cluster $cluster, Node $router): PrivateDnsState
+    {
+        $canonical = $this->state();
+        $lan = app(RouteRenderContext::class)->lanIp($router);
+        $pending = $cluster->pendingDns();
+        $tld = array_key_exists('tld', $pending) ? $pending['tld'] : $cluster->tld;
+        $tlds = [];
+        $records = [];
+        if (is_string($tld) && $tld !== '') {
+            $tlds[$tld] = (string) $lan;
+            foreach ($canonical->tlds as $name => $address) {
+                if (str_ends_with((string) $name, '.'.$tld)) {
+                    $tlds[$name] = $address;
+                }
+            }
+        }
+        $owned = Route::query()->where('cluster_id', $cluster->id)
+            ->where('publication', 'private')->pluck('domain')->all();
+        foreach ($canonical->records as $name => $address) {
+            if (in_array($name, $owned, true)) {
+                $records[$name] = (string) $lan;
+            } elseif (array_any(array_filter([$tld, ...$owned], is_string(...)), static fn (string $scope): bool => $name === $scope || str_ends_with((string) $name, '.'.$scope))) {
+                $records[$name] = $address;
+            }
+        }
+
+        $listen = [(string) $lan];
+        foreach (Node::query()->where('settings->'.ClusterDnsEvidence::Key.'->effective->delegate->router_id', $router->id)->get() as $member) {
+            $previous = data_get($member->settings, ClusterDnsEvidence::Key.'.effective.delegate');
+            if (is_array($previous) && ($previous['cluster_id'] ?? null) === $cluster->id
+                && is_string($previous['server'] ?? null) && $previous['server'] !== $lan) {
+                $listen[] = $previous['server'];
+            }
+        }
+
+        return PrivateDnsState::from(array_values(array_unique($listen)), $tlds, $records);
     }
 
     /** @return list<string> The address that VPN DNS answers on: the configured one, else the VPN Node's. */

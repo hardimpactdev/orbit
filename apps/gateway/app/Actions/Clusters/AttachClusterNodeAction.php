@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Clusters\ClusterDnsTransition;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
@@ -101,7 +103,10 @@ final readonly class AttachClusterNodeAction
             throw $exception;
         }
 
+        app(ClusterDnsTransition::class)->begin($node, $cluster->id, $cluster->id);
+        app(PrivateDnsManager::class)->converge();
         $this->lanIngress()->prune(clusterIds: [$updated->id]);
+        app(ClusterDnsTransition::class)->complete($node);
 
         return $updated;
     }

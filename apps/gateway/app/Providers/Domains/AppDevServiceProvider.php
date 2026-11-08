@@ -8,7 +8,6 @@ use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
-use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
@@ -19,7 +18,6 @@ use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
-use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Infrastructure\AppDev\SwampPrivateDnsManager;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -33,7 +31,6 @@ final class AppDevServiceProvider extends ServiceProvider
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
         AppDevTldConverger::class => NativeAppDevTldConverger::class,
-        AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         VitePortRuntime::class => RemoteVitePortRuntime::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
     ];

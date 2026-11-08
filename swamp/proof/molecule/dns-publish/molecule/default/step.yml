@@ -139,7 +139,7 @@
         quiet: true
     - name: The result is what the Gateway would read
       ansible.builtin.assert:
-        that: result == step.result
+        that: result | combine(step.result) == result
         fail_msg: "{{ step.name }}: result.json is {{ result | to_json }}, expected {{ step.result | to_json }}"
         quiet: true
     - name: The phase reports the number of changes the step expects

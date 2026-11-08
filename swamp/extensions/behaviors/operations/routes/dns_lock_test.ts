@@ -8,7 +8,7 @@ import { ROOT } from "../../../../bin/gate-test-support.ts";
 async function times(): Promise<Record<string, number>> {
     const text = await Deno.readTextFile(`${ROOT}/ansible/vars/dns.yml`);
     const values: Record<string, number> = {};
-    for (const match of text.matchAll(/^(dns_[a-z_]+): (.+)$/gm)) {
+    for (const match of text.matchAll(/^(dns_(?:phase_timeout|cutover_budget|lock_margin|lock_hold|lock_wait|lock_job_timeout)): (.+)$/gm)) {
         const [, name, raw] = match;
         if (!/^(?:\d+|"\{\{.*\}\}")$/.test(raw.trim())) continue;
         // `(name | int)` is the value of another variable; the rest is arithmetic.
@@ -86,4 +86,3 @@ Deno.test("the cutover runs as a generated script that recovers by itself, not a
     assert(cutover.includes("recover dnsmasq_start_failed"));
     assert(cutover.includes("recover dnsmasq_not_listening"));
 });
-

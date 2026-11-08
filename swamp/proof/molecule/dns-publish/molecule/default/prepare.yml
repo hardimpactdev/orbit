@@ -16,9 +16,10 @@
       ansible.builtin.apt:
         name: [dnsmasq, bind9-dnsutils, procps]
         state: present
-        update_cache: true
-        cache_valid_time: 3600
+        update_cache: false
         update_cache_retries: 5
+    - name: Prepare the independent public uplink
+      ansible.builtin.import_tasks: ../../public-resolver.yml
     - name: Stop the stock dnsmasq
       ansible.builtin.systemd:
         name: dnsmasq
@@ -40,6 +41,11 @@
       when: "'10.99.99.77/32' not in lo_addresses.stdout"
       changed_when: true
 
+    - name: Reset the disposable resolver state before modeling the first cutover
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: [/var/lib/orbit/dnsmasq, /etc/dnsmasq.d/orbit.conf]
     - name: Make the folders of the old listener
       ansible.builtin.file:
         path: "{{ item }}"
@@ -67,6 +73,12 @@
           content: "[Unit]\nAfter=orbit-private-dns.socket\n[Service]\nExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/var/lib/orbit/proof-legacy/listener.conf --conf-dir= --pid-file=\n"
       loop_control:
         label: "{{ item.dest }}"
+    - name: Stop any previous disposable legacy listener before recreating its socket
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        daemon_reload: true
+      loop: [orbit-private-dns.service, orbit-private-dns.socket]
     - name: Start the old listener and its backend
       ansible.builtin.systemd:
         name: "{{ item }}"

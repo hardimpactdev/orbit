@@ -39,7 +39,7 @@ function clusterRouterDns(?array $before, array $after): array
         'route_mutations' => ['forward' => ['prepare_certificates' => [], 'lan' => [], 'retire_lan' => [], 'cleanup' => [], 'routes' => []]]];
     $steps = app(NativeClusterRouterSteps::class)->build($input, false);
 
-    return ['dns' => $steps['dns'], 'restore' => $steps['restore_dns_plan']['dns']];
+    return ['dns' => $steps['dns'], 'restores_dns' => isset($steps['restore_dns_plan'])];
 }
 
 /** @return list<array<string,mixed>> */
@@ -61,21 +61,18 @@ describe('Route create plan', function (): void {
 });
 
 describe('Cluster Router steps', function (): void {
-    it('selects the new Router with the complete state and restores the earlier one with a newer revision', function (): void {
+    it('selects the new Router without replaying a captured DNS rollback', function (): void {
         $before = plannerDns('10');
         $after = plannerDns('20', '10.44.0.3');
 
         $plan = clusterRouterDns($before, $after);
 
         expect($plan['dns'])->toBe([['node_id' => 5, 'dns' => $after]])
-            ->and($plan['restore'])->toHaveCount(1)
-            ->and($plan['restore'][0]['node_id'])->toBe(5)
-            ->and((int) $plan['restore'][0]['dns']['revision'])->toBeGreaterThan(20)
-            ->and([...$plan['restore'][0]['dns'], 'revision' => '10'])->toBe($before);
+            ->and($plan['restores_dns'])->toBeFalse();
     });
 
     it('plans no DNS when the Router change leaves the records as they are', function (): void {
-        expect(clusterRouterDns(plannerDns('10'), plannerDns('20')))->toBe(['dns' => [], 'restore' => []]);
+        expect(clusterRouterDns(plannerDns('10'), plannerDns('20')))->toBe(['dns' => [], 'restores_dns' => false]);
     });
 });
 

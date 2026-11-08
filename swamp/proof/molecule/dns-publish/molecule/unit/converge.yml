@@ -814,3 +814,91 @@
 
     - name: Run the cutover and recovery scripts with stand-ins
       ansible.builtin.include_tasks: scripts.yml
+
+- name: Prove Cluster member policy capability and private scope partition
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - "{{ playbook_dir }}/../../../../../ansible/vars/dns.yml"
+  vars:
+    templates: "{{ playbook_dir }}/../../../../../ansible/templates"
+    policy:
+      server: 10.44.0.1
+      domains: [orbit, foreign.test]
+      all_domains: [orbit, test]
+      delegate: {cluster_id: 1, router_id: 7, server: 192.168.6.20, domains: [test]}
+  tasks:
+    - name: Render supported member policy
+      ansible.builtin.set_fact:
+        capable: "{{ lookup('ansible.builtin.template', templates ~ '/dns-member-policy.j2') | from_json }}"
+      vars:
+        member_version: 258
+    - name: Render unsupported member policy
+      ansible.builtin.set_fact:
+        unsupported: "{{ lookup('ansible.builtin.template', templates ~ '/dns-member-policy.j2') | from_json }}"
+      vars:
+        member_version: 257
+    - name: Check scope and capability outcomes
+      ansible.builtin.assert:
+        that:
+          - capable.error is none
+          - capable.delegate.server == '192.168.6.20'
+          - capable.domains == ['orbit', 'foreign.test']
+          - "'DNS=192.168.6.20\n' in capable.delegate_content"
+          - "'DNS=10.44.0.1' not in capable.delegate_content"
+          - "'Domains=~test\nDefaultRoute=no\n' in capable.delegate_content"
+          - unsupported.error is none
+          - unsupported.delegate is none
+          - unsupported.domains == ['orbit', 'test']
+          - unsupported.degraded == 'dns.cluster_delegate_unsupported'
+          - "unsupported.delegate_content == ''"
+    - name: Aggregate a partial publication without losing successful selections
+      ansible.builtin.set_fact:
+        partial: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_node: [node, router], dns_member: [member]}
+        result_hosts:
+          node:
+            dns_result: {revision: '2', digest: current, desired_digest: current, selected_at: 100, dnsmasq: reloaded}
+          router:
+            dns_failure: {code: dns.bind_conflict}
+          member: {}
+    - name: Require retention after partial resolver publication
+      ansible.builtin.assert:
+        that:
+          - partial.error_code == 'dns.bind_conflict'
+          - partial.resolvers[0].digest == 'current'
+          - partial.resolvers[0].selected_at == 100
+          - partial.members[0].effective is not defined
+    - name: Aggregate prepared receipts after failed persistence or rollback
+      ansible.builtin.set_fact:
+        rejected_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: "{{ item }}"
+            dns_member_failure: dns.member_selection_failed
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+      loop: [false, true]
+      register: rejected_members
+    - name: A prepared or failed receipt never confirms movement
+      ansible.builtin.assert:
+        that:
+          - item.ansible_facts.rejected_member.error_code == 'dns.member_selection_failed'
+          - item.ansible_facts.rejected_member.members[0].effective is not defined
+      loop: "{{ rejected_members.results }}"
+    - name: Aggregate a successfully persisted member
+      ansible.builtin.set_fact:
+        committed_member: "{{ lookup('ansible.builtin.template', templates ~ '/dns-result.j2') | from_json }}"
+      vars:
+        result_groups: {dns_member: [member]}
+        result_hosts:
+          member:
+            dns_member_committed: true
+            dns_member_receipt: {revision: '3', effective: {delegate: null}, selected_at: 200}
+    - name: Only a committed receipt without a member failure confirms movement
+      ansible.builtin.assert:
+        that:
+          - committed_member.error_code is not defined
+          - committed_member.members[0].effective.delegate is none

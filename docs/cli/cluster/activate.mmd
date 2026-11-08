@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
-  %% status: reviewed
+  %% status: draft
   %% command: cluster:activate
   %% kind: cluster.activate
   autonumber
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Cluster Nodes<br/>Router · members
-  participant V as VPN Node<br/>private DNS
+  participant V as DNS targets<br/>resolvers · peers
   CLI->>GW: cluster:activate<br/>CLUSTER
   Note over GW: Validate, lock, plan<br/>transitions stored
   %%> Requirements:
@@ -35,8 +35,10 @@ sequenceDiagram
       %%> - moves every affected Route to the Cluster scope and namespace; the cutover is inside the child
     end
     SW->>V: Select the Router in DNS<br/>child dns-publish
+    %%> DNS lifecycle:
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected Cluster DNS delegates and VPN policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
-    %%> - private DNS answers Cluster names with the Router's WireGuard address for every caller; LAN members reach it through the hub
+    %%> - the vpn Node answers WireGuard addresses; the Cluster Router resolver answers its supported LAN members with LAN addresses through a Cluster-only DNS delegate
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent
     %%> Why it always runs:
     %%> - after a failure before the cutover it removes the LAN rules and DNS selection the stored state does not need

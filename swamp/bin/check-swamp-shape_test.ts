@@ -16,7 +16,6 @@ import {
     isGatewayPrimitive,
     ratchet,
     SCHEMA,
-    taskQueueComparison,
     toolFindings,
     workflowCoverage,
 } from "./check-swamp-shape.ts";
@@ -26,23 +25,6 @@ const inventory = {
     "cli.install": "action",
     "caddy.publish": "action",
 };
-Deno.test("Task queue allowance requires the entire exact public rename", () => {
-    const old =
-        'deps.http("POST", "/api/v1/task-groups", {tasks: plan.tasks.map(f)});';
-    const current =
-        'deps.http("POST", "/api/v1/tasks", {subtasks: plan.tasks.map(f)});';
-    assertEquals(taskQueueComparison(old, current), old);
-    for (
-        const changed of [
-            current + "\nawait delay(1);",
-            current.replace("POST", "DELETE"),
-            current.replace('tasks"', 'other"'),
-        ]
-    ) {
-        assertEquals(taskQueueComparison(old, changed), changed);
-    }
-    assertEquals(taskQueueComparison(current, current), current);
-});
 Deno.test("step inputs read one bounded data record, never a query or version history", () => {
     const file = "workflows/workflow-example.yaml";
     const workflow = (candidates: string) =>
@@ -961,7 +943,7 @@ Deno.test("phase controls reject computed intervals and failed-command retries",
         );
     }
 });
-Deno.test("Route private DNS grace allows only the approved file, step and literal command", () => {
+Deno.test("Route grace no longer permits an extra shell sleep outside DNS publication", () => {
     const file = "workflows/workflow-route-dns-grace.yaml";
     const workflow = {
         name: "route-dns-grace",
@@ -981,12 +963,12 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
         }],
     };
     const source = JSON.stringify(workflow);
-    assertEquals(analyzeYaml(file, source).findings, []);
+    assert(analyzeYaml(file, source).findings.some((f) => f.rule === "custom-control"));
     const labelsOnly = JSON.parse(source);
     const targetOnly = JSON.parse(source);
     delete targetOnly.jobs[0].steps[0].labels;
     targetOnly.jobs[0].steps[0].target = "orbit-node-209";
-    assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);
+    assert(analyzeYaml(file, JSON.stringify(targetOnly)).findings.some((f) => f.rule === "custom-control"));
     const rejected = (path: string, source: string) =>
         assert(
             analyzeYaml(path, source).findings.some((f) =>

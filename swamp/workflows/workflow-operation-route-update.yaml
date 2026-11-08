@@ -166,24 +166,6 @@ jobs:
           host_keys: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host_keys }}'
           dns: '${{ self.vpn.dns }}'
         execution_secrets: {}
-    # Resolvers that honor the TTL stop asking for the old name before its site leaves (route-dns-grace).
-  - name: 'Wait the DNS grace'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Make a CSR on the Node', condition: {type: always}}
-    - {step: 'Sign the CSR', condition: {type: always}}
-    - {step: 'Install cert, publish site', condition: {type: always}}
-    - {step: 'Write the new APP_URL', condition: {type: always}}
-    - {step: 'Probe the site over TLS', condition: {type: always}}
-    - {step: 'Open or close the edge', condition: {type: always}}
-    - {step: 'Move private DNS', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
-    # Each Node writes its lasting Caddyfile and drops the old certificates and LAN rules (route-target-retire).
   - name: 'Withdraw the old site'
     labels: {role: swamp}
     dependsOn:
@@ -194,7 +176,6 @@ jobs:
     - {step: 'Probe the site over TLS', condition: {type: always}}
     - {step: 'Open or close the edge', condition: {type: always}}
     - {step: 'Move private DNS', condition: {type: always}}
-    - {step: 'Wait the DNS grace', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}

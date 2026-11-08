@@ -1,7 +1,7 @@
 id: 95872d2a-e42e-4355-a3d6-747269134586
 name: operation-task-prep-fix
 description: >-
-  Apply the review of the owner to a parked prep group in one run from full inputs on 209: resume the task VM, let the author
+  Apply the review of the owner to a prep group in one run from full inputs on 209: resume the task VM only when parked, let the author
   apply the corrections as a new commit, check them with the runner plan and a bounded review loop, and push them to the same
   draft pull request. The existing resume, turn and publish workflows run as children. One step calls the Gateway, the push
   token mint of the publish child.
@@ -21,13 +21,14 @@ inputs:
     intent:
       type: object
       properties:
+        task_vm_id: {type: integer, minimum: 1}
         resume: {type: object}
         author: {type: object}
         fix: {type: object}
         reviews: {type: array, minItems: 2, maxItems: 2, items: {type: object}}
         publish: {type: object}
         plan: {type: object}
-      required: [resume, author, fix, reviews, publish, plan]
+      required: [task_vm_id, author, fix, reviews, publish, plan]
       additionalProperties: false
     execution_secrets:
       type: object
@@ -76,22 +77,24 @@ jobs:
   steps:
   - name: Resume the VM
     labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.resume) }}'
     writes: true
     task:
       type: workflow
       workflowIdOrName: operation-task-vm-resume
       inputs:
         operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.intent.resume.node_id }}'
+        node_id: '${{ has(inputs.intent.resume) ? inputs.intent.resume.node_id : inputs.node_id }}'
         kind: task_vm.resume
-        intent: '${{ inputs.intent.resume }}'
+        intent: '${{ has(inputs.intent.resume) ? inputs.intent.resume : {} }}'
         execution_secrets: '${{ inputs.resume_secrets }}'
   - name: Apply the corrections
     labels: {role: swamp}
     dependsOn:
     - step: Resume the VM
       condition:
-        type: succeeded
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
     task:
       type: workflow
       workflowIdOrName: operation-task-turn

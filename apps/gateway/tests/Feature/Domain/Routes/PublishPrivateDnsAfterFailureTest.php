@@ -5,10 +5,13 @@ declare(strict_types=1);
 use App\Actions\AppDev\AdmitPrivateDnsPublicationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\AppDev\PublishPrivateDns;
+use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -16,7 +19,7 @@ use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
-/** A running cluster.router_set Operation whose run restored the DNS it changed. */
+/** A running Cluster Router transition. */
 function clusterRouterSetOperation(string $kind = 'cluster.router_set'): Operation
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'router', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.5',
@@ -36,6 +39,26 @@ function clusterRouterTerminal(string $status): array
 }
 
 describe('Private DNS after a failed run', function (): void {
+    it('retains the candidate when DNS publication may have selected consumers before interruption', function (string $status, string $dnsStatus): void {
+        Queue::fake();
+        $operation = clusterRouterSetOperation();
+        $cluster = Cluster::query()->create(['name' => 'dev']);
+        Node::query()->whereKey($operation->node_id)->update(['cluster_id' => $cluster->id]);
+        $role = NodeRole::query()->create(['node_id' => $operation->node_id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => 'provisioning']);
+        $operation->update(['input' => ['cluster_router' => ['candidate' => ['assignment_id' => $role->id], 'old_nodes' => []]]]);
+        $data = clusterRouterTerminal($status);
+        $data['failure'] = null;
+        $data['result']['steps'] = ['Select the Router in DNS' => ['status' => $dnsStatus]];
+
+        app(NativeClusterRouterProjection::class)->apply($operation, $data);
+
+        expect($role->refresh()->failed_step)->toBe('dns-publication')
+            ->and(ClusterRouterTransition::candidateServes($role))->toBeTrue();
+    })->with([
+        ['interrupted', 'running'], ['interrupted', 'succeeded'],
+        ['failed', 'failed'], ['cancelled', 'interrupted'],
+    ]);
+
     it('publishes a fresh render once a failed Router change is projected, so a restore that a newer publication superseded is corrected', function (): void {
         Queue::fake();
         $operation = clusterRouterSetOperation();

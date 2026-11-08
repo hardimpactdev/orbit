@@ -1,138 +1,92 @@
 sequenceDiagram
-  %% Target design (ADR 0248, option A chosen 2026-11-07): every publication renders the complete private DNS from the Gateway database, and one Ansible phase writes one dnsmasq configuration on the vpn Node. Shared by Route, Node, Cluster and role kinds.
-  %% status: reviewed
-  %% command: none · shared step of Route, Node, Cluster and role kinds
+  %% Target design: ADR 0248, Cluster router resolver amendment. Shared publication with Cluster-only DNS delegates and no automatic VPN fallback.
+  %% Tightened: flow-tighten rules 18, 22, 27, 28: one phase per target, parallel targets, shared peer policy, retain old paths until members confirm.
+  %% status: draft
+  %% command: none · shared DNS publication
   %% kind: dns.publish
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
+  %% lane M icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
-  participant N as VPN Node<br/>reached over ssh
-  Note over GW: Render all private DNS<br/>one revision, three files
+  participant N as DNS Nodes<br/>VPN · Routers
+  participant M as LAN members<br/>includes Router
+  Note over GW: Render DNS and selection<br/>one database revision
   %%> What it does:
-  %%> - reads every Route, Node, Cluster and role holder from the database
-  %%> - renders the complete state, never a piece of it
-  %%> - takes the revision in the same transaction that reads the rows
-  %%> Result:
-  %%> - `orbit.conf`, `orbit.hosts` and `orbit.servers` as text, and the revision
-  %%> Why:
-  %%> - each publication is a whole state, so two parallel publications cannot lose each other's change
-  %%> - every caller gets the same answer; ADR 0248 lists the A answers that this changes for beast, sabre, shark and app-prod
-  GW->>SW: Start run with the render<br/>child workflow dns-publish
-  %%> What it does:
-  %%> - the owning kind (Route, Node, Cluster or role change) starts this step in its own run
+  %%> - reads stored desired and pending Route, Cluster, Router and membership rows in the revision transaction
+  %%> - builds the VPN WireGuard answers, Router LAN answers for its LAN members, and each member's Cluster delegate and remaining VPN policy from one address-selection rule
+  %%> - includes explicit retirement targets from unfinished transitions; a missing row alone never authorizes deletion
+  %%> - pre-cutover preparation sets cluster_only: it publishes Router projections and member policies through this same phase while leaving the VPN listener in place
+  GW->>SW: Start run, full intent<br/>child dns-publish
   %%> Inputs:
-  %%> - the render (TLDs, records, listen address) and the revision
-  %%> - the address and SSH host keys of the VPN Node
+  %%> - revision, target renders, member policies, expected answers and pinned SSH connections; no step fetches intent from the Gateway
+  %%> - the owning command retains its lifecycle lock and receives this child's terminal result
   Note over SW: Write the intent
   %%> What it does:
-  %%> - writes the render and the connection of the Node to a 0600 file in the run folder, and ships the playbook
-  SW->>N: Run the DNS phase<br/>ansible-playbook dns-publish
+  %%> - writes private run files and ships the existing Ansible assets once
+  SW->>N: Publish resolver files<br/>dns-publish.yml · forEach
   %%> How:
-  %%> - one Ansible phase reads, changes and checks the Node in one run
-  %%> - a Swamp worker reaches the Node over SSH
-  %%> - the phase holds the Node's dnsmasq lock from the first read to the end of any recovery
-  %%> - the lock holder outlives the step timeout plus the cutover, so a killed phase never lets a second one in early; a dead holder expires, it does not release
-  %%> - a cutover script that an earlier phase left running is waited for before the Node is read
-  alt revision is newer than installed
-    %% path: newer-revision
-    Note over N: Validate the files<br/>dnsmasq --test
-    %%> What it does:
-    %%> - checks the new files in a temporary folder before anything is replaced
-    %%> On failure:
-    %%> - nothing is installed and the phase fails with `dns.config_invalid`
-    Note over N: Snapshot the Node
-    %%> What it does:
-    %%> - before the first change, saves the files, the unit states and who holds the listen addresses under `snapshot/`
-    %%> - a snapshot that exists is reused, never overwritten, until a publication commits
-    %%> - writes `reload.pending`: a reload is owed until the commit
-    Note over N: Install changed files
-    %%> What it does:
-    %%> - replaces only the files whose content changed, each in one rename
-    alt orbit.conf is unchanged
-      %% path: reload
-      Note over N: Reload dnsmasq<br/>SIGHUP
-      %%> Why:
-      %%> - dnsmasq reads the hosts and servers files again on SIGHUP, so an exact Route change drops no query
-      %%> - unchanged means equal to the copy dnsmasq last started with
-    else orbit.conf changed
-      %% path: restart
-      Note over N: Restart dnsmasq
-      %%> When:
-      %%> - a TLD is added, changed or removed; dnsmasq reads `orbit.conf` only at start
-      %%> - also when an earlier restart failed, or dnsmasq is down: the copy it started with is deleted before and written after
-      %%> - the old listener stops and dnsmasq restarts in one script, detached on the Node, so the address is without an owner for one restart only
-      %%> - the script checks that dnsmasq holds every listen address; if not it restores the snapshot itself, so a dead controller cannot leave both listeners down
-    end
-    Note over N: Check the answers<br/>dig on the VPN address
-    %%> What it does:
-    %%> - asks the running dnsmasq for the reserved names and one name per TLD
-    %%> - for each exact Route: the A answer, AAAA gives NODATA, and a child name is forwarded
-    %%> - fails the phase when an answer differs from the render
-    Note over N: Check the Node resolver<br/>127.0.0.55, getent
-    %%> What it does:
-    %%> - asks the Node's own address 127.0.0.55, where its systemd-resolved sends every name
-    %%> - asks the Node's normal resolver for a private name and the AAAA of an exact name (NODATA); a public name only warns
-    Note over N: Record the revision
-    %%> What it does:
-    %%> - writes `orbit.revision` last, so a failed run leaves the old revision and a rerun repairs it
-    Note over N: Commit
-    %%> What it does:
-    %%> - the new files become the last good set and the files of the old listener go to `previous/legacy/`
-    %%> - removes `reload.pending`, then the snapshot; a commit that was interrupted is finished by the next publication
-  else same or older revision
+  %%> - independent VPN and Router targets run in parallel; each target takes its DNS lock and validates, snapshots, installs and checks in one phase
+  %%> - the Router's isolated unit binds its LAN address only and forwards unmatched names directly to VPN DNS; VPN DNS never forwards back
+  %%> - reuse the templates, revision check, reload-on-change and local recovery; only unit, paths, bind set and upstream policy differ
+  %%> Result:
+  %%> - answers checked over UDP and TCP; A, AAAA NODATA, exact-name descendants and nested TLD exceptions match the target render
+  alt revision already installed
     %% path: superseded
     Note over N: Skipped — superseded<br/>dns.revision_superseded
     %%> Result:
-    %%> - a newer publication already wrote a state that includes this change
-    %%> - the files stay as they are and the phase still succeeds
-  end
-  alt files installed and answers match
-    %% path: succeeded
-    N-->>SW: Phase result
-    %%> Returns:
-    %%> - the installed revision and whether dnsmasq reloaded, restarted or stayed
-  else validation or check fails
-    %% path: failed
-    Note over N: Restore the snapshot
-    %%> What it does:
-    %%> - runs only when the Node was changed; puts every saved file and unit state back, from the first snapshot of the unfinished work
-    %%> - restarts dnsmasq on the restored files and starts the old listener again
-    %%> - one script, `snapshot/restore.sh`, does it; the detached cutover runs it too when dnsmasq does not come up
-    %%> - a `dns.config_invalid` refusal installed nothing, so there is nothing to restore
-    Note over N: Check the recovery<br/>dig UDP and TCP
-    %%> What it does:
-    %%> - asks the restored resolvers on the first listen address (the VPN address) and on 127.0.0.55, over UDP and TCP; further listen addresses were not served by the old setup
-    %%> - the result says `recovered: true`; when a task or an answer fails it says `recovered: false` and `dns.rollback_failed`
-    N--xSW: exit ≠ 0
-    %%> When:
-    %%> - dnsmasq refuses the files (`dns.config_invalid`), SSH fails, or an answer differs from the render (`dns.check_failed`)
-    %%> On the Node:
-    %%> - the phase restores the snapshot; a failed recovery keeps the snapshot, and the next run starts from it
-  end
-  Note over SW: Report the result
-  %%> What it does:
-  %%> - prints the phase's `result.json` (`{revision, dnsmasq}`, or `{error_code, recovered}`), also after a failed phase
-  %%> - this is the terminal step the Gateway reads
-  Note over SW: Remove the run folder
-  %%> What it does:
-  %%> - deletes the intent and the shipped playbook, whatever happened
-  alt files installed and answers match
-    %% path: recorded
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result
+    %%> - no write or reload; receipt names the actual revision and projection digest
+    %%> - only matching effective projections authorize dependent member selection or retirement; an obsolete run cannot remove a newer resolver
+  else newer revision
+    %% path: newer-revision
+    N-->>SW: Resolver receipts<br/>revision · digest · answers
     %%> Result:
-    %%> - the owning kind continues with its next step
-  else validation or check fails
-    %% path: refused
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and the `error_code` that Report the result printed
-    Note over GW: Mark the owner failed
+    %%> - records the revision last, after checks; record-only changes use SIGHUP and unchanged content leaves the PID alone
+    %%> - a changed startup configuration restarts only that resolver; the snapshot remains until the phase commits
+  end
+  SW->>M: Apply member DNS policy<br/>shared peer phase · forEach
+  %%> When:
+  %%> - only changed member policies, after their required resolver projections pass; the lifecycle caller waits for every affected member
+  %%> What it does:
+  %%> - first persists and activates VPN coverage for old and new private domains, then reloads the replacement delegate, then narrows VPN to its final scope; brief private overlap is allowed, including on withdrawal
+  %%> - keeps owned exact domains beneath foreign VPN namespaces as more specific delegate exceptions; no equal suffix remains on both scopes at steady state
+  %%> - checks uncached Cluster A, another private name, public resolution and the actual selected scope; the resolver publication checks AAAA NODATA
+  %%> Unsupported members:
+  %%> - systemd below 258 or missing delegate support keeps VPN selection; returns dns.cluster_delegate_unsupported and Doctor reports it
+  %%> Runtime failure:
+  %%> - Cluster resolver or LAN failure makes selected Cluster lookups fail until repair; Doctor reports it and no automatic VPN fallback runs
+  opt replacing or withdrawing
+    %% path: retire
+    Note over SW: Wait the DNS grace<br/>one shared 31-second grace
+    %%> Why:
+    %%> - every affected member has confirmed its new policy before cached answers to the old address can expire
+    %%> - persist the last successful DNS selection time; retries wait only the remaining grace, while any newer successful selection resets the deadline
+    %%> - this shared barrier alone owns the wait; Route reconciliation and Router transitions consume it without another grace
+    %%> - only a successfully persisted member receipt with no member failure passes; a prepared receipt followed by commit failure or rollback never authorizes retirement
+    %%> - if any member fails or is offline, no retirement runs and the old resolver, sites and LAN rules remain
+    SW->>N: Retire unused resolvers<br/>dns-publish.yml · absent
+    %%> What it does:
+    %%> - removes only the explicitly retired unit and fences its revision; retained configuration and recovery files do not authorize service activation
+    %%> - the owning command can then retire the old Router sites and prune its LAN rules
+  end
+  Note over SW: Remove the run folder
+  %%> How:
+  %%> - native completed dependencies remove disposable intent and assets after work stops, including on failure
+  %%> - public receipts come from the phases; no separate reporting or assertion script
+  alt required phases pass
+    %% path: succeeded
+    SW-->>GW: Run succeeded<br/>terminal result
+    %%> Result:
+    %%> - the shared reader projects each applied revision and digest; the owner may finish its transition
+  else publication or member fails
+    %% path: failed
+    SW--xGW: Run failed<br/>failed target · error_code
+    %%> On the Node:
+    %%> - a failed changed phase restores its own captured files and live policy; a failed restore retains its snapshot and reports dns.rollback_failed
+    %%> - successful targets remain applied; the old Router and DNS stay reachable while any member still selects them
     %%> Retry:
-    %%> - run the owning command again after fixing the cause
+    %%> - keep the unfinished transition and receipts; resume or render fresh stored state with a newer revision
+    %%> - never replay an older whole-fleet snapshot over later changes; cleanup failure stays visible
   end

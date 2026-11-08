@@ -8,7 +8,9 @@
 listen-address={{ address }}
 {% endfor %}
 {# The Node's own resolver: systemd-resolved on the vpn Node sends every name here. #}
+{% if dns_local_resolver is not none %}
 listen-address={{ dns_local_resolver }}
+{% endif %}
 bind-dynamic
 no-resolv
 no-hosts

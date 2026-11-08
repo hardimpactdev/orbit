@@ -39,14 +39,3 @@ jobs:
           host_keys: '${{ inputs.intent.nodes[string(self.vpn.node_id)].host_keys }}'
           dns: '${{ self.vpn.dns }}'
         execution_secrets: {}
-    # Resolvers that honor the TTL stop asking the old Router (route-dns-grace).
-  - name: 'grace'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'records', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
