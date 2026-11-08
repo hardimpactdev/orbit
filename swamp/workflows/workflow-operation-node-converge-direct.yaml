@@ -1,356 +1,393 @@
 id: daace7ba-223f-47b6-9452-7c0da7cf384e
-name: operation-node-converge-direct
-description: Re-apply Orbit's own footprint on a Node with official cfgmgmt from 209, in the chart's steps.
-vaults: []
+name: operation-node-converge
+description: 'Inspect and reconcile recorded Node state in ordered Ansible phases; always remove private input.'
+vaults:
+  - orbit-control-inputs
 queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [node.converge]}
-    intent: {type: object}
-    execution_secrets: {type: object, additionalProperties: false}
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - node.converge
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+              - orbit-control-inputs
+          key:
+            type: string
+            pattern: '^(node-converge-operation-[1-9][0-9]*-agent-verifier|node-role-operation-[1-9][0-9]*-[a-z-]+)$'
+        required:
+          - vault
+          - key
+        additionalProperties: false
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
   additionalProperties: false
 jobs:
-- name: converge
-  labels: {role: swamp}
-  steps:
-    # The pinned release; a binary with the pinned SHA-256 is left alone.
-  - name: 'Install the Node agent'
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: ${{ "node-converge-binary-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {url: '${{ inputs.intent.agent.url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:" + inputs.intent.agent_sha256 }}',
-        owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # config.toml and ca.pem; the key is never written here.
-  - name: 'Configure the Node agent'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Install the Node agent', condition: {type: succeeded}}]
-    forEach: {item: file, in: '${{ inputs.intent.agent.files }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "node-converge-file-" + string(inputs.node_id) + "-" + string(self._index) }}
-      methodName: apply
-      globalArgs: {path: '${{ self.file.path }}', ensure: present, content: '${{ self.file.content }}', owner: root, group: root, mode: '0644',
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # The unit names the group in SupplementaryGroups, and a unit that names a missing group does not start.
-  - name: 'Create the orbit-env group'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/group'
-      behaviorName: ${{ "node-converge-env-group-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {groupname: orbit-env, ensure: present, system: true, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # The unit, enabled and running.
-  - name: 'Start the Node agent'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Create the orbit-env group', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "node-converge-agent-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {service: orbit-agent.service, unitFile: '${{ inputs.intent.agent.unit }}', enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # The agent reads its files only when it starts; this part only runs when it changed.
-  - name: 'Restart the Node agent'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Start the Node agent', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "node-converge-agent-" + string(inputs.node_id) }}
-      methodName: restart
-      globalArgs: {service: orbit-agent.service, unitFile: '${{ inputs.intent.agent.unit }}', enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # Best effort, as before: an Instance .env loses its world bits.
-  - name: 'Close Instance .env files'
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
-    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
-    guard: '${{ size(inputs.intent.agent.checkouts) == 0 }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: &ssh
-        name: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.target.user }}
-          port: ${{ inputs.intent.ssh.target.port }}
-          identityFile: ${{ inputs.intent.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "60", "/usr/bin/find"] + inputs.intent.agent.checkouts + ["-maxdepth", "1", "-name", ".env", "-type", "f", "-perm", "/o=rwx", "-exec", "chmod", "o-rwx", "{}", "+"] }}'
-        timeoutSec: 70
-    # Like Caddy's traverse on a release: the agent's group may pass through each production home to its .env.
-  - name: 'Let the agent reach homes'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
-    guard: '${{ size(inputs.intent.agent.homes) == 0 }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "60", "/usr/bin/setfacl", "-m", "g:orbit-env:--x"] + inputs.intent.agent.homes }}'
-        timeoutSec: 70
-    # Each role part runs beside the others; the Gateway reads each part's outcome from its step.
-  - name: 'Install Caddy'
-    labels: {role: swamp}
-    writes: true
+  -
+    name: intent
+    labels:
+      role: swamp
+    steps:
+      -
+        name: 'Write the intent'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+  -
+    name: private-agent_verifier
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    guard: '${{ inputs.intent.roles.caddy_package == null }}'
-    task:
-      type: workflow
-      workflowIdOrName: node-caddy-package
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent: '${{ {"ssh": inputs.intent.ssh, "package": inputs.intent.roles.caddy_package} }}'
-  - name: 'Publish Caddy sites'
-    labels: {role: swamp}
-    writes: true
+      -
+        job: intent
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Write agent_verifier'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-write-agent_verifier
+          methodName: execute
+          inputs:
+            run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
+            env:
+              ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-agent_verifier" }}'
+              ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.agent_verifier.key) }}'
+        guard: '${{ !("agent_verifier" in inputs.execution_secrets) }}'
+  -
+    name: private-metrics_password
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    - {step: 'Install Caddy', condition: {type: always}}
-    guard: '${{ inputs.intent.roles.caddy == null || ("Install Caddy" in steps && steps["Install Caddy"].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: node-caddy-sites
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent: '${{ {"ssh": inputs.intent.ssh, "user": inputs.intent.roles.user, "caddy": inputs.intent.roles.caddy} }}'
-  - name: 'Install private DNS'
-    labels: {role: swamp}
-    writes: true
+      -
+        job: private-agent_verifier
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Write metrics_password'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-write-metrics_password
+          methodName: execute
+          inputs:
+            run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
+            env:
+              ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-metrics_password" }}'
+              ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.metrics_password.key) }}'
+        guard: '${{ !("metrics_password" in inputs.execution_secrets) }}'
+  -
+    name: private-websocket_environment
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    guard: '${{ inputs.intent.roles.dns == null }}'
-    task:
-      type: workflow
-      workflowIdOrName: node-private-dns
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent: '${{ {"ssh": inputs.intent.ssh, "dns": inputs.intent.roles.dns} }}'
-  - name: 'Configure PHP-FPM'
-    labels: {role: swamp}
-    writes: true
+      -
+        job: private-metrics_password
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Write websocket_environment'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-write-websocket_environment
+          methodName: execute
+          inputs:
+            run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
+            env:
+              ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-websocket_environment" }}'
+              ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.websocket_environment.key) }}'
+        guard: '${{ !("websocket_environment" in inputs.execution_secrets) }}'
+  -
+    name: private-analytics_environment
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    forEach: {item: version, in: '${{ inputs.intent.roles.php_versions }}'}
-    task:
-      type: workflow
-      workflowIdOrName: node-php-runtime
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent:
-          ssh: '${{ inputs.intent.ssh }}'
-          php: {version: '${{ self.version }}', runtime_ini: '${{ inputs.intent.roles.php[self.version] }}'}
-  - name: 'Write the tmpfiles rule'
-    labels: {role: swamp}
-    writes: true
+      -
+        job: private-websocket_environment
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Write analytics_environment'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-write-analytics_environment
+          methodName: execute
+          inputs:
+            run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
+            env:
+              ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-analytics_environment" }}'
+              ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.analytics_environment.key) }}'
+        guard: '${{ !("analytics_environment" in inputs.execution_secrets) }}'
+  -
+    name: prepare
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    guard: '${{ inputs.intent.roles.tmpfiles == null }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "node-converge-tmpfiles-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {path: /etc/tmpfiles.d/orbit.conf, ensure: present, content: '${{ inputs.intent.roles.tmpfiles == null ? "" : inputs.intent.roles.tmpfiles }}', owner: root, group: root, mode: '0644',
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # Best effort: a failure is reported as skipped residue and retried on the next converge.
-  - name: 'Clear Route residue'
-    labels: {role: swamp}
-    writes: true
-    allowFailure: true
+      -
+        job: private-analytics_environment
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Prepare private input'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ansible-input
+          methodName: convergeInput
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+  -
+    name: input
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    guard: '${{ inputs.intent.roles.residue == null }}'
-    task:
-      type: workflow
-      workflowIdOrName: node-route-residue
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent: '${{ {"ssh": inputs.intent.ssh, "user": inputs.intent.roles.user, "home": inputs.intent.roles.home, "agent_sha256": inputs.intent.agent_sha256, "residue": inputs.intent.roles.residue} }}'
-    # The one end check: the pinned binary, the recorded key and the agent files hold the Gateway's hashes.
-  - name: 'Check the footprint'
-    labels: {role: swamp}
+      -
+        job: prepare
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge input'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-input
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags input \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/input.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/input-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: agent
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Restart the Node agent', condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '30', /usr/bin/sha256sum, --check, --strict, '-']
-        stdin: '${{ inputs.intent.footprint_check }}'
-        timeoutSec: 40
-
-# The network part is last: a failed role part never risks the connection carrying its repair.
-- name: network
-  dependsOn: [{job: converge, condition: {type: succeeded}}]
-  steps:
-  - name: Read WireGuard state
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.network == null }}'
-    task: &network_read
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "node-net-read-" + string(inputs.node_id) }}'
-      methodName: exec
-      globalArgs: &network_ssh
-        name: '${{ "node-net-read-" + string(inputs.node_id) }}'
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', env, LC_ALL=C, WG_HIDE_KEYS=always, wg, show, all]}
-  - name: Read hub WireGuard state
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" }}'
-    task:
-      <<: *network_read
-      behaviorName: '${{ ("node-net-read-" + string(inputs.intent.network != null ? inputs.intent.network.hub_id : inputs.node_id)).split(".").join("-") }}'
-      globalArgs:
-        name: '${{ ("node-net-read-" + string(inputs.intent.network != null ? inputs.intent.network.hub_id : inputs.node_id)).split(".").join("-") }}'
-        transport: {kind: ssh, user: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.user : inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.port : inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.identity_file : inputs.intent.ssh.identity_file }}'}
-        hosts: [{name: target, address: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.host : inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.host_keys : inputs.intent.ssh.target.host_keys }}'}}]
-      inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', env, LC_ALL=C, WG_HIDE_KEYS=always, wg, show, all]}
-  - name: Resolve WireGuard endpoint
-    labels: {role: swamp}
-    guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" }}'
-    task:
-      <<: *network_read
-      inputs: {hosts: 'name:target', timeoutSec: 20, argv: [timeout, '15', getent, ahosts, '${{ inputs.intent.network != null ? inputs.intent.network.endpoint_host : "" }}']}
-  - name: Read network DNS policy
-    labels: {role: swamp}
-    allowFailure: true
-    dependsOn: [{step: Read WireGuard state, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" }}'
-    task:
-      <<: *network_read
-      inputs:
-        hosts: 'name:target'
-        sudo: true
-        timeoutSec: 20
-        argv: [timeout, '15', sh, -c, "wg show orbit public-key && echo @@ && resolvectl dns && echo @@ && resolvectl domain orbit && echo @@ && resolvectl default-route orbit && echo @@ && { cat /etc/wireguard/orbit.dns-link 2>/dev/null || true; } && echo @@ && { grep -E \"^PostUp[[:space:]]*=[[:space:]]*resolvectl dns %i \" /etc/wireguard/orbit.conf || true; }"]
-  - name: Decide the network change
-    labels: {role: swamp}
+      -
+        job: input
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge agent'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-agent
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags agent \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/agent.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/agent-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: software
+    labels:
+      role: swamp
     dependsOn:
-    - {step: Read WireGuard state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read hub WireGuard state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Resolve WireGuard endpoint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read network DNS policy, condition: {type: always}}
-    guard: '${{ inputs.intent.network == null }}'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/network-command'
-      behaviorName: '${{ "node-net-drift-" + string(inputs.node_id) }}'
-      methodName: compare
-      inputs:
-        required: '${{ inputs.intent.network != null ? inputs.intent.network.required : false }}'
-        observations: '${{ inputs.intent.network != null ? inputs.intent.network.observations : [] }}'
-        stdout: '${{ ("Read WireGuard state" in steps ? steps["Read WireGuard state"].outputs.stdout : "") }}'
-        hub_stdout: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? ("Read hub WireGuard state" in steps ? steps["Read hub WireGuard state"].outputs.stdout : "") : "" }}'
-        addresses: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? ("Resolve WireGuard endpoint" in steps ? steps["Resolve WireGuard endpoint"].outputs.stdout : "") : "" }}'
-        dns_stdout: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" && "Read network DNS policy" in steps && steps["Read network DNS policy"].status == "succeeded" ? steps["Read network DNS policy"].outputs.stdout : "" }}'
-        policy: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" && inputs.intent.network.apply.existing_key != null ? [{"server": inputs.intent.network.apply.peer.dns_server, "dns_server": inputs.intent.network.apply.peer.dns_server, "domains": inputs.intent.network.apply.peer.domains, "public_key": inputs.intent.network.apply.existing_key}] : [] }}'
-  - name: Apply recorded network
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Decide the network change, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: '${{ inputs.intent.network == null || !("Decide the network change" in steps) || !steps["Decide the network change"].outputs.changed }}'
-    task:
-      type: workflow
-      workflowIdOrName: '${{ inputs.intent.network_mode == "hub" ? "node-network-hub" : "node-network-peer" }}'
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.network != null ? inputs.intent.network.apply : {} }}', execution_secrets: {}}
-  - name: Read the tunnel key
-    labels: {role: swamp}
-    dependsOn: [{step: Apply recorded network, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" || inputs.intent.network.apply.existing_key != null }}'
-    task:
-      <<: *network_read
-      inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', wg, show, orbit, public-key]}
-  - name: Probe the tunnel
-    labels: {role: swamp}
-    allowFailure: true
-    dependsOn: [{step: Apply recorded network, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.network == null || inputs.intent.network.probe_ip == null }}'
-    task:
-      <<: *network_read
-      inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', ping, -c, '1', -W, '50', '${{ inputs.intent.network != null ? inputs.intent.network.probe_ip : "" }}']}
-  - name: Read the handshake
-    labels: {role: swamp}
+      -
+        job: agent
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge software'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-software
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags software \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/software.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/software-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: roles
+    labels:
+      role: swamp
     dependsOn:
-    - {step: Apply recorded network, condition: {type: succeeded}}
-    - {step: Probe the tunnel, condition: {type: always}}
-    task:
-      <<: *network_read
-      inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', wg, show, orbit, latest-handshakes]}
-  - name: Check the handshake
-    labels: {role: swamp}
+      -
+        job: software
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge roles'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-roles
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: tools
+    labels:
+      role: swamp
     dependsOn:
-    - {step: Read the handshake, condition: {type: succeeded}}
-    - {step: Read the tunnel key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: assert
-      severity: high
-      message: No recorded peer completed a recent WireGuard handshake.
-      expr: >-
-        (inputs.intent.network.mode == "hub" && size(inputs.intent.network.apply.peer_keys) == 0)
-        || steps["Read the handshake"].outputs.stdout.split("\n").exists(line,
-          size(line.split("\t")) == 2
-          && int(line.split("\t")[1]) >= inputs.intent.network.handshake_after
-          && (inputs.intent.network.mode == "peer"
-            ? line.split("\t")[0] == inputs.intent.network.apply.peer.server_public_key
-            : line.split("\t")[0] in inputs.intent.network.apply.peer_keys))
+      -
+        job: roles
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge tools'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-tools
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags tools \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/tools.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/tools-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: network
+    labels:
+      role: swamp
+    dependsOn:
+      -
+        job: tools
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge network'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-network
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags network \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/network.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/network-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: check
+    labels:
+      role: swamp
+    dependsOn:
+      -
+        job: network
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Converge check'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: node-converge-converge-check
+          methodName: execute
+          inputs:
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags check \"$ORBIT_ANSIBLE/operation-node-converge.yml\" > \"$ORBIT_RUN/check.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/check-meta.json\"\nexit \"$code\""
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
+              ANSIBLE_COLLECTIONS_PATH: /opt/orbit/ansible/collections
+  -
+    name: converge
+    labels:
+      role: swamp
+    dependsOn:
+      -
+        job: check
+        condition:
+          type: always
+    steps:
+      -
+        name: 'Report Node converge'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: node-converge-result
+          methodName: convergeResult
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'

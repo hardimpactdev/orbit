@@ -1,0 +1,45 @@
+---
+- name: Protect the hub folder
+  ansible.builtin.file: { path: /etc/wireguard/orbit-peers.d, state: directory, owner: root, group: root, mode: "0700" }
+- name: Reconcile the recorded hub configuration
+  ansible.builtin.copy: { dest: /etc/wireguard/orbit.conf, content: "{{ hub_plan.config }}", owner: root, group: root, mode: "0600" }
+- name: Reconcile recorded peer files
+  ansible.builtin.copy: { dest: "{{ item.file }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
+  loop: "{{ hub_plan.peers }}"
+  loop_control: { label: "{{ item.node_id }}" }
+- name: Prune only removed peers
+  ansible.builtin.command: { argv: "{{ hub_plan.prune_argv[:-1] + ['-print', '-delete'] }}" }
+  register: hub_prune
+  changed_when: hub_prune.stdout | length > 0
+- name: Ensure persistent hub forwarding
+  ansible.builtin.copy: { dest: /etc/sysctl.d/99-orbit-forwarding.conf, content: "net.ipv4.ip_forward = 1\n", owner: root, group: root, mode: "0644" }
+- name: Read live hub forwarding
+  ansible.builtin.command: sysctl -n net.ipv4.ip_forward
+  register: forwarding
+  changed_when: false
+- name: Repair live hub forwarding
+  when: forwarding.stdout | trim != '1'
+  ansible.builtin.command: sysctl -w net.ipv4.ip_forward=1
+  changed_when: true
+- name: Start the hub without restarting a matching tunnel
+  ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+- name: Reconcile live hub peers and port without copying its private key
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      before=$(wg showconf orbit | sha256sum)
+      wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key; printf '\nListenPort = %s\n' {{ hub_plan.port | quote }}; for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done)
+      [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed
+  register: hub_sync
+  changed_when: hub_sync.stdout is search('changed')
+- name: Read the hub key
+  ansible.builtin.command: wg show orbit public-key
+  register: hub_key
+  changed_when: false
+- name: Require the recorded hub identity
+  ansible.builtin.assert: { that: hub_key.stdout | trim == hub_plan.public_key, quiet: true }
+- name: Repair the hub interface address
+  ansible.builtin.include_tasks: node-converge-address.yml
+  vars:
+    tunnel_address: "{{ hub_plan.config | regex_findall('(?m)^Address = (.+)$') | first }}"

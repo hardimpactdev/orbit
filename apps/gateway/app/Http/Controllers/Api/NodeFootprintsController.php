@@ -33,7 +33,7 @@ final class NodeFootprintsController extends Controller
     public function converge(ConvergeNodeFootprintRequest $request, Node $node, StartNodeConvergeAction $action): JsonResponse
     {
         return response()->json([
-            'data' => OperationData::fromModel($action->execute($node, $request->force(), requestId: $request->attributes->getString('orbit.request_id')))->toArray(),
+            'data' => OperationData::summary($action->execute($node, $request->boolean('base'), $request->roles(), $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ], 202);
     }

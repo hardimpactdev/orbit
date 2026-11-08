@@ -1,0 +1,51 @@
+---
+- name: Resolve selected recipe tools, not recorded digests
+  vars:
+    names: "{{ (recipe.common + intent.selected_roles | map('extract', recipe.roles) | flatten) | unique | list }}"
+    versions: "{{ names | select('match', '^php:') | map('regex_replace', '^php:', '') | list }}"
+    php_names: "{{ versions | map('extract', recipe.php.versions) | map(attribute='packages') | flatten + recipe.php.shared }}"
+  ansible.builtin.set_fact:
+    php_versions: "{{ versions }}"
+    tool_list: >-
+      {%- set out = [] -%}
+      {%- for name in (names | reject('match', '^php:') | list + php_names) | unique -%}
+      {%- set tool = recipe.tools[name] -%}
+      {%- set artifact = (tool.artifacts | default({})).amd64 | default({}) -%}
+      {%- set digest = artifact.sha256 | default(artifact.sha512 | default('')) -%}
+      {%- set _ = out.append({'name': name, 'source': tool.source, 'package': tool.package | default(name),
+          'version': artifact.version | default(tool.version), 'url': artifact.url | default(''),
+          'sha256': artifact.sha256 | default(''), 'sha512': artifact.sha512 | default(''),
+          'path': '/var/cache/orbit/debs/' ~ name ~ '_' ~ digest ~ '.deb'}) -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Separate package and artifact pins
+  ansible.builtin.set_fact:
+    ubuntu_tools: "{{ tool_list | selectattr('source', 'equalto', 'ubuntu') | list }}"
+    deb_tools: "{{ tool_list | selectattr('url', 'match', '.*[.]deb$') | list }}"
+    tool_by_name: "{{ dict(tool_list | map(attribute='name') | zip(tool_list)) }}"
+    snapshot_packages: []
+- name: Reconcile exact package pins
+  ansible.builtin.import_tasks: task-vm-apt.yml
+- name: Hold every recipe package at its pin
+  ansible.builtin.dpkg_selections: { name: "{{ item.package }}", selection: hold }
+  loop: "{{ ubuntu_tools }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Reconcile JavaScript pins
+  ansible.builtin.import_tasks: task-vm-javascript.yml
+- name: Reconcile Deno pins
+  ansible.builtin.import_tasks: task-vm-deno.yml
+- name: Reconcile Rust pins
+  ansible.builtin.import_tasks: task-vm-rust.yml
+- name: Reconcile Swamp pins
+  ansible.builtin.import_tasks: task-vm-swamp.yml
+- name: Reconcile Pi pins
+  ansible.builtin.import_tasks: task-vm-pi.yml
+- name: Reconcile Composer
+  when: "'composer' in tool_by_name"
+  ansible.builtin.get_url:
+    url: "{{ recipe.tools.composer.artifacts.amd64.url }}"
+    dest: /usr/local/bin/composer
+    checksum: "sha256:{{ recipe.tools.composer.artifacts.amd64.sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"

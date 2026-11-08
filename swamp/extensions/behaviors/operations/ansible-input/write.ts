@@ -1,6 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
+import { convergeResult, ReportInput } from "./converge_result.ts";
+import { convergeInput } from "./converge_input.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -23,11 +25,44 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.03.1",
+    version: "2026.11.08.3",
     resources: {
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
+        output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        convergeInput: {
+            description: "Build a private, literal Node converge inventory with recorded SSH pins",
+            arguments: ReportInput,
+            async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
+                const { folder } = ReportInput.parse(raw);
+                await convergeInput(folder, ctx.extensionFile('ansible/build_vars.py'), ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts'));
+                return { ready: true };
+            },
+        },
+        convergeResult: {
+            description: "Collect bounded Node converge outcomes and remove private inputs on every outcome",
+            arguments: ReportInput,
+            async execute(raw: z.infer<typeof ReportInput>, ctx: Context) {
+                const { folder } = ReportInput.parse(raw);
+                let result;
+                let cleanupFailed = false;
+                try {
+                    result = await convergeResult(folder);
+                } finally {
+                    try { await Deno.remove(folder, { recursive: true }); }
+                    catch (error) { if (!(error instanceof Deno.errors.NotFound)) cleanupFailed = true; }
+                }
+                if (cleanupFailed && !result.failed_phase) {
+                    result = { ...result, phases: result.phases.map((phase) => phase.name === 'check' ? { ...phase, status: 'failed' as const } : phase),
+                        failed_phase: "check" as const, error_code: "node.converge_cleanup_failed" };
+                }
+                result = { ...result, cleanup_complete: !cleanupFailed };
+                const value = { stdout: JSON.stringify({ outcome: result.failed_phase ? "failed" : "succeeded", ...result }) };
+                await ctx.writeResource("output", "output", value);
+                return value;
+            },
+        },
         write: {
             description:
                 "Write the admitted intent and locate shipped playbooks",

@@ -1,0 +1,63 @@
+---
+- name: Ensure the agent configuration directory
+  ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
+- name: Inspect the agent secret without exposing it
+  ansible.builtin.stat: { path: /etc/orbit/agent/secret, checksum_algorithm: sha256 }
+  register: agent_secret
+  no_log: true
+- name: Require the admitted verifier
+  ansible.builtin.assert:
+    that: [agent_secret.stat.checksum | default('') == secrets.agent_verifier]
+    quiet: true
+  no_log: true
+- name: Protect the existing agent secret
+  ansible.builtin.file: { path: /etc/orbit/agent/secret, owner: root, group: root, mode: "0600" }
+- name: Reconcile the pinned agent binary
+  ansible.builtin.get_url:
+    url: "{{ intent.agent.url }}"
+    dest: /usr/local/bin/orbit-agent
+    checksum: "sha256:{{ intent.agent.sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  register: agent_binary
+- name: Reconcile the agent configuration and trust
+  ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
+  loop:
+    - { path: /etc/orbit/agent/config.toml, content: "{{ intent.agent.configuration }}" }
+    - { path: /etc/orbit/agent/ca.pem, content: "{{ intent.agent.certificate }}" }
+    - { path: /etc/systemd/system/orbit-agent.service, content: "{{ intent.agent.unit }}" }
+  register: agent_files
+- name: Ensure the agent unit's supplementary group
+  ansible.builtin.group: { name: orbit-env, system: true, state: present }
+- name: Start the agent and restart only for managed changes
+  ansible.builtin.systemd:
+    name: orbit-agent.service
+    enabled: true
+    daemon_reload: "{{ agent_files is changed }}"
+    state: "{{ 'restarted' if agent_binary is changed or agent_files is changed else 'started' }}"
+- name: Require a valid recorded CLI release
+  ansible.builtin.assert:
+    that: [intent.cli.plan_error == None]
+    quiet: true
+- name: Reconcile the recorded CLI release
+  when: intent.cli.skip_reason == None
+  block:
+    - name: Install the pinned CLI
+      ansible.builtin.get_url:
+        url: "{{ intent.cli.release.url }}"
+        dest: "/usr/local/bin/orbit-{{ intent.cli.release.version }}"
+        checksum: "sha256:{{ intent.cli.release.sha256 }}"
+        owner: root
+        group: root
+        mode: "0755"
+    - name: Select the pinned CLI release
+      ansible.builtin.file: { src: "/usr/local/bin/orbit-{{ intent.cli.release.version }}", dest: /usr/local/bin/orbit, state: link, owner: root, group: root, force: true }
+    - name: Create the CLI profile folder
+      ansible.builtin.file: { path: /root/.orbit, state: directory, owner: root, mode: "0700" }
+    - name: Reconcile the recorded CLI profile
+      ansible.builtin.copy:
+        dest: /root/.orbit/config.json
+        content: "{{ intent.cli.profile }}"
+        owner: root
+        mode: "0600"

@@ -50,10 +50,14 @@ return ['node.add' => [
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true],
 ], 'node.converge' => [
-    'workflow' => 'operation-node-converge-direct',
+    'workflow' => 'operation-node-converge',
     'projection' => NodeConvergeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'converge', 'step' => 'Check the footprint', 'native' => true],
+    'terminal_result' => ['job' => 'converge', 'step' => 'Report Node converge', 'data' => 'node-converge-result'],
+    'execution_copies' => [
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-converge-operation-[1-9][0-9]*-agent-verifier$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-operation-[1-9][0-9]*-[a-z-]+$'],
+    ],
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add',
     'workflow_inputs' => true,

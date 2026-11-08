@@ -1,0 +1,108 @@
+---
+# Seven ordered, ungated phases. A matching recorded digest never suppresses a live read or repair.
+- name: Reconcile a distinct hub before its target peer
+  hosts: hub
+  any_errors_fatal: true
+  become: true
+  gather_facts: false
+  tags: [network]
+  tasks:
+    - name: Reconcile the hub
+      ansible.builtin.import_tasks: tasks/node-converge-hub.yml
+      vars: { hub_plan: "{{ intent.network.hub }}" }
+- name: Reconcile recorded Node state
+  hosts: target
+  become: true
+  gather_facts: false
+  module_defaults:
+    ansible.builtin.apt: { lock_timeout: 300 }
+  vars:
+    recipe: "{{ intent.recipe | from_json }}"
+    orbit_user: "{{ intent.user }}"
+    orbit_home: "{{ '/root' if intent.user == 'root' else '/home/' ~ intent.user }}"
+    vp_home: /opt/orbit/vite-plus
+    apt_directory: /var/tmp/orbit-converge-apt
+    apt_retries: 4
+    apt_delay: 30
+    apt_environment: { APT_CONFIG: /var/tmp/orbit-converge-apt/apt.conf, DEBIAN_FRONTEND: noninteractive, NEEDRESTART_MODE: l }
+    apt_index_environment: "{{ apt_environment }}"
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd: { daemon_reload: true }
+  tasks:
+    - name: Read target platform
+      ansible.builtin.setup: { gather_subset: [min] }
+      tags: [input]
+    - name: Require the pinned Linux platform
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version == recipe.ubuntu.release
+          - ansible_facts.architecture == 'x86_64'
+          - intent.agent.url is string
+          - intent.agent.sha256 is string
+          - secrets.agent_verifier | length > 0
+        quiet: true
+      tags: [input]
+    - name: Reconcile the base
+      ansible.builtin.import_tasks: tasks/node-converge-base.yml
+      tags: [agent]
+    - name: Reconcile selected software
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-software.yml
+        apply: { tags: [software] }
+      when: intent.selected_roles | length > 0
+      tags: [software]
+    - name: Reconcile selected recorded roles
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-role.yml
+        apply: { tags: [roles] }
+      loop: "{{ intent.roles }}"
+      loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
+      tags: [roles]
+    - name: Start the independent Tool observations
+      ansible.builtin.set_fact: { tool_results: [] }
+      tags: [tools]
+    - name: Reconcile each independent Tool
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-tool.yml
+        apply: { tags: [tools] }
+      loop: "{{ intent.tools }}"
+      loop_control: { loop_var: tool, label: "{{ tool.id }}" }
+      tags: [tools]
+    - name: Record bounded Tool results
+      ansible.builtin.copy:
+        dest: "{{ orbit_run }}/tools-result.json"
+        content: "{{ tool_results | to_json }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      tags: [tools]
+    - name: Fail Tools only after every admitted Tool has been attempted
+      ansible.builtin.assert:
+        that: tool_results | selectattr('status', 'equalto', 'failed') | list | length == 0
+        quiet: true
+      tags: [tools]
+    - name: Reconcile the network hub before the target
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-network.yml
+        apply: { tags: [network] }
+      when: intent.network != None
+      tags: [network]
+    - name: Check the managed agent files without changing the Node
+      ansible.builtin.stat: { path: /usr/local/bin/orbit-agent, checksum_algorithm: sha256 }
+      register: agent_check
+      tags: [check]
+    - name: Require the recorded agent pin
+      ansible.builtin.assert:
+        that: [agent_check.stat.checksum | default('') == intent.agent.sha256]
+        quiet: true
+      tags: [check]
+    - name: Check the selected role runtime
+      ansible.builtin.include_tasks:
+        file: tasks/node-converge-role-check.yml
+        apply: { tags: [check] }
+      loop: "{{ intent.roles }}"
+      loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
+      tags: [check]

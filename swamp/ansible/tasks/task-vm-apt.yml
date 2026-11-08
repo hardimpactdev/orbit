@@ -35,6 +35,7 @@
         install_recommends: false
         fail_on_autoremove: true
         allow_downgrade: true
+        allow_change_held_packages: true
       environment: "{{ apt_environment }}"
       register: apt_install
       until: apt_install is succeeded
@@ -65,7 +66,8 @@
       when: deb_missing | length > 0
       ansible.builtin.command:
         argv: >-
-          {{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades', '-o', 'Dpkg::Options::=--force-confold', '--']
+          {{ ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades',
+          '--allow-change-held-packages', '-o', 'Dpkg::Options::=--force-confold', '--']
           + deb_missing | map(attribute='path') | list }}
       environment: "{{ apt_environment }}"
       register: apt_debs

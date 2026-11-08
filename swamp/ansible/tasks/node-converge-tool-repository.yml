@@ -1,0 +1,29 @@
+---
+- name: Read the recorded repository signing key
+  ansible.builtin.get_url:
+    url: "{{ tool.repository.signing_key.url }}"
+    dest: "/usr/share/keyrings/orbit-{{ tool.repository.name }}.asc"
+    owner: root
+    group: root
+    mode: "0644"
+- name: Inspect the signing-key fingerprint
+  ansible.builtin.command:
+    argv: [gpg, --batch, --show-keys, --with-colons, "/usr/share/keyrings/orbit-{{ tool.repository.name }}.asc"]
+  register: repository_key
+  changed_when: false
+- name: Require the recorded repository key
+  ansible.builtin.assert:
+    that: tool.repository.signing_key.fingerprint in (repository_key.stdout | regex_findall('(?m)^fpr:::::::::([A-F0-9]+):'))
+    quiet: true
+- name: Reconcile the recorded repository definition
+  ansible.builtin.copy:
+    dest: "/etc/apt/sources.list.d/orbit-{{ tool.repository.name }}.sources"
+    content: |
+      Types: deb
+      URIs: {{ tool.repository.uris | join(' ') }}
+      Suites: {{ tool.repository.suites | join(' ') }}
+      Components: {{ tool.repository.components | join(' ') }}
+      Signed-By: /usr/share/keyrings/orbit-{{ tool.repository.name }}.asc
+    owner: root
+    group: root
+    mode: "0644"

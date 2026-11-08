@@ -1,0 +1,18 @@
+---
+- name: Load only this recorded role's literal variables
+  ansible.builtin.include_vars:
+    file: "{{ orbit_run }}/role-{{ role_plan.assignment_id }}/vars.yml"
+    name: scoped_role
+  no_log: true
+- name: Create selected role folders
+  ansible.builtin.file: { path: "{{ item.path }}", state: directory, owner: "{{ item.owner }}", group: "{{ item.group }}", mode: "{{ item.mode }}" }
+  loop: "{{ scoped_role.intent.directories }}"
+  loop_control: { label: "{{ item.path }}" }
+- name: Reconcile the shared role runtime, never publication or other-Node plays
+  ansible.builtin.include_tasks: node-role-runtime.yml
+  vars:
+    intent: "{{ scoped_role.intent }}"
+    rt: "{{ scoped_role.intent.runtime }}"
+    secrets: "{{ scoped_role.secrets }}"
+    containers: "{{ scoped_role.containers }}"
+    plans: "{{ scoped_role.plans }}"

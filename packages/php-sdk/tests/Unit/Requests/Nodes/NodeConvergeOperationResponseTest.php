@@ -23,7 +23,7 @@ it('returns the admitted Operation and preserves the converge idempotency key', 
     expect($response)->toBeInstanceOf(OperationResponse::class);
     expect($response->kind)->toBe('node.converge');
     $mock->assertSent(fn ($pending): bool => $pending->headers()->get('Idempotency-Key') === 'converge-proof'
-        && $pending->body()->all() === ['force' => true]);
+        && $pending->body()->all() === ['base' => true]);
 });
 
 it('refuses a retired synchronous footprint response', function (): void {

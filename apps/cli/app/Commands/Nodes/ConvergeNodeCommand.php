@@ -18,8 +18,9 @@ final class ConvergeNodeCommand extends NodeCommand
 
     #[\Override]
     protected $signature = 'node:converge
-        {node : Node ID or name}
-        {--force : Re-apply every artifact, not only the ones whose digest changed}
+        {node? : Positive numeric Node ID}
+        {--base : Apply only Orbit-owned files, units, agent and CLI}
+        {--roles= : Apply the base and these recorded roles (comma separated)}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
@@ -28,22 +29,27 @@ final class ConvergeNodeCommand extends NodeCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
+        if ($nodeId === null) {
+            return self::FAILURE;
+        }
+        $roles = $this->option('roles');
+        if (($this->option('base') === true && $roles !== null)
+            || (is_string($roles) && ($roles === '' || array_diff(explode(',', $roles),
+                ['gateway', 'vpn', 'router', 'ingress', 'app-dev', 'app-prod', 'metrics', 'database', 'websocket', 'analytics', 'ci-runner', 'swamp']) !== []))) {
+            return $this->renderGatewayFailure('validation.failed', 'Select either --base or a nonempty list of known roles.');
+        }
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
-
-        if ($nodeId === null) {
-            return self::FAILURE;
-        }
-
         $result = $this->sendWithProgress(
             $connector,
-            new ConvergeNodeRequest($nodeId, $this->option('force') === true,
-                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null),
+            new ConvergeNodeRequest($nodeId, $this->option('base') === true,
+                is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
+                is_string($roles) ? explode(',', $roles) : null),
             OperationResponse::class,
             ['Converge Node footprint', 'Converging Node footprint', 'Node footprint request completed'],
             static fn (OperationResponse $response): ProgressOutcome => new ProgressOutcome(ProgressState::Success,
