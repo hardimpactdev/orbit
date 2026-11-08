@@ -44,10 +44,10 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
         $input = ValidatedData::object($operation->input);
 
         return [
-            'intent' => ['resume' => $input['resume'], 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
+            'intent' => ['task_vm_id' => $input['task_vm_id'], ...(isset($input['resume']) ? ['resume' => $input['resume']] : []), 'author' => $input['author'], 'fix' => $input['fix'], 'reviews' => $input['reviews'], 'publish' => $input['publish'], 'plan' => $input['plan']],
             'execution_secrets' => $input['execution_secrets'],
             // An empty map must reach the workflow as an object, not as an empty JSON list.
-            'resume_secrets' => (object) ValidatedData::object($input['resume_secrets']),
+            'resume_secrets' => (object) ValidatedData::object($input['resume_secrets'] ?? []),
             'publish_secrets' => $input['publish_secrets'],
         ];
     }
@@ -61,7 +61,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
     {
         $input = $this->input($operation);
         $pi = ValidatedData::object(ValidatedData::object($input['execution_secrets'])['pi_token']);
-        $vm = TaskVm::query()->find(ValidatedData::integer(ValidatedData::object(ValidatedData::object($operation->input)['resume'])['task_vm_id']));
+        $vm = TaskVm::query()->find(ValidatedData::integer(ValidatedData::object($operation->input)['task_vm_id']));
         if (! $vm instanceof TaskVm || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
             throw new ResourceOperationException('tasks.prep_fix_refused', 'The task VM or its Pi credential is gone, so the corrections cannot start.', 409);
         }
@@ -88,7 +88,7 @@ final readonly class TaskPrepFixProjection implements DirectOperationProjection,
 
             // The resume step is a child run, not a task_vm.resume Operation, so the VM is recorded as ready here once the step succeeded.
             if (NativeRunResult::stepStatus($native, 'Resume the VM') === 'succeeded') {
-                $vm = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer(ValidatedData::object($intent['resume'])['task_vm_id']));
+                $vm = TaskVm::query()->lockForUpdate()->find(ValidatedData::integer($intent['task_vm_id']));
                 if ($vm instanceof TaskVm && $vm->state === TaskVmState::Parked) {
                     $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
                 }
