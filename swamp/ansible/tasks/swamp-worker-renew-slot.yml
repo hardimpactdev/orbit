@@ -37,6 +37,8 @@
   register: renewal_before
   changed_when: false
   no_log: true
+- name: Refresh the actual connection times after the live probes
+  ansible.builtin.import_tasks: swamp-worker-connections.yml
 - name: Read the time immediately before the controlled drain
   ansible.builtin.setup:
     gather_subset: ["!all", "!min", date_time]
@@ -47,9 +49,10 @@
       - renewal_live.status | default('') in renewal_accepting
       - renewal_live.instanceUuid | default('') == item.instanceUuid
       - renewal_live.capacity | default(0) | int >= renewal_capacity | int
+      - renewal_connections[item.name] | int <= ansible_date_time.epoch | int
       - >-
         renewal_session_seconds - ((ansible_date_time.epoch | int) -
-        (renewal_live.enrolledAt | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp()) > renewal_round_seconds
+        renewal_connections[item.name]) > renewal_round_seconds
     fail_msg: >-
       Worker renewal stopped: pool capacity, instance or session headroom changed.
       No controlled drain started; the eight-hour cap risk remains

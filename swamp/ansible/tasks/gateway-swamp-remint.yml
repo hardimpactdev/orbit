@@ -24,9 +24,33 @@
       SWAMP_NO_UPDATE_CHECK: "1"
       SWAMP_NO_TELEMETRY: "1"
 - name: Require the Swamp key
-  ansible.builtin.stat: { path: "{{ swamp_cli.SWAMP_API_KEY_FILE }}" }
+  ansible.builtin.stat:
+    path: "{{ swamp_cli.SWAMP_API_KEY_FILE }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
   register: swamp_key
   failed_when: not swamp_key.stat.exists
+# Older ready fleets have only a/b. Refuse before stopping any service: c must
+# first be provisioned through the same local control-plane bootstrap as a/b.
+- name: Check worker c credentials before stopping the control plane
+  ansible.builtin.stat:
+    path: "{{ swamp_credentials }}/c/{{ item }}.token"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop: [enrollment, server]
+  register: swamp_remint_c
+- name: Require a three-worker fleet before remint
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+      - item.stat.size | default(0) | int > 0
+    fail_msg: >-
+      Swamp remint stopped before stopping any service: worker c's enrollment and server token files are required.
+      Provision the three-worker control plane through local bootstrap first
+  loop: "{{ swamp_remint_c.results }}"
+  loop_control: {label: "{{ item.item }}"}
 # Serve and the workers hold the token store open, so they stop while the tokens change.
 - name: Stop the workers
   ansible.builtin.systemd: { name: "orbit-swamp-worker@{{ item }}.service", state: stopped }

@@ -12,6 +12,7 @@
   loop:
     - {src: swamp-worker-renewal.yml, dest: worker-renewal.yml}
     - {src: tasks/swamp-worker-renew-slot.yml, dest: tasks/swamp-worker-renew-slot.yml}
+    - {src: tasks/swamp-worker-connections.yml, dest: tasks/swamp-worker-connections.yml}
     - {src: tasks/swamp-worker-renew-verify.yml, dest: tasks/swamp-worker-renew-verify.yml}
   loop_control: {label: "{{ item.dest }}"}
 - name: Write worker renewal units

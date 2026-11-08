@@ -38,41 +38,8 @@
           SWAMP_API_KEY_FILE: "{{ renewal_home }}/.config/swamp/api-key"
           SWAMP_NO_UPDATE_CHECK: '1'
           SWAMP_NO_TELEMETRY: '1'
-    # Bootstrap and remint use different token names. The units carry only file paths.
-    - name: Read the latest enrollment receipt of each worker unit
-      ansible.builtin.command:
-        argv:
-          - timeout
-          - '10'
-          - journalctl
-          - "--unit=orbit-swamp-worker@{{ item }}.service"
-          - '--grep=Enrolled as '
-          - --lines=1
-          - --output=cat
-          - --no-pager
-          - --quiet
-      loop: "{{ renewal_slots }}"
-      register: renewal_receipts
-      changed_when: false
-      failed_when: false
-      no_log: true
-    - name: Resolve the real pool names from the enrollment receipts
-      ansible.builtin.set_fact:
-        renewal_names: >-
-          {{ renewal_names | default({}) | combine({item.item:
-            (item.stdout | default('') | regex_replace('\x1b\[[0-9;]*m', '')
-            | regex_findall('Enrolled as "?([^"\s]+)"?') | first | default(''))
-            if item.rc | default(-1) in [0, 1] else ''}) }}
-      loop: "{{ renewal_receipts.results }}"
-      loop_control: {label: "{{ item.item }}"}
-    - name: Require three distinct enrollment names before maintenance
-      ansible.builtin.assert:
-        that:
-          - renewal_names.values() | reject('equalto', '') | unique | length == 3
-        fail_msg: >-
-          Worker renewal stopped: cannot resolve all three unit names from enrollment journals.
-          The eight-hour session cap can still abort active dispatches.
-          No worker was drained; retry in five minutes
+    - name: Read the actual connection receipts
+      ansible.builtin.import_tasks: tasks/swamp-worker-connections.yml
     - name: Read the three permanent workers
       ansible.builtin.command:
         argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
@@ -82,11 +49,14 @@
       register: renewal_list
       changed_when: false
       no_log: true
-    - name: Select the permanent pool
+    - name: Select the permanent pool with its actual connection times
       ansible.builtin.set_fact:
         renewal_pool: >-
-          {{ (renewal_list.stdout | from_json).workers
-          | selectattr('name', 'in', renewal_names.values() | list) | list }}
+          {{ renewal_pool | default([]) + [item | combine({'connectedAt': renewal_connections[item.name]})] }}
+      loop: >-
+        {{ (renewal_list.stdout | from_json).workers
+        | selectattr('name', 'in', renewal_names.values() | list) | list }}
+      loop_control: {label: "{{ item.name }}"}
     - name: Require all three workers to be connected before renewal
       ansible.builtin.assert:
         that:
@@ -97,7 +67,7 @@
           No worker was drained; the eight-hour cap risk remains, retry in five minutes
     - name: Select the oldest worker and its unit
       ansible.builtin.set_fact:
-        renewal_current: "{{ renewal_pool | sort(attribute='enrolledAt') | first }}"
+        renewal_current: "{{ renewal_pool | sort(attribute='connectedAt') | first }}"
     - name: Resolve the target and its two peers
       ansible.builtin.set_fact:
         renewal_slot: "{{ (renewal_names | dict2items | selectattr('value', 'equalto', renewal_current.name) | first).key }}"
@@ -110,4 +80,4 @@
       ansible.builtin.include_tasks: tasks/swamp-worker-renew-slot.yml
       when: >-
         ((ansible_date_time.epoch | int) -
-        (renewal_current.enrolledAt | regex_replace('Z$', '+0000') | to_datetime('%Y-%m-%dT%H:%M:%S.%f%z')).timestamp()) >= renewal_due_seconds
+        renewal_current.connectedAt) >= renewal_due_seconds

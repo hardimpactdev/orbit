@@ -1,5 +1,6 @@
 /** Exercise the production Ansible renewal through real modules and disposable command stubs. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1.0.12";
 
 const decoder = new TextDecoder();
 const playbook =
@@ -24,6 +25,7 @@ interface Worker {
 interface State {
   workers: Record<Slot, Worker>;
   receipts?: Partial<Record<Slot, string>>;
+  connections?: Partial<Record<Slot, string>>;
   probe_error?: Partial<Record<Slot, string>>;
   drain_on_probe?: Slot;
   fill_on_probe?: Slot;
@@ -57,7 +59,13 @@ if (name === "getent") {
 } else if (name === "journalctl") {
     const slot = args.find(arg => arg.startsWith("--unit=")).split("@")[1][0];
     if (state.journal_error === slot) Deno.exit(124);
-    console.log(state.receipts?.[slot] ?? '2026-11-08T01:00:00Z [INF] worker: Enrolled as "' + state.workers[slot].name + '"');
+    const message = state.receipts?.[slot] ?? '2026-11-08T01:00:00Z [INF] worker: Enrolled as "' + state.workers[slot].name + '"';
+    if (args.includes("--output=cat")) console.log(message);
+    else {
+        if (!args.includes("--boot=0") || !args.includes("--output=json")) throw new Error("connection receipt must use journal JSON from this boot");
+        console.log(message ? JSON.stringify({MESSAGE: message, __REALTIME_TIMESTAMP:
+            String(Date.parse(state.connections?.[slot] ?? state.workers[slot].enrolledAt)*1000)}) : "");
+    }
 } else if (name === "queued-dispatch") {
     event("queued-follow-on");
     const deadline = Date.now() + 30_000;
@@ -117,6 +125,7 @@ if (name === "getent") {
             else {
                 const previous = state.workers[slot].instanceUuid;
                 Object.assign(state.workers[slot], {status: "idle", instanceUuid: previous.startsWith("new-") ? previous + "-next" : "new-" + slot, enrolledAt: new Date().toISOString()});
+                if (state.connections) state.connections[slot] = new Date().toISOString();
                 state.starting = state.starting.filter(value => value !== slot);
                 event("enrolled-" + slot); save();
             }
@@ -127,7 +136,7 @@ if (name === "getent") {
         if (!slot) throw new Error("verification used an unknown worker name: " + args[2]);
         event("verify-" + slot);
         if (state.age_peer_on_probe) {
-            state.workers.b.enrolledAt = new Date(Date.now() - (7*60+50)*60_000).toISOString(); save();
+            state.connections = {...state.connections, b: new Date(Date.now() - (7*60+50)*60_000).toISOString()}; save();
         }
         const error = state.probe_error?.[slot] ?? (state.workers[slot].activeDispatchIds.length >= state.workers[slot].capacity ? "at capacity" : undefined);
         if (state.drain_on_probe === slot) { state.workers[slot].status = "draining"; save(); }
@@ -228,7 +237,7 @@ class Fixture {
       throw error;
     }
   }
-  start() {
+  start(testPlaybook = playbook, extraVars: Record<string, unknown> = {}) {
     this.completed = false;
     this.write();
     this.child = new Deno.Command("timeout", {
@@ -239,7 +248,7 @@ class Fixture {
         "localhost,",
         "-c",
         "local",
-        playbook,
+        testPlaybook,
         "-e",
         JSON.stringify({
           orbit_user: identity("-un"),
@@ -248,6 +257,7 @@ class Fixture {
           ansible_become: false,
           ansible_python_interpreter: "{{ ansible_playbook_python }}",
           renewal_swamp_binary: `${this.root}/swamp`,
+          ...extraVars,
         }),
       ],
       env: this.env,
@@ -521,4 +531,109 @@ test("peer approaching eight-hour cap during probe blocks drain", async (f) => {
   assert(events.includes("verify-c"));
   assert(!events.includes("attempt-restart-a"));
   assertStringIncludes(f.output, "session headroom changed");
+});
+
+test("same-process reconnect clears old enrolledAt lockout and renews on connection age", async (f) => {
+  // Swamp retains the process UUID and enrolledAt when it reconnects after the
+  // hard cap. A real journal receipt now records the successful new socket.
+  f.state.workers.a.enrolledAt = new Date(Date.now() - 12 * 3600_000)
+    .toISOString();
+  f.state.workers.b.enrolledAt = fresh();
+  f.state.workers.c.enrolledAt = fresh();
+  f.state.connections = { a: fresh() };
+  f.start();
+  assertEquals(await f.result(), []);
+  assertEquals(f.read().workers.a.instanceUuid, "old-a");
+  // Once this socket is due, the same stale durable metadata must not block it.
+  f.state = f.read();
+  f.state.connections!.a = new Date(Date.now() - 3 * 3600_000 - 1000)
+    .toISOString();
+  f.start();
+  const events = await f.result();
+  assert(events.includes("drain-a"));
+  assert(events.includes("enrolled-a"));
+  assertEquals(f.read().workers.a.instanceUuid, "new-a");
+  assert(!events.includes("drain-b"));
+  assert(!events.includes("drain-c"));
+});
+
+const remintTasks =
+  new URL("../ansible/tasks/gateway-swamp-remint.yml", import.meta.url)
+    .pathname;
+for (const missing of ["directory", "enrollment", "server", "empty server"]) {
+  test(`proof remint with missing c ${missing} fails before any service stops`, async (f) => {
+    const config = `${f.root}/.config/swamp`;
+    Deno.mkdirSync(config, { recursive: true });
+    Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+    const credentials = `${f.root}/credentials`;
+    if (missing !== "directory") {
+      Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+      for (const kind of ["enrollment", "server"]) {
+        if (missing !== kind) {
+          Deno.writeTextFileSync(
+            `${credentials}/c/${kind}.token`,
+            missing === "empty server" && kind === "server"
+              ? ""
+              : "synthetic-test-only",
+          );
+        }
+      }
+    }
+    const testPlaybook = `${f.root}/remint.yml`;
+    Deno.writeTextFileSync(
+      testPlaybook,
+      JSON.stringify([{
+        name: "Exercise the real proof fleet remint",
+        hosts: "localhost",
+        gather_facts: false,
+        tasks: [{ "ansible.builtin.import_tasks": remintTasks }],
+      }]),
+    );
+    f.start(testPlaybook, {
+      control: { user: identity("-un"), repository: f.root },
+      swamp_home: f.root,
+      swamp_credentials: credentials,
+    });
+    assertEquals(await f.result(false), []);
+    assertStringIncludes(
+      f.output,
+      "Swamp remint stopped before stopping any service",
+    );
+  });
+}
+test("proof remint preflight accepts an existing three-worker fleet without reading tokens", async (f) => {
+  const config = `${f.root}/.config/swamp`;
+  Deno.mkdirSync(config, { recursive: true });
+  Deno.writeTextFileSync(`${config}/api-key`, "synthetic-test-only");
+  const credentials = `${f.root}/credentials`;
+  Deno.mkdirSync(`${credentials}/c`, { recursive: true });
+  for (const kind of ["enrollment", "server"]) {
+    Deno.writeTextFileSync(
+      `${credentials}/c/${kind}.token`,
+      "synthetic-test-only",
+    );
+  }
+  const tasks = parse(Deno.readTextFileSync(remintTasks)) as Array<
+    Record<string, unknown>
+  >;
+  const stop = tasks.findIndex((task) => task.name === "Stop the workers");
+  assert(stop > 0);
+  const testPlaybook = `${f.root}/preflight.yml`;
+  // Execute the actual production prefix, stopping before its first mutation.
+  Deno.writeTextFileSync(
+    testPlaybook,
+    JSON.stringify([{
+      name: "Exercise the production remint preflight",
+      hosts: "localhost",
+      gather_facts: false,
+      tasks: tasks.slice(0, stop),
+    }]),
+  );
+  f.start(testPlaybook, {
+    control: { user: identity("-un"), repository: f.root },
+    swamp_home: f.root,
+    swamp_credentials: credentials,
+  });
+  assertEquals(await f.result(), []);
+  assert(!f.output.includes("synthetic-test-only"));
 });
