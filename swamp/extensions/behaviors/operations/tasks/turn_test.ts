@@ -990,7 +990,10 @@ Deno.test("the persisted resource keeps messages and tool metadata without argum
             }),
             entry("user", {
                 role: "user",
-                content: "password=message-secret-value",
+                // Pi and the model-router guard use bare 32-byte hex credentials.
+                // Swamp redacts them without consulting a Gateway/route reader.
+                content: "password=message-secret-value\n" + "a".repeat(64) +
+                    " " + "b".repeat(64),
             }),
             entry("system", {
                 role: "system",
@@ -1028,6 +1031,8 @@ Deno.test("the persisted resource keeps messages and tool metadata without argum
                 "message-secret-value",
                 "echo complete",
                 "/app/",
+                "a".repeat(64),
+                "b".repeat(64),
             ]
         ) {
             assertEquals(
@@ -1077,7 +1082,7 @@ Deno.test("the persisted resource keeps messages and tool metadata without argum
                 at: "2026-11-08T10:00:00Z",
                 kind: "message",
                 label: "user",
-                text: "password=[REDACTED]",
+                text: "password=[REDACTED]\n[REDACTED] [REDACTED]",
             },
         ]);
     } finally {
