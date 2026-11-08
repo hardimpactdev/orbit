@@ -1,28 +1,28 @@
 ---
 title: "ADR 0248: Render private DNS as desired state"
 sidebarTitle: "0248 Private DNS desired state"
-description: "In progress. Option A is chosen: every publication renders the complete private DNS from the Gateway database, and one Ansible phase writes a stock dnsmasq on the vpn Node. The listener, its catalog and the three-way merge go."
+description: "In progress. Option A is chosen: every publication renders the complete private DNS from the Gateway database, and one shared Ansible phase writes the vpn and Cluster Router dnsmasq projections. LAN members select their Cluster resolver."
 ---
 
 # ADR 0248: Render private DNS as desired state
 
-Every DNS publication renders the whole private DNS from the Gateway database. One Ansible phase writes the result to a stock dnsmasq on the `vpn` Node. There is no custom listener, no delta piece and no three-way merge.
+Every DNS publication renders the whole private DNS from the Gateway database. One shared Ansible phase writes a stock dnsmasq on the `vpn` Node and a dedicated dnsmasq on each active Cluster Router with a LAN address. LAN members select their Cluster resolver for its names. There is no custom listener, no delta piece and no three-way merge.
 
 ## Status
 
 In progress.
 
-Nick approved the direction on 2026-11-07 and chose option A the same day. The build follows the sections below.
+The VPN desired-state build is in PR #3165 and is not merged. The Cluster Router amendment and its charts are draft. Resolve the two review questions below before implementing the amendment or cutting over live DNS.
 
-Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole: no Cluster DNS, no member step, no fallback.
+Principle: [Deterministic first](/mission#principles) and [Lean](/mission#principles). This ADR replaces the publication machinery of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router), retains its Router LAN DNS firewall families, and defines the simpler Cluster resolver below. The old delegate and automatic fallback plan is not implicitly approved by this amendment.
 
-Decisions of 2026-11-07:
+The VPN baseline and Cluster amendment:
 
-- Option A: all Routes in one dnsmasq file on the vpn Node.
+- Option A remains: all private Routes are answered on the vpn Node. Cluster resolvers add a LAN overlay; the vpn Node does not delegate names to them.
 - The AAAA fix is taken: NODATA for exact Routes, no upstream IPv6 leak.
 - Rollback is the previous rendered configuration. The phase takes a snapshot before its first change and restores it when a check fails. A rerun is the rollback. There is no rollback bridge.
 - The render reads only stored rows. Every pending state (Cluster TLD, Router and LAN address changes, a pending Node) is stored before the publication.
-- Answers per caller are gone. A WireGuard member gets the Router's WireGuard address, and a LAN member reaches the Router through the hub.
+- Source-dependent answers on the vpn Node are gone. Other callers receive WireGuard addresses there; a LAN member obtains LAN answers from its Cluster Router.
 
 ## Context
 
@@ -59,7 +59,7 @@ Today the per-caller rule gives the Router LAN address to an eligible member: an
 
 ## Decision
 
-Nick chose option A on 2026-11-07: all Routes in one dnsmasq file on the vpn Node.
+The vpn Node keeps the complete WireGuard projection. Each eligible Cluster Router holds a complete LAN projection for its own Cluster, built from the same stored Route selection. The resolver a member selects determines the address; neither server inspects requester identity.
 
 ### One render
 
@@ -71,7 +71,7 @@ The render is a function of rows. A change stores the row state that decides inc
 
 - The revision is `max(stored + 1, now in microseconds)`. The Gateway takes it in the same transaction that reads the rows. A database restore cannot move it below an installed revision, because the clock keeps going.
 - The Node holds the installed revision in `orbit.revision`, written last.
-- Parallel publications are safe: the newest render wins, and it contains every change recorded before it. A failed run does not undo its change by replaying an old render. The Gateway projects the failure into the rows, and the next publication renders them.
+- On each target, the newest render wins and contains every change recorded before it. Distribution across Nodes is not atomic; the handover barrier below keeps old paths alive until every member confirms. A failed run does not undo its change by replaying an old render. The Gateway projects the failure into the rows, and the next publication renders them.
 
 ### One phase
 
@@ -92,12 +92,78 @@ Route, Node, Cluster, metrics and role workflows call the shared `dns-publish` c
 
 Gateway PHP no longer publishes over SSH. The paths that still publish synchronously (Cluster actions, `orbit:node-provision`, the Route projectors and the ai-router extension) call `PrivateDnsManager::converge()`. It admits a `dns.publish` operation with a fresh render and waits for its end. One kind then writes private DNS, and `DnsmasqPrivateDnsManager` goes.
 
+### Cluster Router resolver
+
+The Gateway builds VPN answers, Router overlays and member selection in the same revision transaction. One rule selects the stored Route placement that serves each name. Its VPN projection uses WireGuard addresses; its Cluster projection substitutes the selected Router LAN address only for names served through that Cluster. A record already answered by the same TLD suffix is omitted. New Instances inside that TLD need no DNS publication.
+
+| Name on a Cluster resolver | Answer |
+| --- | --- |
+| Cluster TLD, apex and descendants | Router LAN address; absent types, including AAAA, give NODATA |
+| Exact Cluster Route outside its TLD | Router LAN address; other types give NODATA; descendants forward to VPN DNS unless separately owned |
+| More specific Node TLD or Route with a different serving target | Preserve the canonical selection with an explicit exception; never let the Cluster wildcard capture another target |
+| Unmatched name, including other Clusters and reserved names | Forward directly to VPN DNS |
+
+A Cluster without a TLD still serves its exact Cluster Routes. A Router without a LAN address has no LAN resolver, and members keep VPN selection. An inactive Cluster has no selected resolver. Public Routes do not become private merely because their workload belongs to a Cluster. Preserve existing publication and reserved-name conflict rules.
+
+The Router runs a separate `orbit-cluster-dns-CLUSTER.service` from `dnsmasq-base`, with its own explicit config path and state directory. It binds only the recorded LAN address on UDP and TCP port 53, using `bind-dynamic`. It does not load `/etc/dnsmasq.d`, bind loopback or WireGuard, move Incus snippets, or change the Node's own resolver. Refuse an overlapping bind before mutation; the Router may share a Node with VPN DNS only when their bind sets are disjoint. Install packages and the unit during Router preparation, not on every Route publication.
+
+Reuse `swamp/ansible/dns-publish.yml`, its templates and its validation, lock, snapshot, pending-reload, check and revision contract. Pass the unit, owned paths, listen addresses, local zones and upstream addresses as target data. Keep the existing reloadable hosts and servers files alongside one startup config per resolver; do not replace record-only SIGHUP with a restart. Router upstream is the VPN address only, with `no-resolv` and `no-hosts`. It must not discover uplinks or inherit the VPN-only `local=/orbit/` rule. A forwarded child of an exact name goes to VPN DNS, not straight to a public resolver. The vpn Node never forwards to a Router, so no forwarding loop exists.
+
+### Member selection and persistence
+
+An active Cluster's managed Linux members with a recorded LAN address use its ready LAN Router, including the Router itself. Roles do not decide membership eligibility. A roleless member needs managed SSH enrollment before selection; report an unmanaged member as unresolved work rather than claiming it was configured. Nodes without a LAN address and non-members retain VPN split DNS. A conflicting explicit DNS override is refused before changing it.
+
+The Gateway renders the Cluster TLD and outside-TLD Cluster Route domains onto the LAN DNS scope. Every other private suffix stays on `orbit`, with the VPN server. Both private scopes are route-only. Remove equal or more specific competing WireGuard domains for the selected Cluster; do not deduplicate across destination scopes. Keep more specific foreign namespaces on VPN. An outside-TLD Route domain also captures descendant queries in resolved; the Cluster resolver forwards those queries back to VPN DNS.
+
+One shared member phase serves `fleet.peer_dns`, Node convergence, explicit DNS repair and Cluster lifecycle work. Its digest includes Cluster and Router identity, LAN address, both domain sets and VPN address. Record the revision separately so an unchanged effective policy stays unchanged. Lifecycle runs wait for affected members in their own Swamp graph; an asynchronous peer reconcile is not the handover barrier. The phase discovers the LAN interface by the stored local address and its route to the Router. It validates the active network manager, persists owned settings through reboot and link recreation, applies the live policy, flushes affected cached answers and checks the resulting scope. There is no global `resolved.conf`, `resolv.conf`, address, route or DHCP change. Doctor and peer reconciliation use this same effective policy, so they cannot undo a healthy LAN selection.
+
+**Same-link limitation, open for review.** systemd-resolved has one server set per link, not one set per routing domain. The read-only inspection of Beast found its public DNS server `192.168.6.1` on LAN link `enp11s0`, with no global DNS server. Replacing that link's server changes public DNS too; appending the Router lets either server answer Cluster names. Setting `DNSDefaultRoute=no` there also removes the public default scope. Direct LAN per-link selection is valid only when a separate public resolver scope already exists. Never apply it silently to the current shared-link topology. A persistent networkd drop-in or NetworkManager profile owns direct link selection where supported; a bare `resolvectl` command is not persistence.
+
+### Membership and Router lifecycle
+
+The lifecycle caller supplies its stored pending state to the shared publication. Serving sites and LAN access exist before a resolver selects them. Expansion writes and checks DNS targets before selecting members. Withdrawal or replacement confirms every affected member has moved, waits the existing 31-second positive-TTL grace, and only then removes the old resolver, sites or LAN rules. Removal failures retain their target identities for retry; absence from a render is not authority to delete a daemon.
+
+| Event | Required DNS work |
+| --- | --- |
+| Join, or member gains LAN | Open existing managed ingress, publish and check Router projection, then persist and check that member's selection |
+| Leave, or member loses LAN | Restore and check that member's VPN split policy before pruning its LAN DNS access; retain the old address until withdrawal completes |
+| Activate | Prepare and check Router DNS, then select every eligible member |
+| Change or remove Cluster TLD | Publish the new projection and member domains together; remove old domains after selection and grace; exact Routes remain without a TLD |
+| `cluster:router:set` | Prepare candidate sites and DNS, publish selected VPN and LAN projections, move every eligible member, wait grace, then retire the old Router |
+| `cluster:router:unset` | Keep existing active-TLD and Route refusals; restore members to VPN and remove owned DNS before clearing the assignment and pruning ingress |
+| Deactivate | Reconcile Routes to their remaining scope, publish VPN state, restore every LAN member to VPN, then retire Cluster DNS and its ingress |
+| Router LAN or VPN address changes | Treat as replacement: prepare new endpoint, update dependent projections and members, retain old endpoint until every dependent target confirms |
+| Route outside TLD changes | Publish the complete affected resolver projections and changed member routing domains; keep the existing Route withdrawal grace |
+
+### Consistency, failure and rollback
+
+Every target records its installed revision and content digest. The publication returns per-target receipts, including the selected server and domain digest for each member. A superseded revision is a successful `dns.revision_superseded` skip on that target, but it does not by itself authorize a stale member switch or retirement. A dependent phase requires the effective projection it needs. If newer state differs, stop that obsolete transition and reconcile from current rows. Keep existing Cluster lifecycle serialization and the per-Node peer/DNS locks; do not add a fleet lock or claim distributed atomicity.
+
+An unchanged target needs no reload; a newer publication with identical content updates only its revision. A failed changed phase restores only its own captured persistent and live settings while it still owns the target lock. Report failed recovery as `dns.rollback_failed` and keep its snapshot. Successful target publications stay installed. A member failure blocks old Router retirement and leaves the unfinished transition and receipts recorded. A worker crash does not prove cleanup ran; a retry inspects pending state before completing or restoring that target.
+
+A deliberate rollback records the intended prior topology as new desired state and publishes a fresh revision through the same graph. It first restores and checks the serving endpoint, then moves members, then retires the unused endpoint. Do not replay an old render across the fleet or restore a whole Node. Do not delete an old Router, its LAN address or its DNS access while an offline member can still select it. Keep that member as an explicit blocker.
+
+The proposed minimal runtime policy has no automatic VPN fallback for selected Cluster names. A failed Cluster resolver or LAN path makes uncached names in that scope fail until repair or an explicit selection change. Other private names still use VPN, and ordinary public names retain their public scope. A VPN outage leaves locally answered Cluster names available, but forwarded names fail. This runtime policy is a review question below; installing two unequal servers does not provide ordered preference and automatic return.
+
+### Rollout and acceptance
+
+PR #3165 stays unmerged. Build and prove Router DNS and member selection while the PHP listener still serves VPN DNS; the overlay can forward to that existing endpoint. The implementation needs a deployable pre-cutover stack layer: split listener deletion and VPN socket takeover into the final layer, rather than deploying the #3165 base as a prerequisite. This design branch is based on #3165 for review only and is not deployable. Prove and select LAN members before allowing the final cutover layer to run. The cutover preserves the LAN path for members that have selected their Cluster resolver.
+
+Use real Ubuntu Molecule machines for a VPN resolver, a Router and a member. Cover record-only reload and unchanged PID, TLD restart, invalid config and bind conflict, UDP/TCP, AAAA NODATA, exact descendants, nested foreign namespaces, Cluster without a TLD, roleless managed members, member policy persistence after reboot and link restart, and ordinary public DNS with VPN down. Prove join, leave, Router move/unset, deactivate, offline-member cleanup refusal, phase rollback, controller interruption and a newer revision overtaking an older transition. Include the shared LAN/public interface case after the scope decision; it cannot be skipped for the real fleet.
+
+Before cutover, update the comparison kit to query the member stub separately from direct VPN and Router endpoints. Preserve a fresh baseline and list every expected change. The historical five WireGuard exceptions under `.test` may become LAN answers under the complete Cluster suffix; distinguish that preselection change from the VPN cutover. Do not declare byte-for-byte agreement with old LAN expectations until each exception is classified by Route ownership. List the address change on app-prod separately. The design step changes neither the kit nor live DNS.
+
+### Review questions
+
+1. For members whose LAN interface also supplies public DNS, use an independent systemd-resolved DNS delegate for Cluster names, leaving uplink DNS intact, or let the Cluster resolver also handle their public queries? The delegate is recommended. It changes the requested direct per-link mechanism and needs explicit approval; the alternative changes public DNS availability through VPN.
+2. When a Cluster resolver or LAN path fails, do Cluster lookups fail until repair, as the minimal draft shows, or do members automatically select VPN and return to LAN after recovery? Automatic fallback needs a bounded, proven recovery mechanism; a list of two servers is insufficient.
+
 ### What gets deleted
 
 - The listener, its release, sockets and units: `PrivateDnsMessageCodec`, `PrivateDnsTransportServer`, `PrivateDnsInheritedSockets`, `PrivateDnsSocketBinder`, `PrivateDnsListener*`, `PrivateDnsRequestHandler`, `SocketPrivateDnsUpstream`, `ServePrivateDnsCommand`, `NodePrivateDnsListenerFootprint`, `PrivateDnsFootprintArtifact`, `resources/private-dns/serve.php`, and the `php:8.5` build of the `vpn` profile that only the listener needs.
 - The catalog and the requesters: `PrivateDnsAnswerCatalog`, `FilePrivateDnsCatalogStore`, the answer selectors and cache, `*DnsRequesterResolver`, `DnsRequester`, `catalog.json`, `catalog.json.loaded`, and the `overrides` and `answers()` code in `ClusterRouterDnsSelection`, with `ClusterRouterDnsSelectionReconciler` and the DNS part of `ClusterRouterTransition`.
 - The publishers and the merge: `DnsmasqPrivateDnsManager` (744 lines), `VpnDnsmasqBackendListen`, `mutation-command/dns.ts` and its test, and the workflows `route-dns-publish`, `route-create-dns` and `node-private-dns`.
-- The Router LAN DNS firewall families of ADR 0219 step 1, which nothing then uses.
+- Keep the Router LAN DNS firewall families of ADR 0219 step 1. The Cluster resolver uses them; their scope remains eligible member LAN sources, TCP and UDP port 53. Do not add a second rule owner.
 - About 3,000 lines of PHP and 500 lines of workflow YAML, with their tests. The build PR lists the exact files.
 
 ### Proof
@@ -117,7 +183,7 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 ## Consequences
 
 - The listener, the catalog, the requesters and the three-way merge are gone. The vpn Node runs stock dnsmasq with three files.
-- A WireGuard member gets the Router's WireGuard address, and beast, sabre and shark reach beast through the WireGuard hub instead of the LAN.
+- A WireGuard member gets the Router's WireGuard address. LAN members get the Router LAN address from the Cluster resolver, so their application traffic stays on the LAN.
 - AAAA for an exact Route gives NODATA. It no longer leaks a public IPv6 address.
 - A TLD change restarts dnsmasq, so every name stops for the length of the restart. Measured on Ubuntu 26.04 with a query every 66 ms on average: five restarts, 213 queries, none failed. The gap is shorter than the query spacing.
 - Parallel publications are safe because each one writes a whole state and the newest revision wins. A failed run leaves its rows in the database, and the next publication renders them.
@@ -128,8 +194,8 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 - So a controller that dies in the cutover (the 300-second step timeout, a worker crash) cannot leave both listeners down. The script needs no controller, and the next publication waits for a running one before it reads the Node.
 - The lock holder of a dead controller does not release the lock. It expires after 420 seconds. The next publication waits 150 seconds, which covers a controller stopped by the step timeout. An earlier crash can make it fail on the lock, and the owner retries. The Node's DNS does not depend on the lock.
 - `reload.pending` makes the retry of a killed record publication reload dnsmasq although the files match.
-- The answers per caller go, and these A answers change. Whether the first is wanted is Nick's decision. Per-caller answers are not built, so both outcomes stay possible.
-  - Beast, sabre and shark: 120 names change from `192.168.6.20` to `10.44.0.7`. They are the apex `test` and 119 exact `*.test` records. Any new name under `test` changes the same way.
+- The VPN endpoint changes the following historical A answers. The cutover must preserve the already-selected LAN path through the member stub; direct queries to VPN DNS intentionally receive WireGuard answers.
+  - Direct queries from beast, sabre and shark to VPN DNS: 120 names change from `192.168.6.20` to `10.44.0.7`. They are the apex `test` and 119 exact `*.test` records. Any new name under `test` changes the same way.
   - Five exact `.test` records already give `10.44.0.7` today, because they bypass the override: `flow-viewer.orbit.test`, `gateway-feedback.orbit.test`, `operator.test`, `reverb.sync-engine.mealou.test` and `team.test`.
   - App-prod (`10.44.0.4`): 13 names change from `10.0.0.4` to `10.44.0.4`. They are `hauzer.app`, `mealou.app`, `nckrtl.com`, `nckrtl.com.prod` and the `sync.`, `analytics.`, `horizon.` and `treadmill.` hosts of them. That address is app-prod's own, so no traffic path changes.
   - The round trip from shark to beast takes 0.18 ms over the LAN and 8.9 ms over WireGuard through the hub. Both Nodes have one WireGuard peer, the hub.
@@ -141,6 +207,6 @@ Gateway PHP no longer publishes over SSH. The paths that still publish synchrono
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: replaces [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) as a whole, and the Cluster DNS member step of [0226](/decisions/0226-split-private-dns-on-managed-peers)
+- ADRs: replaces the unbuilt resolver mechanisms of [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router); retains split private DNS from [0226](/decisions/0226-split-private-dns-on-managed-peers)
 - Detail: [Private DNS](/reference/private-dns), [Routes](/reference/routes), [Node provisioning](/reference/node-provisioning), and the chart `docs/cli/dns/publish.mmd`. The change also touches `swamp/`: the `dns-publish` workflow, its Ansible phase and the parent workflows that call it.
 - Verify: Molecule on the phase, a rehearsal on a task VM fleet, and a name-by-name comparison of old and new answers on the live vpn Node

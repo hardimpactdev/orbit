@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, one Swamp run with the shared route reconcile child (route.reconcile). docs/reference/routes.md#change-a-tld-cluster-state-or-cluster-membership.
-  %% status: reviewed
+  %% status: draft
   %% command: cluster:node:remove
   %% kind: cluster.node_remove
   autonumber
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Cluster Nodes<br/>Router · members
-  participant V as VPN Node<br/>private DNS
+  participant V as DNS targets<br/>resolvers · peers
   CLI->>GW: cluster:node:remove<br/>CLUSTER NODE
   %%> Consent:
   %%> - the CLI resolves the Cluster and the Node, then asks to confirm with their names and the effect; `--force` skips the prompt (`cluster.confirmation_required` without it)
@@ -35,6 +35,8 @@ sequenceDiagram
       %%> - the child moves the Routes' own DNS records and removes the Router's LAN rules to the workload; the steps below change only the member's LAN rules and the Cluster names in DNS
     end
     SW->>V: Select the Node in DNS<br/>child dns-publish
+    %%> DNS lifecycle:
+    %%> - the shared publication checks the VPN and Cluster projections, moves affected LAN member policies, and holds old resolver cleanup until every member confirms (ADR 0248)
     %%> What it does:
     %%> - private DNS answers the Node's names with the Node instead of the Router
     SW->>N: Prune unused rules<br/>@swamp/cfgmgmt/firewall absent

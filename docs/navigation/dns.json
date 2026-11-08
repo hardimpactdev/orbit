@@ -9,7 +9,8 @@
           "group": "dns",
           "pages": [
             "cli/dns/index",
-            "cli/dns/resolve"
+            "cli/dns/resolve",
+            "cli/dns/publish"
           ]
         }
       ]

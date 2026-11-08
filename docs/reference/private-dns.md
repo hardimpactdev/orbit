@@ -15,7 +15,7 @@ covers:
 
 Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It is one stock dnsmasq on the Node with the `vpn` role. The Gateway renders the complete private DNS from its database, and one Ansible phase writes it. Managed Linux Nodes route only Orbit names to it by default. This page explains resolver selection, the Gateway machine's resolver, the vpn Node's dnsmasq, the answers it gives, and how to inspect or repair one peer.
 
-[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) holds the design and replaces the plan of [ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router). Every caller gets the same answer: a Cluster name resolves to the Router's WireGuard address, also for a Cluster member on the Router's LAN.
+[ADR 0248](/decisions/0248-render-private-dns-as-desired-state) holds the VPN design. Its [draft Cluster Router amendment](/decisions/0248-render-private-dns-as-desired-state#cluster-router-resolver) adds LAN resolvers and member selection before cutover. The [publication chart](/cli/dns/publish) and peer chart below show that target design; implementation waits for their review. The VPN endpoint itself gives every caller the Router WireGuard address.
 
 Each Route, Node, Cluster or role change stores its rows first, then publishes the whole state through the shared `dns-publish` child of its native run. A Gateway code path that must have DNS live before it goes on admits a `dns.publish` operation and waits for its end. Private DNS publication starts no other Operation.
 

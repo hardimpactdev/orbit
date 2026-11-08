@@ -1,8 +1,6 @@
 # Kinds whose Swamp workflow step names must equal the Swamp steps in their chart.
 analytics.disable
 analytics.enable
-cluster.router_set
-cluster.router_unset
 conn.gateway_sessions_revoke
 conn.pairing_create
 conn.pairing_revoke
@@ -15,8 +13,6 @@ database_server.close
 database_server.create
 database_server.destroy
 database_user.create
-dns.publish
-fleet.peer_dns
 gateway.release
 instance.clone
 instance.deploy

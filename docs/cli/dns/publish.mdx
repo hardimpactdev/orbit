@@ -1,0 +1,13 @@
+---
+title: "Private DNS publication"
+sidebarTitle: "Publication design"
+description: "Draft shared flow for VPN and Cluster Router DNS, member selection, and safe withdrawal."
+---
+
+This is an internal shared flow, not a new CLI command. [ADR 0248](/decisions/0248-render-private-dns-as-desired-state#cluster-router-resolver) holds the draft contract and the two unresolved choices. Route, Node, Cluster and role changes supply the stored desired state to this flow.
+
+## How it works
+
+<div className="flow-at" data-chart="dns/publish"></div>
+
+Member selection uses the [shared peer DNS phase](/reference/private-dns#resolver-selection). Direct LAN per-link DNS cannot preserve public DNS on a link that supplies both without an independent scope. Implementation waits for chart approval.
