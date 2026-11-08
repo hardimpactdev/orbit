@@ -139,7 +139,7 @@ Last it checks the result:
 
 1. It asks the running dnsmasq on the VPN address for the reserved names and one name per TLD.
 2. For each exact Route it asks for the A answer, for NODATA on AAAA, and for a forwarded child name.
-3. It asks the Node's own address `127.0.0.55`, then the Node's normal resolver: a private name, a public name, and the AAAA of an exact name.
+3. It asks the Node's own address `127.0.0.55`, then the Node's normal resolver: a private name and the AAAA of an exact name. A public name only logs a warning, so an upstream outage does not roll back a publication.
 4. A mismatch restores the snapshot and fails with `dns.check_failed`.
 5. It writes `orbit.revision`, then commits: the new files become the last good set, and `reload.pending` and the snapshot go.
 

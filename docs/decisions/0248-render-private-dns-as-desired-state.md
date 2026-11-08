@@ -81,7 +81,7 @@ The render is a function of rows. A change stores the row state that decides inc
 2. Validate the files in a temporary folder with `dnsmasq --test` on a temporary `orbit.conf` that names the temporary hosts and servers files. A refusal fails the phase with `dns.config_invalid`, and nothing is installed.
 3. Take a snapshot before the first change: the files, the unit states of dnsmasq and the old listener, and who holds the listen addresses. Reuse an existing snapshot, never overwrite it. Write `reload.pending`. Then install the files whose content changed, each in one rename.
 4. Reload with SIGHUP when `orbit.conf` equals `orbit.conf.loaded`, the copy dnsmasq last started with, and restart otherwise. Delete the copy before a restart and write it after.
-5. Check with `dig` on the VPN address and on `127.0.0.55`, then through the Node's normal resolver: reserved names, one name per TLD, each exact Route (A, AAAA NODATA, a forwarded child), a public name.
+5. Check with `dig` on the VPN address and on `127.0.0.55`, then through the Node's normal resolver: reserved names, one name per TLD, each exact Route (A, AAAA NODATA, a forwarded child), a public name (advisory: a warning, never a failure).
 6. Write `orbit.revision`, then commit: the new files become the last good set, `reload.pending` and the snapshot go. A failed check restores the snapshot and checks the restored resolvers.
 
 A Molecule scenario tests the phase and its templates. Publications to one Node run one at a time. Each takes a few seconds, and an older one skips at step 1.

@@ -208,12 +208,16 @@
       register: resolver_answers
       loop: [gateway.orbit, x.test, example.com]
       changed_when: false
+      failed_when: false
     - name: The Node resolves through dnsmasq
       ansible.builtin.assert:
         that:
           - "'10.99.99.2' in resolver_answers.results[0].stdout"
           - "'10.99.99.9' in resolver_answers.results[1].stdout"
-          - resolver_answers.results[2].rc == 0
+          - resolver_answers.results[0].rc == 0
+          - resolver_answers.results[1].rc == 0
+          # The public name needs the internet; a Node without it (DNS_PROOF_OFFLINE=1, the scratch container) cannot resolve it.
+          - resolver_answers.results[2].rc == 0 or (lookup('ansible.builtin.env', 'DNS_PROOF_OFFLINE') | length > 0)
         fail_msg: "{{ resolver_answers.results | map(attribute='stdout') | list }}"
         quiet: true
     - name: Ask the Node's normal resolver for the AAAA of an exact name

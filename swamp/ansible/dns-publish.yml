@@ -554,12 +554,17 @@
                 that:
                   - dns_probe is none or dns_probe.address in (dns_local_answer.stdout_lines | default([]))
                   - not dns_dropin.stat.exists or dns_probe is none or dns_probe.address in (dns_resolver_private.stdout | default(''))
-                  - not dns_dropin.stat.exists or (dns_resolver_public.rc | default(1)) == 0
                   - >-
                     dns_resolver_aaaa is skipped or ((dns_resolver_aaaa.rc | default(0)) != 0
                     and 'does not have any RR' in (dns_resolver_aaaa.stderr | default('')))
                 fail_msg: dns.check_failed
                 quiet: true
+            # A public name is advisory: a publication of private records must not fail, and roll back, because the upstream resolvers of the Node
+            # are unreachable for a while. The private names above prove the path Node -> its resolver -> dnsmasq.
+            - name: Warn when the Node's resolver does not resolve a public name
+              ansible.builtin.debug:
+                msg: "warning: the Node's resolver did not resolve {{ dns_public_check_name }}; its upstream resolvers may be unreachable"
+              when: dns_dropin.stat.exists and (dns_resolver_public.rc | default(1)) != 0
 
             # Last: a failed run leaves the old revision, so the next publication renders and writes the whole state again.
             - name: Record the revision

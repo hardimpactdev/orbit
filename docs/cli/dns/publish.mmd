@@ -72,7 +72,7 @@ sequenceDiagram
     Note over N: Check the Node resolver<br/>127.0.0.55, getent
     %%> What it does:
     %%> - asks the Node's own address 127.0.0.55, where its systemd-resolved sends every name
-    %%> - asks the Node's normal resolver for a private name, a public name and the AAAA of an exact name (NODATA)
+    %%> - asks the Node's normal resolver for a private name and the AAAA of an exact name (NODATA); a public name only warns
     Note over N: Record the revision
     %%> What it does:
     %%> - writes `orbit.revision` last, so a failed run leaves the old revision and a rerun repairs it

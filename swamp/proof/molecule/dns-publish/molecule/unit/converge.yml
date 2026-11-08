@@ -357,12 +357,12 @@
         expect:
           revision: "1762540000000001"
           files:
-            - {path: /etc/dnsmasq.d/orbit-vpn.conf, copy: "%etc%dnsmasq.d%orbit-vpn.conf", sha256: aaa, present: true, legacy: true, binder: false}
-            - {path: /etc/dnsmasq.d/ubuntu-fan, copy: "%etc%dnsmasq.d%ubuntu-fan", sha256: bbb, present: true, legacy: true, binder: true}
-            - {path: /etc/systemd/system/orbit-private-dns.socket, copy: "%etc%systemd%system%orbit-private-dns.socket", sha256: ccc, present: true, legacy: true, binder: false}
-            - {path: /etc/dnsmasq.d/orbit.conf, copy: null, sha256: null, present: false, legacy: false, binder: false}
-            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, copy: null, sha256: null, present: false, legacy: false, binder: false}
-            - {path: /var/lib/orbit/dnsmasq/orbit.servers, copy: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /etc/dnsmasq.d/orbit-vpn.conf, saved: "%etc%dnsmasq.d%orbit-vpn.conf", sha256: aaa, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/ubuntu-fan, saved: "%etc%dnsmasq.d%ubuntu-fan", sha256: bbb, present: true, legacy: true, binder: true}
+            - {path: /etc/systemd/system/orbit-private-dns.socket, saved: "%etc%systemd%system%orbit-private-dns.socket", sha256: ccc, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/orbit.conf, saved: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, saved: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, saved: null, sha256: null, present: false, legacy: false, binder: false}
           units:
             - {name: dnsmasq, active: true, enabled: true}
             - {name: orbit-private-dns.socket, active: true, enabled: true}
@@ -384,9 +384,9 @@
         expect:
           revision: "1762540000000009"
           files:
-            - {path: /etc/dnsmasq.d/orbit.conf, copy: "%etc%dnsmasq.d%orbit.conf", sha256: ddd, present: true, legacy: false, binder: false}
-            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, copy: "%var%lib%orbit%dnsmasq%orbit.hosts", sha256: eee, present: true, legacy: false, binder: false}
-            - {path: /var/lib/orbit/dnsmasq/orbit.servers, copy: "%var%lib%orbit%dnsmasq%orbit.servers", sha256: fff, present: true, legacy: false, binder: false}
+            - {path: /etc/dnsmasq.d/orbit.conf, saved: "%etc%dnsmasq.d%orbit.conf", sha256: ddd, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, saved: "%var%lib%orbit%dnsmasq%orbit.hosts", sha256: eee, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, saved: "%var%lib%orbit%dnsmasq%orbit.servers", sha256: fff, present: true, legacy: false, binder: false}
           units:
             - {name: dnsmasq, active: false, enabled: false}
           holders: []
