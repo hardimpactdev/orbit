@@ -299,7 +299,10 @@ The shape has limits. Read them before you put a decision into a template.
 
 **Molecule tests the templates, not the command.**
 
-- A Molecule batch proved the command about as fast as the runner once the runner spread its cases over the Nodes, but it needed more lines of YAML than the runner and its tests need of Python (3,576 against about 3,060), and it could not state a terminal menu choice, a first-line wait or a collected failure list. The runner stays.
+- A Molecule batch proved the command about as fast as the runner, once the runner spread its cases over the Nodes.
+- It needed more lines: 3,576 lines of YAML, against about 3,060 lines of Python and tests.
+- It could not state a menu choice, wait for a first line of output or collect the failures of a case.
+- The runner stays.
 - The unit scenarios run on any machine with `localhost`. The Mac of the spike had no container runtime, so nothing ran on a throwaway container.
 
 ## Check all seven boundary decisions
@@ -380,4 +383,7 @@ These items cover the proof, the budget and the deletions.
 Each lesson replaces the rule it changes above.
 
 - 2026-11-07: rewritten for the shape of the spike: Ansible does every machine action, Molecule proves the command.
-- 2026-11-08: the case runner proves the command again; Molecule keeps the `unit` scenarios. A measured A/B of the same 50 `firewall:allow` cases chose it: the speed came from spreading cases over the Nodes and running them in parallel, which the runner now does, and Molecule needed more lines.
+- 2026-11-08: the case runner proves the command again. Molecule keeps the `unit` scenarios.
+  - A measured A/B of the same 50 `firewall:allow` cases chose it.
+  - The speed came from spreading cases over the Nodes and running them in parallel, which the runner now does.
+  - Molecule needed more lines.
