@@ -33,7 +33,7 @@ Input selection and output presentation follow the [CLI standard](/reference/cli
 
 Orbit answers only from recorded Gateway state: Node records and agent facts. It contacts no Node, Grafana or other external system at request time, so the read stays fast even when the Node is unreachable. A repeat reads the current recorded detail again; it changes no records, creates no Operation and is not a skipped action.
 
-Access follows the node family's [shared authority rule](/cli/node), enforced by [`NodeAccessAuthorizer`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php).
+Access follows the node family's [shared authority rule](/cli/node#authority).
 
 | Field | Meaning |
 | --- | --- |
