@@ -440,7 +440,9 @@ Explicit completion runs the Project's teardown steps in the guest while the VM 
 
 The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace, clears the keys of the identity and records the slot `destroyed`. A release that fails leaves the slot `failed`; the host sweep, or the next cancel, releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
-A row without a slot number, such as a VM of the old pool, has no release; its removal is refused with `task_vm.release_unavailable` and an operator deletes the VM on its host. Rows the old pool left in `destroying` were recorded `destroyed`.
+A VM of the old pool has no slot number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release, and the sweep releases such a VM again after a failed release. Rows the old pool left in `destroying` were recorded `destroyed`.
+
+The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for slot n, under the host name it had when the slot was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
 
 A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
 
@@ -605,7 +607,9 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled.
 
-For each active configured Incus host, the job releases the task VMs that a failed start left: a row with no group whose release failed, or whose Operation ended without its projection. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it. An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
+For each active configured Incus host, the job releases the task VMs that a failed start or a failed release left, old-pool VMs included: a row with no group whose release failed, or whose Operation ended without its projection. Before each release it locks the row and checks again; a refresh of the host that opened after the selection leaves the row alone, because its group-less VM is still starting. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/tasks/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it.
+
+An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
 
 A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
@@ -1265,7 +1269,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
 | `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
-| `task_vm.release_unavailable` | 409 | A task workspace's VM has no slot, so no release can take it |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |

@@ -30,6 +30,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmConvergeInput;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
@@ -293,8 +294,8 @@ it('has the sweep leave a host alone while its refresh is open, and go on past a
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
-    // A row without its keys has no hub peer to remove, so its intent cannot be built.
-    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'wireguard_private_key' => null]);
+    // A row without its Node has no hub peer to remove, so its intent cannot be built.
+    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
     $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
     slotPoolSweepWorld();
     $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -559,21 +560,134 @@ it('releases a parked task VM as it is: no start before the removal, and no resu
         ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });
 
-it('refuses the removal of a workspace on a task VM that has no slot, which no release can delete', function (): void {
+it('releases a VM of the old pool by its name: its topology seed goes, and the hub peer by the Node\'s public key', function (): void {
     [$host, $project] = slotPoolHost();
     slotPoolSweepWorld();
     $group = slotPoolGroup($project);
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-610', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit']));
-    TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
-        'size' => TaskVmSize::Large, 'name' => 'tvm-610', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.140']);
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit', 'wireguard_public_key' => str_repeat('o', 43).'=']));
+    // As tvm-610: no slot number and no private key on the Gateway.
+    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Medium, 'name' => 'tvm-610', 'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
         'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
     $group->taskable()->associate($instance);
     $group->fill(['status' => TaskGroupStatus::Settling])->save();
 
-    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(ResourceOperationException::class, 'has no slot')
+    expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace');
+    $intent = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $vm->id)->sole()->input['intent'];
+    expect($intent['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($intent['hub_peer']['public_key'])->toBe(str_repeat('o', 43).'=')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+/** A VM of the old pool, as tvm-610: no slot number and no private key on the Gateway, its Node holding the public key. */
+function oldPoolVm(Node $host, ?Task $group = null, string $name = 'tvm-610', TaskVmState $state = TaskVmState::Ready, ?string $publicKey = null): TaskVm
+{
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.140', 'wireguard_ip' => '10.44.0.140', 'user' => 'orbit', 'wireguard_public_key' => $publicKey ?? str_repeat('o', 43).'=']));
+
+    return TaskVm::query()->create(['group_id' => $group?->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus,
+        'size' => TaskVmSize::Medium, 'name' => $name, 'state' => $state, 'wireguard_ip' => '10.44.0.140']);
+}
+
+it('has a cancel of an old-pool group carry the release of its VM, so its end deletes the VM and not only its records', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    app(TaskExtensionState::class)->enable();
+    $group = slotPoolGroup($project);
+    $vm = oldPoolVm($host, $group);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $vm->node_id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace',
+        'task_workspace_owner_id' => $group->id, 'branch_override' => 'task-1']);
+    $group->taskable()->associate($instance);
+    $group->fill(['status' => TaskGroupStatus::Settling])->save();
+
+    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
+
+    expect($cancel->input['release']['intent']['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($cancel->input['release']['intent']['host']['node_id'])->toBe($host->id)
+        ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['release'])->toBe($cancel->input['release']);
+});
+
+it('has the sweep release an old-pool VM again after its release failed', function (): void {
+    [$host, $project] = slotPoolHost();
+    $vm = oldPoolVm($host, slotPoolGroup($project), state: TaskVmState::Releasing);
+    slotPoolSweepWorld();
+
+    // The failed release frees the VM from its group, so only the sweep can release it again.
+    app(TaskVmSlotReleaseProjection::class)->record($vm, false, 'task_vm.slot_release_failed');
+    expect($vm->refresh()->group_id)->toBeNull()->and($vm->state)->toBe(TaskVmState::Failed);
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    $release = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('triggered_by', 'task-vm-sweep')->sole();
+    expect($release->target_id)->toBe($vm->id)->and($release->input['intent']['slot']['seed_clone'])->toBe('tvm-610-topology-seed')
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
+});
+
+it('releases only a task VM name: any other name of a slotless row refuses, whatever base or seed it names', function (string $name): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    // The host was renamed after a refresh recorded beast-base; a release never takes the shape of a name on trust.
+    $host->update(['name' => 'sabre']);
+    $vm = oldPoolVm($host->refresh(), name: $name, state: TaskVmState::Failed);
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no task VM name')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Failed);
+})->with(['beast-base', 'beast-base-seed', 'sabre-base', 'sabre-base-seed', 'tvm-610-seed', 'shark-tvm-3', 'research-vm']);
+
+it('releases tvm-<id> of the old pool and <host>-tvm-<slot> of a slot, under the host name it had, each with its own seed clone', function (): void {
+    [$host, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $old = oldPoolVm($host, name: 'tvm-610', state: TaskVmState::Failed);
+    $slot = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
+    $slot->update(['name' => 'shark-tvm-'.$slot->slot_number, 'group_id' => null, 'state' => TaskVmState::Failed]);
+
+    $runs = app(TaskVmSlotRuns::class);
+    expect($runs->startRelease($old, 'test')->input['intent']['slot'])->toBe(['name' => 'tvm-610', 'seed_clone' => 'tvm-610-topology-seed'])
+        ->and($runs->startRelease($slot->refresh(), 'test')->input['intent']['slot'])
+        ->toBe(['name' => 'shark-tvm-'.$slot->slot_number, 'seed_clone' => 'shark-tvm-'.$slot->slot_number.'-seed']);
+});
+
+it('never releases a VM whose host is no task VM host', function (): void {
+    [, $project] = slotPoolHost();
+    slotPoolSweepWorld();
+    $elsewhere = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'sabre', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'orbit']));
+    $vm = oldPoolVm($elsewhere, state: TaskVmState::Failed);
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(TaskVmException::class, 'is not a task VM host')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+it('refuses the release of a VM whose Node has no WireGuard public key, which names its hub peer', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $vm = oldPoolVm($host, state: TaskVmState::Failed, publicKey: '');
+
+    expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no WireGuard public key')
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
+});
+
+it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
+    [$host] = slotPoolHost();
+    slotPoolSweepWorld();
+    $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
+    // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
+    $started = false;
+    TaskVm::retrieved(function () use (&$started, $host): void {
+        if (! $started) {
+            $started = true;
+            Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
+                'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+        }
+    });
+
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect($started)->toBeTrue()->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Provisioning);
 });
 
 /**

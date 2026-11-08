@@ -7,6 +7,29 @@ SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
 class RequiredGateTest(unittest.TestCase):
+    def test_agent_lock_changes_reuse_cache_only_with_the_same_toolchain_and_platform(self):
+        import re
+        caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        agent = caller.split('  agent:\n', 1)[1].split('\n  changes:\n', 1)[0]
+        primary = re.search(r'^          key: (.+)$', agent, re.M).group(1)
+        block = re.search(r'^          restore-keys: \|\n((?:            .+\n)+)', agent, re.M)
+        prefixes = [line.strip() for line in block.group(1).splitlines()] if block else []
+
+        def render(template, os='Linux', arch='X64', compiler='rust-A', lock='lock-A'):
+            values = {'runner.os': os, 'runner.arch': arch, 'steps.rust.outputs.version': compiler}
+            return re.sub(r'\$\{\{\s*(.*?)\s*\}\}',
+                          lambda match: lock if match[1].startswith('hashFiles(') else values[match[1]], template)
+
+        previous = render(primary)
+        current = render(primary, lock='lock-B')
+        self.assertNotEqual(previous, current)
+        restore = [render(prefix, lock='lock-B') for prefix in prefixes]
+        self.assertTrue(any(previous.startswith(prefix) for prefix in restore), 'lock change loses the warm dependency cache')
+        for changed in ({'os': 'macOS'}, {'arch': 'ARM64'}, {'compiler': 'rust-B'}):
+            with self.subTest(changed=changed):
+                incompatible = render(primary, **changed)
+                self.assertFalse(any(incompatible.startswith(prefix) for prefix in restore))
+
     def test_there_is_no_merge_queue_trigger_or_handling(self):
         # PRs merge straight into main after their gate (2026-11-05); no workflow, action or job reads a queue event.
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
