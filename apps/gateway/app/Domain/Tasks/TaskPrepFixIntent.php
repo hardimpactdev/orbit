@@ -21,8 +21,8 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 
 /**
- * Admits `task:prep-fix`: one run that applies the review of the owner to a parked prep group. The shared task admission holds
- * the lock, the busy check and the replay; this class checks that the group is a parked prep group and captures the whole
+ * Admits `task:prep-fix`: one run that applies the review of the owner to a prep group. The shared task admission holds
+ * the lock, the busy check and the replay; this class checks that the group has a parked or ready VM and captures the whole
  * intent, so no step of the run calls the Gateway but the push token mint. See docs/cli/task/prep-fix.mmd.
  */
 final readonly class TaskPrepFixIntent
@@ -73,15 +73,16 @@ final readonly class TaskPrepFixIntent
             throw new ResourceOperationException('tasks.prep_fix_refused', 'The group has no author thread, subtask or GitHub repository to continue from.', 409);
         }
         $prompts = TaskPrepPrompts::for(ValidatedData::string($earlier['command']));
-        $resume = TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm));
+        $resume = $vm->state === TaskVmState::Parked ? TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm)) : null;
         $instance->loadMissing('node');
         $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $reviewers = array_map(static fn (int $round): AgentThread => TaskPrepThreads::create($group, $subtask, $instance, 'reviewer'), range(1, self::Rounds));
         $turn = static fn (AgentThread $thread, string $prompt, bool $new): array => TaskPrepThreads::turn($thread, $prompt, $new, $group, $subtask, $instance, $ssh);
 
         return [
-            'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $resume['intent']['node_id'],
-            'resume' => $resume['intent'],
+            'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'task_vm_id' => $vm->id,
+            ...($resume === null ? [] : ['resume' => $resume['intent'], 'resume_secrets' => $resume['execution_secrets']]),
             // The author thread continues its session; the Pi server answers it again after the resume.
             'author' => $turn($author, $prompts->corrections($data->corrections), false),
             'fix' => $turn($author, $prompts->fixCorrections(), false),
@@ -91,7 +92,6 @@ final readonly class TaskPrepFixIntent
             // Only vault key names are admitted. The Pi token is written when the run starts ({@see TaskPrepFixProjection::workflowInput()}),
             // and the push step mints its token when it runs ({@see TaskGitHubTokens}).
             'execution_secrets' => ['pi_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$vm->id]],
-            'resume_secrets' => $resume['execution_secrets'],
             'publish_secrets' => ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()],
                 'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()]],
         ];
