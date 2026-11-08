@@ -816,3 +816,50 @@ Deno.test("the recorded stream produces redacted bounded transcript evidence and
         await Deno.remove(dir, { recursive: true });
     }
 });
+
+for (
+    const ending of [
+        "",
+        '\n{"kind":',
+        '\n{"state":"done","turnId":"other-turn","usage":{"total":999}}',
+    ]
+) {
+    Deno.test(`failed finalization retains transcript without inventing usage (${ending.length})`, async () => {
+        const dir = await Deno.makeTempDir();
+        try {
+            const path = `${dir}/terminal.json`;
+            await Deno.writeTextFile(
+                path,
+                JSON.stringify({
+                    kind: "entry",
+                    entry: {
+                        id: "partial",
+                        message: {
+                            role: "assistant",
+                            content: "Saved before disconnect",
+                        },
+                    },
+                }) + ending,
+            );
+            const evidence = JSON.parse(
+                await terminal({ path, turn: "operation-15", partial: true }),
+            );
+            const result = JSON.parse(
+                finish({
+                    input: turnInput(),
+                    before: "",
+                    after: "",
+                    terminal: JSON.stringify(evidence),
+                    receipt: "",
+                    difference: "",
+                    restored: "",
+                }).result_json,
+            );
+            assertEquals(result.state, "failed");
+            assertEquals(result.transcript[0].id, "partial");
+            assertEquals("metrics" in result, false);
+        } finally {
+            await Deno.remove(dir, { recursive: true });
+        }
+    });
+}

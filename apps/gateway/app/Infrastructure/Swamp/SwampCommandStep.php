@@ -6,6 +6,7 @@ namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -130,6 +131,7 @@ final readonly class SwampCommandStep
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
         }
+        $this->projectChildren($operation, $runId, $run);
         if (! in_array($run['status'], $terminalStatuses, true)) {
             $deadline = OperationRunBudgets::deadline($operation);
             if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
@@ -153,7 +155,10 @@ final readonly class SwampCommandStep
             $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
-            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
+            $projection = $direct->projection($operation);
+            $evidence = $projection instanceof DirectOperationChildProjection ? $this->terminalOutput($run, $selector) : [];
+
+            return $this->settleWithEvidence($operation, $runId, $run['status'], $inputs, $evidence);
         }
         $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
@@ -168,7 +173,7 @@ final readonly class SwampCommandStep
             return $current;
         });
         if (ExpireOperationAction::awaitsSettlement($current)) {
-            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+            return $this->settleWithEvidence($current, $runId, $status, $inputs, $result);
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
             return $current;
@@ -183,6 +188,78 @@ final readonly class SwampCommandStep
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected;
+    }
+
+    /** Keep declared evidence when native completion settles a Gateway timeout, without reopening it.
+     * @param  array<string,mixed>  $inputs
+     * @param  array<string,mixed>  $result
+     */
+    private function settleWithEvidence(Operation $operation, string $runId, string $status, array $inputs, array $result): Operation
+    {
+        return DB::transaction(function () use ($operation, $runId, $status, $inputs, $result): Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            app(DirectOperation::class)->assertRun($current, $runId);
+            if (ExpireOperationAction::awaitsSettlement($current)) {
+                $projection = app(DirectOperation::class)->projection($current);
+                if ($projection instanceof DirectOperationChildProjection && $projection->acceptsParent($current)) {
+                    $projection->applyChild($current, $inputs, $result);
+                }
+            }
+
+            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+        });
+    }
+
+    /** The same declared terminal reader records completed children while their parent is open.
+     * @param  array<string,mixed>  $run
+     */
+    private function projectChildren(Operation $operation, string $runId, array $run): void
+    {
+        $declarations = [];
+        $direct = app(DirectOperation::class);
+        foreach (array_keys($direct->definitions()) as $kind) {
+            $definition = $direct->definition($kind);
+            if ($definition === null || ! is_subclass_of($definition['projection'], DirectOperationChildProjection::class)) {
+                continue;
+            }
+            $projection = app($definition['projection']);
+            if ($projection instanceof DirectOperationChildProjection && $projection->acceptsParent($operation)
+                && $definition['workflow'] !== ($run['workflowName'] ?? null) && isset($definition['terminal_result'])) {
+                $declarations[$definition['workflow']] = [$projection, $definition['terminal_result']];
+            }
+        }
+        if ($declarations === []) {
+            return;
+        }
+        $children = [];
+        $recorded = ValidatedData::object($operation->state['native_children'] ?? []);
+        foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $childId) {
+            if (isset($recorded[$childId])) {
+                continue;
+            }
+            $child = $this->history($childId);
+            if (($child['id'] ?? null) === $childId && is_string($child['workflowName'] ?? null) && isset($declarations[$child['workflowName']])
+                && in_array($child['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+                $children[] = $child;
+            }
+        }
+        usort($children, static fn (array $left, array $right): int => strcmp(ValidatedData::string($left['completedAt'] ?? ''), ValidatedData::string($right['completedAt'] ?? '')));
+        foreach ($children as $child) {
+            [$projection, $selector] = $declarations[ValidatedData::string($child['workflowName'])];
+            $result = $this->terminalOutput($child, $selector);
+            DB::transaction(function () use ($operation, $child, $projection, $result): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                $recorded = ValidatedData::object($current->state['native_children'] ?? []);
+                if (($current->status->terminal() && ! ExpireOperationAction::expiredUnsettled($current)) || isset($recorded[ValidatedData::string($child['id'])])) {
+                    return;
+                }
+                $projection->applyChild($current, ValidatedData::object($child['inputs'] ?? []), $result);
+                $current->update(['state' => [...($current->state ?? []), 'native_children' => [
+                    ...ValidatedData::object($current->state['native_children'] ?? []), ValidatedData::string($child['id']) => true,
+                ]]]);
+            });
+        }
+        $operation->refresh();
     }
 
     /**

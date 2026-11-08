@@ -77,7 +77,12 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
         ],
     });
     await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Saved answer");
+    source.readyState = 0;
+    source.onerror?.();
     await expect.element(page.getByLabelText("Agent connection")).toMatchTextContent("Recorded");
+    await expect
+        .element(page.getByLabelText("Agent connection"))
+        .toMatchTextContent("Output updates when the turn ends.");
 });
 
 it("shows only that subtask's reviewer and implementer, streams updates, and closes old subscriptions", async () => {
@@ -243,7 +248,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     await expect.element(page.getByRole("status", { name: "Failed", exact: true })).toBeVisible();
     await expect
         .element(page.getByLabelText("Agent connection"))
-        .toMatchTextContent("Reconnecting");
+        .toMatchTextContent("Recorded");
     document.getElementById("agent-tab-2")!.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect

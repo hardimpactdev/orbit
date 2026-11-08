@@ -6,14 +6,20 @@ use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -146,3 +152,172 @@ it('replaces a known cost with null when a terminal report contains unpriced usa
     expect($second->refresh()->tokens)->toBe(90);
     Http::assertNothingSent();
 });
+
+it('derives activity from nested thread references of any open operation', function (string $kind): void {
+    [$group, $thread, $operation] = recordedTaskWorld();
+    $operation->update(['kind' => $kind, 'input' => ['turns' => [['intent' => ['thread_id' => $thread->id]]]]]);
+    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.state', 'working');
+    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.state', 'working');
+    Http::assertNothingSent();
+})->with(['tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round', 'future.operation']);
+
+it('clears legacy copied subtask totals and records only later deltas', function (): void {
+    [$group, $thread, , $first, $second] = recordedTaskWorld();
+    $group->update(['tokens' => 120]);
+    $first->update(['tokens' => 100]);
+    $second->update(['tokens' => 100]);
+    $migration = require database_path('migrations/2027_01_31_000000_clear_copied_subtask_token_totals.php');
+    $migration->up();
+    expect($first->refresh()->tokens)->toBeNull()->and($second->refresh()->tokens)->toBeNull()->and($group->refresh()->tokens)->toBe(120);
+    TaskTurnProjection::recordThread($group->id, $thread->id, ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140]]);
+    expect($first->refresh()->tokens)->toBeNull()->and($second->refresh()->tokens)->toBe(40);
+});
+
+it('records a completed child while its parent is running and deduplicates parent replay', function (string $kind): void {
+    [$group, $thread, $operation, , $second] = recordedTaskWorld();
+    $root = '986bc349-54dc-4dea-9f22-76e3353d1cb0';
+    $child = '986bc349-54dc-4dea-9f22-76e3353d1cb1';
+    $intent = ['group_id' => $group->id, 'thread_id' => $thread->id];
+    $operation->update(['kind' => $kind, 'input' => ['turn' => $intent], 'state' => ['swamp_run_id' => $root]]);
+    $result = ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140, 'cost_usd' => 0.75],
+        'transcript' => [['id' => 'child', 'message' => ['role' => 'assistant', 'content' => 'Child ended before parent']]]];
+    $workflow = app(DirectOperation::class)->definition($kind)['workflow'];
+    $histories = [
+        $root => ['id' => $root, 'workflowName' => $workflow, 'status' => 'running', 'startedAt' => now()->subMinute()->toISOString(),
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind]],
+        $child => ['id' => $child, 'workflowName' => 'operation-task-turn', 'status' => 'succeeded', 'completedAt' => now()->toISOString(),
+            'inputs' => ['intent' => $intent], 'jobs' => [['name' => 'turn', 'steps' => [
+                ['name' => 'shape_result', 'status' => 'succeeded', 'outputs' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]],
+                ['name' => 'outcome', 'status' => 'succeeded'],
+            ]]]],
+    ];
+    $socket = new class($root, $child, $histories) implements WebSocketClient
+    {
+        private ?array $frame = null;
+
+        private bool $open = false;
+
+        public function __construct(private string $root, private string $child, private array $histories) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frame = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = $this->frame;
+            $this->frame = null;
+            if ($frame === null) {
+                return [];
+            }
+            $data = $frame['type'] === 'workflow.run.search'
+                ? ['results' => [['runId' => $this->child, 'parentRun' => ['runId' => $this->root]]]]
+                : $this->histories[$frame['payload']['workflowIdOrName']];
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $data]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    app(SwampConnection::class)->release();
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/unused-test-ca', 'swamp.read_token' => 'fixture-read-token']);
+    try {
+        $reader = app(SwampCommandStep::class);
+        $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];
+        expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(SwampTerminalReadUnavailable::class);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+        expect($thread->refresh()->tokens)->toBe(140);
+        expect($second->refresh()->tokens)->toBe(80);
+        $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Child ended before parent');
+        TaskTurnProjection::recordTurn($operation, $thread->id, [...$result, 'metrics' => ['tokens' => 180]]);
+        TaskTurnProjection::recordTurn($operation, $thread->id, $result);
+        expect($thread->refresh()->tokens)->toBe(180)->and($second->refresh()->tokens)->toBe(120);
+        Http::assertNothingSent();
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with(['tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round']);
+
+it('retains partial terminal evidence on cancellation and timeout settlement without inventing usage', function (bool $expired): void {
+    [$group, $thread, $operation] = recordedTaskWorld();
+    $root = '986bc349-54dc-4dea-9f22-76e3353d1cc0';
+    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => []] : [])],
+        'input' => ['group_id' => $group->id, 'thread_id' => $thread->id],
+        'started_at' => $expired ? now()->subHours(2) : now()->subMinute(), 'dispatched_at' => $expired ? now()->subHours(2) : now()->subMinute(),
+        'status' => $expired ? OperationStatus::Failed : OperationStatus::Running,
+        'error_code' => $expired ? 'operation.timed_out' : null, 'lock_key' => 'task-group:'.$group->id]);
+    $result = ['state' => 'failed', 'transcript' => [['id' => 'partial', 'message' => ['role' => 'assistant', 'content' => 'Saved before disconnect']]]];
+    $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'cancelled',
+        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.turn', 'intent' => $operation->input],
+        'jobs' => [['name' => 'turn', 'steps' => [['name' => 'shape_result', 'status' => 'succeeded', 'outputs' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $socket = new class($history) implements WebSocketClient
+    {
+        private ?array $frame = null;
+
+        private bool $open = false;
+
+        public function __construct(private array $history) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frame = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = $this->frame;
+            $this->frame = null;
+            if ($frame === null) {
+                return [];
+            }
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.run.search' ? ['results' => []] : $this->history]]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    app(SwampConnection::class)->release();
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
+    try {
+        $reader = app(SwampCommandStep::class);
+        $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
+        $reader->projectTerminal($operation, ['id' => $root], $selector);
+        expect($thread->refresh()->tokens)->toBe(100);
+        expect($operation->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Cancelled);
+        expect($operation->lock_key)->toBeNull();
+        $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Saved before disconnect');
+        Http::assertNothingSent();
+    } finally {
+        app(SwampConnection::class)->release();
+    }
+})->with([false, true]);

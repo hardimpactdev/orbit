@@ -74,11 +74,26 @@ final class AgentThread extends Model
     /** An admitted unfinished turn is active even while its last observation says done. */
     public function activityState(): ?AgentThreadState
     {
-        $active = Operation::query()->where('kind', 'tasks.turn')->where('target_type', 'task_group')
-            ->where('target_id', $this->task_group_id)->where('input->thread_id', $this->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->exists();
+        $active = Operation::query()->where('target_type', 'task_group')->where('target_id', $this->task_group_id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->get(['input'])
+            ->contains(fn (Operation $operation): bool => in_array($this->id, self::heldThreadIds($operation->input), true));
 
         return $active ? AgentThreadState::Working : $this->state;
+    }
+
+    /** @param array<mixed> $input
+     * @return list<int>
+     */
+    public static function heldThreadIds(array $input): array
+    {
+        $ids = is_int($input['thread_id'] ?? null) ? [$input['thread_id']] : [];
+        foreach ($input as $value) {
+            if (is_array($value)) {
+                $ids = [...$ids, ...self::heldThreadIds($value)];
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /** @return BelongsTo<Node, $this> */

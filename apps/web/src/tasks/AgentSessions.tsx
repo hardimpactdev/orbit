@@ -265,11 +265,13 @@ function SessionViewer({ session }: { session: AgentThread }) {
         const source = new EventSource(
             `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream${after}`,
         );
+        let recorded = false;
         setConnection("Connecting…");
         source.addEventListener("agent", (event: MessageEvent<string>) => {
             try {
                 const data: unknown = JSON.parse(event.data);
                 setConversation((state) => applyAgentEvent(state, data, session.id));
+                recorded = true;
                 setConnection("Recorded");
             } catch {
                 setConnection("Unreadable update. Reconnecting…");
@@ -278,12 +280,17 @@ function SessionViewer({ session }: { session: AgentThread }) {
         source.addEventListener("unavailable", () =>
             setConnection("Agent stream unavailable. Reconnecting…"),
         );
-        source.onerror = () =>
+        source.onerror = () => {
+            if (recorded) {
+                setConnection("Recorded");
+                return;
+            }
             setConnection(
                 source.readyState === EventSource.CLOSED
                     ? "Agent stream unavailable. Reload to retry."
                     : "Reconnecting…",
             );
+        };
         return () => source.close();
     }, [session.id, session.node_id, session.task_group_id, visible]);
     // The stream can end or miss a transition. A new state in the polled list wins over it.
@@ -334,6 +341,9 @@ function SessionViewer({ session }: { session: AgentThread }) {
                     {connection !== "Live" && (
                         <p className="text-dim" aria-label="Agent connection">
                             {connection}
+                            {connection === "Recorded"
+                                ? " · Output updates when the turn ends."
+                                : ""}
                         </p>
                     )}
                     {conversation.error && (

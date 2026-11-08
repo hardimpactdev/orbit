@@ -283,25 +283,39 @@ function parsePrivate(raw: string, code: string): unknown {
     }
 }
 
-/** The matching terminal Pi event: its state and seven finite nonnegative usage counts. */
-export async function terminal(args: { path: string; turn: string }) {
-    const events =
-        (await readPrivate(args.path, "tasks.pi_completion_unconfirmed"))
-            .trim().split("\n").map((line) =>
-                parsePrivate(line, "tasks.pi_event_invalid") as Record<
-                    string,
-                    unknown
-                >
-            );
+/** Retain available transcript evidence even when the stream ends without a terminal event. */
+export async function terminal(
+    args: { path: string; turn: string; partial?: boolean },
+) {
+    const raw = await readPrivate(args.path, "tasks.pi_completion_unconfirmed");
+    const events: Record<string, unknown>[] = [];
+    for (const line of raw.trim().split("\n")) {
+        try {
+            const value = parsePrivate(line, "tasks.pi_event_invalid");
+            if (
+                value !== null && typeof value === "object" &&
+                !Array.isArray(value)
+            ) {
+                events.push(value as Record<string, unknown>);
+            } else if (!args.partial) {
+                throw new Error("tasks.pi_event_invalid");
+            }
+        } catch {
+            if (!args.partial) throw new Error("tasks.pi_event_invalid");
+        }
+    }
     const event = events.at(-1);
-    if (
-        !event || event.turnId !== args.turn ||
-        (event.state !== "done" && event.state !== "failed")
-    ) {
+    const complete = event?.turnId === args.turn &&
+        (event.state === "done" || event.state === "failed");
+    if (!complete && !args.partial) {
         throw new Error("tasks.pi_completion_unconfirmed");
     }
-    const parsed = Usage.optional().safeParse(event.usage);
-    if (!parsed.success) throw new Error("tasks.pi_usage_invalid");
+    const parsed = Usage.optional().safeParse(
+        complete ? event?.usage : undefined,
+    );
+    if (!parsed.success && !args.partial) {
+        throw new Error("tasks.pi_usage_invalid");
+    }
     const entries = new Map<string, Record<string, unknown>>();
     for (const item of events) {
         const values = item.kind === "snapshot" && Array.isArray(item.entries)
@@ -345,10 +359,10 @@ export async function terminal(args: { path: string; turn: string }) {
         });
     }
     return JSON.stringify({
-        state: event.state,
+        state: complete && parsed.success ? event?.state : "failed",
         turnId: args.turn,
-        ...(parsed.data ? { usage: parsed.data } : {}),
-        transcript,
+        ...(parsed.success && parsed.data ? { usage: parsed.data } : {}),
+        ...(!args.partial || transcript.length > 0 ? { transcript } : {}),
     });
 }
 

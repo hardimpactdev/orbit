@@ -99,11 +99,11 @@ final readonly class TaskReviewRoundProjection implements DirectOperationProject
             }
             $review = TaskPrepResults::turn($native['review'] ?? null);
             if ($review !== null) {
-                TaskTurnProjection::recordThread($operation->target_id, ValidatedData::integer(ValidatedData::object($intent['review'])['thread_id']), $review);
+                TaskTurnProjection::recordTurn($operation, ValidatedData::integer(ValidatedData::object($intent['review'])['thread_id']), $review);
             }
             $fix = TaskPrepResults::turn($native['fix'] ?? null);
             if ($fix !== null) {
-                TaskTurnProjection::recordThread($operation->target_id, ValidatedData::integer(ValidatedData::object($intent['fix'])['thread_id']), $fix);
+                TaskTurnProjection::recordTurn($operation, ValidatedData::integer(ValidatedData::object($intent['fix'])['thread_id']), $fix);
             }
             $round = TaskReviewRound::query()->where('operation_id', $operation->id)->firstOrFail();
             $verdict = $this->verdict($native, $status === 'succeeded');

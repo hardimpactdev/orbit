@@ -375,20 +375,21 @@ jobs:
             --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
             "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
             awk -v turn="$ORBIT_PI_TURN" -v out="$ORBIT_TERMINAL" '
-              BEGIN { code = 22; first = 1; last = 0; bytes = 0; truncated = 0 }
+              BEGIN { code = 22; first = 1; last = 0; bytes = 0; printf "" > out; close(out) }
               length($0) > 1048576 { code = 21; exit }
               {
-                rows[++last] = $0; bytes += length($0) + 1
+                truncated = 0; rows[++last] = $0; bytes += length($0) + 1
                 while (bytes > 1048576 && first < last) { bytes -= length(rows[first]) + 1; delete rows[first++]; truncated = 1 }
+                if (truncated) {
+                  print "{\"kind\":\"truncated\"}" > out
+                  for (i = first; i <= last; i++) print rows[i] > out
+                } else { print $0 >> out }
+                close(out)
               }
               $0 ~ ("\"turnId\"[ \t]*:[ \t]*\"" turn "\"") && $0 ~ /"state"[ \t]*:[ \t]*"(done|failed)"/ {
                 code = 0; exit
               }
               END {
-                if (code == 0) {
-                  if (truncated) print "{\"kind\":\"truncated\"}" > out
-                  for (i = first; i <= last; i++) print rows[i] > out
-                }
                 exit code
               }' 2>/dev/null || status=$?
           case $status in
@@ -412,7 +413,7 @@ jobs:
     dependsOn:
     - step: observe
       condition:
-        type: succeeded
+        type: completed
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -421,6 +422,7 @@ jobs:
       inputs:
         path: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/terminal.json" }}
         turn: ${{ steps.prepare.outputs.turn_key }}
+        partial: true
   - name: snapshot_after_index
     labels: {role: swamp}
     dependsOn:

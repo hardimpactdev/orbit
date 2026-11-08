@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskReviewRound,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals}.php"
 ---
 
 # Tasks
@@ -888,7 +888,7 @@ Worker output can arrive after a step finishes. In the pinned Swamp version, wor
 
 ## Agent threads
 
-An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. The external runtime keeps the transcript. Orbit keeps the link and the metrics.
+An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. The external runtime writes the transcript. Orbit keeps recorded snapshots, the link and the metrics.
 
 Each subtask gets a fresh implementer thread. Each subtask's first review starts a fresh reviewer thread. Thread titles are `Orbit task #{task} / subtask #{subtask} · Implementer: {title}` and `Orbit task #{task} · Review: {title}`.
 
@@ -925,7 +925,7 @@ The driver maps a model name to Pi's `provider/model` form. Every model uses the
 
 ### Archive finished threads
 
-Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the VM is deleted. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request.
+Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the VM is deleted. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
 
 ## Session routing
 
@@ -1068,7 +1068,7 @@ The board retains recorded lifecycle times, PR identity, token usage and line ch
 
 ### Tokens and line diff
 
-Task operations record thread usage and nullable cost. Missing metrics keep the last recorded values. Each thread counts once in group totals; subtask tokens are the usage added by its turns. List and detail reads use the same totals and recorded lifecycle times, including finished groups. Workspace observations retain complete line counts; missing, stale or truncated observations keep the stored counts. Reads never refresh a Node. Records remain available after a workspace is removed.
+Task operations record thread usage and nullable cost. Missing metrics keep the last recorded values. Each thread counts once in group totals; subtask tokens are the usage added by its turns. A migration clears legacy subtask totals copied from cumulative thread usage to null (unknown). New turns record deltas from that point; earlier totals are not rebuilt. List and detail reads use the same totals and recorded lifecycle times, including finished groups. Workspace observations retain complete line counts; missing, stale or truncated observations keep the stored counts. Reads never refresh a Node. Records remain available after a workspace is removed.
 
 ### Thread token metrics
 
@@ -1232,13 +1232,13 @@ The strip shows tokens per merged PR with its cost, lead time, yield, first-pass
 
 Every task read answers from recorded Gateway state: `tasks:show`, `tasks:list`, `tasks:agents`, `tasks:agent:show`, insights, and the web board. Reads never contact a task VM, Pi server, or Node. A parked or deleted VM does not change that rule.
 
-The Agents section lists started threads and their recorded metrics. An unfinished `tasks.turn` Operation makes its thread `working`, even if its last completed turn was `done`. A terminal projection records the final state and clears an old observation error.
+The Agents section lists started threads and their recorded metrics. Any unfinished Operation that holds a thread makes that thread `working`, even if its last completed turn was `done`. A terminal projection records the final state and clears an old observation error.
 
 ### Read a thread
 
 `GET /api/v1/task-groups/{group}/agents/{session}` returns one recorded transcript snapshot. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and MCP tool `tasks-agent-show` use it. The SSE endpoint sends the same snapshot and ends. Reconnecting reads the latest recorded snapshot. `after_sequence` is accepted but does not request a live Pi read; `cursor` is null and `kind` is `snapshot`.
 
-Swamp records a bounded, redacted transcript with the terminal turn result. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
+Swamp keeps a bounded, redacted transcript on turn finalization, including a disconnect, timeout or cancellation. Missing terminal usage stays unknown. Each child turn records its transcript when it ends, while its parent operation can keep running. During a running turn, readers see the last recorded transcript and current recorded activity state. There is no live transcript viewer. Before the first transcript arrives, readers get an empty snapshot. The response keeps the normalized `entries`, state, errors, and token metrics. `archived` means a stored transcript exists; it does not mean a turn cannot run again.
 
 A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.agent_transcript_unavailable`. A thread of another task returns 404. Neither error contacts the original Node.
 

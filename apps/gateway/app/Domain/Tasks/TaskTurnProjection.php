@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Models\AgentThread;
 use App\Models\Operation;
@@ -14,8 +15,38 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records the native result and the board's existing thread observation. */
-final readonly class TaskTurnProjection implements DirectOperationProjection
+final readonly class TaskTurnProjection implements DirectOperationChildProjection, DirectOperationProjection
 {
+    public function acceptsParent(Operation $parent): bool
+    {
+        return $parent->target_type === 'task_group' && AgentThread::heldThreadIds($parent->input) !== [];
+    }
+
+    public function applyChild(Operation $parent, array $input, array $result): void
+    {
+        $intent = ValidatedData::object($input['intent'] ?? []);
+        $thread = $intent['thread_id'] ?? null;
+        $turn = is_string($result['turn'] ?? null) ? json_decode($result['turn'], true, flags: JSON_THROW_ON_ERROR) : null;
+        if (is_int($thread) && in_array($thread, AgentThread::heldThreadIds($parent->input), true)
+            && ($intent['group_id'] ?? null) === $parent->target_id && is_array($turn)) {
+            self::recordTurn($parent, $thread, ValidatedData::object($turn));
+        }
+    }
+
+    /** The child and parent terminal reads can deliver the same evidence. Apply its delta once.
+     * @param  array<string,mixed>  $result
+     */
+    public static function recordTurn(Operation $operation, int $thread, array $result): void
+    {
+        $key = hash('sha256', $thread.'|'.json_encode($result, JSON_THROW_ON_ERROR));
+        $recorded = ValidatedData::object($operation->state['task_turn_evidence'] ?? []);
+        if (isset($recorded[$key])) {
+            return;
+        }
+        self::recordThread($operation->target_id, $thread, $result);
+        $operation->update(['state' => [...($operation->state ?? []), 'task_turn_evidence' => [...$recorded, $key => true]]]);
+    }
+
     public function input(Operation $operation): array
     {
         return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),
@@ -59,7 +90,7 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
             }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
-                self::recordThread($operation->target_id, ValidatedData::integer($operation->input['thread_id']), $result);
+                self::recordTurn($operation, ValidatedData::integer($operation->input['thread_id']), $result);
             }
 
             app(TaskMaintenanceContinuation::class)->apply($projected);

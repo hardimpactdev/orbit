@@ -72,10 +72,11 @@ sequenceDiagram
   %%> - Send the admitted prompt once; native resume reuses an accepted send.
   SW->>N: observe
   %%> What it does:
-  %%> - Keep bounded transcript evidence and the matching terminal event in a private worker file.
+  %%> - Flush each complete event into a bounded private transcript file, including before a disconnect or cancellation.
   Note over SW: terminal
   %%> What it does:
-  %%> - Read and redact transcript entries, nullable cost and available usage from the private file.
+  %%> - Finalize and redact available transcript entries after observation ends, including failure and cancellation.
+  %%> - Record usage and nullable cost only from a matching terminal event.
   SW->>N: snapshot_after_index
   %%> What it does:
   %%> - Read HEAD into a separate index after the Pi turn.
@@ -152,10 +153,12 @@ sequenceDiagram
     Note over GW: Record thread evidence<br/>state · usage · transcript
     %%> Result:
     %%> - record the thread observation without advancing the external group lifecycle
+    %%> - a child turn records its evidence as soon as the child ends, while its parent continues
   else turn or cleanup failed
     SW--xGW: Native failed result<br/>failed step · error code
     %%> Result:
-    %%> - retain available public evidence and the producer refusal code
+    %%> - retain available public evidence and the producer refusal code, including a partial transcript with no usage
+    %%> - timeout settlement retains the evidence without reopening the timed-out Operation
     %%> - a cleanup failure keeps the Operation failed even if Pi completed the turn
     %%> Retry:
     %%> - inspect the failed step; native resume reuses the accepted Pi send
