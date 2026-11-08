@@ -37,7 +37,7 @@ final readonly class StartProjectPullRequestMergeAction
         $watched = Task::topLevel()->where('project_id', $project->id)->where('watched_pr_number', $number)->whereNull('watched_pr_completion')
             ->whereNotIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))->exists();
         if ($watched) {
-            throw new ResourceOperationException('project.pr_in_task_group', 'A Task group watches this pull request; merge it with tasks:pr-merge.', 409);
+            throw new ResourceOperationException('project.pr_in_task_group', 'A Task group watches this pull request; merge it with task:pr-merge.', 409);
         }
         $target = $this->evidence->outside($project, $number, $head);
         // Only the vault key name is admitted. The step mints its token when it runs ({@see TaskGitHubTokens}).

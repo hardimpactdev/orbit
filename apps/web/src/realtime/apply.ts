@@ -151,8 +151,8 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
         case "task_group.created":
         case "task_group.updated": {
             const group = keyId(data.id);
-            refetch(["task-groups"], true);
-            if (group !== null) refetch(["task-groups", group], true);
+            refetch(["tasks"], true);
+            if (group !== null) refetch(["tasks", group], true);
 
             return true;
         }
@@ -160,7 +160,7 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
             const group = keyId(data.task_group_id);
             const task = keyId(data.task_id);
             if (group !== null && task !== null) {
-                refetch(["task-groups", group, "tasks", task, "comments"]);
+                refetch(["tasks", group, "tasks", task, "comments"]);
             }
 
             return true;
@@ -168,8 +168,8 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
         case "agent_thread.updated": {
             const group = keyId(data.task_group_id);
             if (group !== null) {
-                refetch(["task-groups", group, "agents"]);
-                refetch(["task-groups", group], true);
+                refetch(["tasks", group, "agents"]);
+                refetch(["tasks", group], true);
             }
 
             return true;
@@ -177,7 +177,7 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
         case "tasks.updated":
             if (typeof data.enabled === "boolean") {
                 const enabled = data.enabled;
-                client.setQueryData<Row>(["tasks-status"], (old) => ({ ...old, enabled }));
+                client.setQueryData<Row>(["task-status"], (old) => ({ ...old, enabled }));
             }
 
             return true;

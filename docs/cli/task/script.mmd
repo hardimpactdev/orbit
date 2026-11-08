@@ -1,0 +1,113 @@
+sequenceDiagram
+  %% Target design: tracked repository script, docs/reference/tasks.md#run-a-tracked-repository-script; flow-tighten rule 14. Official SSH argv operations remain separate; native assert is the end check.
+  %% status: migrated
+  %% command: none · SDK/MCP repository script
+  %% kind: tasks.script
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as SDK / MCP<br/>typed API request
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Task VM<br/>reached over ssh
+  CLI->>GW: Run repository script<br/>POST tasks/42/script
+  %%> Input:
+  %%> - child 7, the tracked repository path and literal arguments, with an idempotency key
+  %%> What it does:
+  %%> - the SDK and MCP call the same API; this operation has no CLI command
+  Note over GW: Admit the script<br/>owned task VM · current child
+  %%> Requirements:
+  %%> - group 42 is external and open; child 7 is current and open
+  %%> - your Node has an access grant to the workspace Node
+  %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
+  %%> - the script path and arguments are valid literal inputs
+  GW->>SW: Start one run<br/>operation-task-script
+  %%> Inputs:
+  %%> - the repository path, literal arguments, checkout and pinned SSH identity
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Result:
+  %%> - the caller follows the Operation while Swamp runs the script
+  Note over SW: prepare
+  %%> What it does:
+  %%> - Build the tracked script argv and private output paths from the admitted intent.
+  Note over SW: output-local
+  %%> What it does:
+  %%> - Create the private output download directory on Node 209.
+  SW->>N: inspect
+  %%> What it does:
+  %%> - Read the tracked script mode through the pinned SSH target; it must be executable in HEAD.
+  SW->>N: snapshot-before-index
+  %%> What it does:
+  %%> - Read HEAD into a separate index; keep the real Git index unchanged.
+  SW->>N: snapshot-before-add
+  %%> What it does:
+  %%> - Include the whole workspace in the separate index.
+  SW->>N: snapshot-before-tree
+  %%> What it does:
+  %%> - Read the exact candidate tree, including untracked files.
+  SW->>N: snapshot-before-head
+  %%> What it does:
+  %%> - Read the candidate HEAD.
+  Note over SW: gate
+  %%> What it does:
+  %%> - Refuse an unavailable tracked executable before it runs.
+  SW->>N: execute
+  %%> What it does:
+  %%> - Run the tracked script with literal arguments; keep stdout and stderr in private files.
+  %%> - Every SSH step ends at the run budget that the admission captured, so a step against a VM that is gone ends.
+  SW->>N: output-copy
+  %%> What it does:
+  %%> - Download private script output with official SSH copy.
+  SW->>N: snapshot-after-index
+  %%> What it does:
+  %%> - Read HEAD into the separate index after execution.
+  SW->>N: snapshot-after-add
+  %%> What it does:
+  %%> - Include the whole workspace after execution.
+  SW->>N: snapshot-after-tree
+  %%> What it does:
+  %%> - Read the resulting tree to detect script changes.
+  SW->>N: snapshot-after-head
+  %%> What it does:
+  %%> - Read the resulting HEAD.
+  Note over SW: shape
+  %%> What it does:
+  %%> - Read and redact the downloaded output, retain a bounded tail and workspace changes, then remove the private download.
+  SW->>N: cleanup-index
+  %%> What it does:
+  %%> - Remove the private index and remote output directory on success or failure.
+  Note over SW: cleanup-local
+  %%> What it does:
+  %%> - Remove the private worker output directory on success or failure.
+  Note over SW: outcome
+  %%> What it does:
+  %%> - Native assert fails for an unavailable executable or transport failure; a script exit code remains a completed execution.
+  alt script completed
+    SW-->>GW: Native terminal result<br/>shaped result from shape
+    %%> Result:
+    %%> - the Gateway captures the producer's public result from the same native history read
+    %%> - no shell step prints the result again
+    Note over GW: Record the script result<br/>exit code · output · changes
+    %%> Result:
+    %%> - a nonzero script exit returns outcome failed in a successful Operation; the board stays unchanged
+  else native execution failed
+    SW--xGW: Native failed result<br/>failed step · error code
+    %%> Result:
+    %%> - the Operation fails with the native refusal or transport error code
+    %%> Retry:
+    %%> - inspect the failed Operation before admitting a fresh script run
+  else run budget ended
+    GW->>SW: Cancel the run<br/>native cancel request
+    %%> What it does:
+    %%> - the Gateway fails the Operation with operation.timed_out and asks Swamp to cancel the bound run
+    %%> - ending the task group asks again for a run that outlived its timeout, before the VM is destroyed
+    %%> Result:
+    %%> - Swamp stops the run and releases its SSH behavior lock; the behavior is named by the VM's Node id, so the next VM never shares it
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+    %%> Returns:
+    %%> - the Operation status and bounded public result
+  end

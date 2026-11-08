@@ -19,7 +19,6 @@ final class CreateTaskCommentRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly int $groupId,
         private readonly int $taskId,
         private readonly string $type,
         private readonly string $commentBody,
@@ -29,7 +28,7 @@ final class CreateTaskCommentRequest extends GatewayRequest implements HasBody
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/tasks/{$this->taskId}/comments";
+        return "/api/v1/tasks/{$this->taskId}/comments";
     }
 
     /** @return array<string, string> */

@@ -1,0 +1,19 @@
+---
+title: "orbit task:question:close"
+sidebarTitle: "task:question:close"
+description: "Close a stale question that no one still has to answer. Use it when a resolution already answered the question but the record stayed `escalated`, or when a later subtask made the question moot."
+---
+
+```bash
+orbit task:question:close [question] [--status=STATUS] [--reason=TEXT] [--json]
+```
+
+| Argument or option | Prompt | Effect |
+| --- | --- | --- |
+| `question` | a list of open and escalated questions | The numeric question ID. |
+| `--status=STATUS` | `superseded` or `answered` | `superseded` when nobody has to answer the question, `answered` when the reason is its answer. |
+| `--reason=TEXT` | multiline text | Why the question is closed, at most 2,000 characters. It becomes the question's answer. |
+
+In a terminal the command prompts for each omitted input. A noninteractive call fails before the request with `task.question_required`, `task.status_required`, or `task.reason_required`, and an invalid value fails with `task.question_invalid`, `task.status_invalid`, or `task.reason_invalid`. A question that is already `answered` or `superseded` fails with `tasks.question_closed`, unless the status and the reason are the same as before. Then the command returns the question unchanged. The command needs Gateway access.
+
+Human output prints the closed question as `task:question:list` does. JSON returns the question record. [Close a question](/reference/tasks#execution-ownership) describes what closing changes and what it leaves alone.

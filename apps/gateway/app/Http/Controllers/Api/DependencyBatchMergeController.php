@@ -19,9 +19,9 @@ final class DependencyBatchMergeController extends Controller
 {
     #[StartsOperation('tasks.dependency_merge', requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function store(DependencyBatchMergeRequest $request, Task $group, StartDependencyBatchMergeAction $action): JsonResponse
+    public function store(DependencyBatchMergeRequest $request, Task $task, StartDependencyBatchMergeAction $action): JsonResponse
     {
-        $operation = $action->execute($group, $request->integer('publish_operation_id'), $request->string('head_sha')->toString(),
+        $operation = $action->execute($task, $request->integer('publish_operation_id'), $request->string('head_sha')->toString(),
             CallerName::fromRequest($request), $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);

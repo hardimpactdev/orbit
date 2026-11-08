@@ -35,10 +35,10 @@ it('registers the ready and merge steps as native Swamp kinds with their workflo
 it('routes the two steps on a task group', function (): void {
     $routes = app('router')->getRoutes();
 
-    expect($routes->getByName('tasks:pr-ready')?->uri())->toBe('api/v1/task-groups/{group}/pr-ready')
-        ->and($routes->getByName('tasks:pr-merge')?->uri())->toBe('api/v1/task-groups/{group}/pr-merge')
-        ->and($routes->getByName('tasks:pr-ready')?->methods())->toContain('POST')
-        ->and($routes->getByName('tasks:pr-merge')?->methods())->toContain('POST');
+    expect($routes->getByName('task:pr-ready')?->uri())->toBe('api/v1/tasks/{task}/pr-ready')
+        ->and($routes->getByName('task:pr-merge')?->uri())->toBe('api/v1/tasks/{task}/pr-merge')
+        ->and($routes->getByName('task:pr-ready')?->methods())->toContain('POST')
+        ->and($routes->getByName('task:pr-merge')?->methods())->toContain('POST');
 });
 
 it('requires an exact head and a mode for the ready step', function (): void {
@@ -54,7 +54,7 @@ it('requires an exact head and a mode for the ready step', function (): void {
 
 it('requires an exact head for the merge step and refuses unknown fields', function (): void {
     $rules = (new TaskPullRequestMergeRequest)->rules();
-    $request = TaskPullRequestMergeRequest::create('/api/v1/task-groups/1/pr-merge', 'POST', server: ['CONTENT_TYPE' => 'application/json'],
+    $request = TaskPullRequestMergeRequest::create('/api/v1/tasks/1/pr-merge', 'POST', server: ['CONTENT_TYPE' => 'application/json'],
         content: json_encode(['head_sha' => PR_HEAD, 'method' => 'merge'], JSON_THROW_ON_ERROR));
 
     expect(Validator::make(['head_sha' => PR_HEAD], $rules)->passes())->toBeTrue()

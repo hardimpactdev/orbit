@@ -22,7 +22,7 @@ use App\Support\ValidatedData;
 
 /**
  * The input of the one converge of a task VM (swamp/ansible/task-vm-role.yml), which the image refresh and every task start run
- * (docs/cli/tasks/vm-image-refresh.mmd, docs/cli/tasks/provision.mmd). On a current image it changes nothing; it catches up the delta
+ * (docs/cli/task/vm-image-refresh.mmd, docs/cli/task/start.mmd). On a current image it changes nothing; it catches up the delta
  * between the image and `$commit`.
  */
 final readonly class TaskVmConvergeInput

@@ -17,9 +17,9 @@ use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 
 /**
- * The precondition that keeps approved work when a group ends (docs/cli/tasks/complete.mmd, docs/cli/tasks/cancel.mmd): complete and
+ * The precondition that keeps approved work when a group ends (docs/cli/task/complete.mmd, docs/cli/task/cancel.mmd): complete and
  * cancel remove the workspace and its task VM only when origin already has the group's latest approved commit. Neither pushes, wakes a
- * VM or starts a review; `tasks:publish` comes first, and it resumes a parked VM.
+ * VM or starts a review; `task:publish` comes first, and it resumes a parked VM.
  */
 final readonly class TaskFinalReview
 {
@@ -42,7 +42,7 @@ final readonly class TaskFinalReview
         $repository = GitHubRepository::fromOrigin($group->project->repository_url ?? '');
         if ($repository === null || ! $this->reaches($repository, $group, $commit, $branch)) {
             throw new ResourceOperationException('tasks.approved_work_unpublished',
-                "Approved commit {$commit} is not on origin's {$branch} branch. Run tasks:publish first; it resumes a parked task VM.", 409,
+                "Approved commit {$commit} is not on origin's {$branch} branch. Run task:publish first; it resumes a parked task VM.", 409,
                 details: ['commit' => $commit, 'branch' => $branch]);
         }
     }

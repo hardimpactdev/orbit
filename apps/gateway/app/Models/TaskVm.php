@@ -41,7 +41,7 @@ use Throwable;
  * @property string $wireguard_ip
  * @property string|null $pi_token
  * @property int|null $slot_number the slot the task VM takes on its host, `<host>-tvm-<number>`
- * @property string|null $wireguard_private_key the WireGuard key a task start minted (docs/cli/tasks/provision.mmd)
+ * @property string|null $wireguard_private_key the WireGuard key a task start minted (docs/cli/task/start.mmd)
  * @property string|null $ssh_host_private_key the SSH host key a task start minted, an OpenSSH Ed25519 file
  * @property string|null $agent_secret the agent secret a task start minted
  * @property Carbon|null $claimed_at

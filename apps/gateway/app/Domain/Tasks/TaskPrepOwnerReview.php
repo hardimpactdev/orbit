@@ -10,7 +10,7 @@ use App\Domain\GitHub\GitHubReviewComment;
 /** The corrections a request for changes on a draft spec holds: the text of the review and the inline comments of the reviewer. */
 final readonly class TaskPrepOwnerReview
 {
-    /** The longest `corrections` text that `tasks:prep-fix` takes. */
+    /** The longest `corrections` text that `task:prep-fix` takes. */
     public const int Limit = 40000;
 
     private const string Cut = "\n\n[The review was cut here at the limit of the corrections.]";

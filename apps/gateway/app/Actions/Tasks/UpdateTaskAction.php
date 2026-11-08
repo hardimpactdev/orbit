@@ -113,7 +113,7 @@ final readonly class UpdateTaskAction
                     'log_name' => 'tasks', 'description' => 'deliverables corrected', 'subject_type' => Task::class,
                     'subject_id' => $task->id, 'properties' => ['check_id' => $currentCheck->id, 'old' => $old, 'new' => $data->deliverables],
                     'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
-                    'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'tasks:subtask:update', 'status' => 'completed',
+                    'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
                 ]);
 
                 return $task->refresh();
@@ -132,7 +132,7 @@ final readonly class UpdateTaskAction
                     'log_name' => 'tasks', 'description' => 'deliverables corrected', 'subject_type' => Task::class,
                     'subject_id' => $task->id, 'properties' => ['gate' => true, 'old' => $old, 'new' => $data->deliverables],
                     'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
-                    'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'tasks:subtask:update', 'status' => 'completed',
+                    'request_id' => $requestId ?? (string) Str::uuid(), 'command' => 'task:update', 'status' => 'completed',
                 ]);
 
                 return $task->refresh();

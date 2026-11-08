@@ -1,0 +1,16 @@
+---
+title: "orbit task:publish"
+sidebarTitle: "task:publish"
+---
+
+Push an [eligible checked candidate's](/reference/tasks#check-an-external-group) commit for an external group. When hosted CI is required, the owning handoff operation must have succeeded with passed CI on that check/commit. Optionally open or update its pull request. See [Publish an external group](/reference/tasks#publish-an-external-group).
+
+```bash
+orbit task:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."
+```
+
+The optional `task` argument is the numeric task group ID. `--check` supplies the eligible handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. Add `--draft` to open a new pull request as a draft; it needs `--title` and `--body`, and an open pull request keeps its state. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.
+
+## How it works
+
+<div className="flow-at" data-chart="task/publish"></div>

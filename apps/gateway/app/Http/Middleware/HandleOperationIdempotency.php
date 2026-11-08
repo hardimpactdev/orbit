@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRequestFingerprint;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
+use App\Models\Task;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -27,6 +28,10 @@ final readonly class HandleOperationIdempotency
         $route = $request->route();
 
         if (! $route instanceof Route) {
+            return $next($request);
+        }
+
+        if ($request->routeIs('task:cancel') && $request->route('task') instanceof Task && $request->route('task')->parent_id !== null) {
             return $next($request);
         }
 

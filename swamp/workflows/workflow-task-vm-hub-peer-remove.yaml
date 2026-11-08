@@ -1,6 +1,6 @@
 id: 2f8c5d1a-9e47-4b3c-8a61-7d0e4b2c9f53
 name: task-vm-hub-peer-remove
-description: Remove one task VM's peer from the WireGuard hub at its release (docs/cli/tasks/cancel.mmd). A rerun finds the peer gone.
+description: Remove one task VM's peer from the WireGuard hub at its release (docs/cli/task/cancel.mmd). A rerun finds the peer gone.
 vaults: []
 queueTimeout: 60
 inputs:

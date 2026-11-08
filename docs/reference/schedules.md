@@ -206,3 +206,5 @@ The native result projection records the latest run time and success or failure.
 A copied Schedule on a new production Instance can run before the data of that Instance is ready. So an Instance Schedule can start disabled, and enable is a separate step. A manual run is not an enable, because one run does not start the calendar.
 
 Retained Instance timer removal uses official file and systemd checks. Its native end assertion confirms four managed paths are absent and the timer is stopped, disabled and unloaded. A standalone removal refuses an active service before mutation; Instance cascade removal stops it. The Gateway deletes the copy only after native success.
+
+The Gateway task PR gate runs as the internal Artisan command `task:pr-gate`. This schedule keeps its existing timing and overlap guard; the public task commands are under [`task:*`](/cli/task).

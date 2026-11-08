@@ -10,7 +10,7 @@ use App\Models\TaskVmImageBuild;
 
 /**
  * The base a host's task VMs start from: the snapshot of its base VM that its latest refresh recorded
- * (docs/cli/tasks/vm-image-refresh.mmd), which a task start copies. Only a refresh makes a base. The output of the retired recipe image
+ * (docs/cli/task/vm-image-refresh.mmd), which a task start copies. Only a refresh makes a base. The output of the retired recipe image
  * build is an image, not a snapshot, so it is never a base and never replaces the snapshot.
  */
 final readonly class TaskVmPromotedImage

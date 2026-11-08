@@ -6,98 +6,62 @@ namespace App\Commands\Tasks;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
+use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class UpdateTaskGroupCommand extends TaskCommand
 {
-    #[\Override]
-    protected $signature = 'tasks:update
-        {group? : Numeric task group ID}
+    protected $signature = 'task:update
+        {task? : Numeric Task ID}
         {--title= : New title}
         {--brief= : New brief}
-        {--status= : Board status; active moves require external orchestration}
-        {--preview : Keep the sandbox running during review}
-        {--no-preview : Allow the sandbox to park during review}
+        {--status= : Board status for the selected level}
+        {--preview : Keep the parent sandbox running during review}
+        {--no-preview : Allow the parent sandbox to park during review}
+        {--position= : Child position, starting at 1}
+        {--deliverables= : JSON file replacing the child deliverables}
+        {--topology= : JSON array of required workload nodes}
         {--json : Return machine-readable JSON}';
 
-    #[\Override]
-    protected $description = 'Change a task group\'s title, brief, status, or preview intent.';
+    protected $description = 'Update a task or subtask.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
-
-        if ($groupId === false) {
-            return self::FAILURE;
-        }
-
+        $taskId = $this->idArgument('task', 'Task', 'task');
         $title = $this->optionalText($this->option('title'), 'Title', 'title', self::TITLE_MAX);
-        $brief = $title === false ? false : $this->optionalText($this->option('brief'), 'Brief', 'brief', self::BRIEF_MAX);
-
-        if ($title === false || $brief === false) {
+        $brief = $this->optionalText($this->option('brief'), 'Brief', 'brief', self::BRIEF_MAX);
+        $status = $this->option('status');
+        $position = $this->option('position') === null ? null : $this->idOption('position', 'Position', 'position');
+        $deliverables = $this->deliverablesFile();
+        $topology = $this->topologyOption($this->option('topology'));
+        if (in_array(false, [$taskId, $title, $brief, $position, $deliverables, $topology], true)) {
             return self::FAILURE;
         }
-
-        $status = $this->option('status');
-
         if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
-            return $this->renderGatewayFailure('tasks.status_invalid', 'Status must be one of '.implode(', ', self::GROUP_STATUSES).'.');
+            return $this->renderGatewayFailure('task.status_invalid', 'Unknown task status.');
         }
-
-        $status = is_string($status) ? $status : null;
-        if ($this->option('preview') === true && $this->option('no-preview') === true) {
-            return $this->renderGatewayFailure('tasks.preview_conflict', 'Use either --preview or --no-preview.');
+        if ($this->option('preview') && $this->option('no-preview')) {
+            return $this->renderGatewayFailure('task.preview_conflict', 'Use either --preview or --no-preview.');
         }
-        $preview = $this->option('preview') === true ? true : ($this->option('no-preview') === true ? false : null);
-        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null;
-
+        $preview = $this->option('preview') ? true : ($this->option('no-preview') ? false : null);
+        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null || $position !== null || $deliverables !== null || $topology !== null;
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one task group update: --title, --brief, --status, --preview, or --no-preview.');
+            return $this->renderGatewayFailure('task.update_required', 'Provide at least one task update.');
         }
-
         $connector = $this->gatewayConnector($repository, $connectors);
-
         if ($connector === null) {
             return self::FAILURE;
         }
-
-        $eligible = $title === null && $brief === null
-            ? ($status !== null ? self::GROUP_STATUSES : array_values(array_diff(self::GROUP_STATUSES, ['completed', 'failed', 'cancelled'])))
-            : self::PLANNING_STATUSES;
-        $groupId ??= $this->selectGroup($connector, $eligible);
-
-        if ($groupId === null) {
-            return self::FAILURE;
-        }
-
+        $taskId ??= (int) $this->promptText('Task ID', 20);
         if (! $changed) {
-            $current = $this->loadGroup($connector, $groupId);
-
-            if (! $current instanceof TaskGroupResponse) {
-                return self::FAILURE;
-            }
-
-            foreach ($this->promptFields(['title' => 'Title', 'brief' => 'Brief', 'status' => 'Status']) as $field) {
-                match ($field) {
-                    'title' => $title = $this->promptText('Title', self::TITLE_MAX, default: $current->title),
-                    'brief' => $brief = $this->promptText('Brief', self::BRIEF_MAX, multiline: true, default: $current->brief),
-                    default => $status = $this->promptChoice(
-                        'Status',
-                        array_combine(self::GROUP_STATUSES, self::GROUP_STATUSES),
-                        $current->status,
-                    ),
-                };
-            }
+            $title = $this->promptText('Title', self::TITLE_MAX);
         }
+        $task = $this->sendWithProgress($connector, new UpdateTaskRequest(
+            $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $topology,
+        ), TaskRecordResponse::class, ['Update task', 'Updating task', 'Updated task']);
 
-        $group = $this->sendWithProgress(
-            $connector,
-            new UpdateTaskGroupRequest($groupId, $title, $brief, $status, preview: $preview),
-            TaskGroupResponse::class,
-            ['Update task group', 'Updating task group', 'Updated task group'],
-        );
-
-        return $group instanceof TaskGroupResponse ? $this->renderGroup($group) : self::FAILURE;
+        return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : ($task instanceof TaskGroupResponse ? $this->renderGroup($task) : self::FAILURE);
     }
 }

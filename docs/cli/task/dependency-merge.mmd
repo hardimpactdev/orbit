@@ -1,0 +1,119 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, R2-R3. Nick 2026-11-06: a task never holds a GitHub credential at admission; the first step of the run mints the two tokens when it runs. docs/reference/tasks.md#dependency-batch-squash-admission.
+  %% Tightened: flow-tighten 2026-11-02; native command boundaries remain visible, independent reads and content requests fan out.
+  %% status: migrated
+  %% command: none · API / MCP (task-dependency-merge)
+  %% kind: tasks.dependency_merge
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as API / MCP<br/>typed API request
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>repository · PRs
+  CLI->>GW: Merge batch of group 42<br/>publish #5165 · head 9f3c…
+  %%> Command:
+  %%> - `POST /api/v1/tasks/42/dependency-merge` with `publish_operation_id` 5165, `head_sha` and an `Idempotency-Key`
+  %%> - syntax: the MCP tool `task-dependency-merge` with `group`, `publish_operation_id`, `head_sha`
+  %%> Who can call it:
+  %%> - only the configured Services Node; there is no `orbit` command
+  Note over GW: Check the batch<br/>task #5166 · key names
+  %%> Requirements:
+  %%> - the Project has dependency merge enabled; today every Project is off
+  %%> - the Project is an app with a hosted production Instance; packages and unclassified monorepos are refused
+  %%> - group 42 is an external dependency batch the Services Node created, with a passed handoff check and the exact successful publish task #5165 for this head
+  %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - names the vault keys `dependency-merge-write-<uuid>` and `dependency-merge-read-<uuid>`; it mints no token
+  %%> Result:
+  %%> - task #5166 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-dependency-merge
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the repository, default branch, PR branch `task-42`, expected head, and the smoke workflow path
+  %%> - the vault key names of the tokens, never the tokens; no token exists yet
+  GW-->>CLI: 202 Accepted<br/>task #5166
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  Note over SW: Create merge scratch
+  %%> What it does:
+  %%> - creates a private temporary directory for native replies; no repository content enters run data
+  SW->>GW: Mint the tokens<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - the step posts the run id with `purpose: dependency_merge`; the Gateway checks the Operation, the run and the repository
+  %%> - it mints a write token with only `contents: write` and `pull_requests: write`, never `workflows: write`, and a read token with `contents`, `pull_requests`, `checks` and `actions` read
+  %%> - it writes both to the vault keys that admission named; the reply holds descriptors only
+  SW->>GH: Read the PR
+  Note over SW: Inspect the PR
+  %%> Recovery:
+  %%> - an already-merged exact head skips metadata, contents, registry reads and the PUT; its merge SHA is kept
+  SW->>GH: Read repository settings
+  %%> Parallel:
+  %%> - repository settings, changed files, workflow definitions, exact-head workflow runs and check runs are independent native reads
+  SW->>GH: Read changed files
+  %%> What it does:
+  %%> - follows all Link pages; count, duplicates and the GitHub truncation boundary are checked before reading contents
+  SW->>GH: Read workflow definitions
+  SW->>GH: Read head workflow runs
+  SW->>GH: Read head check runs
+  Note over SW: Plan exact contents
+  SW->>GH: Read exact contents
+  %%> What it does:
+  %%> - reads every allowed changed file at base and head, and its root manifest, in parallel
+  Note over SW: Plan registry reads
+  Note over SW: Read registry records
+  %%> What it does:
+  %%> - reads public Packagist metadata with bounded curl commands; no GitHub token reaches the registry
+  Note over SW: Check the dependency diff
+  %%> Refuses:
+  %%> - changes outside existing dependency versions, breaking root ranges, untrusted lock sources or unreachable packages
+  %%> - exact-head Required checks or the configured production smoke suite missing, pending or failed
+  SW->>GH: Squash on expected head
+  %%> What it does:
+  %%> - one squash PUT with the admitted sha; a moved head refuses without merging
+  Note over SW: Read merge result
+  SW->>GH: Revoke the read token
+  %%> When:
+  %%> - always, on success and failure; best effort because both tokens expire within one hour
+  SW->>GH: Revoke the write token
+  %%> When:
+  %%> - always, on success and failure; best effort because both tokens expire within one hour
+  Note over SW: Remove merge scratch
+  Note over SW: Confirm the merge
+  alt merged
+    GH-->>SW: PR #57 merged · sha
+    %%> Returns:
+    %%> - the merge commit
+    SW-->>GW: Run succeeded<br/>terminal event · merge sha
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the merge<br/>task succeeded
+    %%> Result:
+    %%> - task #5166 succeeds with the merge SHA
+    %%> - the task system sees the merge and completes group 42 as usual; nothing is deployed here
+  else refused or failed
+    GH--xSW: check or diff refused
+    %%> When:
+    %%> - a check, file or diff rule refuses, the head moved, or GitHub refuses the merge
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>PR open · normal PR path
+    %%> Result:
+    %%> - task #5166 fails; PR #57 stays open and goes through ordinary PR handling
+    %%> Retry:
+    %%> - a new request for the same head is a new task with new tokens; it reads everything again
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5166
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

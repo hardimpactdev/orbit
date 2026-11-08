@@ -53,9 +53,9 @@ describe('a task group cannot declare a topology', function (): void {
     });
 
     it('refuses a new group whose subtask declares a topology', function (): void {
-        $response = topology_refusal_send('POST', '/api/v1/task-groups', [
+        $response = topology_refusal_send('POST', '/api/v1/tasks', [
             'project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief',
-            'tasks' => [topology_refusal_subtask(['app-dev'])],
+            'subtasks' => [topology_refusal_subtask(['app-dev'])],
         ]);
 
         $response->assertStatus(422);
@@ -64,9 +64,9 @@ describe('a task group cannot declare a topology', function (): void {
     });
 
     it('accepts a new group whose subtasks declare no topology', function (): void {
-        topology_refusal_send('POST', '/api/v1/task-groups', [
+        topology_refusal_send('POST', '/api/v1/tasks', [
             'project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief',
-            'tasks' => [topology_refusal_subtask([])],
+            'subtasks' => [topology_refusal_subtask([])],
         ])->assertStatus(201);
 
         expect(Task::topLevel()->count())->toBe(1);
@@ -75,7 +75,7 @@ describe('a task group cannot declare a topology', function (): void {
     it('refuses a new subtask that declares a topology', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
 
-        $response = topology_refusal_send('POST', "/api/v1/task-groups/{$group->id}/tasks", topology_refusal_subtask(['app-dev', 'app-prod']));
+        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask(['app-dev', 'app-prod'])]);
 
         $response->assertStatus(422);
         expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported')
@@ -86,7 +86,7 @@ describe('a task group cannot declare a topology', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
         $subtask = $group->tasks()->create(['title' => 'Step', 'brief' => 'Do it']);
 
-        $response = topology_refusal_send('PATCH', "/api/v1/task-groups/{$group->id}/tasks/{$subtask->id}", ['topology' => ['app-dev']]);
+        $response = topology_refusal_send('PATCH', "/api/v1/tasks/{$subtask->id}", ['topology' => ['app-dev']]);
 
         $response->assertStatus(422);
         expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported')

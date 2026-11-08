@@ -125,7 +125,7 @@ export function createDemoGateway() {
     const schedules = list<Schedule>("GET /api/v1/schedules");
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
-    const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
+    const taskGroups = list<TaskGroup>("GET /api/v1/tasks");
     const proxyModels = list<{ id: string; provider: string }>("GET /api/v1/ai-router/models");
     const activities = list<Activity>("GET /api/v1/activities");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
@@ -736,10 +736,10 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/task-groups\/(\d+)\/swamp-runs$/,
+                /^\/api\/v1\/tasks\/(\d+)\/swamp-runs$/,
                 ([group = ""]) =>
                     ok(
-                        byRoute.get(`GET /api/v1/task-groups/{group}/swamp-runs#${group}`) ?? {
+                        byRoute.get(`GET /api/v1/tasks/{task}/swamp-runs#${group}`) ?? {
                             availability: "available",
                             observed_at: new Date().toISOString(),
                             runs: [],
@@ -747,7 +747,7 @@ export function createDemoGateway() {
                         },
                     ),
             ],
-            ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/tasks$/, () => ok(taskGroups)],
             [
                 "GET",
                 /^\/api\/v1\/task-insights(?:\?.*)?$/,
@@ -755,7 +755,7 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/task-groups\/(\d+)$/,
+                /^\/api\/v1\/tasks\/(\d+)$/,
                 ([group = ""]) => {
                     const found = taskGroups.find((candidate) => String(candidate.id) === group);
 
@@ -778,14 +778,13 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
-                /^\/api\/v1\/task-groups\/(\d+)\/agents$/,
-                ([group = ""]) => ok(list("GET /api/v1/task-groups/{group}/agents", group)),
+                /^\/api\/v1\/tasks\/(\d+)\/agents$/,
+                ([group = ""]) => ok(list("GET /api/v1/tasks/{task}/agents", group)),
             ],
             [
                 "GET",
-                /^\/api\/v1\/task-groups\/(\d+)\/tasks\/(\d+)\/comments$/,
-                ([, task = ""]) =>
-                    ok(list("GET /api/v1/task-groups/{group}/tasks/{task}/comments", task)),
+                /^\/api\/v1\/tasks\/(\d+)\/comments$/,
+                ([task = ""]) => ok(list("GET /api/v1/tasks/{task}/comments", task)),
             ],
             [
                 "GET",

@@ -6,8 +6,8 @@ export type SwampRuns = components["schemas"]["TaskSwampRuns"];
 
 export const taskSwampRunsQuery = (groupId: number) =>
     queryOptions({
-        queryKey: ["task-groups", String(groupId), "swamp-runs"],
-        queryFn: () => get<SwampRuns>(`/api/v1/task-groups/${groupId}/swamp-runs`),
+        queryKey: ["tasks", String(groupId), "swamp-runs"],
+        queryFn: () => get<SwampRuns>(`/api/v1/tasks/${groupId}/swamp-runs`),
         refetchInterval: 5_000,
         retry: false,
     });

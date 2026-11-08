@@ -1,7 +1,7 @@
 id: 6825ed05-928f-4260-a42f-6ef2aa8a2277
 name: task-vm-start
 description: >-
-  Start a task VM and converge it in one Ansible run (docs/cli/tasks/provision.mmd, step "Start and converge"): the `start` part of the
+  Start a task VM and converge it in one Ansible run (docs/cli/task/start.mmd, step "Start and converge"): the `start` part of the
   host playbook with the slot's identity and the claim's Pi token and model file from the vault, then the role's converge on the new VM over
   WireGuard, and the task branch (swamp/ansible/task-vm-start.yml).
 vaults:

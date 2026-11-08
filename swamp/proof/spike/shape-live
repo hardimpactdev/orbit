@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Live measurement of the shape spike (draft PR #3134), run in a task VM with `tasks:script`.
+# Live measurement of the shape spike (draft PR #3134), run in a task VM with `task:script`.
 # Throwaway: it exists so that the spike's playbooks run in the VM from a tracked script. Delete it with the spike.
 #
 #   shape-live env               what the VM has: tools, the nested fleet, the checkout
-#   shape-live apply REF         put the files that origin/REF changed since main over the workspace (REF comes from tasks:sync)
+#   shape-live apply REF         put the files that origin/REF changed since main over the workspace (REF comes from task:sync)
 #   shape-live prep              install Ansible, Molecule and the collections in /tmp, and probe the nested app-dev
 #   shape-live unit              run the two Molecule `unit` scenarios and time them
 #   shape-live fw-before         firewall:allow through the nested Gateway, three new rules and one repeat (today's workflow; run before `apply`)
@@ -120,7 +120,7 @@ env)
 apply)
     ref=${2:?usage: shape-live apply REF}
     git rev-parse --verify -q "origin/$ref^{commit}" >/dev/null || {
-        echo "origin/$ref is missing: run tasks:sync first" >&2
+        echo "origin/$ref is missing: run task:sync first" >&2
         exit 2
     }
     base=$(git merge-base origin/main "origin/$ref")

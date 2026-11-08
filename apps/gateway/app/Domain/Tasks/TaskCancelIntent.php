@@ -56,7 +56,7 @@ final readonly class TaskCancelIntent
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
             }
             // Every refusal comes before the cancel changes anything. An Operation still open on the group's VM, such as a release after a
-            // failed start or a resume, refuses it; approved work that origin does not have refuses it too: tasks:publish comes first.
+            // failed start or a resume, refuses it; approved work that origin does not have refuses it too: task:publish comes first.
             $slot = TaskVm::forGroup($group);
             if ($slot instanceof TaskVm) {
                 TaskVmSlotRuns::assertReleasable($slot);

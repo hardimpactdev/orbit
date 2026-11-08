@@ -25,8 +25,16 @@ trait ValidatesDeliverablePaths
                 return;
             }
             $data = $validator->getData();
-            $group = $this->route('group');
+            $group = $this->route('task');
+            if ($group instanceof Task && $group->parent_id !== null) {
+                $group = $group->parent;
+            } elseif ($this->has('parent_id')) {
+                $group = Task::topLevel()->find($this->input('parent_id'));
+            }
             $task = $this->route('task');
+            if ($task instanceof Task && $task->parent_id === null) {
+                $task = null;
+            }
             if ($task instanceof Task && ($task->status !== TaskStatus::Todo || ! $group instanceof Task || $task->parent_id !== $group->id)) {
                 return;
             }
@@ -48,9 +56,9 @@ trait ValidatesDeliverablePaths
                 }
                 $commit = TaskReviewBase::commit($task);
             } else {
-                foreach ($data['tasks'] ?? [] as $index => $input) {
+                foreach ($data['subtasks'] ?? [] as $index => $input) {
                     if (($input['deliverables'] ?? []) !== []) {
-                        $lists["tasks.{$index}.deliverables"] = $input['deliverables'];
+                        $lists["subtasks.{$index}.deliverables"] = $input['deliverables'];
                     }
                 }
                 $commit = '';

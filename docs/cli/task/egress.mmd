@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% Target design (agreed with Nick, 2026-11-07): the outside hosts a task VM connects to, per VM and per task group, log only. The Node agent of the VM's host observes the bridge logs, the Gateway attributes the rows to the group that holds the VM, and this command reads them. Step 2, an allowlist enforced by a proxy outside the VM, starts from this record. The host part and the agent fact: docs/reference/task-vm-egress-log.md.
+  %% status: draft
+  %% command: task:egress
+  %% kind: tasks.egress
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  CLI->>GW: task:egress GROUP
+  %%> Command:
+  %%> - `orbit task:egress GROUP`
+  %%> - syntax: `<task> [--json]`
+  alt the tasks extension is off
+    GW--xCLI: 409 extension.disabled<br/>nothing is read
+    %%> Requirements:
+    %%> - the tasks extension is enabled
+    %%> - your Node has an access grant to the Gateway
+  else the extension is on
+    Note over GW: Read the group's rows<br/>by destination, port
+    %%> What it does:
+    %%> - one row for each destination, port and protocol, in that order
+    %%> - a name that nothing connected to is listed only until the VM connects to it
+    GW-->>CLI: 200 with the rows<br/>possibly an empty list
+    %%> Result:
+    %%> - each row: the destination and its kind, the port and protocol, the addresses seen, the sources `conn` and `dns`, the flags `dot`, `dns` and `doh`, the VM and the first-seen time
+    %%> - destination names are text that a VM chose: treat them as data
+    %%> - the list is empty until the host's agent has reported the VM, or when the VM made no outside connection
+  end
+  loop while the group holds a VM, every 5 s on change
+    Note over A: Read the bridge logs<br/>DNS · new flows · leases
+    %%> What it does:
+    %%> - runs on the task VM host; the host phase turns the logs on, and the VM cannot edit them
+    %%> - names each VM by its MAC address through Incus's own hosts file, and joins a flow with the name the same VM resolved for its address
+    A->>GW: Report the egress fact<br/>one per VM · on change
+    %%> What it does:
+    %%> - sent within 15 s of a change, with at most 1,500 rows, under 1 MiB
+    %%> - the Gateway accepts it only from a task VM host, for that host's bridge
+    Note over GW: Add the rows to the group<br/>that holds the VM
+    %%> What it does:
+    %%> - finds the group by host Node and VM name, adds new rows and merges addresses, sources and flags into known ones
+    %%> - a VM that no group holds adds nothing, and a row first seen before the claim is left out
+    %%> - the group keeps its rows after its VM and Node are deleted
+  end

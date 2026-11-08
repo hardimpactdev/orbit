@@ -34,12 +34,12 @@ function setup() {
             }
             if (
                 method === "GET" &&
-                path === "/api/v1/task-groups?project_id=123"
+                path === "/api/v1/tasks?project_id=123"
             ) {
                 return Promise.resolve({ status: 200, body: { data: groups } });
             }
             assertEquals(method, "POST");
-            assertEquals(path, "/api/v1/task-groups");
+            assertEquals(path, "/api/v1/tasks");
             posts.push(body!);
             const group = { ...body, id: 456 };
             if (!state.dropCreate) groups.push(group);
@@ -78,7 +78,7 @@ Deno.test("one candidate becomes one ordered backlog task through the Gateway, n
     assertEquals(s.posts[0].orchestration, "external");
     assertEquals(s.posts[0].status, "backlog");
     assertEquals(
-        s.posts[0].tasks,
+        s.posts[0].subtasks,
         plan.tasks.map(({ title, brief, deliverables }) => ({
             title,
             brief,
@@ -93,7 +93,7 @@ Deno.test("baseline is one task and repeated scans create no second baseline", a
     await enqueue(plan, 123, project.repository, s.deps);
     await enqueue(plan, 123, project.repository, s.deps);
     assertEquals(s.posts.length, 1);
-    assertEquals((s.posts[0].tasks as unknown[]).length, 1);
+    assertEquals((s.posts[0].subtasks as unknown[]).length, 1);
 });
 Deno.test("lost create reply is adopted by exact brief and never posted twice", async () => {
     const s = setup(), plan = taskPlan(detection, project);

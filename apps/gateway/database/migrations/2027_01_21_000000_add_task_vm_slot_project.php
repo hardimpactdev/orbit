@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * A ready slot is a task VM enrolled ahead of time for one Project and kept stopped (docs/cli/tasks/vm-slots.mmd). The
+ * A ready slot is a task VM enrolled ahead of time for one Project and kept stopped (docs/cli/task/vm-slots.mmd). The
  * row names that Project, and the digest of what a task image carries in the release whose converge it got. Plain
  * columns: a foreign key makes SQLite rebuild `task_vms`. The guards finish a run that stopped after the first column.
  */

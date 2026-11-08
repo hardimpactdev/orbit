@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "route": "GET /api/v1/task-groups",
+    "route": "GET /api/v1/tasks",
     "status": 200,
     "body": {
         "data": [
@@ -29,10 +29,10 @@
                 "lines_added": 142,
                 "lines_deleted": 46,
                 "duration_ms": 2460000,
-                "tasks": [
+                "parent_id": null,
+                "subtasks": [
                     {
                         "id": 31,
-                        "task_group_id": 12,
                         "position": 1,
                         "title": "Validate discount codes",
                         "assistance_requested": true,
@@ -61,11 +61,11 @@
                             "changed_paths": [],
                             "failed_step": "composer test",
                             "output": "FAILED  Tests\\Feature\\CheckoutTest > it applies the discount\nExpected 90 but got 100.\n\nTests:  1 failed, 212 passed"
-                        }
+                        },
+                        "parent_id": 12
                     },
                     {
                         "id": 32,
-                        "task_group_id": 12,
                         "position": 2,
                         "title": "Show the reduced total",
                         "assistance_requested": false,
@@ -84,7 +84,8 @@
                         "duration_ms": null,
                         "type": "implementation",
                         "completion_summary": null,
-                        "check": null
+                        "check": null,
+                        "parent_id": 12
                     }
                 ]
             },
@@ -113,9 +114,12 @@
                 "lines_added": 18,
                 "lines_deleted": 6,
                 "duration_ms": 600000,
-                "tasks": []
+                "parent_id": null,
+                "subtasks": []
             }
         ],
-        "meta": { "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844" }
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
     }
 }

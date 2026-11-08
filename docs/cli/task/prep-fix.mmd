@@ -1,0 +1,87 @@
+sequenceDiagram
+  %% Target design: docs/reference/tasks.md#apply-the-corrections, the "Apply the corrections" step of stage 1 of the command development pipeline (docs/reference/pipeline/1-prep.mmd). The pattern of task:prep: one admission, one parent Swamp run, existing workflows as children.
+  %% status: draft
+  %% command: task:prep-fix
+  %% kind: tasks.prep_fix
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>author · reviewer
+  participant GH as GitHub<br/>draft PR
+  CLI->>GW: task:prep-fix 42<br/>the corrections
+  %%> Command:
+  %%> - the MCP tool `task-prep-fix`, or `POST /api/v1/tasks/42/prep-fix` with `{"corrections": "..."}` and an `Idempotency-Key`
+  %%> - `corrections` is the review of the owner, as text, with any decision made since
+  Note over GW: Admit the corrections<br/>group 42 · capture the intent
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation
+  %%> What it does:
+  %%> - captures, in one transaction, the resume of the VM, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
+  %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
+  %%> Decided by the orchestrator, for Nick's review:
+  %%> - the review of the owner is an input of the call. The gate check of stage 4 makes the call when the owner's latest review requests changes on the current head of the draft PR, with the review text and his inline comments as `corrections`, keyed by group and review (`pr-gate:prep-fix:42:REVIEW`). A person or the orchestrator can still make the call
+  GW->>SW: Start one run, full intent<br/>operation-task-prep-fix
+  %%> Inputs:
+  %%> - the whole intent above and the vault key names of the Pi and push-token credentials, never their values
+  %%> - one step of the run calls the Gateway: the push step mints its token when it starts, with the run id of this run
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Next:
+  %%> - the CLI follows the Operation with `operation:show`
+  SW->>VM: Resume the VM<br/>operation-task-vm-resume
+  %%> What it does:
+  %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi session are as the park left them
+  SW->>VM: Apply the corrections<br/>operation-task-turn
+  %%> What it does:
+  %%> - the author thread of the prep run gets the corrections as its prompt
+  %%> - it changes only the three files of the spec, as one new commit on top of the pushed spec; it never amends the pushed commit
+  %%> - a correction that needs another file or a decision of the owner is not made, and the summary says so
+  alt the author moved HEAD
+    loop until the review has no findings, at most 2 rounds
+      SW->>VM: Plan the cases<br/>runner.py plan
+      %%> What it does:
+      %%> - runs `python3 swamp/proof/runner/runner.py plan --file` on the cases file; a refusal (exit 3) is added to the findings of the round
+      SW->>VM: Review the spec<br/>operation-task-turn
+      %%> What it does:
+      %%> - a new reviewer thread restores the commit under review, reads the spec as it stands and checks that each correction is applied or has its reason
+      %%> - runner tests that fail only because they pin the old cases file are a note and not a finding when the owner's review defers that change, so the loop can end
+      VM-->>SW: Findings or none
+      SW->>VM: Fix the findings<br/>operation-task-turn
+      %%> When:
+      %%> - only when the review has findings, and only between the two rounds: the findings of the last round end the run
+      %%> Result:
+      %%> - the author thread fixes them in its corrections commit
+    end
+    alt the last review has no findings
+      SW->>GW: Mint the push token<br/>operation:direct:github-token
+      SW->>GH: Push the corrections<br/>operation-task-publish
+      %%> What it does:
+      %%> - pushes the commit to `task-42` without force, so the same draft pull request gets the corrections as a new commit
+      %%> - a branch that moved since the park, such as a correction pushed by hand, is refused with `tasks.not_fast_forward`, and nothing is overwritten
+      SW-->>GW: Native terminal result<br/>commit · rounds
+      Note over GW: Record the corrections<br/>VM ready · park again
+      %%> Result:
+      %%> - the task VM is recorded as ready, and the Gateway admits `task:park` for the group, which stops the VM again while the spec waits for review
+      %%> - a park that the Gateway refuses is kept in the result as `park_refused`
+      %%> - a failed resume leaves the VM recorded as parked, so the run can be admitted again
+    else findings are left
+      SW--xGW: Native failed result<br/>tasks.prep_review_unresolved
+      %%> Result:
+      %%> - nothing is pushed; the VM keeps running for the orchestrator, and the result keeps the findings of the last round
+    end
+  else HEAD did not move
+    SW--xGW: Native failed result<br/>tasks.prep_not_committed
+    %%> Result:
+    %%> - no review runs; the VM keeps running for the orchestrator
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+    %%> Returns:
+    %%> - the Operation status, and the commit and the notes of the last review when the run succeeded
+  end

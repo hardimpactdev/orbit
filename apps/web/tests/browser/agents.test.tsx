@@ -51,7 +51,7 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
         state: "done",
     };
     setTransport((method, path, body) =>
-        path.startsWith("/api/v1/task-groups/")
+        path.startsWith("/api/v1/tasks/")
             ? Promise.resolve({
                   status: 200,
                   payload: {
@@ -67,7 +67,7 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
     await app.router.navigate({ to: "/tasks/$id", params: { id: "7" } });
     await expect.poll(() => FakeSource.instances.length).toBe(1);
     const source = FakeSource.instances[0]!;
-    expect(source.url).toBe("/api/v1/task-groups/7/agents/2/stream");
+    expect(source.url).toBe("/api/v1/tasks/7/agents/2/stream");
     source.send({
         kind: "snapshot",
         thread_id: 2,
@@ -99,7 +99,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
         project_id: 999,
         app: "test",
         taskable_type: null,
-        tasks: [{ id: 9, title: "First subtask", brief: "Read progress", status: "running" }],
+        subtasks: [{ id: 9, title: "First subtask", brief: "Read progress", status: "running" }],
     };
     const sessions = [
         {
@@ -154,7 +154,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
         },
     ];
     setTransport((method, path, body) =>
-        path.startsWith("/api/v1/task-groups/")
+        path.startsWith("/api/v1/tasks/")
             ? Promise.resolve({
                   status: 200,
                   payload: {
@@ -175,7 +175,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     expect(pane("Agents").getByRole("tab").all()).toHaveLength(2);
     await expect.poll(() => FakeSource.instances.length).toBe(1);
     const implementer = FakeSource.instances[0]!;
-    expect(implementer.url).toBe("/api/v1/task-groups/7/agents/2/stream");
+    expect(implementer.url).toBe("/api/v1/tasks/7/agents/2/stream");
     implementer.send({ kind: "snapshot", thread_id: 2, cursor: "5", state: "idle", entries: [] });
     await expect
         .element(page.getByRole("tabpanel"))
@@ -258,7 +258,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     expect(implementer.closed).toBe(true);
     await expect.poll(() => FakeSource.instances.length).toBe(2);
     const reviewer = FakeSource.instances[1]!;
-    expect(reviewer.url).toBe("/api/v1/task-groups/7/agents/1/stream");
+    expect(reviewer.url).toBe("/api/v1/tasks/7/agents/1/stream");
     expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain(
         "Reading the source",
     );
@@ -274,7 +274,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
     await expect.poll(() => pane("Agents").getByRole("tab").all().length).toBe(5);
     await expect
         .poll(() => FakeSource.instances.at(-1)?.url)
-        .toBe("/api/v1/task-groups/7/agents/3/stream");
+        .toBe("/api/v1/tasks/7/agents/3/stream");
 });
 
 it("shows each thread's polled state in its tab, whatever the selected thread's stream says", async () => {
@@ -288,7 +288,7 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
         project_id: 999,
         app: "test",
         taskable_type: null,
-        tasks: [{ id: 50, title: "Only subtask", brief: "Write receipts", status: "running" }],
+        subtasks: [{ id: 50, title: "Only subtask", brief: "Write receipts", status: "running" }],
     };
     const thread = (id: number, role: string, state: string) => ({
         id,
@@ -302,7 +302,7 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
     });
     let sessions = [thread(1, "reviewer", "idle"), thread(2, "implementer", "working")];
     setTransport((method, path, body) =>
-        path.startsWith("/api/v1/task-groups/")
+        path.startsWith("/api/v1/tasks/")
             ? Promise.resolve({
                   status: 200,
                   payload: {
@@ -332,7 +332,7 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
 
     // The implementer hands off; its stream never reports the end of the turn.
     sessions = [thread(1, "reviewer", "working"), thread(2, "implementer", "done")];
-    await queryClient.invalidateQueries({ queryKey: ["task-groups"] });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
 
     await expect.element(indicator(/Implementer/)).toHaveAccessibleName("Done");
     await expect.element(indicator(/Reviewer/)).toHaveAccessibleName("Working");
@@ -367,7 +367,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
             project_id: 999,
             app: "test",
             taskable_type: null,
-            tasks: [{ id: 52, title: "Only subtask", brief: "Stream", status: "running" }],
+            subtasks: [{ id: 52, title: "Only subtask", brief: "Stream", status: "running" }],
         };
         const session = {
             id: 4,
@@ -380,7 +380,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
             state: "working",
         };
         setTransport((method, path, body) =>
-            path.startsWith("/api/v1/task-groups/")
+            path.startsWith("/api/v1/tasks/")
                 ? Promise.resolve({
                       status: 200,
                       payload: {
@@ -396,7 +396,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
         await app.router.navigate({ to: "/tasks/$id", params: { id: "51" } });
         await expect.poll(() => FakeSource.instances.length).toBe(1);
         const first = FakeSource.instances[0]!;
-        expect(first.url).toBe("/api/v1/task-groups/51/agents/4/stream");
+        expect(first.url).toBe("/api/v1/tasks/51/agents/4/stream");
         first.send({ kind: "snapshot", thread_id: 4, cursor: "run-1.7", entries: [] });
         first.send({
             kind: "entry",
@@ -421,7 +421,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
         setVisibility("visible");
         await expect.poll(() => FakeSource.instances.length).toBe(2);
         expect(FakeSource.instances[1]!.url).toBe(
-            "/api/v1/task-groups/51/agents/4/stream?after_sequence=run-1.8",
+            "/api/v1/tasks/51/agents/4/stream?after_sequence=run-1.8",
         );
         await expect
             .element(page.getByRole("tabpanel"))

@@ -9,7 +9,7 @@ use App\Models\Task;
 
 /**
  * The prompt a task VM receives for one turn: the title, brief and deliverables of the subtask, then the prompt of the caller.
- * The admission records this text as the admitted prompt. See docs/cli/tasks/turn.mmd.
+ * The admission records this text as the admitted prompt. See docs/cli/task/turn.mmd.
  */
 final readonly class TaskTurnPrompt
 {

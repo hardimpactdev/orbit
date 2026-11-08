@@ -22,7 +22,7 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
         return Promise.resolve({
             status: 200,
             body: {
-                data: path.includes("/task-groups/")
+                data: path.includes("/tasks/")
                     ? {
                         project_id: projectId,
                         orchestration: "external",
@@ -43,7 +43,7 @@ Deno.test("worker admission checks the current enrollment, package repo and merg
     const run = () =>
         verifyWorker(args, "orbit-gateway", project.repository, read, http);
     await run();
-    assertEquals(calls, ["/api/v1/task-groups/456", "/api/v1/projects/57"]);
+    assertEquals(calls, ["/api/v1/tasks/456", "/api/v1/projects/57"]);
     for (
         const change of [{ tokenName: "task-group-456-1" }, { ready: false }, {
             revoked: true,

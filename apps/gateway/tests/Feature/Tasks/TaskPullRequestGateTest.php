@@ -163,7 +163,7 @@ it('replays the step that the key of the same head already recorded and leaves t
 it('registers the gate check on the Gateway schedule every minute', function (): void {
     Artisan::call('schedule:list');
 
-    expect(Artisan::output())->toMatch('/\*\s+\*\s+\*\s+\*\s+\*\s+php artisan tasks:pr-gate/');
+    expect(Artisan::output())->toMatch('/\*\s+\*\s+\*\s+\*\s+\*\s+php artisan task:pr-gate/');
 });
 
 function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD, ?string $pushed = null): TaskReviewRound

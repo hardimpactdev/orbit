@@ -23,7 +23,7 @@ final class CloseTaskQuestionCommand extends TaskCommand
     ];
 
     #[\Override]
-    protected $signature = 'tasks:question:close
+    protected $signature = 'task:question:close
         {question? : Numeric question ID}
         {--status= : answered or superseded}
         {--reason= : Why the question is closed}
@@ -103,7 +103,7 @@ final class CloseTaskQuestionCommand extends TaskCommand
         }
 
         if ($choices === []) {
-            $this->renderGatewayFailure('tasks.question_required', 'No open or escalated question to close.');
+            $this->renderGatewayFailure('task.question_required', 'No open or escalated question to close.');
 
             return null;
         }

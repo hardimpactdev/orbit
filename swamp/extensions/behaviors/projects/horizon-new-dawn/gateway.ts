@@ -106,7 +106,7 @@ export async function verifyWorker(
     }
     const group = await gateway(
         "GET",
-        `/api/v1/task-groups/${input.group}`,
+        `/api/v1/tasks/${input.group}`,
     );
     const data = group.body?.data as {
         project_id?: number;

@@ -25,7 +25,7 @@ final class ShowTaskAgentRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/agents/{$this->sessionId}";
+        return "/api/v1/tasks/{$this->groupId}/agents/{$this->sessionId}";
     }
 
     /** @return array<string, string> */

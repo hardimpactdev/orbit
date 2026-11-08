@@ -68,7 +68,7 @@ export async function enqueue(
     if (old?.state === "created") return old;
     const listed = await deps.http(
         "GET",
-        `/api/v1/task-groups?project_id=${projectId}`,
+        `/api/v1/tasks?project_id=${projectId}`,
     );
     if (listed.status !== 200 || !Array.isArray(listed.body?.data)) {
         throw new Error("Cannot reconcile Horizon task groups");
@@ -110,7 +110,7 @@ export async function enqueue(
         groupId: null,
     };
     await deps.save(intent);
-    const result = await deps.http("POST", "/api/v1/task-groups", {
+    const result = await deps.http("POST", "/api/v1/tasks", {
         project_id: projectId,
         title: plan.baseline
             ? "Horizon New Dawn parity baseline"
@@ -118,7 +118,7 @@ export async function enqueue(
         brief,
         status: "backlog",
         orchestration: "external",
-        tasks: plan.tasks.map(({ title, brief, deliverables }) => ({
+        subtasks: plan.tasks.map(({ title, brief, deliverables }) => ({
             title,
             brief,
             deliverables,

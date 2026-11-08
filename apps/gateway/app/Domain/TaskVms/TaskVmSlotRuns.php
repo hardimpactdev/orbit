@@ -19,7 +19,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The intents of a task start (docs/cli/tasks/provision.mmd) and a release (docs/cli/tasks/cancel.mmd) in one slot. A task start copies the
+ * The intents of a task start (docs/cli/task/start.mmd) and a release (docs/cli/task/cancel.mmd) in one slot. A task start copies the
  * host's base VM snapshot, writes the identity the admission minted, a new Pi token and the Pi models file with the fixed model key, and
  * adds the hub peer beside the boot; then it runs the converge and starts the task branch. A release deletes the VM and removes the hub
  * peer; the Gateway then deletes the Node. Neither calls the model router.

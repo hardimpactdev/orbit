@@ -263,7 +263,7 @@ function SessionViewer({ session }: { session: AgentThread }) {
         const after =
             cursor.current === null ? "" : `?after_sequence=${encodeURIComponent(cursor.current)}`;
         const source = new EventSource(
-            `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream${after}`,
+            `/api/v1/tasks/${session.task_group_id}/agents/${session.id}/stream${after}`,
         );
         let recorded = false;
         setConnection("Connecting…");

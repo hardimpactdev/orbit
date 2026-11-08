@@ -1,6 +1,6 @@
 # SPIKE. Molecule scenario `dual-stack`: the case family-ipv6 of swamp/proof/firewall/allow.cases.yaml, which needs the batch `dual-stack` of
 # swamp/proof/batches.yaml (setup step `ipv6_addresses`: every Node also has an IPv6 address on the proof bridge). Same driver, platforms and
-# inventory as `default`; run on the task VM against the nested fleet that `tasks:provision` already built, from the parent directory
+# inventory as `default`; run on the task VM against the nested fleet that `task:start` already built, from the parent directory
 # (firewall-allow/):
 #   molecule test -s dual-stack     # prepare (IPv6 addresses, pings, listener, test deny, "blocked before" probes) -> converge (the CLI) -> verify
 # The addresses are added in prepare and stay on the containers (as the batch step does); a rerun on a fleet that was not restored needs

@@ -1,0 +1,58 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ListTaskEgressRequest",
+    "route": "GET /api/v1/tasks/{task}/egress",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "destination": "140.82.121.4",
+                "kind": "address",
+                "port": 22,
+                "protocol": "tcp",
+                "addresses": [
+                    "140.82.121.4"
+                ],
+                "sources": [
+                    "conn"
+                ],
+                "flags": [],
+                "vm": "shark-tvm-1",
+                "first_seen_at": "2026-11-07T19:00:09+00:00"
+            },
+            {
+                "destination": "example.com",
+                "kind": "name",
+                "port": null,
+                "protocol": null,
+                "addresses": [],
+                "sources": [
+                    "dns"
+                ],
+                "flags": [],
+                "vm": "shark-tvm-1",
+                "first_seen_at": "2026-11-07T19:00:07+00:00"
+            },
+            {
+                "destination": "registry.npmjs.org",
+                "kind": "name",
+                "port": 443,
+                "protocol": "tcp",
+                "addresses": [
+                    "104.16.1.34",
+                    "104.16.2.34"
+                ],
+                "sources": [
+                    "conn",
+                    "dns"
+                ],
+                "flags": [],
+                "vm": "shark-tvm-1",
+                "first_seen_at": "2026-11-07T19:00:05+00:00"
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

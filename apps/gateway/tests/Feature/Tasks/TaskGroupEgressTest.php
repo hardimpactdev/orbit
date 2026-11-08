@@ -176,7 +176,7 @@ it('lists the rows of a group through the API controller, with null for a name n
     [$host, $group] = egress_world();
     app(TaskExtensionState::class)->enable();
     app(RecordTaskGroupEgressAction::class)->execute($host, 'shark-tvm-1', egress_fact(egress_row(), egress_row(['destination' => 'example.com', 'port' => null, 'protocol' => null, 'sources' => ['dns']])));
-    $request = Request::create("/api/v1/task-groups/{$group->id}/egress");
+    $request = Request::create("/api/v1/tasks/{$group->id}/egress");
     $request->attributes->set('orbit.request_id', 'request-1');
 
     $body = json_decode((string) app(TaskEgressController::class)->show($request, $group, app(ShowTaskGroupEgressAction::class))->getContent(), true);

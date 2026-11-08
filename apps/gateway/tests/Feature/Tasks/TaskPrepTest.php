@@ -29,7 +29,17 @@ it('puts the command and its files in the draft, review and fix prompts', functi
 
 it('refuses a command that is not family:command in lower case', function (string $command): void {
     expect(fn () => TaskPrepPrompts::for($command))->toThrow(ResourceOperationException::class, 'family:command');
-})->with(['', 'firewall', 'Firewall:deny', 'firewall:', ':deny', 'a:b:c', 'firewall: deny', "firewall:deny\n", '../x:y']);
+})->with(['', 'firewall', 'Firewall:deny', 'firewall:', ':deny', 'node:role:', 'node::list', 'firewall: deny', "firewall:deny\n", '../x:y']);
+
+it('names the files of a nested command with dashes after its family', function (): void {
+    $prompts = TaskPrepPrompts::for('node:role:list');
+
+    expect($prompts->family)->toBe('node')
+        ->and($prompts->chart())->toBe('docs/cli/node/role-list.mmd')
+        ->and($prompts->page())->toBe('docs/cli/node/role-list.mdx')
+        ->and($prompts->cases())->toBe('swamp/proof/node/role-list.cases.yaml')
+        ->and($prompts->draft())->toContain('`node:role:list`', 'docs/cli/node/role-list.mmd');
+});
 
 it('validates the request body to one command', function (): void {
     $rules = (new StartTaskPrepRequest)->rules();

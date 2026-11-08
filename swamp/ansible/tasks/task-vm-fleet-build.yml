@@ -1,5 +1,5 @@
 ---
-# The nested fleet from stock Ubuntu (docs/cli/tasks/vm-image-refresh.mmd), part of the fleet phase: task-vm-fleet.yml imports it only when
+# The nested fleet from stock Ubuntu (docs/cli/task/vm-image-refresh.mmd), part of the fleet phase: task-vm-fleet.yml imports it only when
 # the fleet is not complete (a container missing, or no operator stamp), which is a base VM that never held a fleet, or one whose build
 # stopped half way. A converge on a complete fleet skips every task here. The nested network and the seed pool `topology-seed` come from
 # the tools phase (task-vm-incus.yml). A half-made fleet starts from nothing, so a rerun builds it whole. The nested Gateway is prepared by

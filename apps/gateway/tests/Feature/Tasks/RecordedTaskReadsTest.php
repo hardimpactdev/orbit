@@ -132,7 +132,7 @@ it('serves distinct totals and recorded line counts for list, board, and detail 
     if ($ended) {
         $group->forceFill(['status' => TaskGroupStatus::Completed, 'ended_at' => now()->subMinute()])->save();
     }
-    $url = $path === 'detail' ? '/api/v1/task-groups/'.$group->id : '/api/v1/task-groups'.($path === 'board' ? '?compact=1' : '');
+    $url = $path === 'detail' ? '/api/v1/tasks/'.$group->id : '/api/v1/tasks'.($path === 'board' ? '?compact=1' : '');
     $response = $this->getJson($url)->assertOk();
     $data = $path === 'detail' ? 'data' : 'data.0';
     $response->assertJsonPath($data.'.tokens', 120)->assertJsonPath($data.'.lines_added', 30)->assertJsonPath($data.'.line_diff', 40)
@@ -145,7 +145,7 @@ it('serves distinct totals and recorded line counts for list, board, and detail 
 
 it('serves recorded working state through the agents list without a remote read', function (): void {
     [$group] = recordedTaskWorld();
-    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.state', 'working');
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.state', 'working');
     Http::assertNothingSent();
 });
 
@@ -154,7 +154,7 @@ it('serves the recorded transcript and current activity through JSON and the boa
     if (! $saved) {
         Storage::disk('local')->delete(ArchiveAgentTranscriptsAction::path($thread));
     }
-    $response = $this->get('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id.($stream ? '/stream' : '').'?after_sequence=old.4', ['Accept' => 'application/json'])->assertOk();
+    $response = $this->get('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id.($stream ? '/stream' : '').'?after_sequence=old.4', ['Accept' => 'application/json'])->assertOk();
     $data = $stream
         ? json_decode(explode('data: ', $response->streamedContent())[1], true, flags: JSON_THROW_ON_ERROR)
         : $response->json('data');
@@ -178,7 +178,7 @@ it('records terminal cost, transcript, subtask deltas and clears observation err
     expect($thread->refresh()->cost_usd)->toBe(0.75)->and($thread->observation_error)->toBeNull()->and($thread->tokens)->toBe(140);
     expect($first->refresh()->tokens)->toBe(60);
     expect($second->refresh()->tokens)->toBe(80);
-    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Turn result')->assertJsonPath('data.state', 'done');
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Turn result')->assertJsonPath('data.state', 'done');
     Http::assertNothingSent();
 });
 
@@ -203,7 +203,7 @@ it('keeps recorded line counts when the workspace observation is stale or trunca
             'head' => str_repeat('a', 40), 'dirty' => false, 'commits' => null,
             'diff' => ['files' => 501, 'added' => 900, 'removed' => 800, 'truncated' => ! $stale],
         ]]);
-    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->assertJsonPath('data.lines_added', 30)->assertJsonPath('data.lines_deleted', 10);
+    $this->getJson('/api/v1/tasks/'.$group->id)->assertOk()->assertJsonPath('data.lines_added', 30)->assertJsonPath('data.lines_deleted', 10);
     Http::assertNothingSent();
 })->with([false, true]);
 
@@ -219,8 +219,8 @@ it('replaces a known cost with null when a terminal report contains unpriced usa
 it('derives activity from nested thread references of any open operation', function (string $kind): void {
     [$group, $thread, $operation] = recordedTaskWorld();
     $operation->update(['kind' => $kind, 'input' => ['turns' => [['intent' => ['thread_id' => $thread->id]]]]]);
-    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.state', 'working');
-    $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.state', 'working');
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.state', 'working');
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.state', 'working');
     Http::assertNothingSent();
 })->with(['tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round', 'future.operation']);
 
@@ -284,7 +284,7 @@ it('records a completed child while its parent is running and deduplicates paren
         expect($operation->refresh()->status)->toBe(OperationStatus::Running);
         expect($thread->refresh()->tokens)->toBe(140);
         expect($second->refresh()->tokens)->toBe(80);
-        $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Child ended before parent');
+        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Child ended before parent');
         TaskTurnProjection::recordTurn($operation, $thread->id, [...$result, 'metrics' => ['tokens' => 180]]);
         TaskTurnProjection::recordTurn($operation, $thread->id, $result);
         expect($thread->refresh()->tokens)->toBe(180)->and($second->refresh()->tokens)->toBe(120);
@@ -356,7 +356,7 @@ it('keeps the previous transcript when native cancellation skips finalization', 
         expect($thread->refresh()->tokens)->toBe(100);
         expect($operation->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Cancelled);
         expect($operation->lock_key)->toBeNull();
-        $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
+        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
         Http::assertNothingSent();
     } finally {
         app(SwampConnection::class)->release();
@@ -386,7 +386,7 @@ it('loads a root turn capture from its recorded result artifact before projectin
         expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
         expect($thread->refresh()->tokens)->toBe(140);
         expect($socket->queries[0]['predicate'])->toBe('id == "'.$dataId.'" && version == 22');
-        $this->getJson('/api/v1/task-groups/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Large recorded result');
+        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Large recorded result');
         Http::assertNothingSent();
     } finally {
         app(SwampConnection::class)->release();

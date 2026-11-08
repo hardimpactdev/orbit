@@ -7,7 +7,7 @@ namespace App\Commands\Tasks;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 /** Starts a `tasks.provision` operation and follows it until it ends. Ctrl-C stops following, not provisioning. */
@@ -16,8 +16,8 @@ final class ProvisionTaskGroupCommand extends TaskCommand
     use FollowsOperations;
 
     #[\Override]
-    protected $signature = 'tasks:provision
-        {group? : Numeric task group ID}
+    protected $signature = 'task:start
+        {task? : Numeric Task ID}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -26,7 +26,7 @@ final class ProvisionTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
         if ($groupId === false) {
             return self::FAILURE;
@@ -45,7 +45,7 @@ final class ProvisionTaskGroupCommand extends TaskCommand
         }
 
         $key = $this->option('idempotency-key');
-        $operation = $this->send($connector, new ProvisionTaskGroupRequest($groupId, is_string($key) ? $key : null), OperationResponse::class);
+        $operation = $this->send($connector, new StartTaskRequest($groupId, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Provision task group [{$groupId}]", 'Provision')

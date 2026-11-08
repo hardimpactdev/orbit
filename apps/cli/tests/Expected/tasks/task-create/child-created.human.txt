@@ -1,0 +1,47 @@
+Creating subtask...
+
+┌  Create subtask
+│
+├  ● Created subtask
+│
+└  Created subtask.
+
+
+┌  Subtask: 4
+│
+├  Task group           1
+│
+├  Position             3
+│
+├  Title                Document the commands
+│
+├  Status               todo
+│
+├  Assistance           no
+│
+├  Kind                 —
+│
+├  Question             —
+│
+├  Reason               —
+│
+├  Type                 implementation
+│
+├  Implementer thread   —
+│
+├  Tokens               —
+│
+├  Line diff            —
+│
+└  Duration             —
+
+Brief
+  Add docs/cli/task/index.mdx.
+
+ ┌─────────────┬─────────┬────────────────────────────────────┬───────────────────────────────┐
+ │ DELIVERABLE │ TYPE    │ REQUIRES                           │ DESCRIPTION                   │
+ ├─────────────┼─────────┼────────────────────────────────────┼───────────────────────────────┤
+ │ cli-page    │ file    │ docs/cli/task/index.mdx (modified) │ Document every tasks command  │
+ │ docs-lint   │ command │ composer docs-lint in .            │ The documentation lint passes │
+ └─────────────┴─────────┴────────────────────────────────────┴───────────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * The durable record of one promoted task VM base: a refresh of the host's base VM records its snapshot (docs/cli/tasks/vm-image-refresh.mmd).
+ * The durable record of one promoted task VM base: a refresh of the host's base VM records its snapshot (docs/cli/task/vm-image-refresh.mmd).
  * Rows of the retired recipe image build stay readable; their `images` hold an image, which is never a usable base.
  *
  * @property int $id

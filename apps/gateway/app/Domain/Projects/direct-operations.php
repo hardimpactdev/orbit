@@ -21,7 +21,7 @@ return [
             'updates' => ['job' => 'inspect', 'step' => 'Find the updates'],
         ]], 'projection' => ProjectMaintenanceProjection::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-read-[1-9][0-9]*$']]],
-    // project:pr-merge: the same Swamp run as tasks:pr-merge, for a pull request that no Task group watches.
+    // project:pr-merge: the same Swamp run as task:pr-merge, for a pull request that no Task group watches.
     'project.pr_merge' => ['workflow' => 'operation-task-pr-merge', 'github_token_issuer' => TaskGitHubTokens::class, 'projection' => TaskPullRequestMergeProjection::class,
         'workflow_inputs' => true,
         'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the merge', 'native' => true, 'captures' => ['pr_receipt' => ['job' => 'merge', 'step' => 'Squash on expected head', 'field' => 'stdout']]],

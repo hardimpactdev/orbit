@@ -38,7 +38,7 @@ use Illuminate\Support\Str;
  * published pull request it reads the pull request. A draft with a passed handoff check on its head gets the ready step in
  * the mode of the group; a draft without one stays a draft, except the spec of a prep group whose build has not started, which
  * gets the build step once the owner approved its head. Until then the owner's request for changes on that head gets the corrections
- * (`tasks:prep-fix`, keyed by group and review). A pull request out of draft gets the merge step in manual mode; in
+ * (`task:prep-fix`, keyed by group and review). A pull request out of draft gets the merge step in manual mode; in
  * automatic mode it gets one review round per head, one Swamp run with the reviewer, the comment, and for findings the fix and the push, and the merge step once the round on that exact head passed. Admission makes the other reads: the CI result of the head,
  * and for the manual merge the reviewer's approval of that exact head. A pending check, a missing approval, a running
  * round, a busy group or a failed read is a quiet skip; the next tick reads again.

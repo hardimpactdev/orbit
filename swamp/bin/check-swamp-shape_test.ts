@@ -16,6 +16,7 @@ import {
     isGatewayPrimitive,
     ratchet,
     SCHEMA,
+    taskQueueComparison,
     toolFindings,
     workflowCoverage,
 } from "./check-swamp-shape.ts";
@@ -25,6 +26,23 @@ const inventory = {
     "cli.install": "action",
     "caddy.publish": "action",
 };
+Deno.test("Task queue allowance requires the entire exact public rename", () => {
+    const old =
+        'deps.http("POST", "/api/v1/task-groups", {tasks: plan.tasks.map(f)});';
+    const current =
+        'deps.http("POST", "/api/v1/tasks", {subtasks: plan.tasks.map(f)});';
+    assertEquals(taskQueueComparison(old, current), old);
+    for (
+        const changed of [
+            current + "\nawait delay(1);",
+            current.replace("POST", "DELETE"),
+            current.replace('tasks"', 'other"'),
+        ]
+    ) {
+        assertEquals(taskQueueComparison(old, changed), changed);
+    }
+    assertEquals(taskQueueComparison(current, current), current);
+});
 Deno.test("step inputs read one bounded data record, never a query or version history", () => {
     const file = "workflows/workflow-example.yaml";
     const workflow = (candidates: string) =>
@@ -3070,7 +3088,9 @@ Deno.test("workflows declare vaults read directly or forwarded as bounded execut
             assertEquals(
                 a.findings.filter((f) =>
                     f.rule === "workflow-vault-declaration"
-                ).map((f) => f.evidence),
+                ).map((
+                    f,
+                ) => f.evidence),
                 file.endsWith("/child.yaml")
                     ? []
                     : file.endsWith("/parent.yaml")

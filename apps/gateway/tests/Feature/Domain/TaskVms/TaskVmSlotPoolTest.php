@@ -754,14 +754,14 @@ function preservationWorld(array $approved, array &$origin, ?string $merged = nu
     return [$group, $slot, Node::query()->where('name', 'gateway')->sole()];
 }
 
-/** One `tasks:complete` or `tasks:cancel` call from the Gateway Node. */
+/** One `task:complete` or `task:cancel` call from the Gateway Node. */
 function preservationCall(Node $gateway, Task $group, string $command): TestResponse
 {
     return test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->withHeader('Idempotency-Key', 'end-'.fake()->uuid())
-        ->postJson("/api/v1/task-groups/{$group->id}/{$command}");
+        ->postJson("/api/v1/tasks/{$group->id}/{$command}");
 }
 
-it('refuses tasks:complete while origin lacks the latest approval, though the approved commit before it merged, and changes nothing', function (): void {
+it('refuses task:complete while origin lacks the latest approval, though the approved commit before it merged, and changes nothing', function (): void {
     [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
     // A merged and GitHub deleted the branch; B was approved later and lives only in the parked VM.
     $origin = [$a => [$a]];
@@ -774,7 +774,7 @@ it('refuses tasks:complete while origin lacks the latest approval, though the ap
         ->and($slot->refresh()->state)->toBe(TaskVmState::Parked)
         ->and(Operation::query()->whereIn('kind', [TaskVmSlotPool::ReleaseKind, 'task_vm.resume'])->exists())->toBeFalse();
 
-    // tasks:publish pushed B; now the group completes and its parked VM goes as it is.
+    // task:publish pushed B; now the group completes and its parked VM goes as it is.
     $origin['branch'] = [$b, $a];
     preservationCall($gateway, $group, 'complete')->assertOk();
 
@@ -793,7 +793,7 @@ it('takes the merged pull request\'s head for a deleted task branch, so a merged
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });
 
-it('refuses tasks:cancel while origin lacks the latest approval, admitting nothing, and admits a release with no push once it has it', function (): void {
+it('refuses task:cancel while origin lacks the latest approval, admitting nothing, and admits a release with no push once it has it', function (): void {
     [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
     $origin = ['branch' => [$a]];
     [$group, $slot, $gateway] = preservationWorld([$a, $b], $origin);

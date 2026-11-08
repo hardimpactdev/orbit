@@ -1,0 +1,67 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-06, "a new private package mid-task: the agent asks for it through assistance, and a step installs it". docs/reference/tasks.md#install-a-private-package.
+  %% status: migrated
+  %% command: none · API / MCP (task-package)
+  %% kind: tasks.package
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=terminal pill=target tone=amber
+  participant CLI as API / MCP<br/>typed API request
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>reached over ssh
+  Note over CLI: The agent asks<br/>blocked receipt · question
+  %%> What it does:
+  %%> - the agent of group 42 cannot resolve a private package; it ends its turn `blocked` with the package name as its question
+  %%> - the Gateway shows the question as assistance on the subtask; nothing else happens
+  %%> Who answers:
+  %%> - the orchestrator, which decides that the package may be installed, then sends the request below
+  CLI->>GW: Install a package<br/>group 42 · composer · acme/ui
+  %%> Command:
+  %%> - `POST /api/v1/tasks/42/package` with `manager` (`composer` or `npm`), `package` and an `Idempotency-Key`
+  %%> - syntax: the MCP tool `task-package` with `group`, `manager`, `package`
+  Note over GW: Check the group<br/>task #5170 · key names
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - group 42 is an open external group with its own task VM workspace
+  %%> - the package is a name and an optional version constraint, never an option
+  %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - records the manager, the package, the SSH target and the vault key names of the dependency configuration; it mints no token
+  GW->>SW: Start run, full intent<br/>operation-task-package
+  GW-->>CLI: 202 Accepted<br/>task #5170
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  SW->>GW: Write the dependency auth<br/>mint · purpose dependencies
+  %%> What it does:
+  %%> - the shared child workflow asks the Gateway for a read token (`operation:direct:github-token`), then writes the Composer `auth.json` and the `.npmrc` of the task account on the VM, mode 0600
+  %%> - the token is minted for this run only and expires within the hour
+  SW->>VM: Install the package<br/>composer require · npm install
+  %%> What it does:
+  %%> - one official `@swamp/ssh exec` argument list in the checkout: `composer require --no-scripts` or `npm install --ignore-scripts`, with the package after `--`
+  %%> - the package manager updates `composer.json` and its lock file, or `package.json` and its lock file, in the workspace; nothing is committed
+  SW->>VM: Remove the dependency auth
+  %%> When:
+  %%> - always, after the install, on success and on failure; a failed removal fails the run
+  %%> What it does:
+  %%> - the shared child workflow deletes both files, then revokes the token (`DELETE installation/token`) so a command that echoed it holds a dead token
+  %%> - it reports the outcome as `dependency_token` in the result: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason
+  %%> - Decided by the orchestrator, for Nick's review: an `unrevoked` token does not fail the run; the files are gone and the token expires within the hour
+  Note over SW: Confirm the package<br/>install and removal succeeded
+  alt the install and the removal passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    Note over GW: Record the result<br/>package · token outcome
+    %%> Result:
+    %%> - task #5170 succeeds with `manager`, `package` and `dependency_token`; the orchestrator resolves the assistance, and the agent gets a new turn with the package installed
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the task failed<br/>`tasks.package_failed`
+    %%> Retry:
+    %%> - a repeat with the same package writes the configuration again; a run cancelled before the removal leaves the files until the token expires or `task:cancel` removes the VM
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5170
+    GW-->>CLI: status + result
+  end

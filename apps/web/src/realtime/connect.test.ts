@@ -254,8 +254,8 @@ it("reloads what stops polling on the first subscription and everything after a 
     pusher.channel.emit("pusher:subscription_succeeded");
     expect(setLiveness).toHaveBeenLastCalledWith("live");
     expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
-        { queryKey: ["task-groups"] },
-        { queryKey: ["tasks-status"] },
+        { queryKey: ["tasks"] },
+        { queryKey: ["task-status"] },
         { queryKey: ["processes"] },
         { queryKey: ["activities"], predicate: expect.any(Function) },
     ]);
@@ -317,8 +317,8 @@ it("reloads the task, Process, and Activity queries on a first subscription righ
     sockets[0]!.channel.emit("pusher:subscription_succeeded");
 
     expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
-        { queryKey: ["task-groups"] },
-        { queryKey: ["tasks-status"] },
+        { queryKey: ["tasks"] },
+        { queryKey: ["task-status"] },
         { queryKey: ["processes"] },
         { queryKey: ["activities"], predicate: expect.any(Function) },
     ]);
@@ -377,7 +377,7 @@ it("unbinds callbacks before disconnect and ignores callbacks already queued by 
 
 it("forwards task notices and Process usage from the orbit channel to the query cache", async () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
-    client.setQueryData(["tasks-status"], { enabled: true });
+    client.setQueryData(["task-status"], { enabled: true });
     await connectRealtime(client, controller.signal);
     const channel = sockets[0]!.channel;
     channel.emit("pusher:subscription_succeeded");
@@ -407,10 +407,10 @@ it("forwards task notices and Process usage from the orbit channel to the query 
 
     flushTaskRefetches();
     expect(invalidate.mock.calls.map(([filters]) => filters)).toEqual([
-        { queryKey: ["task-groups"], exact: true },
-        { queryKey: ["task-groups", "5"], exact: true },
+        { queryKey: ["tasks"], exact: true },
+        { queryKey: ["tasks", "5"], exact: true },
     ]);
-    expect(client.getQueryData(["tasks-status"])).toEqual({ enabled: false });
+    expect(client.getQueryData(["task-status"])).toEqual({ enabled: false });
     expect(client.getQueryData(["processes"])).toEqual([
         { id: 1, runtime_status: "inactive", cpu: 7.5, memory_bytes: 2_048 },
     ]);

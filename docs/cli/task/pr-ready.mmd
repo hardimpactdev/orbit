@@ -1,0 +1,112 @@
+sequenceDiagram
+  %% Nick 2026-11-06: a task VM never holds a GitHub credential, and the step mints its token when it runs, not at admission.
+  %% Target design: stage 4 of the command development pipeline (docs/reference/pipeline/4-pr-and-ci.mmd, "Admit the ready step"), R2-R3. The Gateway admits and names the vault key, the step mints its token, and Swamp calls GitHub. docs/reference/tasks.md#ready-and-merge-a-task-pull-request.
+  %% status: draft
+  %% command: none · API / MCP (task-pr-ready)
+  %% kind: tasks.pr_ready
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as API / MCP<br/>typed API request
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>repository · PRs
+  CLI->>GW: Ready the PR of GROUP<br/>head SHA · mode MODE
+  %%> Command:
+  %%> - `POST /api/v1/tasks/GROUP/pr-ready` with `head_sha`, `mode` (`manual` or `automatic`) and an `Idempotency-Key`
+  %%> - syntax: the MCP tool `task-pr-ready` with `group`, `head_sha`, `mode`
+  %%> Who can call it:
+  %%> - a Node with an access grant to the Gateway; there is no `orbit` command
+  GW->>GH: Read the PR and checks<br/>head · draft · CI
+  %%> What it does:
+  %%> - reads the PR and the check runs of the head with read-only App tokens (`pull_requests: read`, `checks: read`)
+  GH-->>GW: PR state · check runs
+  Note over GW: Check the PR<br/>head · CI green · key name
+  %%> Requirements:
+  %%> - the tasks extension is on, and the group is an open external group with a published PR that is open
+  %%> - the PR head is exactly `head_sha`, and the Project's merge check (`Required checks`) passed on that head
+  %%> - in manual mode, the PR author is not the reviewer, because GitHub refuses a review request from the author
+  %%> - no other task runs on the group; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - names the vault key `pr-ready-write-<uuid>` for the write token; it mints no token
+  %%> Result:
+  %%> - a task recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-task-pr-ready
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the repository, PR number, expected head, mode and the reviewer's GitHub login
+  %%> - the vault key name of the token, never the token
+  GW-->>CLI: 202 Accepted<br/>task id
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  SW->>GW: Mint the token<br/>operation:direct:github-token
+  %%> What it does:
+  %%> - the first step posts the run id to the Gateway; the Gateway checks the Operation, the run and the repository, mints a token with only `pull_requests: write`, and writes it to the vault key that admission named
+  %%> Why here and not at admission:
+  %%> - an installation token lives one hour; the token is minted when the step that uses it runs
+  %%> - no task VM holds a GitHub credential
+  SW->>GH: Read the PR
+  %%> What it does:
+  %%> - one `gh api` read of state, draft flag, head SHA and GraphQL node id
+  Note over SW: Check the PR head
+  %%> Refuses:
+  %%> - a head other than the admitted one, or a PR that is no longer open, with `tasks_pr.head_moved`; nothing is changed
+  SW->>GH: Take the PR out of draft
+  %%> What it does:
+  %%> - marks the PR ready for review with the App token, passed by vault key name
+  %%> When:
+  %%> - only while the PR is a draft; a PR that is already ready skips this step, so a rerun is safe
+  %%> Why:
+  %%> - a draft means the work is still moving; leaving draft says the spec, code and proof cases are done
+  opt manual mode
+    SW->>GH: Request the review
+    %%> What it does:
+    %%> - requests the review of the reviewer's GitHub login, so GitHub notifies the reviewer that the PR waits
+    %%> Why:
+    %%> - in manual mode the reviewer's approval on the exact head is the gate of the merge step
+  end
+  SW->>GH: Read the PR result
+  %%> What it does:
+  %%> - reads the head, the draft flag and the requested reviewers; the Gateway keeps this as the task result
+  SW->>GH: Clean up the token<br/>task-github-cleanup
+  %%> What it does:
+  %%> - runs the shared cleanup child: it revokes the token, best effort because the token expires within one hour, and removes the private GitHub CLI configuration directory of this run
+  %%> When:
+  %%> - always, on success and failure
+  Note over SW: Confirm the ready step
+  alt ready
+    GH-->>SW: PR ready · head sha
+    %%> Returns:
+    %%> - the head SHA, the draft flag and the requested reviewers
+    SW-->>GW: Run succeeded<br/>terminal event · PR state
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the result<br/>task succeeded
+    %%> Result:
+    %%> - the task succeeds with the PR number, head and requested reviewers; the PR now waits for the gate
+  else refused or failed
+    GH--xSW: head moved or refused
+    %%> When:
+    %%> - the head moved, GitHub refused the draft change, or GitHub refused the review request
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, such as `tasks_pr.head_moved`
+    Note over GW: Mark the task failed<br/>PR kept as it is
+    %%> Result:
+    %%> - the task fails; the PR stays as GitHub left it, and the Gateway changes no task state
+    %%> Retry:
+    %%> - a new request for the same head is a new task with a new token; a step that already happened is skipped
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

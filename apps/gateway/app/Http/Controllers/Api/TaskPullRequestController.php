@@ -23,9 +23,9 @@ final class TaskPullRequestController extends Controller
     /** Takes the group's published PR out of draft and, in manual mode, requests the reviewer's review. */
     #[StartsOperation(OperationKinds::TasksPrReady, requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function ready(TaskPullRequestReadyRequest $request, Task $group, StartTaskPullRequestStepAction $action): JsonResponse
+    public function ready(TaskPullRequestReadyRequest $request, Task $task, StartTaskPullRequestStepAction $action): JsonResponse
     {
-        $operation = $action->ready($group, $request->string('head_sha')->toString(), $request->string('mode')->toString(),
+        $operation = $action->ready($task, $request->string('head_sha')->toString(), $request->string('mode')->toString(),
             CallerName::fromRequest($request), $request->attributes->getString('orbit.request_id'));
 
         return $this->accepted($request, $operation);
@@ -34,9 +34,9 @@ final class TaskPullRequestController extends Controller
     /** Squash-merges the group's published PR on the exact approved head. */
     #[StartsOperation(OperationKinds::TasksPrMerge, requiresKey: true, bindCaller: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function merge(TaskPullRequestMergeRequest $request, Task $group, StartTaskPullRequestStepAction $action): JsonResponse
+    public function merge(TaskPullRequestMergeRequest $request, Task $task, StartTaskPullRequestStepAction $action): JsonResponse
     {
-        $operation = $action->merge($group, $request->string('head_sha')->toString(),
+        $operation = $action->merge($task, $request->string('head_sha')->toString(),
             CallerName::fromRequest($request), $request->attributes->getString('orbit.request_id'));
 
         return $this->accepted($request, $operation);

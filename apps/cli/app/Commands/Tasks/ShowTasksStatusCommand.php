@@ -15,7 +15,7 @@ use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 final class ShowTasksStatusCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:status
+    protected $signature = 'task:status
         {--json : Return machine-readable JSON}';
 
     public function extensionSlug(): ?string

@@ -29,7 +29,7 @@ EXCLUDED = {
     'operation-direct-private-material',
     'operation-direct-secret-output',
     'project-dependency-read-token',
-    'tasks-agent-stream',
+    'task-agent-stream',
     'realtime-auth',
     'agent-realtime',
     'agent-realtime-auth',
@@ -91,7 +91,8 @@ def tool(method, path, operation, components):
     body = operation.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema')
     if body is not None:
         body = resolve(body, components)
-        variants = body.get('oneOf')
+        variant_kind = 'oneOf' if 'oneOf' in body else 'anyOf'
+        variants = body.get(variant_kind)
         if variants is not None and not body.get('properties'):
             if not all(variant.get('type') == 'object' for variant in variants):
                 sys.exit(f'{name}: request body variants are not objects')
@@ -107,7 +108,15 @@ def tool(method, path, operation, components):
                 key: alternatives[0] if len(alternatives) == 1 else {'anyOf': alternatives}
                 for key, alternatives in variant_properties.items()
             }
-            body = {'type': 'object', 'properties': properties_union, 'oneOf': variants}
+            flattened_variants = []
+            for variant in variants:
+                # Closed body alternatives validate the flattened tool input, including transport
+                # parameters. A route parameter's schema takes precedence over its body duplicate.
+                flattened_properties = dict(variant.get('properties', {}))
+                for key, schema in properties.items():
+                    flattened_properties[key] = {**flattened_properties.get(key, {}), **schema}
+                flattened_variants.append({**variant, 'properties': flattened_properties})
+            body = {'type': 'object', 'properties': properties_union, variant_kind: flattened_variants}
         if body.get('type') != 'object':
             sys.exit(f'{name}: request body is not an object')
         for key, schema in body.get('properties', {}).items():

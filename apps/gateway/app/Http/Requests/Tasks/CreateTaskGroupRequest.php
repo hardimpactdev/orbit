@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
+use App\Data\Tasks\CreateTaskData;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskDeliverableType;
@@ -13,6 +14,7 @@ use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
+use App\Models\Task;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
@@ -32,6 +34,19 @@ final class CreateTaskGroupRequest extends FormRequest
     /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
     public function rules(): array
     {
+        if ($this->has('parent_id')) {
+            return [...(new CreateTaskRequest)->rules(),
+                'parent_id' => ['required', 'integer:strict', 'min:1', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
+                'project_id' => ['sometimes', 'integer:strict', Rule::in([Task::topLevel()->find($this->integer('parent_id'))?->project_id])],
+            ];
+        }
+
+        return $this->parentRules();
+    }
+
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
+    public function parentRules(): array
+    {
         return [
             'project_id' => ['required', 'integer:strict', 'min:1', Rule::exists(Project::class, 'id')],
             'title' => ['required', 'string', 'max:160'],
@@ -41,23 +56,23 @@ final class CreateTaskGroupRequest extends FormRequest
             'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
-            'tasks' => ['sometimes', 'array', 'max:50'],
-            'tasks.*.title' => ['required', 'string', 'max:160'],
-            'tasks.*.brief' => ['required', 'string', 'max:8000'],
-            'tasks.*.topology' => ['sometimes', 'array', 'list', 'max:'.TaskTopology::maxNodes(), new TaskTopologyList],
-            'tasks.*.topology.*' => ['required', 'string', 'max:64', 'regex:'.TaskTopology::EntryPattern],
-            'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
-            'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
-            'tasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
-            'tasks.*.deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],
-            'tasks.*.deliverables.*.description' => ['required', 'string', 'max:500'],
-            'tasks.*.deliverables.*.path' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'tasks.*.deliverables.*.change' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
-            'tasks.*.deliverables.*.fails_on_base' => ['sometimes', new FailsOnBase, 'boolean:strict'],
-            'tasks.*.deliverables.*.command' => ['required_if:tasks.*.deliverables.*.type,command', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:1000'],
-            'tasks.*.deliverables.*.directory' => ['sometimes', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'tasks.*.deliverables.*.paths' => [new CommandPaths, 'prohibited_unless:tasks.*.deliverables.*.type,command', 'array', 'list', 'max:100'],
-            'tasks.*.deliverables.*.paths.*' => ['required', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'subtasks' => ['sometimes', 'array', 'max:50'],
+            'subtasks.*.title' => ['required', 'string', 'max:160'],
+            'subtasks.*.brief' => ['required', 'string', 'max:8000'],
+            'subtasks.*.topology' => ['sometimes', 'array', 'list', 'max:'.TaskTopology::maxNodes(), new TaskTopologyList],
+            'subtasks.*.topology.*' => ['required', 'string', 'max:64', 'regex:'.TaskTopology::EntryPattern],
+            'subtasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
+            'subtasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
+            'subtasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
+            'subtasks.*.deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],
+            'subtasks.*.deliverables.*.description' => ['required', 'string', 'max:500'],
+            'subtasks.*.deliverables.*.path' => ['required_if:subtasks.*.deliverables.*.type,file', 'prohibited_unless:subtasks.*.deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'subtasks.*.deliverables.*.change' => ['required_if:subtasks.*.deliverables.*.type,file', 'prohibited_unless:subtasks.*.deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
+            'subtasks.*.deliverables.*.fails_on_base' => ['sometimes', new FailsOnBase, 'boolean:strict'],
+            'subtasks.*.deliverables.*.command' => ['required_if:subtasks.*.deliverables.*.type,command', 'prohibited_unless:subtasks.*.deliverables.*.type,command', 'string', 'max:1000'],
+            'subtasks.*.deliverables.*.directory' => ['sometimes', 'prohibited_unless:subtasks.*.deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'subtasks.*.deliverables.*.paths' => [new CommandPaths, 'prohibited_unless:subtasks.*.deliverables.*.type,command', 'array', 'list', 'max:100'],
+            'subtasks.*.deliverables.*.paths.*' => ['required', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
         ];
     }
 
@@ -65,26 +80,28 @@ final class CreateTaskGroupRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), [
-                'project_id',
-                'title',
-                'brief',
-                'status',
-                'orchestration',
-                'review',
-                'preview',
-                'current_recipe',
-                'tasks',
-            ]);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->has('parent_id')
+                ? ['parent_id', 'project_id', 'title', 'brief', 'deliverables', 'topology']
+                : [
+                    'project_id',
+                    'title',
+                    'brief',
+                    'status',
+                    'orchestration',
+                    'review',
+                    'preview',
+                    'current_recipe',
+                    'subtasks',
+                ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
     }
 
-    public function payload(): CreateTaskGroupData
+    public function parentPayload(): CreateTaskGroupData
     {
         $tasks = [];
-        $validatedTasks = $this->validated('tasks');
+        $validatedTasks = $this->validated('subtasks');
 
         foreach (is_array($validatedTasks) ? $validatedTasks : [] as $task) {
             if (! is_array($task) || ! is_string($task['title'] ?? null) || ! is_string($task['brief'] ?? null)) {
@@ -109,6 +126,21 @@ final class CreateTaskGroupRequest extends FormRequest
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
             review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
+        );
+    }
+
+    public function parentTask(): ?Task
+    {
+        return $this->has('parent_id') ? Task::topLevel()->findOrFail($this->integer('parent_id')) : null;
+    }
+
+    public function childPayload(): CreateTaskData
+    {
+        return new CreateTaskData(
+            title: $this->string('title')->toString(),
+            brief: $this->string('brief')->toString(),
+            deliverables: CreateTaskRequest::deliverables($this->validated('deliverables')),
+            topology: TaskTopology::fromInput($this->validated('topology', [])),
         );
     }
 }

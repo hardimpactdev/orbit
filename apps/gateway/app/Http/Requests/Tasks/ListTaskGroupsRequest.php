@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Requests\Tasks;
 
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
+use App\Models\Task;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -23,7 +25,8 @@ final class ListTaskGroupsRequest extends FormRequest
         return [
             'compact' => ['sometimes', 'boolean'],
             'project_id' => ['sometimes', 'integer', 'min:1'],
-            'status' => ['sometimes', 'string', Rule::enum(TaskGroupStatus::class)],
+            'parent_id' => ['sometimes', 'integer', 'min:1', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
+            'status' => ['sometimes', 'string', Rule::enum($this->has('parent_id') ? TaskStatus::class : TaskGroupStatus::class)],
         ];
     }
 
@@ -39,5 +42,10 @@ final class ListTaskGroupsRequest extends FormRequest
         $value = $this->validated('status');
 
         return is_string($value) ? TaskGroupStatus::from($value) : null;
+    }
+
+    public function parentTask(): ?Task
+    {
+        return $this->has('parent_id') ? Task::topLevel()->findOrFail($this->integer('parent_id')) : null;
     }
 }

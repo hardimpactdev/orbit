@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateTaskCommentRequest",
+    "route": "POST /api/v1/tasks/{task}/comments",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.assistance_subtask_open",
+            "message": "Group assistance comments require all subtasks to have ended.",
+            "details": {}
+        }
+    }
+}

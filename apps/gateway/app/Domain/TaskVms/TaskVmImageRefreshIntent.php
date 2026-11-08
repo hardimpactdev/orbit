@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Admits the refresh of one task VM host's base (docs/cli/tasks/vm-image-refresh.mmd) as one run on the host: the host's base VM starts,
+ * Admits the refresh of one task VM host's base (docs/cli/task/vm-image-refresh.mmd) as one run on the host: the host's base VM starts,
  * converges as a task start would, stops and is snapshotted; the snapshot is proven with one task start in a free slot, and the
  * projection promotes it. The intent holds everything the run needs; no step calls the Gateway.
  */

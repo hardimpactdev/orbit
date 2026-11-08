@@ -1,6 +1,6 @@
 ---
 # The Incus work of a task VM host, one tagged part per Swamp phase. The host keeps one stopped base VM that never gets an identity;
-# its ZFS snapshot is the base a task start copies (docs/cli/tasks/vm-image-refresh.mmd):
+# its ZFS snapshot is the base a task start copies (docs/cli/task/vm-image-refresh.mmd):
 # - `base-start`: start the base VM; a host without one gets it once, from the stock Ubuntu VM image and an empty seed volume. A rebuild
 #   (`--from-stock`) first deletes the base VM and its seed, with their snapshots, so the run builds the base from stock.
 # - `base-snapshot`: stop the base VM and snapshot it and its seed volume under the run's name.
@@ -8,7 +8,7 @@
 # - `base-discard`: after a failed refresh, stop the base VM, remove the run's snapshot and roll back to the recorded one.
 # - `host-clean`: after a refresh, remove what no current path makes: in the task VM project every image but the stock one and the
 #   volumes and instances of retired prefixes; the retired projects whole; the images of the image projects.
-# A task start and a release (docs/cli/tasks/provision.mmd, docs/cli/tasks/cancel.mmd):
+# A task start and a release (docs/cli/task/start.mmd, docs/cli/task/cancel.mmd):
 # - `start`: copy the recorded base snapshot and its seed snapshot (ZFS clones), put the identity the admission minted and the claim's keys
 #   on an identity volume of the VM, and start it. The base's orbit-identity unit applies them at boot. The containers start with the VM.
 # - `delete`: the task VM, its seed clone and its identity volume go; the Gateway then deletes the Node and its keys.
@@ -280,7 +280,7 @@
     identity_volume: "{{ slot.name }}-identity"
   tasks:
     # The identity is on the VM's disk before it boots: a small volume of its own holds the files, and the base's orbit-identity unit
-    # applies them before sshd, WireGuard and the agent start (docs/cli/tasks/provision.mmd). The start waits for nothing in the guest.
+    # applies them before sshd, WireGuard and the agent start (docs/cli/task/start.mmd). The start waits for nothing in the guest.
     - name: Start a VM with its identity
       tags: [start]
       block:
