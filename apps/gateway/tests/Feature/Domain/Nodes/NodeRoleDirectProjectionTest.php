@@ -101,8 +101,8 @@ it('marks a role failed when its first add or a non-active convergence fails', f
     ]];
 
     $this->getJson('/api/v1/nodes/'.$node->id.'/roles')->assertOk()->assertJsonPath('data', $expected);
-    $this->getJson('/api/v1/nodes/'.$node->id)->assertOk()->assertJsonPath('data.role_assignments', $expected);
-    $this->getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.role_assignments', $expected);
+    $this->getJson('/api/v1/nodes/'.$node->id)->assertOk()->assertJsonPath('data.assignments', $expected);
+    $this->getJson('/api/v1/nodes')->assertOk()->assertJsonPath('data.0.assignments', $expected);
 })->with(['first add' => ['provisioning'], 'failed earlier' => ['failed']])->with([
     'native role check' => ['Check the role', 'converge:Check the role', 'node_role.convergence_failed'],
     'recorded Ubuntu requirement' => ['Require supported Ubuntu', 'converge:Require supported Ubuntu', 'role.os_unsupported'],

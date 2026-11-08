@@ -342,6 +342,23 @@ it('selects every case for every tracked file of the shared directories', functi
     expect($unselected)->toBe([]);
 });
 
+it('selects the recorded Node list proof for its implementation and cases', function (string $path): void {
+    firewallSelectionList() ?? $this->markTestSkipped('Needs the repository checkout.');
+    $result = ProofSelection::select(
+        (string) file_get_contents(dirname(base_path(), 2).'/swamp/proof/selection.txt'),
+        proofChanges([$path]), false, ['swamp/proof/node/list.cases.yaml'],
+    );
+
+    expect($result->everythingBecause)->toBeNull()->and($result->cases)->toBe([
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml'],
+    ]);
+})->with([
+    'apps/cli/app/Commands/Nodes/ListNodesCommand.php',
+    'apps/gateway/app/Data/Nodes/NodeData.php',
+    'packages/php-sdk/src/Responses/Nodes/NodeResponse.php',
+    'swamp/proof/node/list.cases.yaml',
+]);
+
 /** The two file sets that started a proof of every case, with the helper of OperationRunBudgets (`longestFixedSeconds`) at the place where it lives now, in OperationBudgetTable. */
 dataset('swamp unit changes that touch no command', [
     '#3080, the serve run cap in the unit' => [[

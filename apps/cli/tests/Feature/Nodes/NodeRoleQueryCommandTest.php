@@ -90,13 +90,13 @@ it('retains assignment order and nullable failures in both output forms', functi
     $mockClient->assertSentCount(2);
 });
 
-it('preserves the recorded Ubuntu role failure in all Node read commands', function (string $command, array $arguments, string $assignmentPath, string $humanFragment): void {
+it('preserves recorded native role failures in all Node read commands', function (string $command, array $arguments, string $assignmentPath, string $failedStep, string $errorCode): void {
     $assignment = [
         'id' => 12,
         'role' => 'database',
         'status' => 'failed',
-        'failed_step' => 'converge:Require supported Ubuntu',
-        'error_code' => 'role.os_unsupported',
+        'failed_step' => $failedStep,
+        'error_code' => $errorCode,
     ];
     $node = [
         'id' => 7,
@@ -106,7 +106,7 @@ it('preserves the recorded Ubuntu role failure in all Node read commands', funct
         'public_ssh_port' => 22,
         'user' => 'orbit',
         'roles' => ['database'],
-        'role_assignments' => [$assignment],
+        'assignments' => [$assignment],
     ];
     $meta = ['request_id' => node_role_command_request_id()];
     $mockClient = MockClient::global([
@@ -122,12 +122,15 @@ it('preserves the recorded Ubuntu role failure in all Node read commands', funct
     expect($json['request_id'])->toBe(node_role_command_request_id());
 
     expect(Artisan::call($command, $arguments))->toBe(0);
-    expect(Artisan::output())->toContain($humanFragment, 'Request ID: '.node_role_command_request_id());
+    expect(Artisan::output())->toContain($command === 'node:role:list' ? $failedStep : 'database', 'Request ID: '.node_role_command_request_id());
     $mockClient->assertSentCount(2);
 })->with([
-    'node:role:list' => ['node:role:list', ['node' => '7'], 'assignments', 'converge:Require supported Ubuntu'],
-    'node:list' => ['node:list', [], 'nodes.0.role_assignments', 'database'],
-    'node:show' => ['node:show', ['node' => '7'], 'role_assignments', 'database'],
+    'node:role:list' => ['node:role:list', ['node' => '7'], 'assignments'],
+    'node:list' => ['node:list', [], 'nodes.0.assignments'],
+    'node:show' => ['node:show', ['node' => '7'], 'assignments'],
+])->with([
+    'native role check' => ['converge:Check the role', 'node_role.convergence_failed'],
+    'recorded Ubuntu requirement' => ['converge:Require supported Ubuntu', 'role.os_unsupported'],
 ]);
 
 it('lists node roles from the active gateway as JSON', function (): void {

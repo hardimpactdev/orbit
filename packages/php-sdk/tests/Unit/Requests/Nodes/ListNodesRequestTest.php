@@ -101,7 +101,6 @@ function list_nodes_gateway_data(): array
             'failed_step' => null,
             'error_code' => null,
             'roles' => ['app-dev'],
-            'role_assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'provisioning', 'failed_step' => null, 'error_code' => null]],
             'settings' => null,
             'updating' => [
                 'kind' => 'gateway_release',
@@ -109,6 +108,8 @@ function list_nodes_gateway_data(): array
                 'release' => 12,
             ],
             'agent' => ['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'],
+            'cluster_name' => 'development',
+            'assignments' => [['id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => 'converge:Require supported Ubuntu', 'error_code' => 'role.converge_failed']],
         ],
         [
             'id' => 7,
@@ -130,10 +131,11 @@ function list_nodes_gateway_data(): array
             'failed_step' => 'wireguard-server-validate',
             'error_code' => 'vpn.server_config_invalid',
             'roles' => ['app-prod'],
-            'role_assignments' => [['id' => 14, 'role' => 'app-prod', 'status' => 'failed', 'failed_step' => 'converge:packages', 'error_code' => 'packages.failed']],
             'settings' => null,
             'updating' => null,
             'agent' => null,
+            'cluster_name' => null,
+            'assignments' => [],
         ],
     ];
 }

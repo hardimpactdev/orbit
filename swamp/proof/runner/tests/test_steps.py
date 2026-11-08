@@ -1,4 +1,5 @@
 """Each step against the fake fleet: what it does, and what makes it report a failure."""
+import json
 import sys
 import tempfile
 import unittest
@@ -190,6 +191,44 @@ class StepTest(unittest.TestCase):
         self.assertEqual(found, ['cli firewall:allow: exit 1, expected 0', 'cli firewall:allow: status failed, expected succeeded'])
         self.assertEqual(steps.cli(self.run, {'run': ['node:list'], 'expect': {'exit': 0}}), [])
         self.assertEqual(steps.cli(self.run, {'run': ['node:list'], 'expect': {'code': 'x.y'}}), ['cli node:list: code None, expected x.y'])
+
+    def test_node_list_cases_reject_wrong_json_envelopes_and_recorded_rows(self):
+        loaded = spec.load(Path(__file__).resolve().parents[2] / 'node' / 'list.cases.yaml',
+                           Path(__file__).resolve().parents[2] / 'batches.yaml')
+        args = self.run.resolve(loaded.case('recorded-nodes').stages[0].act[1].args)
+        self.assertEqual(args['run'], ['node:list', '--json'])
+        self.assertEqual(args['forms'], ['human'])
+        rows = [
+            {'id': self.fleet.nodes[name]['node_id'], 'cluster_id': None, 'name': name, 'status': 'active',
+             'roles': [name], 'cluster_name': None,
+             'assignments': [{'id': index + 1, 'role': name, 'status': 'active', 'failed_step': None, 'error_code': None}]}
+            for index, name in enumerate(('app-dev', 'app-prod', 'gateway'))
+        ]
+        good = {'nodes': rows, 'request_id': '11111111-1111-4111-8111-111111111111'}
+
+        def check(document):
+            def cli(argv, form='json', node=None):
+                return {'rc': 0, 'json': {'operations': []},
+                        'stdout': json.dumps(document, separators=(',', ':')), 'stderr': ''}
+            with patch.object(self.run, 'cli', side_effect=cli) as called:
+                failures = steps.cli(self.run, args)
+                called.assert_any_call(['node:list', '--json'], 'human', None)
+            return failures
+
+        self.assertEqual(check(good), [])
+        wrong_rows = [
+            [], rows[1:],
+            [{**rows[0], 'id': 999}, *rows[1:]],
+            [{**rows[0], 'name': 'wrong-node'}, *rows[1:]],
+            [{**rows[0], 'status': 'failed'}, *rows[1:]],
+            [{**rows[0], 'roles': []}, *rows[1:]],
+            [{**rows[0], 'assignments': []}, *rows[1:]],
+            [{**rows[0], 'assignments': [{**rows[0]['assignments'][0], 'status': 'failed'}]}, *rows[1:]],
+        ]
+        documents = [{}, [], {'nodes': {}}, {'nodes': rows}, *({'nodes': value, 'request_id': good['request_id']} for value in wrong_rows)]
+        for document in documents:
+            with self.subTest(document=document):
+                self.assertTrue(check(document), 'A wrong successful JSON answer must fail the case')
 
     def test_cli_writes_the_output_to_the_evidence(self):
         steps.cli(self.run, {'run': ['node:list']})

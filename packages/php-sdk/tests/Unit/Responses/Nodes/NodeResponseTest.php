@@ -17,30 +17,37 @@ it('preserves every typed role assignment and its recorded failure in both Node 
             'error_code' => $status === 'failed' ? $errorCode : null,
         ];
     }
-    $data = node_response_gateway_data(['role_assignments' => $assignments]);
+    $data = node_response_gateway_data(['assignments' => $assignments]);
     $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $node = NodeResponse::fromGatewayData($data, $requestId);
     $nodes = new NodesResponse([$node], $requestId);
 
-    expect($node->roleAssignments)->toHaveCount(4)
-        ->and($node->roleAssignments[2]->failedStep)->toBe($failedStep)
-        ->and($node->roleAssignments[2]->errorCode)->toBe($errorCode)
-        ->and($node->roleAssignments[2]->requestId)->toBe($requestId)
-        ->and($node->toArray()['role_assignments'])->toBe($assignments)
-        ->and($nodes->toArray()['nodes'][0]['role_assignments'])->toBe($assignments);
+    expect($node->assignments)->toHaveCount(4)
+        ->and($node->assignments[2]->failedStep)->toBe($failedStep)
+        ->and($node->assignments[2]->errorCode)->toBe($errorCode)
+        ->and($node->assignments[2]->requestId)->toBe($requestId)
+        ->and($node->toArray()['assignments'])->toBe($assignments)
+        ->and($nodes->toArray()['nodes'][0]['assignments'])->toBe($assignments);
+    expect($node->toArray())->not->toHaveKey('role_assignments');
 })->with([
     'native role check' => ['converge:Check the role', 'packages.failed'],
     'recorded Ubuntu requirement' => ['converge:Require supported Ubuntu', 'role.os_unsupported'],
 ]);
 
-it('rejects malformed nested role assignments', function (mixed $assignments): void {
-    NodeResponse::fromGatewayData(node_response_gateway_data(['role_assignments' => $assignments]), 'request-id');
+it('normalizes non-assignment values to the canonical empty assignment list', function (mixed $assignments): void {
+    $node = NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => $assignments]), 'request-id');
+
+    expect($node->assignments)->toBe([])
+        ->and($node->toArray()['assignments'])->toBe([]);
 })->with([
     'scalar' => 'invalid',
     'object instead of list' => [['role' => 'app-dev']],
     'scalar item' => [[42]],
-    'malformed assignment' => [[['id' => 0]]],
-])->throws(GatewayApiException::class);
+]);
+
+it('rejects malformed nested role assignments', function (): void {
+    NodeResponse::fromGatewayData(node_response_gateway_data(['assignments' => [['id' => 0]]]), 'request-id');
+})->throws(GatewayApiException::class);
 
 it('preserves the original positional constructor contract', function (): void {
     $response = new NodeResponse(
@@ -112,6 +119,47 @@ it('preserves the original named constructor contract', function (): void {
         ->and($response->errorCode)
         ->toBeNull();
 });
+
+it('preserves recorded native failure labels in the shared Node projection', function (string $step): void {
+    $assignment = [
+        'id' => 12,
+        'role' => 'app-dev',
+        'status' => 'failed',
+        'failed_step' => $step,
+        'error_code' => 'node_role.convergence_failed',
+    ];
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'failed_step' => $step,
+        'assignments' => [$assignment],
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->failedStep)->toBe($step)
+        ->and($response->assignments[0]->failedStep)->toBe($step)
+        ->and($response->toArray()['assignments'])->toBe([$assignment]);
+})->with(['converge:Require supported Ubuntu', 'converge:Check the role']);
+
+it('still rejects unsafe assignment failure labels without exposing them', function (mixed $step): void {
+    try {
+        NodeResponse::fromGatewayData(node_response_gateway_data([
+            'assignments' => [[
+                'id' => 12, 'role' => 'app-dev', 'status' => 'failed', 'failed_step' => $step,
+            ]],
+        ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        test()->fail('Unsafe assignment failure label was accepted.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->getMessage())
+            ->toBe('Gateway response contains an invalid node role assignment failed_step.')
+            ->not->toContain('step-secret-sentinel');
+    }
+})->with([
+    'wrong type' => [['bad']],
+    'empty' => '',
+    'overlong' => str_repeat('a', 129),
+    'control' => "converge:Require Ubuntu\nstep-secret-sentinel",
+    'credential assignment' => 'converge:password=step-secret-sentinel',
+    'credential header' => 'converge:Authorization:step-secret-sentinel',
+    'bearer credential' => 'converge:Bearer step-secret-sentinel',
+]);
 
 it('does not invent an SSH port for malformed gateway data', function (): void {
     $response = NodeResponse::fromGatewayData(
@@ -308,12 +356,32 @@ function node_response_public_data(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
-        'role_assignments' => [],
         'settings' => null,
         'updating' => null,
         'agent' => null,
+        'cluster_name' => null,
+        'assignments' => [],
     ];
 }
+
+it('preserves the shared assignment projection and Cluster name in Node collections', function (): void {
+    $assignments = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $assignments[] = ['id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
+            'failed_step' => $status === 'failed' ? 'ansible:converge' : null,
+            'error_code' => $status === 'failed' ? 'role.converge_failed' : null];
+    }
+    $node = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'cluster_name' => 'development', 'assignments' => $assignments,
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+    $list = new NodesResponse([$node], $node->requestId);
+
+    expect($node->clusterName)->toBe('development')
+        ->and($node->assignments)->toHaveCount(4)
+        ->and($list->toArray()['nodes'][0]['cluster_name'])->toBe('development')
+        ->and($list->toArray()['nodes'][0]['cluster_id'])->toBe(3)
+        ->and($list->toArray()['nodes'][0]['assignments'])->toBe($assignments);
+});
 
 it('reads the update in progress and ignores a malformed one', function (mixed $updating, ?array $expected): void {
     $response = NodeResponse::fromGatewayData(['id' => 4, 'name' => 'gateway', 'updating' => $updating], 'request');

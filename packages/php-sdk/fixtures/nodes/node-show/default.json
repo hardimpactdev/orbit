@@ -33,6 +33,16 @@
                 "state": "online",
                 "since": null
             },
+            "cluster_name": "development",
+            "assignments": [
+                {
+                    "id": 2,
+                    "role": "app-dev",
+                    "status": "active",
+                    "failed_step": null,
+                    "error_code": null
+                }
+            ],
             "access": {
                 "can_access": [],
                 "accessible_by": []

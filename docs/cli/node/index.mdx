@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Actions/Nodes/{UpdateNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
   - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
+  - apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php
   - packages/php-sdk/src/Requests/Nodes/**
   - packages/php-sdk/src/Responses/Nodes/**
 ---
@@ -16,9 +17,17 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 
 [Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
 
+[`node:list`](/cli/node/list) reads the recorded Nodes visible to the caller, including their assignment states and Cluster names. List and show use the same assignment fields as `node:role:list`; they do not refresh the machines.
+
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.
+
+## Authority
+
+`NodeAccessAuthorizer` owns the shared Node access rule. The active Gateway Node, the host serving the Gateway, and a caller with a grant to the active Gateway have Gateway authority. They may read every recorded Node without a direct grant to each target. Other callers may read only Nodes to which they have a direct grant.
+
+A collection read is refused with `node_access.required` only when the caller has neither Gateway authority nor any direct Node grant. A target read requires Gateway authority or a direct grant to that target.
 
 ## Commands
 
@@ -47,15 +56,11 @@ Destructive commands ask for confirmation. The default answer is No. Declining, 
 
 Set `task_vms.task_max_vms` through `node:update --task-vms` to cap task-work VM claims on a host. Parked claims count; authenticated CI and base refresh proofs are exempt. See [Task VM fields](/reference/node-settings#task-vm-fields) for the count and resource limits.
 
-## Node access
-
-The Gateway enforces one shared authority rule. Its active Gateway Node and its recorded serving host have fleet-wide authority. A Node with an access grant to the active Gateway also has fleet-wide authority. Otherwise, the caller needs an access grant to the target Node. Without either authority or a target grant, Orbit refuses with `node_access.required`.
-
 ## Recorded role assignments
 
 [`node:role:list`](/cli/node/role-list) reads every assignment, including `active`, `provisioning`, `failed`, and `removing` records. It starts no Operation and contacts no Node or external service. Missing or stale agent facts do not change the result.
 
-The JSON field `role_assignments` on [`node:list`](/cli/node/list) and [`node:show`](/cli/node/show) uses the same projection as the role list's `assignments`: `id`, `role`, `status`, `failed_step`, and `error_code`. Unset failure fields are `null`; recorded failure details stay visible even on an active assignment. Native step labels, such as `converge:Check the role`, keep their original case and spaces. All three lists use role-registry order, then assignment ID. The Node's `roles` field remains the role-name summary in that order.
+The JSON field `assignments` on [`node:list`](/cli/node/list), [`node:show`](/cli/node/show), and the role list uses one shared projection: `id`, `role`, `status`, `failed_step`, and `error_code`. Unset failure fields are `null`; recorded failure details stay visible even on an active assignment. Native step labels, such as `converge:Check the role`, keep their original case and spaces. All three lists use role-registry order, then assignment ID. The Node's `roles` field remains the role-name summary in that order.
 
 ## Why it works this way
 

@@ -54,9 +54,9 @@ describe('recorded Node role reads', function (): void {
             $this->getJson('/api/v1/nodes/'.$this->node->id.'/roles')->assertOk()
                 ->assertJsonPath('data', $expected)->assertJsonStructure(['meta' => ['request_id']]);
             $this->getJson('/api/v1/nodes/'.$this->node->id)->assertOk()
-                ->assertJsonPath('data.role_assignments', $expected);
+                ->assertJsonPath('data.assignments', $expected)->assertJsonMissingPath('data.role_assignments');
             $this->getJson('/api/v1/nodes')->assertOk()
-                ->assertJsonPath('data.0.role_assignments', $expected);
+                ->assertJsonPath('data.0.assignments', $expected)->assertJsonMissingPath('data.0.role_assignments');
         }
 
         expect([Node::all()->toArray(), NodeRole::all()->toArray(), Operation::all()->toArray()])->toBe($before);

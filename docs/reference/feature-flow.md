@@ -105,7 +105,7 @@ The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Furt
 - List a helper that several commands share with every one of them.
 - A cases file selects its own command. Charts and pages are `skip`.
 
-The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
+The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. The Node family selects `node:list` and reports the remaining Node commands as uncovered until they have cases. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
 
 Code that every command runs through selects `*`. The documentation skips (`**/*.md`, `**/*.mdx`, `**/*.mmd`) come last in the list. A README inside a directory that selects `*` therefore stays `skip`.
 

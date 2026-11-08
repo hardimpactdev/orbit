@@ -20,6 +20,7 @@ use App\Http\Requests\Nodes\RelocateNodeRoleRequest;
 use App\Http\Requests\Nodes\RemoveNodeRoleRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
+use App\Models\NodeRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,10 +30,15 @@ final class NodeRolesController extends Controller
     public function index(Request $request, Node $node, ListNodeRolesAction $action): JsonResponse
     {
         return response()->json([
-            'data' => array_map(
-                static fn (NodeRoleAssignmentData $assignment): array => $assignment->toArray(),
-                $action->execute($node),
-            ),
+            'data' => $action
+                ->execute($node)
+                ->map(
+                    static fn (NodeRole $assignment): array => NodeRoleAssignmentData::fromModel(
+                        $assignment,
+                    )->toArray(),
+                )
+                ->values()
+                ->all(),
             'meta' => $this->meta($request),
         ]);
     }

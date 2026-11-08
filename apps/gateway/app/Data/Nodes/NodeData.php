@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Nodes;
 
+use App\Actions\Nodes\ListNodeRolesAction;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -19,7 +20,7 @@ final class NodeData extends Data
 {
     /**
      * @param  list<string>  $roles
-     * @param  list<NodeRoleAssignmentData>  $roleAssignments
+     * @param  list<NodeRoleAssignmentData>  $assignments
      */
     public function __construct(
         public int $id,
@@ -41,11 +42,12 @@ final class NodeData extends Data
         public ?string $failedStep,
         public ?string $errorCode,
         public array $roles,
-        public array $roleAssignments,
         public ?NodeSettingsData $settings = null,
         public ?NodeUpdatingData $updating = null,
         public bool $swampWorkerSelected = false,
         public ?NodeAgentData $agent = null,
+        public ?string $clusterName = null,
+        public array $assignments = [],
     ) {}
 
     /**
@@ -66,7 +68,10 @@ final class NodeData extends Data
         $sshHostFingerprint = $node->getAttribute('ssh_host_fingerprint');
         $failedStep = $node->getAttribute('failed_step');
         $errorCode = $node->getAttribute('error_code');
-        $assignments = NodeRoleAssignmentData::forNode($node);
+
+        $assignments = array_values(app(ListNodeRolesAction::class)->execute($node)
+            ->map(static fn ($assignment): NodeRoleAssignmentData => NodeRoleAssignmentData::fromModel($assignment))
+            ->all());
 
         return new self(
             id: $node->id,
@@ -88,11 +93,12 @@ final class NodeData extends Data
             failedStep: ValidatedData::nullableString($failedStep),
             errorCode: ValidatedData::nullableString($errorCode),
             roles: array_map(static fn (NodeRoleAssignmentData $assignment): string => $assignment->role, $assignments),
-            roleAssignments: $assignments,
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
             updating: $updating,
             swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
             agent: app(NodeAgentLiveness::class)->for($node),
+            clusterName: $node->cluster?->name,
+            assignments: $assignments,
         );
     }
 }
