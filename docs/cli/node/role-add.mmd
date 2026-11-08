@@ -21,7 +21,7 @@ sequenceDiagram
   %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]`
   Note over GW: Check recorded state
   %%> Requirements:
-  %%> - apply the [shared NodeAccessAuthorizer rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php) for the [Node family](/cli/node)
+  %%> - apply the [Node family's shared authority rule](/cli/node#authority)
   %%> - use recorded Node eligibility, role compatibility, singleton ownership and Cluster membership; admission contacts no Node
   %%> - `database` needs a recorded WireGuard address; Analytics needs its two valid storage Processes
   alt unknown Node

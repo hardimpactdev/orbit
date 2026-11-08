@@ -29,7 +29,7 @@ orbit node:role:add 7 database --converge
 orbit node:role:add 9 analytics --postgres-process=41 --clickhouse-process=42
 ```
 
-[Shared input rules](/reference/cli-ux#input-and-output-modes) govern omitted arguments and Analytics storage options. Access follows the [Node family's](/cli/node) shared [NodeAccessAuthorizer rule](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php). [Role compatibility](/reference/node-provisioning#role-compatibility) owns conflicts, singleton roles and ingress Cluster requirements; the [CI runner reference](/reference/node-provisioning#ci-runner-role) describes that role's host boundary.
+[Shared input rules](/reference/cli-ux#input-and-output-modes) govern omitted arguments and Analytics storage options. Access follows the [Node family's shared authority rule](/cli/node#authority). [Role compatibility](/reference/node-provisioning#role-compatibility) owns conflicts, singleton roles and ingress Cluster requirements; the [CI runner reference](/reference/node-provisioning#ci-runner-role) describes that role's host boundary.
 
 A repeat without `--converge` is refused with `validation.failed`, except for an `active` `ingress` assignment, which reapplies its configuration. A successful second convergence reports no changes when the Node already matches. To move `gateway`, `websocket` or `metrics`, use [`node:role:relocate`](/cli/node/role-relocate).
 
