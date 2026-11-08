@@ -16,9 +16,12 @@ sequenceDiagram
   %%> Started by:
   %%> - `task:start` for a todo group, from proof CI or feature work
   %%> Result:
-  %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
+  %%> - the lowest free task slot number (2 or above) under the capacity of the host with the most room: `shark-tvm-3`
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
   %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
+  %%> - a ci_only host accepts no task work or operator proof, even when it is the only free host; CI proofs prefer ci_only hosts. A host’s own base refresh proves on that host
+  %%> - slot 1 on each shared host is reserved for authenticated CI command proofs and refresh candidate proofs; operator proofs and task provision, prep, build and review never take it, even when idle
+  %%> - one Large VM takes 3 max_vms units; task work gets floor(max_vms / 3) minus one VM places
   GW->>SW: Start run, full intent<br/>operation-task-provision
   SW->>VM: Start and converge<br/>one Ansible run
   %%> What it does:
