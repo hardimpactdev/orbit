@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - creates a missing native dataset pool, or an Incus-managed loop-backed ZFS pool with the configured size
   %%> - caps ARC at 2 GiB only when the actual pool source is a regular file; native-ZFS hosts keep their setting
   %%> - converges the isolated NAT bridge, ACL, project, profile, stock Ubuntu image and forwarding rule; an unchanged rerun changes nothing
-  %%> - permits DHCP requests (UDP 68 to 67) from the task bridge and DNS (TCP/UDP 53) to its host address through UFW before first boot; a forwarding rule alone cannot admit these host input packets
+  %%> - permits DHCP requests (UDP 68 to 67) from the task bridge and DNS (TCP/UDP 53) to its host address through UFW before first boot, using the orbit:task-vms-* catalog ownership shown by firewall:list --managed; a forwarding rule alone cannot admit these host input packets
   SW->>H: Log egress<br/>host bridge, log only
   %%> What it does:
   %%> - sets up the egress log of the host bridge (Ansible part `egress-log`): an nftables rule logs each new outside connection of a task VM, rsyslog writes it to its own file, and dnsmasq logs the DNS queries; nothing is blocked

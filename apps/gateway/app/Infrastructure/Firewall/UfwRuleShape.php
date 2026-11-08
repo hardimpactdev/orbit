@@ -17,6 +17,7 @@ final readonly class UfwRuleShape
         public ?string $inInterface,
         public ?string $outInterface,
         public ?string $family,
+        public string $sourcePort = 'any',
     ) {}
 
     /** @return array<string, mixed> */
@@ -33,6 +34,7 @@ final readonly class UfwRuleShape
             'in_interface' => $this->inInterface,
             'out_interface' => $this->outInterface,
             'family' => $this->family,
+            ...($this->sourcePort === 'any' ? [] : ['source_port' => $this->sourcePort]),
         ];
     }
 
@@ -48,6 +50,7 @@ final readonly class UfwRuleShape
             $string('comment'), $string('action'), $string('direction'), $string('source'),
             $string('destination'), $string('port'), $string('protocol'),
             $nullable('in_interface'), $nullable('out_interface'), $nullable('family'),
+            is_string($value['source_port'] ?? null) ? $value['source_port'] : 'any',
         );
     }
 
@@ -60,6 +63,7 @@ final readonly class UfwRuleShape
             && $this->source === $observed->source
             && $this->destination === $observed->destination
             && $this->port === $observed->port
+            && $this->sourcePort === $observed->sourcePort
             && $this->protocol === $observed->protocol
             && $this->inInterface === $observed->inInterface
             && $this->outInterface === $observed->outInterface

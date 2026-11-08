@@ -134,6 +134,7 @@ final readonly class NodeRemovalInput
             'intent' => ['schema_version' => 1, 'node_id' => $node->id, 'name' => $node->name,
                 'offline' => $snapshot['offline'], 'machine_deleted' => $machineDeleted, 'platform' => $node->platform, 'task_vm_guest' => $taskVmGuest,
                 'probe' => ['host' => $node->wireguard_ip, 'port' => 22], 'ssh' => $target,
+                'task_host_input_comments' => NodeFirewallRuleCatalog::TaskHostInputComments,
                 'roles' => $roleIntents, 'dns' => $dns, 'peers' => $peers, 'hub' => $hub, 'router_rules' => $routerRules,
                 'public_ssh' => ['argv' => ['ufw', ...array_slice($publicSsh->arguments, 2)]],
                 'managed_keys' => array_values(array_unique([trim(app(SshKeyProvider::class)->publicKey()), $ssh->identity()['public_key']])),

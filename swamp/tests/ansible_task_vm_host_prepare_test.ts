@@ -158,32 +158,35 @@ Deno.test({
     try {
       const result = f.run();
       assert(result.ok, result.output);
-      // Input is default-deny, as on Sabre. A routed allow cannot admit packets addressed to the host.
-      const inputAllowed = (
-        iface: string,
-        proto: string,
-        sourcePort: string,
-        destPort: string,
-        dest: string,
-      ) =>
-        f.firewall().some((rule) =>
-          rule.rule === "allow" && !rule.route && rule.interface_in === iface &&
-          rule.proto === proto && rule.to_port === destPort &&
-          (!rule.from_port || rule.from_port === sourcePort) &&
-          (!rule.to_ip || rule.to_ip === dest)
-        );
-      // Initial DHCP discovery is broadcast, before the guest has an address.
-      assert(inputAllowed("proofbr0", "udp", "68", "67", "255.255.255.255"));
-      for (const proto of ["udp", "tcp"]) {
-        assert(inputAllowed("proofbr0", proto, "43210", "53", "10.252.42.1"));
-        assert(!inputAllowed("otherbr0", proto, "43210", "53", "10.252.42.1"));
-        assert(!inputAllowed("proofbr0", proto, "43210", "53", "192.168.6.30"));
-      }
-      assert(!inputAllowed("proofbr0", "tcp", "43210", "22", "10.252.42.1"));
-      assert(!inputAllowed("otherbr0", "udp", "68", "67", "255.255.255.255"));
-      assert(
-        !inputAllowed("proofbr0", "udp", "43210", "67", "255.255.255.255"),
-      );
+      // Assert every INPUT rule, including unrestricted rules that a packet matcher could overlook.
+      const input = f.firewall().filter((rule) => !rule.route)
+        .sort((a, b) => (a.comment ?? "").localeCompare(b.comment ?? ""));
+      assertEquals(input, [
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "udp",
+          from_port: "68",
+          to_port: "67",
+          comment: "orbit:task-vms-dhcp",
+        },
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "tcp",
+          to_ip: "10.252.42.1",
+          to_port: "53",
+          comment: "orbit:task-vms-dns-tcp",
+        },
+        {
+          rule: "allow",
+          interface_in: "proofbr0",
+          proto: "udp",
+          to_ip: "10.252.42.1",
+          to_port: "53",
+          comment: "orbit:task-vms-dns-udp",
+        },
+      ]);
     } finally {
       f.cleanup();
     }

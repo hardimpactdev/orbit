@@ -206,7 +206,7 @@
     proto: udp
     from_port: '68'
     to_port: '67'
-    comment: orbit-task-vms-dhcp
+    comment: orbit:task-vms-dhcp
 
 - name: Allow task VM DNS to the bridge address
   community.general.ufw:
@@ -215,7 +215,7 @@
     proto: "{{ item }}"
     to_ip: "{{ prepare_bridge.split('/')[0] }}"
     to_port: '53'
-    comment: orbit-task-vms-dns
+    comment: "orbit:task-vms-dns-{{ item }}"
   loop: [udp, tcp]
 
 - name: Allow forwarded task VM traffic

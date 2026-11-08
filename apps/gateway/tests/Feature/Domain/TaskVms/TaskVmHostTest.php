@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\UpdateNodeAction;
+use App\Data\Nodes\NodeStorageAppsData;
 use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Requests\Nodes\UpdateNodeRequest;
+use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -98,3 +107,53 @@ it('uses the same upper bound and message in the node update request validator',
         'task_vms.task_max_vms must be null or an integer from 0 to max_vms.',
     ]);
 });
+
+it('withdraws input rules before saving removal or a bridge change, and retains settings after failure', function (?array $replacement, string $terminal, bool $apps = false): void {
+    Http::preventStrayRequests();
+    SwampNodeFixture::ensure();
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'retiring-host', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '10.44.0.10', 'user' => 'orbit',
+        'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+        'settings' => ['task_vms' => ['cidr' => '10.252.10.0/24', 'max_vms' => 6, 'ci_only' => true]],
+    ]));
+    $previous = $node->settings;
+    $patch = new NodeSettingsPatch($apps, $apps ? NodeStorageAppsData::from(['path' => '/home/orbit/task-apps']) : null, true, $replacement === null ? null : NodeTaskVmsData::from($replacement));
+
+    // Keep the after-commit Swamp dispatch outside this admission/projection test.
+    DB::beginTransaction();
+    $operation = app(UpdateNodeAction::class)->execute($node, null, null, $patch);
+
+    expect($operation)->toBeInstanceOf(Operation::class);
+    expect($operation->input['task_host_input_comments'])->toBe(['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp']);
+    expect($operation->input['root'])->toBe($apps ? '/home/orbit/task-apps' : null);
+    expect($node->refresh()->settings)->toBe($previous);
+    $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-task-host-withdrawal']]);
+    app(NodeSettingsProjection::class)->apply($operation, [
+        'run_id' => 'fixture-task-host-withdrawal', 'status' => $terminal,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $terminal === 'failed' ? 'node.task_host_firewall_remove_failed' : null,
+        'result' => ['steps' => ['Withdraw task host input' => ['status' => $terminal],
+            ...($apps ? ['Check owner and mode' => ['status' => 'succeeded', 'stdout' => 'directory orbit:orbit 755']] : [])],
+            'summary' => ['failed_steps' => $terminal === 'failed' ? ['Withdraw task host input'] : []]],
+    ]);
+
+    if ($terminal === 'failed') {
+        expect($node->refresh()->settings)->toBe($previous);
+    } else {
+        expect($node->refresh()->settings['task_vms'] ?? null)->toBe($operation->input['settings']['task_vms'] ?? null);
+        $names = array_column(app(NodeFirewallDesiredRules::class)->forNode($node), 'name');
+        if ($replacement === null) {
+            expect($names)->not->toContain('orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp');
+        } else {
+            expect($names)->toContain('orbit:task-vms-dhcp');
+        }
+    }
+    Http::assertNothingSent();
+    DB::rollBack();
+})->with([
+    'removed' => [null, 'succeeded'],
+    'withdrawal failed' => [null, 'failed'],
+    'bridge changed' => [['cidr' => '10.252.42.0/24', 'network' => 'proofbr0', 'max_vms' => 6, 'ci_only' => true], 'succeeded'],
+    'with apps preparation' => [null, 'succeeded', true],
+]);
