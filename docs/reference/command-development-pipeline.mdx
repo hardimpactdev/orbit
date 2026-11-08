@@ -96,6 +96,18 @@ The Gateway and app-dev see the outer VM's checkout as an Incus disk device, so 
 - Docs: [The base VM and its snapshot](/reference/compute-drivers#the-base-vm-and-its-snapshot), [Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot).
 - Files: [`swamp/workflows/workflow-operation-task-vm-image-refresh.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-task-vm-image-refresh.yaml).
 
+## Capacity: ideal state
+
+Task work and CI proofs use separate fixed pools on every host. Beast and Shark each have two task places and two CI places. Sabre has zero task places and two CI places. A place holds one VM; VM size does not change the place count. The request kind chooses the pool. Only `proof.run` from an authenticated active `ci-runner` Node and base refresh proofs use the CI pool. Other work uses the task pool.
+
+A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A build, fix turn or review round that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review.
+
+CI proofs wait in one first-come-first-served queue. The first PR takes every free CI place, with at least one VM and no more VMs than its batches. Each VM starts fresh from the base. Whole batches are balanced across VMs by measured case times. Each VM restores its fleet and runs its share. Orbit merges every case verdict into one report, then deletes the VMs.
+
+Full pools cause a wait, never a capacity refusal. A two-hour total admission budget ends a wait with a clear timeout. The proof job belongs to `Required checks`: every selected command needs case verdicts, and every case must pass. A PR that selects no command passes without starting a VM. There is no shared reserve, task VM cap layered over resource units, or CI preemption path.
+
+<div className="flow-at" data-chart="reference/pipeline/capacity-model"></div>
+
 ## Change the development pipeline
 
 Change a stage in the place that owns it, and update this page in the same PR.

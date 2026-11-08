@@ -1,0 +1,26 @@
+sequenceDiagram
+  %% status: reviewed
+  %% kind: pipeline.capacity
+  autonumber
+  title Task VMs and CI proof VMs
+  participant T as Task (prep/build)
+  participant TP as Task pool<br/>beast 2, shark 2
+  participant PR as Pull request
+  participant Q as CI proof queue<br/>(one line, first come first served)
+  participant CP as CI pool<br/>beast 2, shark 2, sabre 2
+  participant VM as CI proof VMs
+
+  T->>TP: Claim a task place (wait in line when full)
+  TP-->>T: Task VM, built from the base
+  T->>PR: Publish the PR
+  T->>TP: Release the task VM (delete it)
+  Note over T,TP: A fix turn claims a task place again (waits if full)
+  PR->>Q: CI asks for a proof of the PR head
+  Q->>CP: Next PR in line takes every free CI place (at least 1)
+  CP-->>VM: Fresh VMs from the base, one per place
+  Q->>VM: Split the cases over the VMs (whole batches, balanced by measured time)
+  VM->>VM: Each VM restores its fleet and runs its cases
+  VM-->>Q: Verdict lines per case
+  Q->>CP: Delete the VMs, free the places
+  Q-->>PR: One report: all passed, or the failed cases
+  Note over Q,PR: No capacity is never an error: the PR waits in line
