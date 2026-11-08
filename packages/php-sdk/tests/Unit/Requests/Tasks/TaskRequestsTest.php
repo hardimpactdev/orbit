@@ -231,7 +231,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($snapshot->cursor)->toBeNull()
             ->and($snapshot->archived)->toBeTrue()
             ->and(array_column($snapshot->entries, 'kind'))->toBe(['message', 'activity'])
-            ->and($snapshot->entries[1]['text'])->toBe("Tests: 12 passed\n\n$ composer check\nexit code 0")
+            ->and($snapshot->entries[1]['text'])->toBe('bash · succeeded · 1200 ms')
             ->and($snapshot->tokens)->toBe(48_200)
             ->and($snapshot->toArray())->toMatchArray(['thread_id' => 3, 'kind' => 'snapshot', 'cursor' => null, 'archived' => true, 'request_id' => task_request_id()]);
 
