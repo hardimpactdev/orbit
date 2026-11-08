@@ -113,6 +113,8 @@ After choosing commands, choose their cases:
 
 The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
 
+Merge-base replay is a separate opt-in within this selection. The runner uses the same case-level comparison to find added or changed definitions, then keeps only cases with `fails_on_base: true` that belong to the admitted batch. Whole-file selection for code, tooling or uncertainty does not by itself make unchanged cases eligible. Unflagged cases never replay. A merged flag stays in the file without causing replay in later PRs. See [when to set the flag](/reference/verification-cases#opt-into-merge-base-replay).
+
 Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed`, `proof tooling changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
 
 Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.

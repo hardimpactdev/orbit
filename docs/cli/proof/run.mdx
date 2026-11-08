@@ -49,7 +49,7 @@ CI proofs join one first-come-first-served queue, ordered by their proof Operati
 
 Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded VM. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
-Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because proving a new case can fail may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
+Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because replaying a changed case with `fails_on_base: true` may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
 Operator proofs use one VM per command through the task pool's FIFO admission. Their optional `--keep-failed` retains a failed VM for 60 minutes. CI ignores that option and always deletes its VMs.
 
