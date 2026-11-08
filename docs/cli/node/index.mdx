@@ -16,6 +16,8 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 
 [Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
 
+[`node:list`](/cli/node/list) reads the recorded Nodes visible to the caller, including their assignment states and Cluster names. List and show use the same assignment fields as `node:role:list`; they do not refresh the machines.
+
 A Node's `updating` field is set only while a Gateway release runs on the Gateway Node ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)).
 
 `node:add` returns an enrollment Operation. The CLI follows its native result; JSON mode returns the terminal Operation, and `node:show` returns the enrolled Node.

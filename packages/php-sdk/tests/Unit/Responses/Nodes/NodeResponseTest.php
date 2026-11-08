@@ -276,8 +276,29 @@ function node_response_public_data(): array
         'settings' => null,
         'updating' => null,
         'agent' => null,
+        'cluster_name' => null,
+        'assignments' => [],
     ];
 }
+
+it('preserves the shared assignment projection and Cluster name in Node collections', function (): void {
+    $assignments = [];
+    foreach (['active', 'provisioning', 'failed', 'removing'] as $index => $status) {
+        $assignments[] = ['id' => $index + 1, 'role' => 'app-dev', 'status' => $status,
+            'failed_step' => $status === 'failed' ? 'ansible:converge' : null,
+            'error_code' => $status === 'failed' ? 'role.converge_failed' : null];
+    }
+    $node = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'cluster_name' => 'development', 'assignments' => $assignments,
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+    $list = new NodesResponse([$node], $node->requestId);
+
+    expect($node->clusterName)->toBe('development')
+        ->and($node->assignments)->toHaveCount(4)
+        ->and($list->toArray()['nodes'][0]['cluster_name'])->toBe('development')
+        ->and($list->toArray()['nodes'][0]['cluster_id'])->toBe(3)
+        ->and($list->toArray()['nodes'][0]['assignments'])->toBe($assignments);
+});
 
 it('reads the update in progress and ignores a malformed one', function (mixed $updating, ?array $expected): void {
     $response = NodeResponse::fromGatewayData(['id' => 4, 'name' => 'gateway', 'updating' => $updating], 'request');
