@@ -21,7 +21,7 @@ final class ListTaskAgentsRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/agents";
+        return "/api/v1/tasks/{$this->groupId}/agents";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskAgentsResponse

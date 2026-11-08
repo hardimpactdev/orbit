@@ -23,7 +23,7 @@ final class ListTaskQuestionsCommand extends TaskCommand
     private const int MAXIMUM_OFFSET_MINUTE = 59;
 
     #[\Override]
-    protected $signature = 'tasks:question:list
+    protected $signature = 'task:question:list
         {--project= : Only questions from this numeric Project ID}
         {--cause= : Only questions with this cause}
         {--status= : Only questions in this status}
@@ -91,7 +91,7 @@ final class ListTaskQuestionsCommand extends TaskCommand
         $projectId = filter_var($project, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         if (! is_int($projectId)) {
-            $this->renderGatewayFailure('tasks.project_invalid', 'Project ID must be a positive integer.');
+            $this->renderGatewayFailure('task.project_invalid', 'Project ID must be a positive integer.');
 
             return false;
         }
@@ -109,7 +109,7 @@ final class ListTaskQuestionsCommand extends TaskCommand
         }
 
         if (! is_string($value) || ! in_array($value, $choices, true)) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} must be one of ".implode(', ', $choices).'.');
+            $this->renderGatewayFailure("task.{$code}_invalid", "{$label} must be one of ".implode(', ', $choices).'.');
 
             return false;
         }
@@ -128,7 +128,7 @@ final class ListTaskQuestionsCommand extends TaskCommand
         $normalized = self::iso8601($since);
 
         if ($normalized === null) {
-            $this->renderGatewayFailure('tasks.since_invalid', 'Since must be an ISO 8601 date or time.');
+            $this->renderGatewayFailure('task.since_invalid', 'Since must be an ISO 8601 date or time.');
 
             return false;
         }

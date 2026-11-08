@@ -39,7 +39,7 @@ function refreshAfterSubscribe(client: QueryClient, full: boolean): void {
             predicate: (query) => !isActivityListQueryKey(query.queryKey),
         });
     } else {
-        for (const queryKey of [["task-groups"], ["tasks-status"], ["processes"]]) {
+        for (const queryKey of [["tasks"], ["task-status"], ["processes"]]) {
             refetchReplacingInitial(client, { queryKey });
         }
         refetchReplacingInitial(client, {

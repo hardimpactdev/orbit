@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Extensions\EnableExtensionRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\StringInput;
@@ -57,23 +57,23 @@ it('follows the gateway switch through the public command kernel', function (): 
     [$listExit, $listOutput] = extension_commands_run(['list', '--format=json']);
     $descriptor = json_decode($listOutput, true, flags: JSON_THROW_ON_ERROR);
     $names = array_column($descriptor['commands'], 'name');
-    $taskCommands = array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'tasks:')));
+    $taskCommands = array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'task:')));
 
     expect($listExit)->toBe(0)
-        ->and($taskCommands)->toBe(['tasks:status'])
+        ->and($taskCommands)->toBe(['task:status'])
         ->and($names)->not->toContain('ai-router:model:list', 'ai-router:status', 'ai-router:setup', 'ai-router:destroy');
 
     [$defaultExit, $defaultOutput] = extension_commands_run([]);
     expect($defaultExit)->toBe(0)
-        ->and($defaultOutput)->toContain('tasks:status')
-        ->not->toContain('tasks:create', 'ai-router:setup', 'ai-router:destroy');
+        ->and($defaultOutput)->toContain('task:status')
+        ->not->toContain('task:create', 'ai-router:setup', 'ai-router:destroy');
 
     foreach ([['list', '--raw'], ['list', '--format=xml']] as $arguments) {
         [, $output] = extension_commands_run($arguments);
-        expect($output)->not->toContain('tasks:create', 'tasks:list', 'ai-router:setup', 'ai-router:destroy');
+        expect($output)->not->toContain('task:create', 'task:list', 'ai-router:setup', 'ai-router:destroy');
     }
 
-    foreach ([['help', 'tasks:list'], ['tasks:list', '--help']] as $arguments) {
+    foreach ([['help', 'task:list'], ['task:list', '--help']] as $arguments) {
         [, $output] = extension_commands_run($arguments);
         expect($output)->not->toContain('List task groups.', '--project=', '--status=');
     }
@@ -154,7 +154,7 @@ it('returns the Gateway refusal when a disabled extension command is invoked dir
         ListExtensionsRequest::class => MockResponse::make([
             'data' => ['tasks' => false, 'ai-router' => false], 'meta' => ['request_id' => 'list-id'],
         ]),
-        ListTaskGroupsRequest::class => MockResponse::make([
+        ListTasksRequest::class => MockResponse::make([
             'error' => [
                 'code' => 'extension.disabled',
                 'message' => 'The tasks extension is disabled.',
@@ -163,11 +163,11 @@ it('returns the Gateway refusal when a disabled extension command is invoked dir
         ], 409),
     ]);
 
-    $this->artisan('tasks:list', ['--json' => true])
+    $this->artisan('task:list', ['--json' => true])
         ->assertExitCode(1)
         ->expectsOutputToContain('extension.disabled');
 
-    $mock->assertSentCount(1, ListTaskGroupsRequest::class);
+    $mock->assertSentCount(1, ListTasksRequest::class);
 });
 
 it('replays the recorded extension API responses as CLI contracts', function (): void {

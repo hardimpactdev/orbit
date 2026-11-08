@@ -53,7 +53,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return TaskBranchUpdate::Unavailable;
         }
         [$repository, $number] = $target;
-        $key = 'tasks:branch-update:'.$group->id.':'.$headSha;
+        $key = 'task:branch-update:'.$group->id.':'.$headSha;
         $read = function () use ($repository, $number, $headSha): string {
             try {
                 return $this->github->updatePullRequestBranch($this->access->token($repository), $repository, $number, $headSha)->value;
@@ -208,7 +208,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             if ($pr->state === GitHubPullRequestState::Open && ($pr->headSha === null || $pr->headSha === '')) {
                 return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
             }
-            $key = 'tasks:pull-request-reviews:v1:'.strtolower($repository->owner.'/'.$repository->name)
+            $key = 'task:pull-request-reviews:v1:'.strtolower($repository->owner.'/'.$repository->name)
                 .'#'.$number.'@'.$pr->headSha.':'.$trust->revision;
             $read = function () use ($token, $repository, $number, &$cached): array {
                 $cached = false;
@@ -403,7 +403,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
 
     private function pendingClockKey(string $headKey, string $runKey): string
     {
-        return 'tasks:check-pending-since:v2:'.$headKey.':'.$runKey;
+        return 'task:check-pending-since:v2:'.$headKey.':'.$runKey;
     }
 
     /** @return array{GitHubRepository, int}|null */

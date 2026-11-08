@@ -10,7 +10,7 @@ use Orbit\Sdk\Responses\Tasks\TaskEgressRowResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** The outside hosts a task group's VM connected to (`tasks:egress`). */
+/** The outside hosts a task group's VM connected to (`task:egress`). */
 final class ListTaskEgressRequest extends GatewayRequest
 {
     #[\Override]
@@ -22,7 +22,7 @@ final class ListTaskEgressRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/egress";
+        return "/api/v1/tasks/{$this->groupId}/egress";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskEgressResponse

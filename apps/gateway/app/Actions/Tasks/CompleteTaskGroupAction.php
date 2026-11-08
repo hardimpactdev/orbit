@@ -50,7 +50,7 @@ final readonly class CompleteTaskGroupAction
     {
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
-        // Approved work that origin does not have refuses the completion before it changes anything: tasks:publish comes first.
+        // Approved work that origin does not have refuses the completion before it changes anything: task:publish comes first.
         if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)) {
             $ended = $this->endedPullRequest($group);
             $this->review->assertOnOrigin($group);

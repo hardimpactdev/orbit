@@ -4,7 +4,7 @@ import fixture from "../../fixtures/fleet/task-swamp-runs.12.json";
 import { queryClient } from "../../src/api/queryClient";
 import { openApp, pane } from "./app";
 
-const endpoint = "/api/v1/task-groups/12/swamp-runs";
+const endpoint = "/api/v1/tasks/12/swamp-runs";
 
 it("shows deterministic runs without an agent transcript and expands plain text output", async () => {
     const app = await openApp("/tasks/12", {
@@ -46,7 +46,7 @@ it("refreshes output and states, shows stale data, and recovers", async () => {
     snapshot.runs[0]!.log_truncated = true;
     snapshot.truncated = true;
     // The same refetch used by the five-second poll, without a real-time wait.
-    await queryClient.refetchQueries({ queryKey: ["task-groups", "12", "swamp-runs"] });
+    await queryClient.refetchQueries({ queryKey: ["tasks", "12", "swamp-runs"] });
     await expect.element(panel).toMatchTextContent("maintenance-worker · failed");
     await expect.element(panel).toMatchTextContent("Step output truncated.");
     await expect.element(panel).toMatchTextContent("Run log truncated");
@@ -54,11 +54,11 @@ it("refreshes output and states, shows stale data, and recovers", async () => {
     await expect.element(panel.getByText(/<script>never execute<\/script>/)).toBeVisible();
     expect(document.querySelectorAll('[data-testid="task-swamp-runs"] script')).toHaveLength(0);
     snapshot.availability = "stale";
-    await queryClient.refetchQueries({ queryKey: ["task-groups", "12", "swamp-runs"] });
+    await queryClient.refetchQueries({ queryKey: ["tasks", "12", "swamp-runs"] });
     await expect.element(panel).toMatchTextContent("Showing the last successful read.");
     await expect.element(panel).toMatchTextContent("composer · failed");
     snapshot = structuredClone(fixture.body.data);
-    await queryClient.refetchQueries({ queryKey: ["task-groups", "12", "swamp-runs"] });
+    await queryClient.refetchQueries({ queryKey: ["tasks", "12", "swamp-runs"] });
     await expect
         .element(panel.getByText(/Showing the last successful read/))
         .not.toBeInTheDocument();

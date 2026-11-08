@@ -1,6 +1,6 @@
 id: 6e0d3b52-4f7a-4c1e-9a2b-8d5f1c7e3a90
 name: task-vm-hub-peer
-description: Add one task VM's peer on the WireGuard hub at its task start (docs/cli/tasks/provision.mmd), the peer file and the live peer. A rerun writes the same file.
+description: Add one task VM's peer on the WireGuard hub at its task start (docs/cli/task/start.mmd), the peer file and the live peer. A rerun writes the same file.
 vaults: []
 queueTimeout: 60
 inputs:

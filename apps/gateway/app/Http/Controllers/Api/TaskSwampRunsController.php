@@ -15,10 +15,10 @@ use Illuminate\Http\Request;
 final class TaskSwampRunsController extends Controller
 {
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function show(Request $request, Task $group, ReadTaskSwampRunsAction $action): JsonResponse
+    public function show(Request $request, Task $task, ReadTaskSwampRunsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($group)->toArray(),
+            'data' => $action->execute($task)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ])->header('Cache-Control', 'no-store');
     }

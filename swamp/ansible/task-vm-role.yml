@@ -90,7 +90,7 @@
       when: converge_due.check
 
 # The converge waits for no nested service, except the fleet build of a base VM that has no fleet: readiness belongs to a task start
-# (docs/cli/tasks/provision.mmd).
+# (docs/cli/task/start.mmd).
 - name: Task VM image
   hosts: task_vm
   become: true

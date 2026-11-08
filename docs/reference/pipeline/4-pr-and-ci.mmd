@@ -22,11 +22,11 @@ sequenceDiagram
   %%> - pushes the command code and the runnable proof cases to the branch of the draft PR; no second PR is opened
   %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
   %%> Built:
-  %%> - the Swamp prep flow (`operation-task-prep`, stage 1) opens the draft PR as the Orbit App with `tasks:publish --draft`; 1 of 3 runs succeeded by 2026-11-06
+  %%> - the Swamp prep flow (`operation-task-prep`, stage 1) opens the draft PR as the Orbit App with `task:publish --draft`; 1 of 3 runs succeeded by 2026-11-06
   GH->>CI: Start CI<br/>on the PR head, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the PR head on every push, also while the PR is a draft; there is one CI, and the merge requires its one result
-  %%> - the handoff branch `task-N-handoff`, which only the Orbit App pushes, runs the same CI before `tasks:publish`; its Swamp workflow validation step gets the read-only Swamp CI token for a push by the App
+  %%> - the handoff branch `task-N-handoff`, which only the Orbit App pushes, runs the same CI before `task:publish`; its Swamp workflow validation step gets the read-only Swamp CI token for a push by the App
   %%> Decided by the orchestrator, for Nick's review:
   %%> - without the token, no handoff that changes `swamp/` could pass hosted CI; the token goes to that one step, never to `pull_request_target` or a fork
   Note over CI: Scope the change<br/>changed files pick the jobs
@@ -90,8 +90,8 @@ sequenceDiagram
     Note over GW,GH: Start the gate check<br/>every minute · reads only
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
-    %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`tasks:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
-    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`tasks:prep-fix`), keyed by group and review, while the VM is parked (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
+    %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`task:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
+    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`task:prep-fix`), keyed by group and review, while the VM is parked (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below
@@ -101,10 +101,10 @@ sequenceDiagram
     %%> Rules:
     %%> - admission is keyed by group and head, so a repeat tick on the same head is a no-op; a push moves the head and the check starts again. The corrections of a spec are keyed by group and review instead: each new review of the owner starts one run, and a failed run starts again only with a new review
     %%> - a pending or red CI result, a missing approval, a busy group or a failed read is a quiet skip; the next tick reads again
-    %%> - a draft PR with no passed handoff check on its head stays a draft, because the code and the runnable cases are not there yet: the PR that `tasks:prep` opens for a spec is such a PR, and an approval never merges it
+    %%> - a draft PR with no passed handoff check on its head stays a draft, because the code and the runnable cases are not there yet: the PR that `task:prep` opens for a spec is such a PR, and an approval never merges it
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
-    %%> - the check for both modes, as the scheduled command `tasks:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
+    %%> - the check for both modes, as the scheduled command `task:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
     %%> - the admission of the corrections of a prep spec, for a parked prep group whose owner requested changes on the current head
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
@@ -118,7 +118,7 @@ sequenceDiagram
     %%> Why:
     %%> - a draft means the work is still moving; leaving draft says the spec, code and proof cases are done
     %%> Built:
-    %%> - the operation `tasks:pr-ready`, with its chart, called by the gate check
+    %%> - the operation `task:pr-ready`, with its chart, called by the gate check
     %%> - the call in automatic mode, where it requests no review; after the fall back to manual mode the step runs again and requests it
     alt manual mode
       GW->>GH: Read the PR reviews<br/>short poll · approval on head
@@ -128,18 +128,18 @@ sequenceDiagram
       %%> - the Gateway is private and its App receives no webhooks, so a short poll sees the approval
       %%> - a push moves the PR head, so the approval must follow the last push
       %%> Built:
-      %%> - the read, as the gate of the operation `tasks:pr-merge`, polled every minute by the gate check
+      %%> - the read, as the gate of the operation `task:pr-merge`, polled every minute by the gate check
       GH-->>GW: Approval on the head
     else automatic mode
       GW->>SW: Admit a review round<br/>group · head · round N
       %%> What it does:
       %%> - one Swamp run per round, admitted by the gate check, keyed by group and head; the Gateway records the round number on the group
-      %%> - the mode is set per Task group when it is created (`tasks:create --review=automatic`); the default is manual
+      %%> - the mode is set per Task group when it is created (`task:create --review=automatic`); the default is manual
       %%> Built:
-      %%> - the mode of the group, set at creation and shown by `tasks:show` as `review`
+      %%> - the mode of the group, set at creation and shown by `task:show` as `review`
       %%> - the admission, keyed by group and head, with the round number recorded on the group; it needs a green merge check and a passed handoff candidate on the head
       %%> - the fall back to manual mode after round 3 with findings, or when a round fails
-      %%> - the one Swamp run per round, `tasks.review_round`, as the chart in docs/cli/tasks/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of that run, and the gate check admits nothing else for a round
+      %%> - the one Swamp run per round, `tasks.review_round`, as the chart in docs/cli/task/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of that run, and the gate check admits nothing else for a round
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
@@ -174,11 +174,11 @@ sequenceDiagram
     %%> History:
     %%> - no merge queue and no GitHub auto-merge (Nick, 2026-11-05): the queue only reran the 2-minute fast checks, because the proof is not run twice
     %%> Built:
-    %%> - the operation `tasks:pr-merge`, with its chart, called by the gate check
+    %%> - the operation `task:pr-merge`, with its chart, called by the gate check
     %%> - the call in automatic mode, after a passed round on the head
     %%> - a PR that no Task group watches merges through `project:pr-merge` (`docs/cli/project/pr-merge.mmd`): the same Swamp step, admitted by the Gateway for the Project, with the green merge check on the exact head as the gate
     %%> Decided by the orchestrator, for Nick's review:
-    %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, a PR that a Task group watches is refused (`tasks:pr-merge` owns it), and so is a PR that does not target the default branch or that comes from a fork (a fork can define its own workflow that reports a passing merge check; open for Nick: how to trust a fork)
+    %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, a PR that a Task group watches is refused (`task:pr-merge` owns it), and so is a PR that does not target the default branch or that comes from a fork (a fork can define its own workflow that reports a passing merge check; open for Nick: how to trust a fork)
     GH->>CI: CI on main<br/>after the merge
     %%> What it does:
     %%> - the normal CI run of the new main commit; the Gateway release (stage 5) takes only a green one

@@ -12,7 +12,7 @@ use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /**
- * The records of a task group after its slot is released (docs/cli/tasks/vm-release.mmd), from the input that admission captured.
+ * The records of a task group after its slot is released (docs/cli/task/vm-release.mmd), from the input that admission captured.
  * The cancel of a group and the end of a proof run both settle through it, inside the transaction that holds the locked group.
  */
 final readonly class TaskGroupEnding

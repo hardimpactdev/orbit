@@ -7,7 +7,7 @@ namespace App\Domain\TaskVms;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 
 /**
- * What a task VM host must not hold beside its base, the stock image and its task VMs (docs/cli/tasks/vm-image-refresh.mmd). After each
+ * What a task VM host must not hold beside its base, the stock image and its task VMs (docs/cli/task/vm-image-refresh.mmd). After each
  * refresh the `host-clean` phase removes it. The task VM project keeps only the stock source image; its other images and the volumes of
  * retired image seeds and of the slot-pool baseline go. The retired projects go whole, and `orbit-proto` loses its images.
  */

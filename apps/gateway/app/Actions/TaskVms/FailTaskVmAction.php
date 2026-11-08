@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Fails a task VM row with its error, and asks its tick group for assistance with `$reason`, so the failure shows in
- * `tasks:status`. Only a row that is still in one of `$from` fails, so a destroy, a claim, or a resume that came first
+ * `task:status`. Only a row that is still in one of `$from` fails, so a destroy, a claim, or a resume that came first
  * wins. A pool row has no group to ask.
  */
 final readonly class FailTaskVmAction

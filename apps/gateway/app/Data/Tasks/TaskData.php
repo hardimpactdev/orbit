@@ -19,7 +19,7 @@ final class TaskData extends Data
 {
     public function __construct(
         public int $id,
-        public int $taskGroupId,
+        public int $parentId,
         public int $position,
         public string $title,
         public string $brief,
@@ -73,7 +73,7 @@ final class TaskData extends Data
             fixupProblem: $task->fixup_problem,
 
             id: $task->id,
-            taskGroupId: $task->requireGroupId(),
+            parentId: $task->requireGroupId(),
             position: $task->position,
             title: $task->title,
             brief: $task->brief,

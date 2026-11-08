@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPIKE, not a runner: measures whether Molecule (delegated driver) can run and assert a proof batch on the nested fleet of a task VM.
-# Run by `orbit tasks:script`, from the repository root of the task VM checkout. Delete it, or make it the runner, after the verdict.
+# Run by `orbit task:script`, from the repository root of the task VM checkout. Delete it, or make it the runner, after the verdict.
 #
 #   scripts/molecule-verify-spike diagnose        what the VM has (no install, nothing changes)
 #   scripts/molecule-verify-spike test [BASE] [FORKS] [STAGE] [SCENARIO]   install Molecule if missing, then `molecule test`; BASE is the first test port (default 47100),

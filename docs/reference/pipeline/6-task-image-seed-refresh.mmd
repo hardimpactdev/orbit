@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): stage 6 of the command development pipeline. Each task VM host keeps one stopped base VM that never gets an identity; its ZFS snapshot is the base a task start copies. After a release, and once a day, every host starts its base VM, converges it as a task start would, stops it and snapshots it; the snapshot is proven with one task start and the Gateway promotes it. There is no Incus image and no publish. Nothing is copied between hosts. The per-host run: docs/cli/tasks/vm-image-refresh.mmd.
+  %% Target design (agreed with Nick, 2026-11-07): stage 6 of the command development pipeline. Each task VM host keeps one stopped base VM that never gets an identity; its ZFS snapshot is the base a task start copies. After a release, and once a day, every host starts its base VM, converges it as a task start would, stops it and snapshots it; the snapshot is proven with one task start and the Gateway promotes it. There is no Incus image and no publish. Nothing is copied between hosts. The per-host run: docs/cli/task/vm-image-refresh.mmd.
   %% status: draft
   %% command: development pipeline stage 6 · per-host task image and seed refresh
   %% kind: pipeline.6-task-image-seed-refresh

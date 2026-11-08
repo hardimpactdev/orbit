@@ -161,7 +161,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 The optional `steps` list uses typed `OperationStep` metadata. Start and list responses can omit it; show and cancel responses include it.
 
-`operation:show`, `operation:cancel` and `tasks:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
+`operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
 Every operation has the same fields, whatever its kind.
 
@@ -242,21 +242,21 @@ Use the kind and target type to start or find the work of a command.
 | `instance:deploy` | `instance.deploy` | `instance` | Instance Node |
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
-| `tasks:park` | `tasks.park` | `task_group` | Gateway |
-| `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
-| `POST task-groups/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
-| `POST task-groups/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
-| `POST task-groups/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
-| `tasks:check` | `tasks.check` | `task_group` | Gateway |
-| `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
-| `POST task-groups/{group}/package` | `tasks.package` | `task_group` | Gateway |
-| `tasks:turn` | `tasks.turn` | `task_group` | Gateway |
-| `tasks:publish` | `tasks.publish` | `task_group` | Gateway |
-| `POST task-groups/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
-| `POST task-groups/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
+| `task:park` | `tasks.park` | `task_group` | Gateway |
+| `task:start` | `tasks.provision` | `task_group` | Gateway |
+| `POST tasks/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
+| `POST tasks/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
+| `POST tasks/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
+| `task:check` | `tasks.check` | `task_group` | Gateway |
+| `POST tasks/{group}/script` | `tasks.script` | `task_group` | Gateway |
+| `POST tasks/{group}/package` | `tasks.package` | `task_group` | Gateway |
+| `task:turn` | `tasks.turn` | `task_group` | Gateway |
+| `task:publish` | `tasks.publish` | `task_group` | Gateway |
+| `POST tasks/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
+| `POST tasks/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
 | `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
-| the gate check `tasks:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
-| the gate check `tasks:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
+| the gate check `task:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
+| the gate check `task:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
@@ -285,7 +285,7 @@ When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` an
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/task-groups/{group}/provision` (`tasks.provision`), `POST /api/v1/task-groups/{group}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/task-groups/{group}/turn` (`tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 Automatic deploy starts bind caller and command as well as target and input. The [automatic deploy start](/reference/deployments#pinned-commits-and-automatic-callers) requires a key and Gateway Node access. Manual deploys and other kinds retain their key scope across callers.
 
@@ -295,7 +295,7 @@ A caller that starts operations without a request keys each admission itself. `O
 
 Concurrent starts with one new key create one operation and start one workflow. The operation stores the key, and a unique index on kind and key settles competing inserts. A request without a key starts a new operation under the usual target-hold rule.
 
-The CLI commands `instance:deploy`, `instance:rollback`, `tasks:provision`, `tasks:check`, and `tasks:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
+The CLI commands `instance:deploy`, `instance:rollback`, `task:start`, `task:check`, and `task:turn` pass the header with `--idempotency-key=KEY`. The PHP SDK requests accept `idempotencyKey`. Each MCP tool that starts an operation takes the `Idempotency-Key` argument (required where the API requires it), generated from the OpenAPI header.
 
 Keyed operations are never pruned, so their keys never expire. Operations currently keep every record. When ADR 0218 adds retention for finished operations, it must exclude every operation that carries a key. The [WebSocket app routes](/reference/websocket-apps) keep their own Node-scoped idempotency rule.
 
@@ -363,7 +363,7 @@ A cancelled deploy or rollback records its history row as `failed` with `deploym
 
 A parent that waits for children passes the request to every nonterminal child in the same transaction.
 
-An Operation that the Gateway timed out is terminal, yet its native run may still be going. Cancelling it asks Swamp again to cancel the run. Ending a task group (`tasks:cancel`) asks Swamp to cancel the runs of the group's timed-out Operations before it destroys the VM, so no run keeps waiting on a VM that is gone.
+An Operation that the Gateway timed out is terminal, yet its native run may still be going. Cancelling it asks Swamp again to cancel the run. Ending a task group (`task:cancel`) asks Swamp to cancel the runs of the group's timed-out Operations before it destroys the VM, so no run keeps waiting on a VM that is gone.
 
 When a `tasks.publish` has started its push, cancellation keeps the group held until the push records success or failure. See [Publish an external group](/reference/tasks#publish-an-external-group).
 

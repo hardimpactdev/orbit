@@ -44,6 +44,15 @@ export type Entry = {
     evidence: string[];
 };
 export type Baseline = { schema: number; entries: Entry[] };
+
+/** Keep the frozen HTTP allowance only for the exact public Task rename. */
+export function taskQueueComparison(old: string, current: string): string {
+    const renamed = old.replaceAll("/api/v1/task-groups", "/api/v1/tasks")
+        .replace("tasks: plan.tasks.map(", "subtasks: plan.tasks.map(");
+    return old.includes('"/api/v1/task-groups"') && current === renamed
+        ? old
+        : current;
+}
 type Analysis = {
     findings: Finding[];
     imports: string[];
@@ -2596,6 +2605,16 @@ if (import.meta.main) {
                     "Agent inventory cannot expand observation permission",
                 );
             }
+        }
+        // This caller keeps exactly its existing HTTP sites during the public
+        // Task rename. Compare its unchanged source in the old vocabulary so
+        // neither the count nor the permitted calls can grow.
+        const taskQueue =
+            "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts";
+        const oldQueue = base.get(taskQueue);
+        const newQueue = head.get(taskQueue);
+        if (oldQueue && newQueue) {
+            head.set(taskQueue, taskQueueComparison(oldQueue, newQueue));
         }
         const analyses = analyze(head, inventory);
         const external = await toolFindings(head);

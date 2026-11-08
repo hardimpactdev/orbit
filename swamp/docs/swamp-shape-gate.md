@@ -302,7 +302,7 @@ nightly schedule and pushes of `task-*-handoff` branches by the Orbit App
 (`orbit-nckrtl[bot]`). Shape and Deno jobs receive neither. The caller maps both secrets explicitly, never through
 inherited secrets. Pull-request-target events and forks cannot receive them.
 Decided by the orchestrator, for Nick's review: a handoff that changes `swamp/`
-needs the validation to pass in hosted CI before `tasks:publish`, and only the
+needs the validation to pass in hosted CI before `task:publish`, and only the
 App pushes those branches.
 
 The helper downloads the public checksum-verified official artifact and starts

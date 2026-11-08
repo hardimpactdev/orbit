@@ -7,6 +7,7 @@ import {
     taskCommentsQuery,
     taskCommentTypeLabel,
     type Task,
+    type TaskGroup,
     type TaskCheck,
     type TaskComment,
 } from "../api/tasks";
@@ -197,7 +198,7 @@ function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["
 }
 
 /** The task's latest check and its comments and turn receipts, newest first, as stacked cards. */
-export function TaskComments({ groupId, task }: { groupId: number; task: Task }) {
+export function TaskComments({ groupId, task }: { groupId: number; task: Task | TaskGroup }) {
     const query = useQuery({
         ...taskCommentsQuery(groupId, task.id),
         refetchInterval: useTaskPoll(),
@@ -212,7 +213,7 @@ export function TaskComments({ groupId, task }: { groupId: number; task: Task })
             className="max-h-[560px] shrink-0 lg:max-h-none lg:min-h-0"
             bodyClassName="space-y-[var(--panel-padding)]"
         >
-            {task.check && <CheckCard check={task.check} now={now} />}
+            {"check" in task && task.check && <CheckCard check={task.check} now={now} />}
             {query.isPending && <p role="status">Loading comments…</p>}
             {query.error && (
                 <p role="alert">

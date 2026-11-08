@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
  * Admits `tasks.review_round`: one run for one review round of the automatic mode. The shared task admission holds the lock, the busy
  * check and the replay; this class checks the head and captures the whole intent: resume when the VM is parked, the reviewer turn in a new
  * thread, and in rounds 1 and 2 the fix (the author turn, the local check and the push). Only vault key names are admitted: the run
- * writes the Pi token when it starts, and the comment and the push mint their tokens when they run. See docs/cli/tasks/review-round.mmd.
+ * writes the Pi token when it starts, and the comment and the push mint their tokens when they run. See docs/cli/task/review-round.mmd.
  */
 final readonly class TaskReviewRoundIntent
 {

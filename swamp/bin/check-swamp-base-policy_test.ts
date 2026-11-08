@@ -14,6 +14,50 @@ import {
     write,
 } from "./gate-test-support.ts";
 
+Deno.test("frozen Task queue allowance accepts only the exact public rename", async () => {
+    await temporary(async (repo) => {
+        await init(repo);
+        const swamp = repo + "/swamp";
+        const queue =
+            "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts";
+        const old =
+            'deps.http("POST", "/api/v1/task-groups", {tasks: plan.tasks.map(f)});';
+        const renamed = old.replaceAll("/api/v1/task-groups", "/api/v1/tasks")
+            .replace("tasks: plan.tasks.map(", "subtasks: plan.tasks.map(");
+        await write(swamp + "/" + queue, old);
+        await write(
+            swamp + "/config/swamp-shape-baseline.json",
+            '{"schema":1,"entries":[]}',
+        );
+        // A frozen rule has no knowledge of the new URL or policy helpers.
+        await write(
+            swamp + "/bin/check-swamp-shape.ts",
+            `Deno.exit(await Deno.readTextFile(${JSON.stringify(queue)}) === ${
+                JSON.stringify(old)
+            } ? 0 : 1);`,
+        );
+        const base = await commit(repo, "frozen queue source");
+        async function check(source: string) {
+            await write(swamp + "/" + queue, source);
+            await commit(repo, "queue update");
+            const result = await run("python3", [
+                script("check-swamp-base-policy.py"),
+                "--base",
+                base,
+            ], { cwd: swamp, env: { DENO_BIN: Deno.execPath() } });
+            assertEquals(await Deno.readTextFile(swamp + "/" + queue), source);
+            return result.code;
+        }
+        assertEquals(await check(renamed), 0);
+        assert(
+            await check(
+                renamed + '\ndeps.http("POST", "/api/v1/tasks", {});',
+            ) !== 0,
+        );
+        assert(await check(renamed.replace("POST", "DELETE")) !== 0);
+    });
+});
+
 Deno.test("real frozen policy owns limits and dependencies", async () => {
     await temporary(async (repo) => {
         await init(repo);
@@ -72,7 +116,8 @@ Deno.test("real frozen policy owns limits and dependencies", async () => {
             );
             return result;
         }
-        assertEquals((await check()).code, 0);
+        const initial = await check();
+        assertEquals(initial.code, 0, initial.stdout + initial.stderr);
         await write(source, originalSource + "await delay(20);\n");
         await commit(
             repo,

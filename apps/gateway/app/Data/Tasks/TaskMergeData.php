@@ -11,7 +11,7 @@ use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** ADR 0203: one open review-and-merge task in the `tasks:status` view. */
+/** ADR 0203: one open review-and-merge task in the `task:status` view. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskMergeData extends Data
 {

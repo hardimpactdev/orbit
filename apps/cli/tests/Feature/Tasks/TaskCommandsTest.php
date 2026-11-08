@@ -12,6 +12,7 @@ use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -22,23 +23,19 @@ use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
-use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CancelTaskRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
-use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskGroupCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskEgressRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupCommentsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
-use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\Request;
@@ -77,7 +74,7 @@ describe('omitted and invalid input', function (): void {
 
                 expect($output)->not->toBe('');
 
-                if ($code === 'tasks.since_invalid') {
+                if ($code === 'task.since_invalid') {
                     expect($output)->toContain('Since must be an ISO 8601 date or time.');
                 }
             }
@@ -86,62 +83,71 @@ describe('omitted and invalid input', function (): void {
             MockClient::destroyGlobal();
         }
     })->with([
-        'show without group' => ['tasks:show', [], 'tasks.group_required'],
-        'show with invalid group' => ['tasks:show', ['group' => 'abc'], 'tasks.group_invalid'],
-        'agents without group' => ['tasks:agents', [], 'tasks.group_required'],
-        'egress without group' => ['tasks:egress', [], 'tasks.group_required'],
-        'agent show without group' => ['tasks:agent:show', [], 'tasks.group_required'],
-        'agent show without thread' => ['tasks:agent:show', ['group' => '1'], 'tasks.agent_thread_required'],
-        'agent show with invalid thread' => ['tasks:agent:show', ['group' => '1', 'session' => 'x'], 'tasks.agent_thread_invalid'],
-        'list with invalid project' => ['tasks:list', ['--project' => '0'], 'tasks.project_invalid'],
-        'list with unknown status' => ['tasks:list', ['--status' => 'queued'], 'tasks.status_invalid'],
-        'questions with invalid project' => ['tasks:question:list', ['--project' => '0'], 'tasks.project_invalid'],
-        'questions with unknown cause' => ['tasks:question:list', ['--cause' => 'nope'], 'tasks.cause_invalid'],
-        'questions with unknown status' => ['tasks:question:list', ['--status' => 'queued'], 'tasks.status_invalid'],
-        'questions with a relative since' => ['tasks:question:list', ['--since' => 'yesterday'], 'tasks.since_invalid'],
-        'questions with an impossible date' => ['tasks:question:list', ['--since' => '2026-02-31'], 'tasks.since_invalid'],
-        'questions with an offset minute of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:00:00+01:99'], 'tasks.since_invalid'],
-        'questions with an offset hour of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:00:00+99:00'], 'tasks.since_invalid'],
-        'questions with a fractional minute of 60' => ['tasks:question:list', ['--since' => '2026-10-07T12:60.5Z'], 'tasks.since_invalid'],
-        'questions with a fractional minute of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:99.5Z'], 'tasks.since_invalid'],
-        'question close without question' => ['tasks:question:close', ['--status' => 'superseded', '--reason' => 'Stale.'], 'tasks.question_required'],
-        'question close with invalid question' => ['tasks:question:close', ['question' => 'abc', '--status' => 'superseded', '--reason' => 'Stale.'], 'tasks.question_invalid'],
-        'question close without status' => ['tasks:question:close', ['question' => '98', '--reason' => 'Stale.'], 'tasks.status_required'],
-        'question close with an open status' => ['tasks:question:close', ['question' => '98', '--status' => 'open', '--reason' => 'Stale.'], 'tasks.status_invalid'],
-        'question close without reason' => ['tasks:question:close', ['question' => '98', '--status' => 'superseded'], 'tasks.reason_required'],
-        'question close with a long reason' => ['tasks:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'tasks.reason_invalid'],
-        'create without project' => ['tasks:create', ['title' => 'T', '--brief' => 'B'], 'tasks.project_required'],
-        'create without title' => ['tasks:create', ['--project' => '1', '--brief' => 'B'], 'tasks.title_required'],
-        'create without brief' => ['tasks:create', ['title' => 'T', '--project' => '1'], 'tasks.brief_required'],
-        'create with a long title' => ['tasks:create', ['title' => str_repeat('x', 161), '--project' => '1', '--brief' => 'B'], 'tasks.title_invalid'],
-        'create with a blank brief' => ['tasks:create', ['title' => 'T', '--project' => '1', '--brief' => '   '], 'tasks.brief_invalid'],
-        'create with a running status' => ['tasks:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--status' => 'running'], 'tasks.status_invalid'],
-        'create with a missing subtasks file' => ['tasks:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--subtasks' => '/nonexistent/subtasks.json'], 'tasks.subtasks_invalid'],
-        'update without a change' => ['tasks:update', ['group' => '1'], 'tasks.update_required'],
-        'update with an unknown status' => ['tasks:update', ['group' => '1', '--status' => 'unknown'], 'tasks.status_invalid'],
-        'subtask update with an unknown status' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--status' => 'unknown'], 'tasks.status_invalid'],
-        'cancel without consent' => ['tasks:cancel', ['group' => '1'], 'input.confirmation_required'],
-        'complete without consent' => ['tasks:complete', ['group' => '1'], 'input.confirmation_required'],
-        'subtask create without brief' => ['tasks:subtask:create', ['group' => '1', 'title' => 'T'], 'tasks.brief_required'],
-        'subtask update without subtask' => ['tasks:subtask:update', ['group' => '1', '--title' => 'T'], 'tasks.subtask_required'],
-        'subtask update without a change' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2'], 'tasks.update_required'],
-        'subtask update with position zero' => ['tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--position' => '0'], 'tasks.position_invalid'],
-        'subtask cancel without consent' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
-        'subtask cancel with an invalid subtask' => ['tasks:subtask:cancel', ['group' => '1', 'subtask' => 'x', '--yes' => true], 'tasks.subtask_invalid'],
-        'subtask destroy without consent' => ['tasks:subtask:destroy', ['group' => '1', 'subtask' => '2'], 'input.confirmation_required'],
-        'group comment without group' => ['tasks:group:comment:create', [], 'tasks.group_required'],
-        'group comments without group' => ['tasks:group:comment:list', [], 'tasks.group_required'],
-        'group comment without type' => ['tasks:group:comment:create', ['group' => '1', '--body' => 'B', '--author' => 'driver'], 'tasks.comment_type_required'],
-        'group comment with unknown type' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'approved', '--body' => 'B', '--author' => 'driver'], 'tasks.comment_type_invalid'],
-        'group comment without body' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--author' => 'nick'], 'tasks.comment_body_required'],
-        'group comment with blank body' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--body' => '  ', '--author' => 'nick'], 'tasks.comment_body_invalid'],
-        'group comment without author' => ['tasks:group:comment:create', ['group' => '1', '--type' => 'resolution', '--body' => 'B'], 'tasks.comment_author_required'],
-        'comment without type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_required'],
-        'comment with an unknown type' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'approved', '--body' => 'B', '--author' => 'nick'], 'tasks.comment_type_invalid'],
-        'comment without body' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--author' => 'nick'], 'tasks.comment_body_required'],
-        'comment without author' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--body' => 'B'], 'tasks.comment_author_required'],
-        'comment with an invalid thread' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--body' => 'B', '--author' => 'nick', '--agent-thread' => 'x'], 'tasks.agent_thread_invalid'],
-        'comment list without subtask' => ['tasks:comment:list', ['group' => '1'], 'tasks.subtask_required'],
+        'show without group' => ['task:show', [], 'task.task_required'],
+        'show with invalid group' => ['task:show', ['task' => 'abc'], 'task.task_invalid'],
+        'agents without group' => ['task:agent:list', [], 'task.task_required'],
+        'egress without group' => ['task:egress', [], 'task.task_required'],
+        'agent show without group' => ['task:agent:show', [], 'task.task_required'],
+        'agent show without thread' => ['task:agent:show', ['task' => '1'], 'task.agent_thread_required'],
+        'agent show with invalid thread' => ['task:agent:show', ['task' => '1', 'session' => 'x'], 'task.agent_thread_invalid'],
+        'list with invalid project' => ['task:list', ['--project' => '0'], 'task.project_invalid'],
+        'list with unknown status' => ['task:list', ['--status' => 'queued'], 'task.status_invalid'],
+        'questions with invalid project' => ['task:question:list', ['--project' => '0'], 'task.project_invalid'],
+        'questions with unknown cause' => ['task:question:list', ['--cause' => 'nope'], 'task.cause_invalid'],
+        'questions with unknown status' => ['task:question:list', ['--status' => 'queued'], 'task.status_invalid'],
+        'questions with a relative since' => ['task:question:list', ['--since' => 'yesterday'], 'task.since_invalid'],
+        'questions with an impossible date' => ['task:question:list', ['--since' => '2026-02-31'], 'task.since_invalid'],
+        'questions with an offset minute of 99' => ['task:question:list', ['--since' => '2026-10-07T12:00:00+01:99'], 'task.since_invalid'],
+        'questions with an offset hour of 99' => ['task:question:list', ['--since' => '2026-10-07T12:00:00+99:00'], 'task.since_invalid'],
+        'questions with a fractional minute of 60' => ['task:question:list', ['--since' => '2026-10-07T12:60.5Z'], 'task.since_invalid'],
+        'questions with a fractional minute of 99' => ['task:question:list', ['--since' => '2026-10-07T12:99.5Z'], 'task.since_invalid'],
+        'question close without question' => ['task:question:close', ['--status' => 'superseded', '--reason' => 'Stale.'], 'task.question_required'],
+        'question close with invalid question' => ['task:question:close', ['question' => 'abc', '--status' => 'superseded', '--reason' => 'Stale.'], 'task.question_invalid'],
+        'question close without status' => ['task:question:close', ['question' => '98', '--reason' => 'Stale.'], 'task.status_required'],
+        'question close with an open status' => ['task:question:close', ['question' => '98', '--status' => 'open', '--reason' => 'Stale.'], 'task.status_invalid'],
+        'question close without reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded'], 'task.reason_required'],
+        'question close with a long reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'task.reason_invalid'],
+        'create without project' => ['task:create', ['title' => 'T', '--brief' => 'B'], 'task.project_required'],
+        'parent with child deliverables' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.option_invalid'],
+        'parent with child topology' => ['task:create', ['--project' => '1', '--topology' => '[]'], 'task.option_invalid'],
+        'child with parent status' => ['task:create', ['--parent' => '1', '--status' => 'todo'], 'task.option_invalid'],
+        'child with parent orchestration' => ['task:create', ['--parent' => '1', '--orchestration' => 'external'], 'task.option_invalid'],
+        'child with parent subtasks' => ['task:create', ['--parent' => '1', '--subtasks' => '/unused'], 'task.option_invalid'],
+        'child with parent review' => ['task:create', ['--parent' => '1', '--review' => 'manual'], 'task.option_invalid'],
+        'child with parent preview' => ['task:create', ['--parent' => '1', '--preview' => true], 'task.option_invalid'],
+        'child with parent recipe' => ['task:create', ['--parent' => '1', '--current-recipe' => true], 'task.option_invalid'],
+        'child with invalid project' => ['task:create', ['--parent' => '1', '--project' => 'abc'], 'task.project_invalid'],
+        'create without title' => ['task:create', ['--project' => '1', '--brief' => 'B'], 'task.title_required'],
+        'create without brief' => ['task:create', ['title' => 'T', '--project' => '1'], 'task.brief_required'],
+        'create with a long title' => ['task:create', ['title' => str_repeat('x', 161), '--project' => '1', '--brief' => 'B'], 'task.title_invalid'],
+        'create with a blank brief' => ['task:create', ['title' => 'T', '--project' => '1', '--brief' => '   '], 'task.brief_invalid'],
+        'create with a running status' => ['task:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--status' => 'running'], 'task.status_invalid'],
+        'create with a missing subtasks file' => ['task:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--subtasks' => '/nonexistent/subtasks.json'], 'task.subtasks_invalid'],
+        'update without a change' => ['task:update', ['task' => '1'], 'task.update_required'],
+        'update with an unknown status' => ['task:update', ['task' => '1', '--status' => 'unknown'], 'task.status_invalid'],
+        'subtask update with an unknown status' => ['task:update', ['task' => '2', '--status' => 'unknown'], 'task.status_invalid'],
+        'cancel without consent' => ['task:cancel', ['task' => '1'], 'input.confirmation_required'],
+        'complete without consent' => ['task:complete', ['task' => '1'], 'input.confirmation_required'],
+        'subtask create without brief' => ['task:create', ['--parent' => '1', 'title' => 'T'], 'task.brief_required'],
+        'subtask update without subtask' => ['task:update', ['--title' => 'T'], 'task.task_required'],
+        'subtask update without a change' => ['task:update', ['task' => '2'], 'task.update_required'],
+        'subtask update with position zero' => ['task:update', ['task' => '2', '--position' => '0'], 'task.position_invalid'],
+        'subtask cancel without consent' => ['task:cancel', ['task' => '2'], 'input.confirmation_required'],
+        'subtask cancel with an invalid subtask' => ['task:cancel', ['task' => 'x', '--yes' => true], 'task.task_invalid'],
+        'subtask destroy without consent' => ['task:destroy', ['task' => '2'], 'input.confirmation_required'],
+        'group comment without group' => ['task:comment:create', [], 'task.task_required'],
+        'group comments without group' => ['task:comment:list', [], 'task.task_required'],
+        'group comment without type' => ['task:comment:create', ['task' => '1', '--body' => 'B', '--author' => 'driver'], 'task.comment_type_required'],
+        'group comment with unknown type' => ['task:comment:create', ['task' => '1', '--type' => 'approved', '--body' => 'B', '--author' => 'driver'], 'task.comment_type_invalid'],
+        'group comment without body' => ['task:comment:create', ['task' => '1', '--type' => 'resolution', '--author' => 'nick'], 'task.comment_body_required'],
+        'group comment with blank body' => ['task:comment:create', ['task' => '1', '--type' => 'resolution', '--body' => '  ', '--author' => 'nick'], 'task.comment_body_invalid'],
+        'group comment without author' => ['task:comment:create', ['task' => '1', '--type' => 'resolution', '--body' => 'B'], 'task.comment_author_required'],
+        'comment without type' => ['task:comment:create', ['task' => '2', '--body' => 'B', '--author' => 'nick'], 'task.comment_type_required'],
+        'comment with an unknown type' => ['task:comment:create', ['task' => '2', '--type' => 'approved', '--body' => 'B', '--author' => 'nick'], 'task.comment_type_invalid'],
+        'comment without body' => ['task:comment:create', ['task' => '2', '--type' => 'resolution', '--author' => 'nick'], 'task.comment_body_required'],
+        'comment without author' => ['task:comment:create', ['task' => '2', '--type' => 'resolution', '--body' => 'B'], 'task.comment_author_required'],
+        'comment with an invalid thread' => ['task:comment:create', ['task' => '2', '--type' => 'resolution', '--body' => 'B', '--author' => 'nick', '--agent-thread' => 'x'], 'task.agent_thread_invalid'],
+        'comment list without subtask' => ['task:comment:list', [], 'task.task_required'],
     ]);
 
     it('refuses a subtasks file that is not an array of titled briefs', function (string $contents): void {
@@ -150,8 +156,8 @@ describe('omitted and invalid input', function (): void {
         file_put_contents($path, $contents);
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--subtasks' => $path, '--json' => true]))->toBe(1)
-            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.subtasks_invalid');
+        expect(Artisan::call('task:create', ['title' => 'T', '--project' => '1', '--brief' => 'B', '--subtasks' => $path, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('task.subtasks_invalid');
         $mock->assertNothingSent();
     })->with([
         'not JSON' => ['title: one'],
@@ -167,82 +173,82 @@ describe('requests', function (): void {
         $path = $this->orbitHome.'/subtasks.json';
         is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
         file_put_contents($path, '[{"title": "One", "brief": "First."}, {"title": "Two", "brief": "Second."}]');
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
 
-        expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--json' => true]))->toBe(0);
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","subtasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
     });
 
     it('omits the status and notification that the caller did not supply', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
 
-        expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--json' => true]))->toBe(0);
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
             && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief"}');
     });
 
     it('sends only the supplied update fields', function (): void {
         $mock = MockClient::global([
-            ...gateway_fixture_mock('tasks/tasks-update/updated'),
-            ...gateway_fixture_mock('tasks/tasks-subtask-update/updated'),
+            ...gateway_fixture_mock('tasks/task-update/updated'),
+            ...gateway_fixture_mock('tasks/task-update/child-updated'),
         ]);
 
-        expect(Artisan::call('tasks:update', ['group' => '13', '--status' => 'todo', '--json' => true]))->toBe(0)
-            ->and(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--position' => '3', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:update', ['task' => '13', '--status' => 'todo', '--json' => true]))->toBe(0)
+            ->and(Artisan::call('task:update', ['task' => '57', '--position' => '3', '--json' => true]))->toBe(0);
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskGroupRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/13'
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
+            && $request->resolveEndpoint() === '/api/v1/tasks/13'
             && (string) $request->body() === '{"status":"todo"}');
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/13/tasks/57'
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
+            && $request->resolveEndpoint() === '/api/v1/tasks/57'
             && (string) $request->body() === '{"position":3}');
     });
 
     it('writes and reads group assistance without looking up or selecting a child', function (): void {
         $mock = MockClient::global([
-            ...gateway_fixture_mock('tasks/tasks-group-comment-create/requested'),
-            ...gateway_fixture_mock('tasks/tasks-group-comment-list/default'),
+            ...gateway_fixture_mock('tasks/task-comment-create/parent-requested'),
+            ...gateway_fixture_mock('tasks/task-comment-list/parent-default'),
         ]);
-        expect(Artisan::call('tasks:group:comment:create', ['group' => '13', '--type' => 'assistance_requested', '--body' => 'May I republish?', '--author' => 'driver', '--json' => true]))->toBe(0)
-            ->and(Artisan::call('tasks:group:comment:list', ['group' => '13', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:comment:create', ['task' => '13', '--type' => 'assistance_requested', '--body' => 'May I republish?', '--author' => 'driver', '--json' => true]))->toBe(0)
+            ->and(Artisan::call('task:comment:list', ['task' => '13', '--json' => true]))->toBe(0);
         $mock->assertSentCount(2);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupCommentRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/13/comments'
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskCommentRequest
+            && $request->resolveEndpoint() === '/api/v1/tasks/13/comments'
             && (string) $request->body() === '{"type":"assistance_requested","body":"May I republish?","author":"driver"}');
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupCommentsRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/13/comments');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskCommentsRequest
+            && $request->resolveEndpoint() === '/api/v1/tasks/13/comments');
     });
 
     it('filters the list and sends the comment thread', function (): void {
         $mock = MockClient::global([
-            ...gateway_fixture_mock('tasks/tasks-list/default'),
-            ...gateway_fixture_mock('tasks/tasks-comment-create/created'),
+            ...gateway_fixture_mock('tasks/task-list/default'),
+            ...gateway_fixture_mock('tasks/task-comment-create/created'),
         ]);
 
-        expect(Artisan::call('tasks:list', ['--project' => '4', '--status' => 'settling', '--json' => true]))->toBe(0)
-            ->and(Artisan::call('tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'assistance_requested', '--body' => 'Stuck.', '--author' => 'nick', '--agent-thread' => '9', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:list', ['--project' => '4', '--status' => 'settling', '--json' => true]))->toBe(0)
+            ->and(Artisan::call('task:comment:create', ['task' => '2', '--type' => 'assistance_requested', '--body' => 'Stuck.', '--author' => 'nick', '--agent-thread' => '9', '--json' => true]))->toBe(0);
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest
             && $request->query()->all() === ['project_id' => 4, 'status' => 'settling']);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskCommentRequest
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
 
     it('accepts the VM review wait as a list filter', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-list/default'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-list/default'));
 
-        expect(Artisan::call('tasks:list', ['--status' => 'waiting_for_review', '--json' => true]))->toBe(0);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
+        expect(Artisan::call('task:list', ['--status' => 'waiting_for_review', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest
             && $request->query()->all() === ['status' => 'waiting_for_review']);
     });
 
     it('lists the outside hosts of a task group', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-egress/default'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-egress/default'));
 
-        expect(Artisan::call('tasks:egress', ['group' => '1', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:egress', ['task' => '1', '--json' => true]))->toBe(0);
 
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect(array_column($json['hosts'], 'destination'))->toBe(['140.82.121.4', 'example.com', 'registry.npmjs.org'])
@@ -250,13 +256,13 @@ describe('requests', function (): void {
             ->and($json['hosts'][2]['sources'])->toBe(['conn', 'dns'])
             ->and($json['hosts'][0])->not->toHaveKey('request_id');
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskEgressRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/1/egress');
+            && $request->resolveEndpoint() === '/api/v1/tasks/1/egress');
     });
 
     it('filters the question list and renders an empty list', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/default'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-question-list/default'));
 
-        expect(Artisan::call('tasks:question:list', [
+        expect(Artisan::call('task:question:list', [
             '--project' => '4',
             '--cause' => 'contract_gap',
             '--status' => 'answered',
@@ -277,23 +283,23 @@ describe('requests', function (): void {
             ]);
 
         MockClient::destroyGlobal();
-        MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+        MockClient::global(gateway_fixture_mock('tasks/task-question-list/empty'));
 
-        expect(Artisan::call('tasks:question:list'))->toBe(0);
+        expect(Artisan::call('task:question:list'))->toBe(0);
         expect(Artisan::output())->toContain('No questions match.');
     });
 
     it('lists superseded questions and closes a question', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-question-list/empty'));
 
-        expect(Artisan::call('tasks:question:list', ['--status' => 'superseded', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:question:list', ['--status' => 'superseded', '--json' => true]))->toBe(0);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskQuestionsRequest
             && $request->query()->all() === ['status' => 'superseded']);
 
         MockClient::destroyGlobal();
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-close/closed'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-question-close/closed'));
 
-        expect(Artisan::call('tasks:question:close', ['question' => '1', '--status' => 'superseded', '--reason' => 'A later subtask owns the continuation.', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:question:close', ['question' => '1', '--status' => 'superseded', '--reason' => 'A later subtask owns the continuation.', '--json' => true]))->toBe(0);
         expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['status'])->toBe('superseded');
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CloseTaskQuestionRequest
             && $request->resolveEndpoint() === '/api/v1/task-questions/1/close'
@@ -301,9 +307,9 @@ describe('requests', function (): void {
     });
 
     it('sends a reduced-precision since filter', function (string $since): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-question-list/empty'));
 
-        expect(Artisan::call('tasks:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskQuestionsRequest
             && $request->query()->all() === ['since' => $since]);
@@ -315,9 +321,9 @@ describe('requests', function (): void {
     ]);
 
     it('normalizes a fractional since cutoff before the Gateway parses it', function (string $since, string $cutoff, string $excluded): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-question-list/empty'));
 
-        expect(Artisan::call('tasks:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
 
         $sent = null;
         $mock->assertSent(static function (Request $request) use (&$sent): bool {
@@ -347,26 +353,26 @@ describe('requests', function (): void {
         $operation = ['id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 1,
             'status' => 'succeeded', 'sequence' => 4, 'result' => ['cleanup_complete' => true]];
         $mock = MockClient::global([
-            CancelTaskGroupRequest::class => MockResponse::make(['data' => $operation], 202),
+            CancelTaskRequest::class => MockResponse::make(['data' => $operation], 202),
             ShowOperationRequest::class => MockResponse::make(['data' => $operation]),
             ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit']]),
         ]);
 
-        expect(Artisan::call('tasks:cancel', ['group' => '1', '--yes' => true, '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:cancel', ['task' => '1', '--yes' => true, '--json' => true]))->toBe(0);
 
-        $mock->assertSent(CancelTaskGroupRequest::class);
-        $mock->assertNotSent(ShowTaskGroupRequest::class);
+        $mock->assertSent(CancelTaskRequest::class);
+        $mock->assertNotSent(ShowTaskRequest::class);
     });
 
     it('cancels a running subtask with --yes without reading the group first', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-cancel/cancelled'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-cancel/child-cancelled'));
 
-        expect(Artisan::call('tasks:subtask:cancel', ['group' => '13', 'subtask' => '57', '--yes' => true, '--json' => true]))->toBe(0)
+        expect(Artisan::call('task:cancel', ['task' => '57', '--yes' => true, '--json' => true]))->toBe(0)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['status'])->toBe('cancelled');
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelSubtaskRequest
-            && $request->resolveEndpoint() === '/api/v1/task-groups/13/tasks/57/cancel');
-        $mock->assertNotSent(ShowTaskGroupRequest::class);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelTaskRequest
+            && $request->resolveEndpoint() === '/api/v1/tasks/57/cancel');
+        $mock->assertNotSent(ShowTaskRequest::class);
     });
 
     it('sends fails_on_base and paths when creating and updating a subtask', function (bool $failsOnBase): void {
@@ -382,18 +388,18 @@ describe('requests', function (): void {
             'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
         ]], JSON_THROW_ON_ERROR));
         $mock = MockClient::global([
-            ...gateway_fixture_mock('tasks/tasks-subtask-create/created'),
-            ...gateway_fixture_mock('tasks/tasks-subtask-update/updated'),
+            ...gateway_fixture_mock('tasks/task-create/child-created'),
+            ...gateway_fixture_mock('tasks/task-update/child-updated'),
         ]);
         $encoded = $failsOnBase ? 'true' : 'false';
 
-        expect(Artisan::call('tasks:subtask:create', ['group' => '1', 'title' => 'Layout', '--brief' => 'Fix the layout.', '--deliverables' => $path, '--json' => true]))->toBe(0)
-            ->and(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:create', ['--parent' => '1', 'title' => 'Layout', '--brief' => 'Fix the layout.', '--deliverables' => $path, '--json' => true]))->toBe(0)
+            ->and(Artisan::call('task:update', ['task' => '2', '--deliverables' => $path, '--json' => true]))->toBe(0);
 
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
             && str_contains((string) $request->body(), '"fails_on_base":'.$encoded)
             && str_contains((string) $request->body(), '"paths":["apps\\/gateway\\/tests\\/Feature\\/HomeScreenTest.php"]'));
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
             && str_contains((string) $request->body(), '"fails_on_base":'.$encoded));
     })->with([
         'true' => [true],
@@ -412,15 +418,15 @@ describe('requests', function (): void {
         ]], JSON_THROW_ON_ERROR));
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
+        expect(Artisan::call('task:update', ['task' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The fails_on_base field is only allowed on a command deliverable (deliverable docs).');
         $mock->assertNothingSent();
 
         MockClient::destroyGlobal();
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:subtask:create', ['group' => '1', 'title' => 'Docs', '--brief' => 'Write the docs.', '--deliverables' => $path, '--json' => true]))->toBe(1)
-            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.deliverables_invalid');
+        expect(Artisan::call('task:create', ['--parent' => '1', 'title' => 'Docs', '--brief' => 'Write the docs.', '--deliverables' => $path, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('task.deliverables_invalid');
         $mock->assertNothingSent();
     })->with([
         'a file' => ['file', ['path' => 'docs/a.md', 'change' => 'any']],
@@ -439,60 +445,60 @@ describe('requests', function (): void {
         ]], JSON_THROW_ON_ERROR));
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
+        expect(Artisan::call('task:update', ['task' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The paths value for deliverable repro must be a list of strings.');
         $mock->assertNothingSent();
     });
 
     it('passes after-sequence to the Gateway and returns its recorded snapshot', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-agent-show/after-sequence'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-agent-show/after-sequence'));
 
-        expect(Artisan::call('tasks:agent:show', ['group' => '1', 'session' => '3', '--after-sequence' => 'run-1.7', '--json' => true]))->toBe(0)
+        expect(Artisan::call('task:agent:show', ['task' => '1', 'session' => '3', '--after-sequence' => 'run-1.7', '--json' => true]))->toBe(0)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['kind' => 'snapshot', 'cursor' => null]);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ShowTaskAgentRequest
             && $request->query()->all() === ['after_sequence' => 'run-1.7']);
     });
 
     it('shows the watched pull request in JSON without changing the publication URL', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-show/watched'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-show/watched'));
 
-        expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:show', ['task' => '1', '--json' => true]))->toBe(0);
         $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($output['watched_pr_url'])->toBe('https://github.com/hardimpactdev/orbit/pull/451')
             ->and($output['watched_pr_number'])->toBe(451)
             ->and($output['watched_pr_state'])->toBe('open')
             ->and($output['pr_url'])->toBeNull();
-        $mock->assertSent(ShowTaskGroupRequest::class);
+        $mock->assertSent(ShowTaskRequest::class);
     });
 
     it('shows fails_on_base for a test deliverable', function (): void {
-        $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
-        $fixture['body']['data']['tasks'][0]['deliverables'][1]['fails_on_base'] = true;
+        $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/task-show/default')), true, flags: JSON_THROW_ON_ERROR);
+        $fixture['body']['data']['subtasks'][0]['deliverables'][1]['fails_on_base'] = true;
         MockClient::global([
-            ShowTaskGroupRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
+            ShowTaskRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
         ]);
 
-        expect(Artisan::call('tasks:show', ['group' => '1']))->toBe(0);
+        expect(Artisan::call('task:show', ['task' => '1']))->toBe(0);
         $human = Artisan::output();
         expect($human)->toContain('Fails on the start commit')->toContain('sdk-test');
 
         MockClient::destroyGlobal();
         MockClient::global([
-            ShowTaskGroupRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
+            ShowTaskRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
         ]);
 
-        expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
+        expect(Artisan::call('task:show', ['task' => '1', '--json' => true]))->toBe(0);
         expect(Artisan::output())->toContain('"fails_on_base":true');
     });
 
     it('returns the Gateway error code when a subtask cannot be cancelled', function (string $fixture, string $code): void {
         MockClient::global(gateway_fixture_mock($fixture));
 
-        expect(Artisan::call('tasks:subtask:cancel', ['group' => '1', 'subtask' => '1', '--yes' => true, '--json' => true]))->toBe(1)
+        expect(Artisan::call('task:cancel', ['task' => '1', '--yes' => true, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
     })->with([
-        'not running' => ['tasks/tasks-subtask-cancel/not-running', 'tasks.subtask_not_running'],
-        'interrupt failed' => ['tasks/tasks-subtask-cancel/interrupt-failed', 'tasks.subtask_interrupt_failed'],
+        'not running' => ['tasks/task-cancel/child-not-running', 'tasks.subtask_not_running'],
+        'interrupt failed' => ['tasks/task-cancel/child-interrupt-failed', 'tasks.subtask_interrupt_failed'],
     ]);
 });
 
@@ -504,7 +510,7 @@ describe('prompts', function (): void {
         expect($status)->toBe(0)
             ->and($display)->toContain('selected 3')
             ->not->toContain('Settling feature');
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest
             && $request->query()->all() === ['status' => 'backlog']);
     });
 
@@ -564,7 +570,7 @@ describe('prompts', function (): void {
         [$status] = task_prompt_run('select-backlog', [Key::CTRL_C]);
 
         expect($status)->not->toBe(0);
-        $mock->assertNotSent(CancelTaskGroupRequest::class);
+        $mock->assertNotSent(CancelTaskRequest::class);
     });
 });
 
@@ -572,15 +578,15 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'orchestration' => 'external', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'orchestration' => 'external', 'status' => $status, 'subtasks' => [],
     ];
 
     return MockClient::global([
-        ListTaskGroupsRequest::class => static fn ($pending): MockResponse => MockResponse::make(['data' => array_values(array_filter(
+        ListTasksRequest::class => static fn ($pending): MockResponse => MockResponse::make(['data' => array_values(array_filter(
             [$group(1, 'Backlog feature', 'backlog'), $group(3, 'Second backlog feature', 'backlog'), $group(5, 'Settling feature', 'settling')],
             static fn (array $row): bool => ! isset($pending->getRequest()->query()->all()['status']) || $row['status'] === $pending->getRequest()->query()->all()['status'],
         )), 'meta' => $meta]),
-        ShowTaskGroupRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
+        ShowTaskRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
         ListTaskAgentsRequest::class => MockResponse::make(['data' => [
             ['id' => 2, 'task_group_id' => 1, 'task_id' => null, 'role' => 'reviewer', 'driver' => 't3', 'external_id' => 'stored-t3-thread', 'state' => 'done'],
             ['id' => 4, 'task_group_id' => 1, 'task_id' => 7, 'role' => 'implementer', 'driver' => 'pi', 'external_id' => 'session-4', 'state' => 'working'],
@@ -680,25 +686,25 @@ describe('assistance columns', function (): void {
     it('shows direction requests before failures, and the kind on the list and the group', function (): void {
         $columns = getenv('COLUMNS');
         putenv('COLUMNS=160');
-        $recorded = json_decode((string) file_get_contents(dirname(__DIR__, 5).'/packages/php-sdk/fixtures/tasks/tasks-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
+        $recorded = json_decode((string) file_get_contents(dirname(__DIR__, 5).'/packages/php-sdk/fixtures/tasks/task-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
         $group = $recorded['body']['data'];
         $group['assistance_requested'] = true;
         $group['assistance_kind'] = 'direction';
         $group['assistance_question'] = 'Which database should this use?';
         $group['assistance_reason'] = 'The implementer is blocked.';
-        $group['tasks'][0]['assistance_requested'] = true;
-        $group['tasks'][0]['assistance_kind'] = 'direction';
-        $group['tasks'][0]['assistance_question'] = 'Which database should this use?';
-        $group['tasks'][0]['assistance_reason'] = 'The implementer is blocked.';
+        $group['subtasks'][0]['assistance_requested'] = true;
+        $group['subtasks'][0]['assistance_kind'] = 'direction';
+        $group['subtasks'][0]['assistance_question'] = 'Which database should this use?';
+        $group['subtasks'][0]['assistance_reason'] = 'The implementer is blocked.';
         $failure = $group;
         $failure['id'] = 3;
         $failure['title'] = 'Failed push';
         $failure['assistance_kind'] = 'failure';
         $failure['assistance_question'] = null;
         $failure['assistance_reason'] = 'The push failed.';
-        $failure['tasks'][0]['assistance_kind'] = 'failure';
-        $failure['tasks'][0]['assistance_question'] = null;
-        $failure['tasks'][0]['assistance_reason'] = 'The push failed.';
+        $failure['subtasks'][0]['assistance_kind'] = 'failure';
+        $failure['subtasks'][0]['assistance_question'] = null;
+        $failure['subtasks'][0]['assistance_reason'] = 'The push failed.';
         $clear = $group;
         $clear['id'] = 2;
         $clear['title'] = 'Clear';
@@ -706,17 +712,17 @@ describe('assistance columns', function (): void {
         $clear['assistance_kind'] = 'direction';
         $clear['assistance_question'] = 'An old question.';
         $clear['assistance_reason'] = 'An old reason.';
-        $clear['tasks'][0]['assistance_requested'] = false;
-        $clear['tasks'][0]['assistance_kind'] = 'direction';
-        $clear['tasks'][0]['assistance_question'] = 'An old question.';
-        $clear['tasks'][0]['assistance_reason'] = 'An old reason.';
+        $clear['subtasks'][0]['assistance_requested'] = false;
+        $clear['subtasks'][0]['assistance_kind'] = 'direction';
+        $clear['subtasks'][0]['assistance_question'] = 'An old question.';
+        $clear['subtasks'][0]['assistance_reason'] = 'An old reason.';
         $body = static fn (array $data): array => ['data' => $data, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
 
         MockClient::global([
-            ListTaskGroupsRequest::class => MockResponse::make($body([$failure, $group, $clear])),
+            ListTasksRequest::class => MockResponse::make($body([$failure, $group, $clear])),
         ]);
 
-        expect(Artisan::call('tasks:list'))->toBe(0);
+        expect(Artisan::call('task:list'))->toBe(0);
         $list = Artisan::output();
         expect($list)->toContain('KIND')
             ->and($list)->toContain('direction')
@@ -728,10 +734,10 @@ describe('assistance columns', function (): void {
 
         MockClient::destroyGlobal();
         MockClient::global([
-            ShowTaskGroupRequest::class => MockResponse::make($body($group)),
+            ShowTaskRequest::class => MockResponse::make($body($group)),
         ]);
 
-        expect(Artisan::call('tasks:show', ['group' => '1']))->toBe(0);
+        expect(Artisan::call('task:show', ['task' => '1']))->toBe(0);
         $shown = Artisan::output();
         expect($shown)->toContain('Kind')
             ->and($shown)->toContain('direction')
@@ -792,7 +798,7 @@ describe('assistance columns', function (): void {
             ])),
         ]);
 
-        expect(Artisan::call('tasks:status'))->toBe(0);
+        expect(Artisan::call('task:status'))->toBe(0);
         $status = Artisan::output();
         $directionAt = strpos($status, 'Needs your direction');
         $failuresAt = strpos($status, 'Failures');
@@ -804,7 +810,7 @@ describe('assistance columns', function (): void {
             ->and(strpos($status, 'The push failed.'))->toBeLessThan(strpos($status, 'The check failed.'))
             ->and($status)->not->toContain('An old reason.');
 
-        expect(Artisan::call('tasks:status', ['--json' => true]))->toBe(0);
+        expect(Artisan::call('task:status', ['--json' => true]))->toBe(0);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect(array_column($json['assistance'], 'id'))->toBe([2, 4, 9, 11])
             ->and($json['assistance'][1])->toMatchArray([
@@ -847,12 +853,12 @@ final class TaskPromptsTerminal extends Terminal
 }
 
 it('shows observed power and capacity wait in human and JSON output', function (bool $json, ?string $power): void {
-    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/task-show/default')), true, flags: JSON_THROW_ON_ERROR);
     $fixture['body']['data']['vm_power'] = $power;
     $fixture['body']['data']['capacity_wait_reason'] = 'The local VM budget is full.';
-    MockClient::global([ShowTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
+    MockClient::global([ShowTaskRequest::class => MockResponse::make($fixture['body'])]);
 
-    expect(Artisan::call('tasks:show', ['group' => '1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    expect(Artisan::call('task:show', ['task' => '1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
     $output = Artisan::output();
     if ($json) {
         $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
@@ -872,83 +878,98 @@ it('shows observed power and capacity wait in human and JSON output', function (
 })->with([false, true])->with(['running', 'stopped', 'destroyed', null]);
 
 it('sends explicit preview updates without changing review status', function (bool $preview): void {
-    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/task-show/default')), true, flags: JSON_THROW_ON_ERROR);
     $fixture['body']['data']['preview'] = $preview;
     $fixture['body']['data']['status'] = 'waiting_for_review';
-    $mock = MockClient::global([UpdateTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
+    $mock = MockClient::global([UpdateTaskRequest::class => MockResponse::make($fixture['body'])]);
 
-    expect(Artisan::call('tasks:update', ['group' => '1', $preview ? '--preview' : '--no-preview' => true, '--json' => true]))->toBe(0);
+    expect(Artisan::call('task:update', ['task' => '1', $preview ? '--preview' : '--no-preview' => true, '--json' => true]))->toBe(0);
     expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))->toBe(['preview' => $preview]);
     expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBe($preview);
 })->with([true, false]);
 
 it('refuses conflicting preview flags before a Gateway request', function (): void {
     $mock = MockClient::global([]);
-    expect(Artisan::call('tasks:update', ['group' => '1', '--preview' => true, '--no-preview' => true, '--json' => true]))->toBe(1);
-    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.preview_conflict');
+    expect(Artisan::call('task:update', ['task' => '1', '--preview' => true, '--no-preview' => true, '--json' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('task.preview_conflict');
     $mock->assertNothingSent();
 });
 
 it('requests a preview on task group creation', function (): void {
-    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
-    expect(Artisan::call('tasks:create', ['title' => 'Preview', '--project' => '1', '--brief' => 'Keep it running.', '--preview' => true, '--json' => true]))->toBe(0);
+    $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+    expect(Artisan::call('task:create', ['title' => 'Preview', '--project' => '1', '--brief' => 'Keep it running.', '--preview' => true, '--json' => true]))->toBe(0);
     expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBeTrue();
 });
 
 it('declares the current recipe on task group creation only when asked', function (bool $current): void {
-    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
-    expect(Artisan::call('tasks:create', ['title' => 'Recipe', '--project' => '1', '--brief' => 'Needs the new image.', '--json' => true, ...($current ? ['--current-recipe' => true] : [])]))->toBe(0);
+    $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+    expect(Artisan::call('task:create', ['title' => 'Recipe', '--project' => '1', '--brief' => 'Needs the new image.', '--json' => true, ...($current ? ['--current-recipe' => true] : [])]))->toBe(0);
     $body = json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR);
     expect($current ? $body['current_recipe'] : array_key_exists('current_recipe', $body))->toBe($current);
 })->with([true, false]);
 
 describe('declared topology', function (): void {
     it('sends a declaration and an explicit empty update', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-create/created'));
-        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev","app-prod+ingress"]', '--json' => true]))->toBe(0);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/child-created'));
+        expect(Artisan::call('task:create', ['--parent' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev","app-prod+ingress"]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
             && json_decode((string) $request->body(), true)['topology'] === ['app-dev', 'app-prod+ingress']);
         MockClient::destroyGlobal();
-        $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/tasks-subtask-create/created.json')), true, flags: JSON_THROW_ON_ERROR);
-        $mock = MockClient::global([UpdateSubtaskRequest::class => MockResponse::make($fixture['body'])]);
-        expect(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--topology' => '[]', '--json' => true]))->toBe(0);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+        $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/task-create/child-created.json')), true, flags: JSON_THROW_ON_ERROR);
+        $mock = MockClient::global([UpdateTaskRequest::class => MockResponse::make($fixture['body'])]);
+        expect(Artisan::call('task:update', ['task' => '57', '--topology' => '[]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
             && json_decode((string) $request->body(), true) === ['topology' => []]);
     });
 
     it('rejects invalid declarations before sending a request', function (string $value): void {
         $mock = MockClient::global([]);
-        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
-        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.invalid_topology');
+        expect(Artisan::call('task:create', ['--parent' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('task.invalid_topology');
         $mock->assertNothingSent();
     })->with(['[""]', '["app-dev","app-dev"]', '[1]', '{}', 'null', 'app-dev']);
 });
 
 it('sends the requested orchestration mode when creating a group', function (string $mode): void {
-    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
-    expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => $mode, '--json' => true]))->toBe(0);
-    $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
+    $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+    expect(Artisan::call('task:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => $mode, '--json' => true]))->toBe(0);
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
         && json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR)['orchestration'] === $mode);
 })->with(['external']);
 
 it('refuses an unknown orchestration mode before contacting the Gateway', function (): void {
     $mock = MockClient::global([]);
-    expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => 'other', '--json' => true]))->toBe(1);
-    expect(Artisan::output())->toContain('tasks.orchestration_invalid');
+    expect(Artisan::call('task:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => 'other', '--json' => true]))->toBe(1);
+    expect(Artisan::output())->toContain('task.orchestration_invalid');
     $mock->assertNothingSent();
 });
 
 it('transports external board status updates without deciding lifecycle policy', function (): void {
     $mock = MockClient::global([
-        ...gateway_fixture_mock('tasks/tasks-update/updated'),
-        ...gateway_fixture_mock('tasks/tasks-subtask-update/updated'),
+        ...gateway_fixture_mock('tasks/task-update/updated'),
+        ...gateway_fixture_mock('tasks/task-update/child-updated'),
     ]);
 
-    expect(Artisan::call('tasks:update', ['group' => '13', '--status' => 'reviewing', '--json' => true]))->toBe(0);
-    expect(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--status' => 'completed', '--json' => true]))->toBe(0);
+    expect(Artisan::call('task:update', ['task' => '13', '--status' => 'reviewing', '--json' => true]))->toBe(0);
+    expect(Artisan::call('task:update', ['task' => '57', '--status' => 'completed', '--json' => true]))->toBe(0);
 
-    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskGroupRequest
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
         && (string) $request->body() === '{"status":"reviewing"}');
-    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
         && (string) $request->body() === '{"status":"completed"}');
+});
+
+it('registers one task family with direct selectors and no old aliases', function (): void {
+    $commands = app(Kernel::class)->all();
+    $names = array_keys(array_filter($commands, static fn ($command): bool => str_starts_with($command->getName() ?? '', 'task:')));
+    sort($names);
+    expect($names)->toBe([
+        'task:agent:list', 'task:agent:show', 'task:cancel', 'task:check', 'task:comment:create', 'task:comment:list',
+        'task:complete', 'task:create', 'task:destroy', 'task:egress', 'task:list', 'task:park', 'task:publish',
+        'task:question:close', 'task:question:list', 'task:show', 'task:start', 'task:status', 'task:turn', 'task:update',
+    ])->and(array_filter(array_keys($commands), static fn (string $name): bool => str_starts_with($name, 'tasks:')))->toBe([]);
+    foreach (['task:check', 'task:turn', 'task:cancel', 'task:destroy', 'task:show', 'task:update', 'task:comment:create', 'task:comment:list'] as $name) {
+        expect(array_keys($commands[$name]->getDefinition()->getArguments()))->toBe(['task'])
+            ->and($commands[$name]->getDefinition()->hasOption('subtask'))->toBeFalse();
+    }
 });

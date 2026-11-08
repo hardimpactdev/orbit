@@ -84,7 +84,7 @@ it('refuses a Project that does not take part in review and merge', function ():
     expect(outsideRefusal(outsideWorld(reviewAndMerge: false)))->toBe('project.review_and_merge_disabled');
 });
 
-it('refuses a pull request that an open Task group watches, and merges it only through tasks:pr-merge', function (): void {
+it('refuses a pull request that an open Task group watches, and merges it only through task:pr-merge', function (): void {
     $project = outsideWorld();
     outsideGroup($project, TaskGroupStatus::WaitingForReview);
 

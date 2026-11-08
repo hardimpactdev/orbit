@@ -1,7 +1,7 @@
 id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
 description: >-
-  Start a task VM for a task group (docs/cli/tasks/provision.mmd) from full inputs on 209: a copy of the host's base snapshot with a clone
+  Start a task VM for a task group (docs/cli/task/start.mmd) from full inputs on 209: a copy of the host's base snapshot with a clone
   of its seed, the identity the admission minted and the claim's Pi token and models file (the guard origin and the fixed model key), with
   the hub peer added beside the boot; the converge of the release refresh, which is a no-op on a current base, and the new task branch, in one Ansible run;
   then one ready check. No step calls the Gateway or the model router.

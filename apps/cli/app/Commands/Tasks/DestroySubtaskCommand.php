@@ -7,18 +7,18 @@ namespace App\Commands\Tasks;
 use App\Commands\Tasks\Concerns\ConfirmsTaskChanges;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\DestroyTaskRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
-use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class DestroySubtaskCommand extends TaskCommand
 {
     use ConfirmsTaskChanges;
 
     #[\Override]
-    protected $signature = 'tasks:subtask:destroy
-        {group? : Numeric task group ID}
-        {subtask? : Numeric subtask ID}
+    protected $signature = 'task:destroy
+        {task? : Numeric Task ID}
         {--yes : Confirm without prompting}
         {--json : Return machine-readable JSON}';
 
@@ -27,10 +27,8 @@ final class DestroySubtaskCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
-        $subtaskId = $groupId === false ? false : $this->idArgument('subtask', 'Subtask', 'subtask');
-
-        if ($groupId === false || $subtaskId === false) {
+        $subtaskId = $this->idArgument('task', 'Task', 'task');
+        if ($subtaskId === false) {
             return self::FAILURE;
         }
 
@@ -40,45 +38,18 @@ final class DestroySubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, ['backlog']);
+        $subtaskId ??= (int) $this->promptText('Subtask ID', 20);
+        $consented = $this->consent(function () use ($connector, $subtaskId): ?string {
+            $task = $this->send($connector, new ShowTaskRequest($subtaskId), TaskRecordResponse::class);
 
-        if ($groupId === null) {
-            return self::FAILURE;
-        }
-
-        $group = null;
-
-        if ($subtaskId === null) {
-            $group = $this->loadGroup($connector, $groupId);
-
-            if (! $group instanceof TaskGroupResponse) {
-                return self::FAILURE;
-            }
-
-            $subtaskId = $this->selectSubtask($group);
-        }
-
-        $consented = $this->consent(function () use ($connector, $groupId, $subtaskId, $group): ?string {
-            $group ??= $this->loadGroup($connector, $groupId);
-
-            if (! $group instanceof TaskGroupResponse) {
-                return null;
-            }
-
-            foreach ($group->tasks as $task) {
-                if ($task->id === $subtaskId) {
-                    return "Destroy subtask {$task->position} ({$task->title}) of task group {$group->reference()}?";
-                }
-            }
-
-            return "Destroy subtask {$subtaskId} of task group {$group->reference()}?";
+            return $task instanceof SubtaskResponse ? "Destroy subtask [{$task->id}] ({$task->title})?" : null;
         }, "Subtask [{$subtaskId}] was not destroyed.");
 
         if (! $consented) {
             return self::FAILURE;
         }
 
-        $task = $this->sendWithProgress($connector, new DestroySubtaskRequest($groupId, $subtaskId), SubtaskResponse::class, ['Destroy subtask', 'Destroying subtask', 'Destroyed subtask']);
+        $task = $this->sendWithProgress($connector, new DestroyTaskRequest($subtaskId), SubtaskResponse::class, ['Destroy subtask', 'Destroying subtask', 'Destroyed subtask']);
 
         if (! $task instanceof SubtaskResponse) {
             return self::FAILURE;

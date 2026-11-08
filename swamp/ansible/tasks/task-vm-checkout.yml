@@ -1,5 +1,5 @@
 ---
-# The warm checkout of a task image (docs/cli/tasks/vm-image-refresh.mmd): main at the converged commit, with `vendor/` and
+# The warm checkout of a task image (docs/cli/task/vm-image-refresh.mmd): main at the converged commit, with `vendor/` and
 # `node_modules/` of every project and their caches, at the fixed path that a task's workspace Instance names. Each step checks the
 # state first: the checkout moves only when HEAD differs, and a project installs only when its lock file differs from the one it
 # installed. The repository is read without a credential: the task VMs serve a public repository.

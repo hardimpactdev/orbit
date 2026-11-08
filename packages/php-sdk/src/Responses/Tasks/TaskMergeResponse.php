@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Tasks;
 
-/** One open review-and-merge task in the `tasks:status` view. */
+/** One open review-and-merge task in the `task:status` view. */
 final readonly class TaskMergeResponse
 {
     public function __construct(

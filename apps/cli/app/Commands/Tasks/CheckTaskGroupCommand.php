@@ -7,7 +7,7 @@ namespace App\Commands\Tasks;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CheckTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CheckTaskGroupCommand extends TaskCommand
@@ -15,9 +15,8 @@ final class CheckTaskGroupCommand extends TaskCommand
     use FollowsOperations;
 
     #[\Override]
-    protected $signature = 'tasks:check
-        {group? : Numeric task group ID}
-        {--subtask= : Numeric subtask ID}
+    protected $signature = 'task:check
+        {task? : Numeric Task ID}
         {--phase= : baseline or handoff}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
@@ -27,12 +26,8 @@ final class CheckTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
+        $groupId = $this->idArgument('task', 'Subtask', 'task');
         if ($groupId === false) {
-            return self::FAILURE;
-        }
-        $subtask = $this->idOption('subtask', 'Subtask', 'subtask');
-        if ($subtask === false) {
             return self::FAILURE;
         }
         $phase = $this->choiceInput($this->option('phase'), 'Phase', 'phase', ['baseline', 'handoff']);
@@ -44,23 +39,14 @@ final class CheckTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
         $connector = $connectors->make($profile);
-        $groupId ??= $this->selectGroup($connector, ['running', 'reviewing']);
-        if ($groupId === null) {
-            return self::FAILURE;
-        }
-        if ($subtask === null) {
-            $group = $this->loadGroup($connector, $groupId);
-            if ($group === null) {
-                return self::FAILURE;
-            }
-            $subtask = $this->selectSubtask($group, ['todo', 'running', 'reviewing']);
-        }
+        $groupId ??= (int) $this->promptText('Subtask ID', 20);
+
         $phase ??= $this->promptChoice('Phase', ['baseline' => 'Baseline', 'handoff' => 'Handoff']);
         $key = $this->option('idempotency-key');
-        $operation = $this->send($connector, new CheckTaskGroupRequest($groupId, $subtask, $phase, is_string($key) ? $key : null), OperationResponse::class);
+        $operation = $this->send($connector, new CheckTaskRequest($groupId, $phase, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
-            ? $this->followOperation($connector, $profile, $operation, "Check task group [{$groupId}]", 'Check')
+            ? $this->followOperation($connector, $profile, $operation, "Check task [{$groupId}]", 'Check')
             : self::FAILURE;
     }
 }

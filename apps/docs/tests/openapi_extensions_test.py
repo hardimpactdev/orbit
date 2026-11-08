@@ -15,7 +15,7 @@ class OpenApiExtensionsTest(unittest.TestCase):
             {'method': 'GET|HEAD', 'uri': 'api/v1/widgets', 'name': 'widget:list',
              'action': 'App\\Http\\Controllers\\WidgetsController@index',
              'middleware': ['App\\Http\\Middleware\\RequireEnabledExtension:widgets']},
-            {'method': 'GET', 'uri': 'api/v1/tasks/status', 'name': 'tasks:status',
+            {'method': 'GET', 'uri': 'api/v1/tasks/status', 'name': 'task:status',
              'action': 'TasksController@status', 'middleware': []},
             {'method': 'GET', 'uri': 'health', 'name': 'health',
              'action': 'HealthController@index', 'middleware': []},
@@ -27,7 +27,7 @@ class OpenApiExtensionsTest(unittest.TestCase):
         routes = namespace['load_routes']()
 
         self.assertEqual([(route['name'], route['extension']) for route in routes],
-                         [('widget:list', 'widgets'), ('tasks:status', None)])
+                         [('widget:list', 'widgets'), ('task:status', None)])
 
     def test_derives_the_slug_enum_from_the_gated_routes(self):
         namespace = {'routes': [{'extension': 'widgets'}, {'extension': None},

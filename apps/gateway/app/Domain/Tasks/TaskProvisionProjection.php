@@ -18,7 +18,7 @@ use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
-/** State projection only: the claim of a slot (docs/cli/tasks/provision.mmd). Swamp owns the start, the fetch, the containers and readiness. */
+/** State projection only: the claim of a slot (docs/cli/task/start.mmd). Swamp owns the start, the fetch, the containers and readiness. */
 final readonly class TaskProvisionProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The end check of a task start: what a task needs, the agent, Pi, the tunnel and the three containers running. */

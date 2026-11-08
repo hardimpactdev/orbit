@@ -10,7 +10,7 @@ use App\Models\TaskVm;
 
 /**
  * Public Gateway pin snapshot for the sole control worker; performs no host lookup or write. A task VM's Node is no part of it: every run
- * that reaches a task VM carries its pinned key in its intent, and the Node lives for one task start only (docs/cli/tasks/provision.mmd).
+ * that reaches a task VM carries its pinned key in its intent, and the Node lives for one task start only (docs/cli/task/start.mmd).
  */
 final readonly class SwampWorkerKnownHostsInput
 {

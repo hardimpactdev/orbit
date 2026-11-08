@@ -16,13 +16,20 @@ final class ListTaskCommentsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        private readonly int $groupId,
         private readonly int $taskId,
+        private readonly ?string $type = null,
+        private readonly ?int $limit = null,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/tasks/{$this->taskId}/comments";
+        return "/api/v1/tasks/{$this->taskId}/comments";
+    }
+
+    /** @return array<string, int|string> */
+    protected function defaultQuery(): array
+    {
+        return array_filter(['type' => $this->type, 'limit' => $this->limit], static fn (mixed $value): bool => $value !== null);
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskCommentsResponse

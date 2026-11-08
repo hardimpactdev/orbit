@@ -20,7 +20,7 @@ final class CompleteTaskGroupRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/task-groups/{$this->groupId}/complete";
+        return "/api/v1/tasks/{$this->groupId}/complete";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskGroupResponse

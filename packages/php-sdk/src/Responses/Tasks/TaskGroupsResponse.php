@@ -6,7 +6,7 @@ namespace Orbit\Sdk\Responses\Tasks;
 
 final readonly class TaskGroupsResponse
 {
-    /** @param list<TaskGroupResponse> $taskGroups */
+    /** @param list<TaskGroupResponse|SubtaskResponse> $taskGroups */
     public function __construct(
         public array $taskGroups,
         public string $requestId,
@@ -16,7 +16,7 @@ final readonly class TaskGroupsResponse
     public function toArray(): array
     {
         return [
-            'task_groups' => array_map(static function (TaskGroupResponse $group): array {
+            'task_groups' => array_map(static function (TaskGroupResponse|SubtaskResponse $group): array {
                 $data = $group->toArray();
                 unset($data['request_id']);
 

@@ -8,7 +8,6 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
-use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 
 final class CreateTaskCommentCommand extends TaskCommand
 {
@@ -19,9 +18,8 @@ final class CreateTaskCommentCommand extends TaskCommand
     ];
 
     #[\Override]
-    protected $signature = 'tasks:comment:create
-        {group? : Numeric task group ID}
-        {subtask? : Numeric subtask ID}
+    protected $signature = 'task:comment:create
+        {task? : Numeric Task ID}
         {--type= : assistance_requested or resolution}
         {--body= : Comment text}
         {--author= : Who wrote the comment}
@@ -33,10 +31,9 @@ final class CreateTaskCommentCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $groupId = $this->idArgument('group', 'Task group', 'group');
-        $subtaskId = $groupId === false ? false : $this->idArgument('subtask', 'Subtask', 'subtask');
+        $groupId = $this->idArgument('task', 'Task', 'task');
 
-        if ($groupId === false || $subtaskId === false) {
+        if ($groupId === false) {
             return self::FAILURE;
         }
 
@@ -64,7 +61,7 @@ final class CreateTaskCommentCommand extends TaskCommand
             $agentThreadId = filter_var($this->option('agent-thread'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
             if (! is_int($agentThreadId)) {
-                return $this->renderGatewayFailure('tasks.agent_thread_invalid', 'Agent thread ID must be a positive integer.');
+                return $this->renderGatewayFailure('task.agent_thread_invalid', 'Agent thread ID must be a positive integer.');
             }
         }
 
@@ -80,23 +77,13 @@ final class CreateTaskCommentCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        if ($subtaskId === null) {
-            $group = $this->loadGroup($connector, $groupId);
-
-            if (! $group instanceof TaskGroupResponse) {
-                return self::FAILURE;
-            }
-
-            $subtaskId = $this->selectSubtask($group);
-        }
-
         $type ??= $this->promptChoice('Comment type', self::TYPES);
         $body ??= $this->promptText('Body', self::COMMENT_BODY_MAX, multiline: true);
         $author ??= $this->promptText('Author', self::AUTHOR_MAX, default: self::localUser());
 
         $comment = $this->sendWithProgress(
             $connector,
-            new CreateTaskCommentRequest($groupId, $subtaskId, $type, $body, $author, $agentThreadId),
+            new CreateTaskCommentRequest($groupId, $type, $body, $author, $agentThreadId),
             TaskCommentResponse::class,
             ['Create comment', 'Creating comment', 'Created comment'],
         );

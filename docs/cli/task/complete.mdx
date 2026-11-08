@@ -1,0 +1,21 @@
+---
+title: "orbit task:complete"
+sidebarTitle: "task:complete"
+description: "Complete a `settling` or `waiting_for_review` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance."
+---
+
+On the `running` or `reviewing` path it stores the ended state, stops the running implementer or reviewer and any running check, then cancels each open subtask and marks the task `completed` in one transaction. A failed stop returns `tasks.subtask_interrupt_failed`, keeps the task and its subtasks open, and leaves the stored completion for retry. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `task:continue` command.
+
+```bash
+orbit task:complete [task] [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
+
+In a terminal, the task list shows only `settling` tasks. Pass the task id to complete a `running` or `reviewing` task whose watched pull request has ended. The question names the task and its Instance and defaults to No. Consent failures match `task:cancel`. A task that is not one of those ready cases fails with `tasks.not_settling`. That includes a `running` or `reviewing` task whose watched pull request is missing, open, or unreadable, unless completion was already recorded. When the task holds a workspace or a task VM, origin's task branch must already reach its latest approved commit. Otherwise the call fails with `tasks.approved_work_unpublished`, names the commit, and changes nothing; run [`task:publish`](/cli/task/publish) first, which resumes a parked VM. A failed GitHub read fails the same way. When removal fails, for example while the task VM resumes, the task is still marked `completed`, the Instance stays attached, and a later complete retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
+
+## How it works
+
+<div className="flow-at" data-chart="task/complete"></div>

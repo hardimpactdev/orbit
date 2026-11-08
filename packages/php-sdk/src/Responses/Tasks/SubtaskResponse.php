@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Tasks;
 
 /** One ordered subtask of a task group; the Gateway calls it a Task. */
-final readonly class SubtaskResponse
+final readonly class SubtaskResponse implements TaskRecordResponse
 {
     public function __construct(
         public int $id,
-        public int $taskGroupId,
+        public int $parentId,
         public int $position,
         public string $title,
         public string $brief,
@@ -40,7 +40,7 @@ final readonly class SubtaskResponse
     {
         return new self(
             id: TaskFields::id($data, 'id', 'subtask', $requestId),
-            taskGroupId: TaskFields::id($data, 'task_group_id', 'subtask', $requestId),
+            parentId: TaskFields::id($data, 'parent_id', 'subtask', $requestId),
             position: TaskFields::id($data, 'position', 'subtask', $requestId),
             title: TaskFields::text($data, 'title', 'subtask', $requestId),
             brief: TaskFields::text($data, 'brief', 'subtask', $requestId),
@@ -68,7 +68,7 @@ final readonly class SubtaskResponse
     /**
      * @return array{
      *     id: int,
-     *     task_group_id: int,
+     *     parent_id: int,
      *     position: int,
      *     title: string,
      *     brief: string,
@@ -96,7 +96,7 @@ final readonly class SubtaskResponse
     {
         return [
             'id' => $this->id,
-            'task_group_id' => $this->taskGroupId,
+            'parent_id' => $this->parentId,
             'position' => $this->position,
             'title' => $this->title,
             'brief' => $this->brief,

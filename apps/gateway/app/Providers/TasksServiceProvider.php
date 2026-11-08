@@ -125,9 +125,9 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             TaskPullRequestGateCommand::class,
         ]);
 
-        // {group} is the top-level task. The Task scope itself returns only subtasks.
-        Route::bind('group', static function (string $value): Task {
-            $task = Task::topLevel()->whereKey($value)->first();
+        // A canonical member selects either level. Internal Task queries keep their child scope.
+        Route::bind('task', static function (string $value): Task {
+            $task = Task::withoutGlobalScope('subtask')->whereKey($value)->first();
 
             if (! $task instanceof Task) {
                 throw (new ModelNotFoundException)->setModel(Task::class, [$value]);

@@ -28,7 +28,7 @@ The server protocol works on official e459 even though its CLI refuses remote st
 
 Orbit only adds its own keys to the managed account's `~/.ssh/authorized_keys`: the `swamp` role's public key, then each operator key that Orbit records. Orbit records no operator keys yet. It never removes, reorders or changes another line, so operator keys that Orbit does not manage keep their access.
 
-The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Inside `PendingSshHostKey::during()`, a target whose key is not yet known gets `host_keys: null`; only [`tasks.provision`](/reference/tasks#provision-an-external-group) uses this, and its bind step pins the key before any child connects. The run needs no secret. Every step runs on 209 and connects with the `swamp` role identity:
+The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Inside `PendingSshHostKey::during()`, a target whose key is not yet known gets `host_keys: null`; only [`task:start`](/cli/task/start), through the internal `tasks.provision` operation, uses this, and its bind step pins the key before any child connects. The run needs no secret. Every step runs on 209 and connects with the `swamp` role identity:
 
 - `Write the Orbit keys` runs one official `@swamp/cfgmgmt/authorized_key` per key. It adds a missing line and leaves a present one alone.
 - `Log in with Swamp identity` opens a new session with only that identity. It is the end check, read from Swamp's run data.

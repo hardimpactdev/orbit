@@ -9,6 +9,7 @@ import { screenText } from "./screen";
 function group(id: number, status: TaskGroup["status"]): TaskGroup {
     return {
         id,
+        parent_id: null,
         project_id: 999,
         orchestration: "external",
         capacity_wait_reason: null,
@@ -40,10 +41,10 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         duration_ms: null,
         questions: 0,
         escalations: 0,
-        tasks: [
+        subtasks: [
             {
                 id: 1,
-                task_group_id: id,
+                parent_id: id,
                 type: "implementation",
                 completion_summary: null,
                 check: null,
@@ -74,7 +75,7 @@ async function openTasks(answer: Transport) {
         wrapTransport: (inner) => (method, path, body) =>
             path.endsWith("/agents") || path.endsWith("/comments")
                 ? Promise.resolve({ status: 200, payload: { data: [] } })
-                : path.startsWith("/api/v1/task-groups")
+                : path.startsWith("/api/v1/tasks")
                   ? answer(method, path, body)
                   : inner(method, path, body),
     });
@@ -95,7 +96,7 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     const groups = statuses.map((status, index) => group(index + 1, status));
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? groups : groups[0] },
+        payload: { data: path === "/api/v1/tasks" ? groups : groups[0] },
     }));
     await expect
         .element(pane("Todo").getByRole("link", { name: "Open task: Feature 1", exact: true }))
@@ -128,14 +129,14 @@ it.each(["running", "stopped", "destroyed", null, undefined] as const)(
         const task = { ...group(1, "waiting_for_review"), vm_power: power };
         await openTasks(async (_, path) => ({
             status: 200,
-            payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+            payload: { data: path === "/api/v1/tasks" ? [task] : task },
         }));
         await pane("In progress").getByRole("link").click();
         await expect
             .element(pane("Description"))
             .toMatchTextContent("Deliver the requested feature.");
         await expect.element(pane("Task")).toMatchTextContent("In progress");
-        expect(queryClient.getQueryData<TaskGroup>(["task-groups", "1"])?.status).toBe(
+        expect(queryClient.getQueryData<TaskGroup>(["tasks", "1"])?.status).toBe(
             "waiting_for_review",
         );
     },
@@ -160,10 +161,10 @@ it("distinguishes direction requests from failures on task and subtask cards", a
         title: "Resolved request",
         assistance_requested: false,
     };
-    direction.tasks = [
-        { ...direction.tasks[0]!, assistance_requested: true, assistance_kind: "direction" },
+    direction.subtasks = [
+        { ...direction.subtasks[0]!, assistance_requested: true, assistance_kind: "direction" },
         {
-            ...direction.tasks[0]!,
+            ...direction.subtasks[0]!,
             id: 2,
             title: "Failed check",
             assistance_requested: true,
@@ -173,7 +174,7 @@ it("distinguishes direction requests from failures on task and subtask cards", a
     const app = await openTasks(async (_, path) => ({
         status: 200,
         payload: {
-            data: path === "/api/v1/task-groups" ? [direction, failure, resolved] : direction,
+            data: path === "/api/v1/tasks" ? [direction, failure, resolved] : direction,
         },
     }));
     const card = (title: string) =>
@@ -201,10 +202,10 @@ it("leads a direction request with its question and shows question and escalatio
         questions: 4,
         escalations: 2,
     };
-    task.tasks[0] = { ...task.tasks[0]!, questions: 3, escalations: 1 };
+    task.subtasks[0] = { ...task.subtasks[0]!, questions: 3, escalations: 1 };
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("Needs your direction")).toMatchTextContent(task.assistance_question);
@@ -244,7 +245,7 @@ it.each(["failure", "direction"] as const)(
         };
         const app = await openTasks(async (_, path) => ({
             status: 200,
-            payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+            payload: { data: path === "/api/v1/tasks" ? [task] : task },
         }));
         await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
         await expect.element(pane("Task")).toBeVisible();
@@ -301,13 +302,13 @@ it("hides empty task lanes and shares the width as cards move between statuses",
 
 it("hides empty subtask lanes, shares their width, and explains an empty board", async () => {
     let task = group(1, "running");
-    task.tasks = [
-        { ...task.tasks[0]!, status: "running" },
-        { ...task.tasks[0]!, id: 2, position: 2, title: "Second step", status: "completed" },
+    task.subtasks = [
+        { ...task.subtasks[0]!, status: "running" },
+        { ...task.subtasks[0]!, id: 2, position: 2, title: "Second step", status: "completed" },
     ];
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("In progress")).toMatchTextContent("First step");
@@ -316,12 +317,12 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
         "Done",
     ]);
     expect(document.querySelector('[aria-label="Todo"]')).toBeNull();
-    task = { ...task, tasks: [task.tasks[1]!] };
+    task = { ...task, subtasks: [task.subtasks[1]!] };
     await queryClient.invalidateQueries();
     await expect.element(pane("In progress")).not.toBeInTheDocument();
     await expect.element(pane("Done")).toMatchTextContent("Second step");
     expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, ["Done"]);
-    task = { ...task, tasks: [] };
+    task = { ...task, subtasks: [] };
     await queryClient.invalidateQueries();
     await expect.element(pane("Subtasks")).toMatchTextContent("No subtasks yet.");
     expect(document.querySelector('[aria-label="Subtasks"] .kanban-board')).toBeNull();
@@ -355,14 +356,14 @@ it("shows missing task errors on a direct detail URL", async () => {
 
 it("shows completed subtask counts on in-progress cards instead of a running label", async () => {
     const task = group(1, "running");
-    const statusAt = (id: number, status: TaskGroup["tasks"][number]["status"]) => ({
-        ...task.tasks[0]!,
+    const statusAt = (id: number, status: TaskGroup["subtasks"][number]["status"]) => ({
+        ...task.subtasks[0]!,
         id,
         position: id,
         title: `Step ${id}`,
         status,
     });
-    task.tasks = [
+    task.subtasks = [
         statusAt(1, "completed"),
         statusAt(2, "completed"),
         statusAt(3, "running"),
@@ -371,7 +372,7 @@ it("shows completed subtask counts on in-progress cards instead of a running lab
     ];
     await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await expect.element(pane("In progress")).toMatchTextContent("2/5");
     await expect.element(pane("In progress")).not.toMatchTextContent("Running");
@@ -384,7 +385,7 @@ it("lets the keyboard activate a focused card", async () => {
     await openTasks(async (_, path) => ({
         status: 200,
         payload: {
-            data: path === "/api/v1/task-groups" ? [group(1, "running")] : group(1, "running"),
+            data: path === "/api/v1/tasks" ? [group(1, "running")] : group(1, "running"),
         },
     }));
     await expect.element(pane("In progress").getByRole("link")).toBeVisible();
@@ -405,9 +406,9 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
         "cancelled",
         "todo",
     ] as const;
-    task.tasks = statuses
+    task.subtasks = statuses
         .map((status, index) => ({
-            ...task.tasks[0]!,
+            ...task.subtasks[0]!,
             id: index + 1,
             position: index + 1,
             title: `Step ${index + 1}`,
@@ -416,7 +417,7 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
         .reverse();
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await expect.element(pane("Todo")).toMatchTextContent("Step 2");
@@ -440,9 +441,9 @@ it("shows card identity, separate line changes and elapsed time, with tokens in 
     task.lines_added = 23_320;
     task.lines_deleted = 9_322;
     task.duration_ms = 5000;
-    task.tasks = [
+    task.subtasks = [
         {
-            ...task.tasks[0]!,
+            ...task.subtasks[0]!,
             tokens: 1200,
             line_diff: 5,
             duration_ms: 4000,
@@ -450,7 +451,7 @@ it("shows card identity, separate line changes and elapsed time, with tokens in 
     ];
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await expect.element(pane("In progress")).toMatchTextContent("EXA-1");
     await expect.element(pane("In progress")).toMatchTextContent("+23.32K");
@@ -483,7 +484,7 @@ it("opens a subtask with its own detail and returns to the parent board", async 
     const task = group(1, "running");
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
     await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
@@ -508,7 +509,7 @@ it("links the group's pull request in the task properties", async () => {
     };
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
 
@@ -523,7 +524,7 @@ it("loads a subtask URL directly and refuses an unknown subtask", async () => {
     const task = group(1, "running");
     const app = await openTasks(async (_, path) => ({
         status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        payload: { data: path === "/api/v1/tasks" ? [task] : task },
     }));
     await app.router.navigate({
         to: "/tasks/$id/subtasks/$subtaskId",
@@ -555,7 +556,7 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
     const unassigned = { ...group(82, "todo"), title: "Unassigned task" };
     await openApp("/instances/1", {
         wrapTransport: (inner) => (method, path, body) =>
-            path === "/api/v1/task-groups"
+            path === "/api/v1/tasks"
                 ? Promise.resolve({ status: 200, payload: { data: [owned, other, unassigned] } })
                 : inner(method, path, body),
     });
@@ -584,11 +585,11 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(pane("Application log")).toBeVisible();
-    queryClient.setQueryData(["task-groups"], [other, unassigned]);
+    queryClient.setQueryData(["tasks"], [other, unassigned]);
     await expect
         .element(page.getByRole("tab", { name: "Tasks", exact: true }))
         .toMatchTextContent("Tasks");
-    queryClient.setQueryData(["task-groups"], [owned, other, unassigned]);
+    queryClient.setQueryData(["tasks"], [owned, other, unassigned]);
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toMatchTextContent(/Tasks\s*1/);
 });
 
@@ -608,10 +609,8 @@ it("hides the Instance Tasks tab and skips task queries when the extension start
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
-    expect(queryClient.getQueryData(["task-groups"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/task-groups")).toBe(
-        false,
-    );
+    expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
 });
 
 it("returns an Instance to Overview when tasks are disabled with task data cached", async () => {
@@ -624,7 +623,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
     let taskRequests = 0;
     const app = await openApp("/instances/1", {
         wrapTransport: (inner) => (method, path, body) => {
-            if (path === "/api/v1/task-groups") {
+            if (path === "/api/v1/tasks") {
                 taskRequests++;
 
                 return Promise.resolve({ status: 200, payload: { data: [owned] } });
@@ -634,7 +633,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
         },
     });
 
-    await expect.poll(() => queryClient.getQueryData(["task-groups"])).toEqual([owned]);
+    await expect.poll(() => queryClient.getQueryData(["tasks"])).toEqual([owned]);
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await expect
         .element(page.getByRole("link", { name: "Open task: Cached Instance task" }))
@@ -657,7 +656,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(pane("Application log")).toBeVisible();
-    expect(queryClient.getQueryData(["task-groups"])).toEqual([owned]);
+    expect(queryClient.getQueryData(["tasks"])).toEqual([owned]);
     expect(document.body.textContent).not.toContain("Cached Instance task");
     expect(taskRequests).toBe(1);
 });
@@ -677,8 +676,6 @@ it("does not load cached Tasks data on a direct route when the extension is disa
     await expect
         .element(page.getByText("The tasks extension is disabled on this Gateway."))
         .toBeVisible();
-    expect(queryClient.getQueryData(["task-groups"])).toBeUndefined();
-    expect(app.gateway.requests.some((request) => request.path === "/api/v1/task-groups")).toBe(
-        false,
-    );
+    expect(queryClient.getQueryData(["tasks"])).toBeUndefined();
+    expect(app.gateway.requests.some((request) => request.path === "/api/v1/tasks")).toBe(false);
 });

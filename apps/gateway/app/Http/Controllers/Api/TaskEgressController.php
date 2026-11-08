@@ -18,10 +18,10 @@ use Illuminate\Http\Request;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class TaskEgressController extends Controller
 {
-    public function show(Request $request, Task $group, ShowTaskGroupEgressAction $action): JsonResponse
+    public function show(Request $request, Task $task, ShowTaskGroupEgressAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($group)
+            'data' => $action->execute($task)
                 ->map(static fn (TaskGroupEgress $row): array => TaskGroupEgressData::fromModel($row)->toArray())
                 ->values()
                 ->all(),

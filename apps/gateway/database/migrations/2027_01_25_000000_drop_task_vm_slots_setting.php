@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Task VMs have no fixed slot identities any more: a slot is only a place under a host's `max_vms` (docs/cli/tasks/provision.mmd). The
+ * Task VMs have no fixed slot identities any more: a slot is only a place under a host's `max_vms` (docs/cli/task/start.mmd). The
  * `slots` key goes from every stored task VM host setting, and the slot digest column with it. A slot number comes back with each task
  * start, so a name is unique among the rows that are not destroyed, as is a slot number on its host. Each step holds when it ran
  * before: a Gateway may have no name index (a table rebuild dropped it), and a failed run may have stopped half way.

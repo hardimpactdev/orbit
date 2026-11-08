@@ -22,9 +22,9 @@ use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
 /**
- * The slots of the task VM hosts (docs/cli/tasks/provision.mmd). A slot is only a place under a host's capacity (`max_vms`); a task start
+ * The slots of the task VM hosts (docs/cli/task/start.mmd). A slot is only a place under a host's capacity (`max_vms`); a task start
  * takes the lowest free slot number and mints a fresh identity for the VM it makes, `<host>-tvm-<n>`, and its release removes both
- * (docs/cli/tasks/cancel.mmd). Every task VM copies the host's base VM, so each has the size of a large one.
+ * (docs/cli/task/cancel.mmd). Every task VM copies the host's base VM, so each has the size of a large one.
  */
 final readonly class TaskVmSlotPool
 {

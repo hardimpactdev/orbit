@@ -9,7 +9,7 @@ covers:
 
 # CLI command vocabulary
 
-The read-only task-page route `tasks:swamp-runs` has no CLI command. Its generated MCP tool is `tasks-swamp-runs`; [Swamp run output](/reference/tasks#swamp-run-output) owns the response contract.
+The read-only task-page route `task:swamp-runs` has no CLI command. Its generated MCP tool is `task-swamp-runs`; [Swamp run output](/reference/tasks#swamp-run-output) owns the response contract.
 
 This page tells an operator or agent how to name a CLI command. It lists the verbs, how ownership selects a verb pair, the actions that only some families have, and the commands that end in a noun. The CLI lives in `apps/cli`. The [CLI design standard](/reference/cli-ux) covers input and output.
 
@@ -69,16 +69,14 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `process` | `create` and `destroy` | A [Process](/reference/processes-and-schedules), or a Project Process definition with `--project` |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules), or a Project Schedule definition with `--project` |
-| `tasks` | `create` | A [task](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |
-| `tasks:comment` | `create` | A typed comment on a subtask |
-| `tasks:group:comment` | `create` | An assistance request or answer owned by a group after all its children end; `list` reads that history |
-| `tasks:subtask` | `create` and `destroy` | A subtask of a task |
+| `task` | `create` | A [task](/reference/tasks). `task:cancel` and `task:complete` end it. |
+| `task:comment` | `create` | A typed comment on a subtask |
 | `tool` | `install` and `remove`; `adopt` establishes ownership of an existing package | A Tool on a Node |
 | `websocket:app` | `create` and `destroy` | A [Reverb app](/reference/websocket-apps) on the `websocket` role |
 
 `route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
 
-`cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `instance:auto-deploy`, `project:maintenance`, `project:review-and-merge`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `ai-router` uses `setup` and `destroy` for its fleet resources, while `ai-router:status` and `ai-router:model:list` remain family-specific reads. `vault` uses `setup` and `destroy` for the Gateway's Vaultwarden account, `status` for its state, and `sync` to publish at once. `tasks` uses `create` for tasks and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. The `project:document` and `project:document-storage` commands keep their names as the commands of the `documents` extension, and its switch is `extension:enable documents`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
+`cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `instance:auto-deploy`, `project:maintenance`, `project:review-and-merge`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `ai-router` uses `setup` and `destroy` for its fleet resources, while `ai-router:status` and `ai-router:model:list` remain family-specific reads. `vault` uses `setup` and `destroy` for the Gateway's Vaultwarden account, `status` for its state, and `sync` to publish at once. `task` uses `create` for tasks and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. The `project:document` and `project:document-storage` commands keep their names as the commands of the `documents` extension, and its switch is `extension:enable documents`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
 [Project Documents](/reference/project-documents#cli-contract) use `project:document:<verb>`. Content operations use `read`, `write`, `upload`, and `download`; browsing adds `search` and `versions`; lifecycle operations add `archive`, `restore`, and `restore-version`. `update` renames or moves an entry. Permanent removal uses CLI `remove` and HTTP operation `project-document-destroy`. HTTP `project-document-version-list` maps to CLI `versions`. These are transport names for the same operations, not extra endpoints.
 
@@ -110,7 +108,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `realtime` | `logs` | The CLI streams Gateway events with `--follow`. Realtime has no retained history. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |
-| `tasks` | `analyze`, `cancel`, `check`, `close`, `complete`, `park`, `provision`, `publish`, `turn`, `status` | The CLI analyzes repositories, provisions or parks task VMs, checks or publishes work, sends turns, completes or cancels tasks, closes questions, and reports state. |
+| `task` | `analyze`, `cancel`, `check`, `close`, `complete`, `park`, `start`, `publish`, `turn`, `status` | The CLI analyzes repositories, starts or parks task VMs, checks or publishes work, sends turns, completes or cancels tasks, closes questions, and reports state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 | `vault` | `setup`, `status`, `sync` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
 | `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |
@@ -129,8 +127,7 @@ Six commands end in a noun.
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
-| `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
-| `tasks:egress` | The CLI lists the outside hosts that a [task](/reference/tasks)'s VM connected to. |
+| `task:egress` | The CLI lists the outside hosts that a [task](/reference/tasks)'s VM connected to. |
 
 ## Gateway route names
 
@@ -138,7 +135,7 @@ The Gateway lives in `apps/gateway`, and it records each route name as the Activ
 
 Some routes have no CLI command. `instance:deploy:automatic` is the [trusted automatic deploy contract](/reference/deployments#pinned-commits-and-automatic-callers) for Swamp and other authorized Gateway peers through API/MCP. CLI deploys use `instance:deploy`, preserve manual identity, and pause automation.
 
-`instance:dependencies:show` and `project:dependencies:show` read Swamp-owned [dependency results](/reference/instance-dependencies) for the API and SDK. They have no matching CLI command. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `tasks:agent:show`, has the [CLI command](/cli/tasks/agent-show) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
+`instance:dependencies:show` and `project:dependencies:show` read Swamp-owned [dependency results](/reference/instance-dependencies) for the API and SDK. They have no matching CLI command. `task:agent:stream` is a server-sent event stream for the web task board. `task:insights` returns the [task insights](/reference/tasks#task-insights) that the web task board shows. Its JSON read, `task:agent:show`, has the [CLI command](/cli/task/agent-show) of the same name. `instance:resolve` resolves a Route target for API clients; the CLI has no bare `instance:resolve` command. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
 
 
 [`node:wireguard-key`](/cli/node/wireguard-key) uses a noun-ending command because setting the key also reconverges the WireGuard hub; it is not a record patch. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. [`node:update`](/cli/node/update) patches a Node's name, platform and settings through `PATCH /api/v1/nodes/{node}`.

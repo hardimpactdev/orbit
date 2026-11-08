@@ -24,7 +24,7 @@ final readonly class NativeInstanceProvisioningIntent
     public function assertCreateSupported(Node $node): void
     {
         if (TaskVm::forNode($node) !== null) {
-            throw new ResourceOperationException('instance.task_vm_node', 'A task VM gets its workspace from tasks:provision, not instance:create.', 409);
+            throw new ResourceOperationException('instance.task_vm_node', 'A task VM gets its workspace from task:start, not instance:create.', 409);
         }
     }
 

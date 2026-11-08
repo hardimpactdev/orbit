@@ -1,5 +1,5 @@
 ---
-# The task branch of a task start (docs/cli/tasks/provision.mmd), on the warm checkout at the converged commit. A rerun on the branch
+# The task branch of a task start (docs/cli/task/start.mmd), on the warm checkout at the converged commit. A rerun on the branch
 # changes nothing.
 - name: Start the task branch
   when: intent.checkout.branch is defined

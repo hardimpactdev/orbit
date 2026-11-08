@@ -17,8 +17,8 @@ use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
-use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
@@ -75,11 +75,11 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     protected function textInput(mixed $value, string $label, string $code, int $max): string|false|null
     {
         if ($value === null || $value === '') {
-            return $this->promptable("tasks.{$code}_required", "{$label} is required.");
+            return $this->promptable("task.{$code}_required", "{$label} is required.");
         }
 
         if (! is_string($value)) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} is invalid.");
+            $this->renderGatewayFailure("task.{$code}_invalid", "{$label} is invalid.");
 
             return false;
         }
@@ -87,7 +87,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $error = self::textError($value, $label, $max);
 
         if ($error !== null) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", $error);
+            $this->renderGatewayFailure("task.{$code}_invalid", $error);
 
             return false;
         }
@@ -103,7 +103,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
 
         if (! is_string($value)) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} is invalid.");
+            $this->renderGatewayFailure("task.{$code}_invalid", "{$label} is invalid.");
 
             return false;
         }
@@ -111,7 +111,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $error = self::textError($value, $label, $max);
 
         if ($error !== null) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", $error);
+            $this->renderGatewayFailure("task.{$code}_invalid", $error);
 
             return false;
         }
@@ -123,11 +123,11 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     protected function choiceInput(mixed $value, string $label, string $code, array $choices): string|false|null
     {
         if ($value === null || $value === '') {
-            return $this->promptable("tasks.{$code}_required", "{$label} is required.");
+            return $this->promptable("task.{$code}_required", "{$label} is required.");
         }
 
         if (! is_string($value) || ! in_array($value, $choices, true)) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} must be one of ".implode(', ', $choices).'.');
+            $this->renderGatewayFailure("task.{$code}_invalid", "{$label} must be one of ".implode(', ', $choices).'.');
 
             return false;
         }
@@ -181,7 +181,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     {
         $groups = $this->sendWithProgress(
             $connector,
-            new ListTaskGroupsRequest(status: count($statuses) === 1 ? $statuses[0] : null),
+            new ListTasksRequest(status: count($statuses) === 1 ? $statuses[0] : null),
             TaskGroupsResponse::class,
             ['List task groups', 'Loading task groups', 'Loaded task groups'],
             dismiss: true,
@@ -194,6 +194,9 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $rows = [];
 
         foreach ($groups->taskGroups as $group) {
+            if (! $group instanceof TaskGroupResponse) {
+                continue;
+            }
             if (($statuses !== [] && ! in_array($group->status, $statuses, true)) || in_array($group->status, $excluded, true)) {
                 continue;
             }
@@ -241,7 +244,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     {
         $rows = [];
 
-        foreach ($group->tasks as $task) {
+        foreach ($group->subtasks as $task) {
             if ($statuses !== [] && ! in_array($task->status, $statuses, true)) {
                 continue;
             }
@@ -280,7 +283,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     {
         $group = $this->sendWithProgress(
             $connector,
-            new ShowTaskGroupRequest($groupId),
+            new ShowTaskRequest($groupId),
             TaskGroupResponse::class,
             ['Show task group', 'Loading task group', 'Loaded task group'],
             dismiss: true,
@@ -336,7 +339,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             self::duration($task->durationMs),
             self::askingKind($task->assistanceRequested, $task->assistanceKind),
             self::assistanceSummary($task->assistanceRequested, $task->assistanceKind, $task->assistanceQuestion, $task->assistanceReason),
-        ], $group->tasks);
+        ], $group->subtasks);
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Kind', 'Assistance'],
@@ -345,7 +348,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ));
         $repros = [];
 
-        foreach ($group->tasks as $task) {
+        foreach ($group->subtasks as $task) {
             foreach ($task->deliverables as $deliverable) {
                 if (($deliverable['fails_on_base'] ?? false) === true && is_string($deliverable['id'] ?? null)) {
                     $repros[] = $deliverable['id'];
@@ -388,7 +391,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
         $topology = self::topology($value);
         if ($topology === null) {
-            $this->renderGatewayFailure('tasks.invalid_topology', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
+            $this->renderGatewayFailure('task.invalid_topology', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
 
             return false;
         }
@@ -427,7 +430,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Subtask: {$task->id}", [
-            'Task group' => $task->taskGroupId,
+            'Task group' => $task->parentId,
             'Position' => $task->position,
             ...($task->topology === [] ? [] : ['Topology' => implode(', ', $task->topology)]),
             'Title' => $task->title,
@@ -475,7 +478,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $contents = is_string($path) && $path !== '' && is_file($path) && is_readable($path) ? file_get_contents($path) : false;
 
         if ($contents === false) {
-            $this->renderGatewayFailure('tasks.deliverables_invalid', 'The deliverables file cannot be read.');
+            $this->renderGatewayFailure('task.deliverables_invalid', 'The deliverables file cannot be read.');
 
             return false;
         }
@@ -489,7 +492,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $deliverables = self::deliverables($entries);
 
         if ($deliverables === null) {
-            $this->renderGatewayFailure('tasks.deliverables_invalid', self::$deliverablesRefusal ?? self::deliverablesShapeMessage());
+            $this->renderGatewayFailure('task.deliverables_invalid', self::$deliverablesRefusal ?? self::deliverablesShapeMessage());
 
             return false;
         }
@@ -803,13 +806,13 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     private function idValue(mixed $value, string $label, string $code): int|false|null
     {
         if ($value === null || $value === '') {
-            return $this->promptable("tasks.{$code}_required", "{$label} ID is required.");
+            return $this->promptable("task.{$code}_required", "{$label} ID is required.");
         }
 
         $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         if (! is_int($id)) {
-            $this->renderGatewayFailure("tasks.{$code}_invalid", "{$label} ID must be a positive integer.");
+            $this->renderGatewayFailure("task.{$code}_invalid", "{$label} ID must be a positive integer.");
 
             return false;
         }

@@ -1,9 +1,9 @@
 # SPIKE (molecule-verify-spike). Molecule with the delegated driver ("default" with managed: false in Molecule 6+).
-# No instance is created or destroyed: the inventory is the nested fleet that `tasks:provision` already built.
+# No instance is created or destroyed: the inventory is the nested fleet that `task:start` already built.
 # Run from the parent directory (firewall-allow/), in the task VM. Swamp runs this as ONE step after it has restored `base`:
 #   molecule test                   # prepare (fixtures) -> converge (the CLI, answers, receipts) -> verify (state)
 # Independent cases run as many at a time as ANSIBLE_FORKS allows (1 is serial); exclusive cases run alone afterwards.
-# The spike runs it through scripts/molecule-verify-spike (`tasks:script`).
+# The spike runs it through scripts/molecule-verify-spike (`task:script`).
 driver:
   name: default
   options:

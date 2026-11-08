@@ -21,10 +21,11 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class TaskGroupData extends Data
 {
     /**
-     * @param  list<TaskData>  $tasks
+     * @param  list<TaskData>  $subtasks
      */
     public function __construct(
         public int $id,
+        public ?int $parentId,
         public int $projectId,
         public string $project,
         public string $projectCode,
@@ -51,7 +52,7 @@ final class TaskGroupData extends Data
         public ?int $durationMs,
         public int $questions,
         public int $escalations,
-        public array $tasks,
+        public array $subtasks,
         public ?string $capacityWaitReason = null,
         public ?VmPower $vmPower = null,
         public bool $preview = false,
@@ -66,7 +67,7 @@ final class TaskGroupData extends Data
     {
         $data = $this->toArray();
         unset($data['brief'], $data['assistance_question'], $data['assistance_reason']);
-        $data['tasks'] = array_map(static fn (TaskData $task): array => $task->toCompactArray(), $this->tasks);
+        $data['subtasks'] = array_map(static fn (TaskData $task): array => $task->toCompactArray(), $this->subtasks);
 
         return $data;
     }
@@ -87,6 +88,7 @@ final class TaskGroupData extends Data
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
 
             id: $group->id,
+            parentId: null,
             projectId: $group->project_id,
             project: $group->project->slug,
             projectCode: $group->project->code,
@@ -113,7 +115,7 @@ final class TaskGroupData extends Data
             durationMs: $group->duration_ms,
             questions: (int) ($group->questions ?? 0),
             escalations: (int) ($group->escalations ?? 0),
-            tasks: array_values($group->tasks
+            subtasks: array_values($group->tasks
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->all()),
         );

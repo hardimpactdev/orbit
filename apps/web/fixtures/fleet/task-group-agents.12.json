@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "route": "GET /api/v1/task-groups/{group}/agents",
+    "route": "GET /api/v1/tasks/{task}/agents",
     "status": 200,
     "body": {
         "data": [

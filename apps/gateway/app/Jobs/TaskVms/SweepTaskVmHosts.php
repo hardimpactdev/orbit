@@ -22,7 +22,7 @@ use Throwable;
 
 /**
  * Releases the task VMs that a failed start left on each Incus host, through the release of a task start
- * (docs/cli/tasks/vm-release.mmd). An Incus host has no sweep of its own.
+ * (docs/cli/task/vm-release.mmd). An Incus host has no sweep of its own.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 {
@@ -41,7 +41,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     /**
      * Releases each task VM of the host that no group holds and whose last release failed or whose Operation ended without its projection, such
-     * as a refused start (docs/cli/tasks/vm-release.mmd); a VM of the old pool, which has no slot number, too. One that a task start or a refresh proof still uses is left alone.
+     * as a refused start (docs/cli/task/vm-release.mmd); a VM of the old pool, which has no slot number, too. One that a task start or a refresh proof still uses is left alone.
      */
     private function releaseStale(int $hostNodeId): void
     {

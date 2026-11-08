@@ -1,0 +1,98 @@
+---
+title: "task"
+sidebarTitle: "Overview"
+description: "Create, prepare, inspect, cancel, and complete tasks, through the Gateway tasks extension."
+covers:
+  - "apps/cli/app/Commands/Tasks/**"
+  - "packages/php-sdk/src/Requests/Tasks/**"
+  - "packages/php-sdk/src/Responses/Tasks/**"
+---
+
+The `task` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `task:create` is the MCP tool `task-create`. Some operations have no CLI command. Use the MCP tool `task-check-cancel` to stop a running task check. The two merge steps of a task pull request, [`task:pr-ready`](/cli/task/pr-ready) and [`task:pr-merge`](/cli/task/pr-merge), are API and MCP only. The agent thread stream, `GET /api/v1/tasks/{task}/agents/{session}/stream`, serves the web app; [`task:agent:show`](/cli/task/agent-show) reads the same recorded snapshot. The stream sends one snapshot and ends; output updates when each turn ends. Reads never contact a task VM or Pi server.
+
+A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`task:status`](/cli/task/status) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge tasks. |
+| [`task:list`](/cli/task/list) | List tasks, optionally for one Project or status. |
+| [`task:show`](/cli/task/show) | Show one task with its brief and subtasks. |
+| [`task:create`](/cli/task/create) | Create a task in Backlog or Todo; `--current-recipe` makes its VM wait for the current recipe image; `--review=automatic` passes its pull request by review rounds instead of Nick's approval. |
+| [`task:update`](/cli/task/update) | Change a task's title, brief, or status. |
+| [`task:cancel`](/cli/task/cancel) | Cancel a task and remove its Instance. |
+| [`task:complete`](/cli/task/complete) | Complete a settling task, or a running or reviewing task whose watched pull request ended, and remove its Instance. |
+| [`task:create`](/cli/task/create) | Append a subtask to a task. |
+| [`task:update`](/cli/task/update) | Change a subtask's title, brief, position, or deliverables. |
+| [`task:destroy`](/cli/task/destroy) | Delete a subtask. |
+| [`task:cancel`](/cli/task/cancel) | Cancel a Todo or running subtask. |
+| [`task:comment:create`](/cli/task/comment-create) | Request group direction or record an answer after all subtasks end; start no work. |
+| [`task:comment:list`](/cli/task/comment-list) | Read group-owned comments, including after completion. |
+| [`task:comment:create`](/cli/task/comment-create) | Ask for assistance on a subtask or resolve a request. |
+| [`task:comment:list`](/cli/task/comment-list) | List a subtask's comments. |
+| [`task:question:list`](/cli/task/question-list) | List the questions agents asked, across tasks. |
+| [`task:question:close`](/cli/task/question-close) | Close an open or escalated question as answered or superseded. |
+| [`task:agent:list`](/cli/task/agent-list) | List a task's agent threads. |
+| [`task:egress`](/cli/task/egress) | List the outside hosts a task's VM connected to. |
+| [`task:agent:show`](/cli/task/agent-show) | Show one redacted read of an agent thread's conversation. |
+| [`task:start`](/cli/task/start) | Provision the VM and workspace of an external task group. |
+| [`task:turn`](/cli/task/turn) | Run one agent turn on an external task group. |
+| [`task:check`](/cli/task/check) | Run a baseline or handoff check in an external task workspace. |
+| [`task:publish`](/cli/task/publish) | Push a checked commit and optionally open or update its pull request. |
+| [`task:park`](/cli/task/park) | Park an external task group VM while its PR waits for review. |
+| [`task:prep`](/cli/task/prep) | Prepare one command for the pipeline: draft its spec and open the draft PR. API and MCP only. |
+| [`task:prep-fix`](/cli/task/prep-fix) | Apply the owner's review to a parked prep group and push the corrections. API and MCP only. |
+| [`task:sync`](/cli/task/sync) | Fetch the default branch and the task branch from origin into the VM workspace. API and MCP only. |
+
+Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, `agents`, or `hosts`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
+
+Direct `task:*` calls send their request without discovering extension switches first, even when discovery is denied or times out. The Gateway enforces the extension switch and Node access.
+
+`task:list`, `task:show`, and `task:question:list` accept any authorized peer. `task:update` and the `task:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. The remaining commands need Gateway access too: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
+
+[Trusted GitHub requested changes](/reference/tasks#trusted-github-feedback) can append a normal fixup subtask. `task:show --json` exposes its source review and findings in the existing `brief`. The Gateway API's `fixup_problem` is `review:{reviewer_id}`; the CLI keeps its existing brief and deliverable fields without adding an identity field. Use the existing cancel or operator-subtask commands when that scope needs intervention. No command configures reviewer trust, submits a GitHub review, requests external re-review, or merges a pull request. In a Project with [review and merge](/reference/tasks#review-and-merge) on, the Gateway itself reviews and merges; the CLI only shows that state. The Gateway's automatic findings packet has its own 64 KiB bound; the CLI's 8,000-character input limit remains unchanged.
+
+Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. Each entry names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add the role `ingress` after `+`. The CLI checks only that the value is a JSON array of distinct strings, and refuses anything else with `task.invalid_topology`. The Gateway validates the entries and how many a topology may have. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. The Gateway [refuses](/reference/compute-drivers#declare-a-topology) any nonempty list with `tasks.orchestration_unsupported`, so only `[]` is accepted.
+
+## Select a task or subtask
+
+A `group` argument is a numeric task ID, and a `subtask` argument is a numeric subtask ID. When you omit either in a terminal, the CLI lists the candidates and you select one. The task list shows the ID, title, Project, and status. The subtask list shows the position, ID, title, and status of the task's subtasks. An empty list stops the command with `No matching records were found.`
+
+With `--json` or `-n`, an omitted task fails with `task.task_required` and an omitted subtask fails with `tasks.subtask_required`. A value that is not a positive integer fails with `task.task_invalid` or `tasks.subtask_invalid`.
+
+Human output names a task by its Project code and ID, such as `ORB-13`, as the web task board does. The CLI accepts only the numeric ID. Human output shows times to the minute in the Gateway's time zone; JSON keeps the full timestamps.
+
+The CLI checks prompted text when you submit it. A title holds 1 to 160 characters, and a brief holds 1 to 8,000 characters. The brief prompt is a multiline text area. Pressing Ctrl-C or reaching the end of input at a prompt stops the command before any change.
+
+## How it works
+
+Project maintenance starts `tasks.maintenance` in its owned workspace. It updates the captured paths and checks the resulting manifests and locks. The Gateway reads the producer receipt from native run history, then admits the normal handoff check after projection commits.
+
+<div className="flow-at" data-chart="task/maintenance"></div>
+
+## Related
+
+- [`project`](/cli/project) lists the Projects that a task can belong to.
+- [`instance`](/cli/instance) shows the task workspace Instance of a running task.
+- The [tasks reference](/reference/tasks) explains Backlog preparation, the scheduler, turn receipts, review, and pull requests.
+
+## Select a task
+
+Every command belongs to `task:*`. Select either level with its existing Task ID. A parent owns the Project, VM and publication; its ordered children are subtasks. REST uses `/api/v1/tasks` and `/tasks/{task}`. Parent responses expose `parent_id: null` and `subtasks`; child responses expose their `parent_id`.
+
+| Command | Selection and behavior |
+| --- | --- |
+| `task:create <title> --project=ID` | Create a parent, in Backlog by default. No VM starts. |
+| `task:create <title> --parent=ID` | Create a child of that parent. The Project and workspace are inherited. A child cannot own children. |
+| `task:list [--parent=ID]` | List the board's parents, or one parent's children. |
+| `task:show <task>`, `task:update <task>` | Read or update either level using its own fields and statuses. |
+| `task:start <task>` | Start a parent's VM with the existing `tasks.provision` operation. |
+| `task:cancel <task>` | Cancel the selected parent or child. Parent cancellation releases owned work and its VM; child cancellation affects that child's work only. |
+| `task:destroy <task>` | Delete a child while its parent is in Backlog. Parent deletion is refused. |
+| `task:check <task>`, `task:turn <task>` | Select the child directly. Orbit derives the parent and preserves current-child and check receipt guards. |
+| `task:park <task>`, `task:publish <task>`, `task:complete <task>` | Require a parent. |
+| `task:comment:create <task>`, `task:comment:list <task>` | Select either level. Parent assistance requires an open external parent with all children ended. Comments never start work. History remains readable after completion. |
+| `task:agent:list <task>`, `task:agent:show <task> <session>` | Require the parent and verify session ownership. The transcript stream stays outside MCP. |
+
+This is a hard switch. Old command names and `/task-groups` URLs have no aliases or adapters. Internal `tasks.*` operation kinds, workflow IDs, vault schemas, receipts and idempotency identities retain their names.

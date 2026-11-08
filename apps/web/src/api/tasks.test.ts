@@ -100,7 +100,7 @@ it("formats duration from milliseconds", () => {
 it("counts completed nested tasks against the group total", () => {
     const task = (id: number, status: Task["status"]): Task => ({
         id,
-        task_group_id: 1,
+        parent_id: 1,
         type: "implementation",
         completion_summary: null,
         check: null,

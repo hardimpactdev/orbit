@@ -12,8 +12,8 @@ use App\Models\TaskVm;
 use Illuminate\Support\Str;
 
 /**
- * The intent of `tasks:sync`: the repository, the two branches to bring into the workspace, the workspace path and the SSH target
- * of the VM. See docs/cli/tasks/sync.mmd.
+ * The intent of `task:sync`: the repository, the two branches to bring into the workspace, the workspace path and the SSH target
+ * of the VM. See docs/cli/task/sync.mmd.
  */
 final readonly class TaskSyncIntent
 {

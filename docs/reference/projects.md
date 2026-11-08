@@ -39,7 +39,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
 
-A task workspace starts from the newest default-branch commit that passed the `merge_check`; see [provision](/reference/tasks#provision-an-external-group).
+A parent task started with `task:start <id>` receives a workspace from the newest default-branch commit that passed the `merge_check`; see [`task:start`](/cli/task/start).
 
 In a review-and-merge Project, the CI workflow must run the `merge_check` on pushes to `task-*-handoff` branches too, because each [handoff commit](/reference/tasks#handoff-ci) is tested on its push. Other Projects run no handoff CI.
 

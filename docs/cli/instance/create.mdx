@@ -72,7 +72,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | --- | --- |
 | `instance.candidate_required` | The Node is a production Node. Create a production Instance with [`instance:clone`](/cli/instance/clone). |
 | `instance.node_inactive`, `instance.node_not_app_dev` | The Node is not active, or has no active `app-dev` role. |
-| `instance.task_vm_node` | The Node is a task VM. A task gets its workspace from [`tasks:provision`](/reference/tasks#provision-an-external-group). |
+| `instance.task_vm_node` | The Node is a task VM. A task gets its workspace from [`task:start`](/reference/tasks#provision-an-external-group). |
 | `instance.default_path_occupied`, `instance.path_taken` | The checkout path is in use on the Node. |
 | `instance.placement_conflict` | A repeat changed the root or branch while an earlier failed create is still being cleaned up. |
 | `instance.removal_conflict` | The Instance is being removed. |

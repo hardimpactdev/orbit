@@ -13,7 +13,7 @@ Schedule log streams use POST, PUT and DELETE under `/api/v1/schedules/{schedule
 
 Task agent JSON and SSE reads return recorded Gateway snapshots. `kind` is `snapshot`, `cursor` is null, and `after_sequence` never requests Pi deltas. `archived` means a saved snapshot exists; a later turn can replace it. Output updates when each turn ends, including children of a running parent. See [Read a thread](/reference/tasks#read-a-thread).
 
-The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
+The task page reads Swamp history through `GET /api/v1/tasks/{task}/swamp-runs`. Its response uses typed run and step schemas; [Swamp run output](/reference/tasks#swamp-run-output) defines availability, bounds, and group matching.
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
 
@@ -31,7 +31,7 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `docs/openapi.json` and `docs/docs.json` are ignored build outputs, so nothing compares them with a stored copy. The script fails when the sources disagree with the API contract. Continuous integration and the local candidate gate run it, then `bin/mcp-tools` and `bin/api-fixtures --check`.
 
-Group assistance comments have separate collection and create schemas: `GET /api/v1/task-groups/{group}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
+Group assistance comments have separate collection and create schemas: `GET /api/v1/tasks/{task}/comments` returns an array of `TaskCommentData`, while POST returns one comment with HTTP 201. POST has no exact-retry 200 response: retries may insert another audit comment. Its 409 response describes the orchestration, group-status, and open-child guards. Keep these operation-specific mappings in `bin/docs-openapi`; [group assistance](/reference/tasks#group-assistance-after-all-children-end) owns the behavior.
 
 The description of `POST /api/v1/proof/verify` is fixed text in the script too. It names the optional `group` field, which a Node with Gateway access sends to prove on the VM of that task group.
 
@@ -71,28 +71,28 @@ The firewall API removes a rule with `POST /api/v1/nodes/{node}/firewall-rules/r
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream and the `AdoptedTool` reply of `tool:adopt`, a Tool with the agent's liveness. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `gateway:release:deploy`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream and the `AdoptedTool` reply of `tool:adopt`, a Tool with the agent's liveness. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `gateway:release:deploy`, `task:create`, `task:update`, and `task:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries.
 
 Each summary is keyed by route name, so removing a route removes its summary in the same change. A new route needs its own summary in the same change, as `cluster:activate`, `instance:auto-deploy:enable`, `project:review-and-merge:enable`, `project:maintenance:enable` and `project:maintenance:inspect` have; without one, the operation's summary is its bare route name. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 
-The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, and deliverable requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `tasks:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
+The `task:create` and `task:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, and deliverable requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `task:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
 
 
 OpenAPI, SDK, MCP, CLI fixtures, and web API types must agree at runtime delivery; this docs child adds no generated endpoint or shipped capability. Generate MCP from native operation IDs rather than adding the source brief's underscore tool spelling as an alias.
 
-The `tasks:check` description follows the [hosted handoff CI contract](/reference/tasks#check-an-external-group). It describes the additive `result.ci` evidence, policy-derived waits and cancellation without adding a caller CI option or changing the operation envelope. Regenerate the MCP metadata and web API types after description changes, even when request and response schema shapes stay the same.
+The `task:check` description follows the [hosted handoff CI contract](/reference/tasks#check-an-external-group). It describes the additive `result.ci` evidence, policy-derived waits and cancellation without adding a caller CI option or changing the operation envelope. Regenerate the MCP metadata and web API types after description changes, even when request and response schema shapes stay the same.
 
-The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and how a repeated cancel removes the unattached workspace the group owns. An active or shared Route still refuses removal.
+The `task:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and how a repeated cancel removes the unattached workspace the group owns. An active or shared Route still refuses removal.
 
-The `tasks:provision` body schema is empty: task VMs run no Swamp worker, so the script declares no `worker` block and no `tasks:worker` route.
+The `task:start` body schema is empty: task VMs run no Swamp worker, so the script declares no `worker` block and no `task:worker` route.
 
-The `tasks:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
+The `task:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
-The `tasks:turn`, `tasks:check` and `tasks:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)).
+The `task:turn`, `task:check` and `task:publish` descriptions name the refusal `409 tasks.vm_resuming`: a parked task VM is woken by the admission, and the call is repeated once the VM runs ([Tasks](/reference/tasks)).
 
-The `tasks:pr-ready` and `tasks:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `tasks:dependency-merge`; the MCP tools `tasks-pr-ready` and `tasks-pr-merge` are the callers.
+The `task:pr-ready` and `task:pr-merge` descriptions follow [Ready and merge a task pull request](/reference/tasks#ready-and-merge-a-task-pull-request). They name the exact `head_sha`, the `mode` of the ready step, the read-only admission checks and the single write token that each step mints. Both routes have no SDK request and no CLI command, like `task:dependency-merge`; the MCP tools `task-pr-ready` and `task-pr-merge` are the callers.
 
-The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's recorded snapshot and not a data class.
+The `task:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's recorded snapshot and not a data class.
 
 The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind, such as `ufw`, and the `subject` that `checkout` and `packages` facts need; a new kind changes that list in the same change. It also writes the `agent:watch` response, including `applications`, a map whose empty form is `{}`.
 

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Tasks;
 
-final readonly class TaskGroupResponse
+final readonly class TaskGroupResponse implements TaskRecordResponse
 {
     /** A task group holds at most this many subtasks in one response. */
     private const int MAX_SUBTASKS = 1_000;
 
-    /** @param list<SubtaskResponse> $tasks */
+    /** @param list<SubtaskResponse> $subtasks */
     public function __construct(
         public int $id,
         public int $projectId,
@@ -38,7 +38,7 @@ final readonly class TaskGroupResponse
         public ?int $durationMs,
         public int $questions,
         public int $escalations,
-        public array $tasks,
+        public array $subtasks,
         public string $requestId,
         public ?string $capacityWaitReason = null,
         public ?string $vmPower = null,
@@ -81,7 +81,7 @@ final readonly class TaskGroupResponse
             durationMs: TaskFields::nullableInt($data, 'duration_ms'),
             questions: TaskFields::count($data, 'questions', 'task group', $requestId),
             escalations: TaskFields::count($data, 'escalations', 'task group', $requestId),
-            tasks: self::subtasks($data['tasks'] ?? [], $requestId),
+            subtasks: self::subtasks($data['subtasks'] ?? [], $requestId),
             requestId: $requestId,
             capacityWaitReason: TaskFields::nullableText($data, 'capacity_wait_reason'),
             preview: ($data['preview'] ?? false) === true,
@@ -107,6 +107,7 @@ final readonly class TaskGroupResponse
     {
         return [
             'id' => $this->id,
+            'parent_id' => null,
             'project_id' => $this->projectId,
             'project' => $this->project,
             'project_code' => $this->projectCode,
@@ -134,12 +135,12 @@ final readonly class TaskGroupResponse
             'duration_ms' => $this->durationMs,
             'questions' => $this->questions,
             'escalations' => $this->escalations,
-            'tasks' => array_map(static function (SubtaskResponse $task): array {
+            'subtasks' => array_map(static function (SubtaskResponse $task): array {
                 $data = $task->toArray();
                 unset($data['request_id']);
 
                 return $data;
-            }, $this->tasks),
+            }, $this->subtasks),
             ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
             ...($this->vmPower === null ? [] : ['vm_power' => $this->vmPower]),
             'preview' => $this->preview,
@@ -157,7 +158,7 @@ final readonly class TaskGroupResponse
             throw TaskFields::invalid('task group', $requestId);
         }
 
-        $tasks = [];
+        $subtasks = [];
 
         foreach ($value as $task) {
             if (! is_array($task)) {
@@ -172,9 +173,9 @@ final readonly class TaskGroupResponse
                 $data[$key] = $item;
             }
 
-            $tasks[] = SubtaskResponse::fromGatewayData($data, $requestId);
+            $subtasks[] = SubtaskResponse::fromGatewayData($data, $requestId);
         }
 
-        return $tasks;
+        return $subtasks;
     }
 }

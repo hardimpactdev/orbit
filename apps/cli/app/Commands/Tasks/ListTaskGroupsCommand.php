@@ -7,7 +7,7 @@ namespace App\Commands\Tasks;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
@@ -15,7 +15,8 @@ use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
 final class ListTaskGroupsCommand extends TaskCommand
 {
     #[\Override]
-    protected $signature = 'tasks:list
+    protected $signature = 'task:list
+        {--parent= : Numeric parent Task ID}
         {--project= : Only groups of this numeric Project ID}
         {--status= : Only groups in this status}
         {--json : Return machine-readable JSON}';
@@ -25,6 +26,10 @@ final class ListTaskGroupsCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
+        $parentId = $this->option('parent') === null ? null : $this->idOption('parent', 'Parent task', 'parent');
+        if ($parentId === false) {
+            return self::FAILURE;
+        }
         $project = $this->option('project');
         $projectId = null;
 
@@ -32,14 +37,14 @@ final class ListTaskGroupsCommand extends TaskCommand
             $projectId = filter_var($project, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
             if (! is_int($projectId)) {
-                return $this->renderGatewayFailure('tasks.project_invalid', 'Project ID must be a positive integer.');
+                return $this->renderGatewayFailure('task.project_invalid', 'Project ID must be a positive integer.');
             }
         }
 
         $status = $this->option('status');
 
         if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
-            return $this->renderGatewayFailure('tasks.status_invalid', 'Status must be one of '.implode(', ', self::GROUP_STATUSES).'.');
+            return $this->renderGatewayFailure('task.status_invalid', 'Status must be one of '.implode(', ', self::GROUP_STATUSES).'.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -50,7 +55,7 @@ final class ListTaskGroupsCommand extends TaskCommand
 
         $groups = $this->sendWithProgress(
             $connector,
-            new ListTaskGroupsRequest($projectId, is_string($status) ? $status : null),
+            new ListTasksRequest($projectId, is_string($status) ? $status : null, $parentId),
             TaskGroupsResponse::class,
             ['List task groups', 'Loading task groups', 'Loaded task groups'],
         );
@@ -65,15 +70,25 @@ final class ListTaskGroupsCommand extends TaskCommand
             return self::SUCCESS;
         }
 
+        if ($parentId !== null) {
+            foreach ($groups->taskGroups as $task) {
+                if ($task instanceof SubtaskResponse) {
+                    $this->renderSubtask($task);
+                }
+            }
+
+            return self::SUCCESS;
+        }
+
         $rows = array_map(static fn (TaskGroupResponse $group): array => [
             $group->id,
             $group->title,
             $group->project ?? $group->projectId,
             $group->status,
-            count(array_filter($group->tasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->tasks),
+            count(array_filter($group->subtasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->subtasks),
             self::askingKind($group->assistanceRequested, $group->assistanceKind),
             self::assistanceSummary($group->assistanceRequested, $group->assistanceKind, $group->assistanceQuestion, $group->assistanceReason),
-        ], $groups->taskGroups);
+        ], array_values(array_filter($groups->taskGroups, static fn ($task): bool => $task instanceof TaskGroupResponse)));
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['ID', 'Title', 'Project', 'Status', 'Subtasks', 'Kind', 'Assistance'],

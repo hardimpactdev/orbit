@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Projects the terminal event of one `operation-task-vm-image-refresh` run once (docs/cli/tasks/vm-image-refresh.mmd). When the run
+ * Projects the terminal event of one `operation-task-vm-image-refresh` run once (docs/cli/task/vm-image-refresh.mmd). When the run
  * passed, the Gateway promotes its snapshot of the host's base VM: it becomes the host's latest build, and task starts copy it. A failed run
  * records nothing, so the host keeps the snapshot it had.
  */
