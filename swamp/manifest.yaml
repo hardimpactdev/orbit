@@ -23,6 +23,8 @@ additionalFiles:
   - ansible/templates/dns-orbit.servers.j2
   - ansible/templates/dns-uplink.j2
   - ansible/templates/dns-check.j2
+  - ansible/templates/dns-snapshot.j2
+  - ansible/tasks/dns-commit.yml
   - ansible/tasks/address-node.yml
   - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml

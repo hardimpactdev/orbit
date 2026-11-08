@@ -16,3 +16,14 @@ dns_line_hosts: '^(?:#.*|{{ dns_pattern_ipv4 }} {{ dns_pattern_name }})\Z'
 dns_line_servers: '^(?:#.*|server=/{{ dns_pattern_name }}/|server=/\*\.{{ dns_pattern_name }}/#)\Z'
 dns_line_conf: >-
   ^(?:#.*|listen-address={{ dns_pattern_ipv4 }}|domain-needed|bogus-priv|bind-dynamic|no-resolv|no-hosts|local-ttl=30|server={{ dns_pattern_ipv4 }}|address=/\.{{ dns_pattern_name }}/{{ dns_pattern_ipv4 }}|local=/{{ dns_pattern_name }}/|addn-hosts=/[A-Za-z0-9/._-]+|servers-file=/[A-Za-z0-9/._-]+)\Z
+
+# The times of one publication, in seconds, in one place. The Swamp step that runs the phase stops it after dns_phase_timeout
+# (swamp/workflows/workflow-dns-publish.yaml), and a test keeps the two equal. The lock holder outlives a killed play, so it must outlive the step
+# timeout and the cutover with a margin; the next publication waits for a live or a dead holder for dns_lock_wait, which is longer than the
+# time a holder of a play that was stopped by the step timeout has left.
+dns_phase_timeout: 300
+dns_cutover_budget: 90
+dns_lock_margin: 30
+dns_lock_hold: "{{ (dns_phase_timeout | int) + (dns_cutover_budget | int) + (dns_lock_margin | int) }}"
+dns_lock_wait: "{{ (dns_lock_hold | int) - (dns_phase_timeout | int) + (dns_lock_margin | int) }}"
+dns_lock_job_timeout: "{{ (dns_lock_wait | int) + (dns_lock_hold | int) + (dns_lock_margin | int) }}"

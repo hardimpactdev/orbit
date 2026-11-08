@@ -1,0 +1,45 @@
+---
+# The commit of a private DNS publication, and the finish of one whose clean-up was interrupted after the revision was written.
+# Input: dns_commit_snap, the manifest of the snapshot. The installed files are the committed ones.
+#   - the new files become the last good set (previous/), the files of the old listener setup go to previous/legacy/;
+#   - the reload marker goes, then the snapshot (last, so an interruption in between leaves a snapshot that the next run finishes);
+#   - the reads that the rest of the play uses are made again.
+- name: Make the folders of the last good set
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: ["{{ dns_previous }}", "{{ dns_previous }}/legacy"]
+- name: Keep the committed files as the last good set
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ dns_previous }}/{{ item | basename }}"
+    remote_src: true
+    mode: preserve
+  loop: "{{ dns_new_files }}"
+- name: Keep the files of the old listener setup
+  ansible.builtin.copy:
+    src: "{{ dns_snapshot }}/files/{{ item.copy }}"
+    dest: "{{ dns_previous }}/legacy/{{ item.path | basename }}"
+    remote_src: true
+    mode: preserve
+  loop: "{{ dns_commit_snap.files | selectattr('legacy') | selectattr('present') | list }}"
+  loop_control:
+    label: "{{ item.path }}"
+- name: Forget that a reload is owed
+  ansible.builtin.file:
+    path: "{{ dns_reload_marker }}"
+    state: absent
+- name: Remove the snapshot
+  ansible.builtin.file:
+    path: "{{ dns_snapshot }}"
+    state: absent
+- name: Read the snapshot again
+  ansible.builtin.slurp:
+    src: "{{ dns_snapshot_manifest }}"
+  register: dns_snap_read
+  failed_when: dns_snap_read is failed and 'file not found' not in (dns_snap_read.msg | default('') | lower)
+- name: Look for the reload marker again
+  ansible.builtin.stat:
+    path: "{{ dns_reload_marker }}"
+  register: dns_marker

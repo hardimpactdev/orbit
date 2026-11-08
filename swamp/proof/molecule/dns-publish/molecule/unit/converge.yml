@@ -4,6 +4,7 @@
 #   validate: dns -> dns.config_invalid or none (names, addresses, revision, pair)
 #   uplink:   resolver files of the Node -> the upstream resolvers (and whether the DHCP lease must be read next)
 #   queries:  dns -> the dig questions
+#   snapshot: what the Node held -> the manifest of the snapshot (files, unit states, holders)
 #   dnsmasq:  the rendered files run in a real dnsmasq on a high port (skipped where dnsmasq or dig is missing)
 #   verify:   dns + the answers of dig (blocks, rendered like dig prints them by dig.j2) -> the errors of the end check
 # The expected texts are written here by hand, never produced by the template, so a change of the template shows as a failed case.
@@ -337,6 +338,59 @@
     real_dig_timeout: |-
       {{ real_dig | trim }};; communications error to 10.44.0.1#53: timed out
 
+    # The manifest of the snapshot: the first cutover from the old listener (legacy files, a snippet, two units, a catalog) and a later publication.
+    snapshot_cases:
+      - name: the first cutover from the old listener
+        revision: "1762540000000001"
+        new: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        copies:
+          - {item: /etc/dnsmasq.d/orbit-vpn.conf, checksum: aaa}
+          - {item: /etc/dnsmasq.d/ubuntu-fan, checksum: bbb}
+          - {item: /etc/systemd/system/orbit-private-dns.socket, checksum: ccc}
+        absent: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        binders: [/etc/dnsmasq.d/ubuntu-fan]
+        dnsmasq: {ActiveState: active, UnitFileState: enabled}
+        listeners:
+          - {item: orbit-private-dns.socket, status: {ActiveState: active, UnitFileState: enabled}}
+          - {item: orbit-private-dns.service, status: {ActiveState: inactive, UnitFileState: static}}
+        holders: [{item: 10.44.0.1, stdout_lines: ["udp UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:((\"systemd\",pid=1,fd=40))"]}]
+        expect:
+          revision: "1762540000000001"
+          files:
+            - {path: /etc/dnsmasq.d/orbit-vpn.conf, copy: "%etc%dnsmasq.d%orbit-vpn.conf", sha256: aaa, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/ubuntu-fan, copy: "%etc%dnsmasq.d%ubuntu-fan", sha256: bbb, present: true, legacy: true, binder: true}
+            - {path: /etc/systemd/system/orbit-private-dns.socket, copy: "%etc%systemd%system%orbit-private-dns.socket", sha256: ccc, present: true, legacy: true, binder: false}
+            - {path: /etc/dnsmasq.d/orbit.conf, copy: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, copy: null, sha256: null, present: false, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, copy: null, sha256: null, present: false, legacy: false, binder: false}
+          units:
+            - {name: dnsmasq, active: true, enabled: true}
+            - {name: orbit-private-dns.socket, active: true, enabled: true}
+            - {name: orbit-private-dns.service, active: false, enabled: false}
+          holders:
+            - {address: 10.44.0.1, owners: ["udp UNCONN 0 0 10.44.0.1:53 0.0.0.0:* users:((\"systemd\",pid=1,fd=40))"]}
+      - name: a later publication holds the new set only
+        revision: "1762540000000009"
+        new: [/etc/dnsmasq.d/orbit.conf, /var/lib/orbit/dnsmasq/orbit.hosts, /var/lib/orbit/dnsmasq/orbit.servers]
+        copies:
+          - {item: /etc/dnsmasq.d/orbit.conf, checksum: ddd}
+          - {item: /var/lib/orbit/dnsmasq/orbit.hosts, checksum: eee}
+          - {item: /var/lib/orbit/dnsmasq/orbit.servers, checksum: fff}
+        absent: []
+        binders: []
+        dnsmasq: {ActiveState: failed, UnitFileState: disabled}
+        listeners: []
+        holders: []
+        expect:
+          revision: "1762540000000009"
+          files:
+            - {path: /etc/dnsmasq.d/orbit.conf, copy: "%etc%dnsmasq.d%orbit.conf", sha256: ddd, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.hosts, copy: "%var%lib%orbit%dnsmasq%orbit.hosts", sha256: eee, present: true, legacy: false, binder: false}
+            - {path: /var/lib/orbit/dnsmasq/orbit.servers, copy: "%var%lib%orbit%dnsmasq%orbit.servers", sha256: fff, present: true, legacy: false, binder: false}
+          units:
+            - {name: dnsmasq, active: false, enabled: false}
+          holders: []
+
   tasks:
     - name: Render the files
       ansible.builtin.set_fact:
@@ -600,3 +654,26 @@
           changed_when: false
           failed_when: false
           when: live.path is defined
+
+    - name: Describe the snapshots
+      ansible.builtin.set_fact:
+        snapshots: "{{ snapshots | default({}) | combine({c.name: lookup('ansible.builtin.template', templates ~ '/dns-snapshot.j2') | from_json}) }}"
+      vars:
+        snap_revision: "{{ c.revision }}"
+        snap_new: "{{ c.new }}"
+        snap_copies: "{{ c.copies }}"
+        snap_absent: "{{ c.absent }}"
+        snap_binders: "{{ c.binders }}"
+        snap_dnsmasq: "{{ c.dnsmasq }}"
+        snap_listeners: "{{ c.listeners }}"
+        snap_holders: "{{ c.holders }}"
+      loop: "{{ snapshot_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}
+    - name: The manifests are the expected ones
+      ansible.builtin.assert:
+        that:
+          - snapshots[c.name] == c.expect
+        fail_msg: "{{ c.name }}: got {{ snapshots[c.name] | to_json }}, expected {{ c.expect | to_json }}"
+        quiet: true
+      loop: "{{ snapshot_cases }}"
+      loop_control: {loop_var: c, label: "{{ c.name }}"}

@@ -1,18 +1,28 @@
 ---
 # dns.publish on the vpn Node (ADR 0248, chart docs/cli/dns/publish.mmd): the complete private DNS, written as one stock dnsmasq.
-# One Swamp phase, tag `publish`. The play holds the Node's dnsmasq lock, compares the revision, and either skips (a newer publication
-# already holds this change) or validates, saves the last good files, installs what changed, reloads or restarts dnsmasq, checks the
-# answers with dig and writes the revision last. A failed check puts the last good files back. It also retires the old listener.
+# One Swamp phase, tag `publish`. The play holds the Node's dnsmasq lock for the whole publication and its recovery, compares the
+# revision, and either skips (a newer publication already holds this change) or validates, takes a snapshot of what it is about to
+# change, installs what changed, reloads or restarts dnsmasq, checks the answers (dig on the VPN address and on the Node's own resolver
+# address, then the Node's normal resolver) and writes the revision last. A failed check puts the snapshot back, and checks that the
+# restored resolvers answer. It also retires the old listener.
+#
+# The snapshot is taken before the first change of a publication and reused, never overwritten, until a publication commits: a run that
+# was killed or failed leaves it, and the retry starts from it, so the original state (the old listener setup on the first cutover) is
+# what any failure restores. A commit (the revision is written after the checks) replaces the last good set with the new files and
+# deletes the snapshot. `reload.pending` is written before the records are replaced and removed at the commit: a retry that finds it
+# reloads dnsmasq even when the files already match.
 #
 # The intent (run folder, mode 0600) is `node` (host, user, port, identity_file, host_keys) and `dns` (revision, listen, tlds, records),
 # as the Gateway rendered them. The public result is `result.json` in the run folder: `{revision, dnsmasq}`, plus `skipped` when the
-# revision was superseded, or `{error_code}` (dns.config_invalid, dns.check_failed, dns.publish_failed) when the phase fails.
+# revision was superseded, or `{error_code}` (dns.config_invalid, dns.check_failed, dns.publish_failed, dns.rollback_failed) when the
+# phase fails; after a failure that changed the Node it holds `recovered: true|false`, and `cause` when the recovery failed.
 #
 # Files on the Node (nothing else is read or written):
 #   /etc/dnsmasq.d/orbit.conf           the only file the stock service reads from the conf dir; read when dnsmasq starts
 #   /var/lib/orbit/dnsmasq/             orbit.hosts and orbit.servers (read at start and on SIGHUP), orbit.revision (written last),
-#                                       orbit.conf.loaded (the orbit.conf dnsmasq started with), previous/ (the last good set,
-#                                       previous/legacy/ for the old listener setup), disabled/ (snippets that bind interfaces)
+#                                       orbit.conf.loaded (the orbit.conf dnsmasq started with), reload.pending (a reload is owed),
+#                                       snapshot/ (manifest.json and files/ of the state before the publication), previous/ (the last
+#                                       good set, previous/legacy/ for the old listener setup), disabled/ (snippets that bind interfaces)
 # The hosts and servers files stay out of /etc/dnsmasq.d because the stock service (`-7 /etc/dnsmasq.d,.dpkg-dist,...`) reads every
 # file there as configuration. Tools on the Node: dnsmasq and dig (bind9-dnsutils) come with the vpn recipe; Ansible needs only Python.
 - name: Pin the Node and address it
@@ -52,6 +62,13 @@
     dns_revision_file: "{{ dns_dir }}/orbit.revision"
     dns_loaded_file: "{{ dns_dir }}/orbit.conf.loaded"
     dns_previous: "{{ dns_dir }}/previous"
+    dns_snapshot: "{{ dns_dir }}/snapshot"
+    dns_snapshot_manifest: "{{ dns_snapshot }}/manifest.json"
+    dns_reload_marker: "{{ dns_dir }}/reload.pending"
+    # The vpn Node resolves through its own dnsmasq: this drop-in sends every name to dns_local_resolver (vars/dns.yml).
+    dns_resolved_dropin: /etc/systemd/resolved.conf.d/30-orbit-local-dns.conf
+    # A public name that the Node's resolver must still resolve after the publication (apt, the agent and every other name need it).
+    dns_public_check_name: example.com
     dns_lock_file: /run/lock/orbit-dnsmasq.lock
     dns_run_dir: /run
     dns_unit_dir: /etc/systemd/system
@@ -69,18 +86,27 @@
       conf: "{{ dns_sums[dns_conf_file] | default('') != (dns_files.conf | hash('sha256')) }}"
       hosts: "{{ dns_sums[dns_hosts_file] | default('') != (dns_files.hosts | hash('sha256')) }}"
       servers: "{{ dns_sums[dns_servers_file] | default('') != (dns_files.servers | hash('sha256')) }}"
+    # The snapshot of an earlier run that was not committed, or none. A snapshot whose revision is installed was committed, and only its
+    # clean-up was interrupted: it is finished before this run starts.
+    dns_snap_old: "{{ (dns_snap_read.content | b64decode | from_json) if dns_snap_read.content is defined else none }}"
+    dns_snap_current: "{{ dns_snap if dns_snap is defined else dns_snap_old }}"
+    dns_stale_snapshot: "{{ dns_snap_old is not none and ((dns_installed_revision | int) >= (dns_snap_old.revision | int)) }}"
+    dns_marker_present: "{{ dns_marker.stat.exists | default(false) }}"
     dns_old_conf: "{{ dns_find_conf.files | map(attribute='path') | select('in', dns_legacy_conf) | list }}"
     dns_binders: "{{ dns_find_binders.files | map(attribute='path') | list }}"
     # dnsmasq reads orbit.conf only at start, so it restarts when the rendered file is not the one it started with, or when it is down.
     dns_restart: "{{ dns_sums[dns_loaded_file] | default('') != (dns_files.conf | hash('sha256')) or dns_unit.status.ActiveState | default('') != 'active' }}"
-    dns_reload: "{{ (dns_drift.hosts or dns_drift.servers) and not dns_restart }}"
+    # A reload that an interrupted run owed (its marker) is done even when the files already match.
+    dns_reload: "{{ (dns_drift.hosts or dns_drift.servers or dns_marker_present) and not dns_restart }}"
     # The Node changes when a file differs, and also when dnsmasq must be (re)started with files that are already right: it crashed, or an
     # earlier restart failed after the file was installed.
-    dns_changing: "{{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0 or dns_restart }}"
+    dns_changing: "{{ dns_drift.conf or dns_drift.hosts or dns_drift.servers or dns_old_conf | length > 0 or dns_binders | length > 0 or dns_restart or dns_marker_present }}"
     dns_action: "{{ 'restarted' if dns_restart else ('reloaded' if dns_reload else 'unchanged') }}"
-    # The files that make the last good set. The files of the new set keep their names; the old listener's go to previous/legacy/.
-    dns_save_keep: "{{ dns_sums.keys() | select('in', [dns_conf_file, dns_hosts_file, dns_servers_file]) | list }}"
-    dns_save_legacy: "{{ dns_old_conf + dns_binders + dns_unit_files + (dns_find_catalog.files | map(attribute='path') | list) }}"
+    # What the snapshot holds. The files of the new set keep their names in the committed set; the old listener's go to previous/legacy/.
+    dns_new_files: ["{{ dns_conf_file }}", "{{ dns_hosts_file }}", "{{ dns_servers_file }}"]
+    dns_snap_legacy: "{{ dns_old_conf + dns_binders + dns_unit_files + (dns_find_catalog.files | map(attribute='path') | list) }}"
+    dns_snap_present: "{{ dns_sums.keys() | select('in', dns_new_files) | list + dns_snap_legacy }}"
+    dns_snap_absent: "{{ dns_new_files | difference(dns_sums.keys() | list) }}"
     dns_listener_started: >-
       {{ dns_listener_state.results | default([]) | selectattr('status.ActiveState', 'defined')
       | selectattr('status.ActiveState', 'equalto', 'active') | map(attribute='item') | list }}
@@ -101,8 +127,12 @@
             fail_msg: dns.config_invalid
             quiet: true
 
-        # The lock of every publication to this Node. flock holds it for as long as its child runs; the child (`sleep`) is stopped when the
-        # phase ends, and the async job stops it after 150 s whatever happens. The holder writes its pid file once it holds the lock.
+        # The lock of every publication to this Node, held for the whole publication and its recovery. flock holds it for as long as its child
+        # runs; the child (`sleep`) is stopped when the phase ends. A play that is killed (the timeout of its Swamp step, a worker crash) leaves
+        # the holder, and it expires on its own after dns_lock_hold seconds, which is longer than the step timeout plus the cutover budget. The
+        # next publication waits dns_lock_wait seconds for a live or dead holder: a holder of a killed play has dns_lock_hold - dns_phase_timeout
+        # seconds left at most, so it is gone by then. The async job ends the holder whatever happens. The numbers are in vars/dns.yml.
+        # The holder writes its pid file once it holds the lock.
         - name: Name the lock holder
           ansible.builtin.set_fact:
             dns_holder: >-
@@ -113,14 +143,15 @@
               - flock
               - --exclusive
               - --timeout
-              - "45"
+              - "{{ dns_lock_wait }}"
               - "{{ dns_lock_file }}"
               - sh
               - -c
-              - 'echo $$ > "$1" && exec sleep 100'
+              - 'echo $$ > "$1" && exec sleep "$2"'
               - sh
               - "{{ dns_holder }}"
-          async: 150
+              - "{{ dns_lock_hold }}"
+          async: "{{ dns_lock_job_timeout }}"
           poll: 0
           register: dns_lock_job
           changed_when: false
@@ -128,7 +159,7 @@
           ansible.builtin.wait_for:
             path: "{{ dns_holder }}"
             search_regex: '^[0-9]+$'
-            timeout: 50
+            timeout: "{{ (dns_lock_wait | int) + 5 }}"
 
         # Read the Node, under the lock. A missing file reads as nothing; any other failure fails the phase.
         - name: Read the installed revision
@@ -141,6 +172,20 @@
             paths: "{{ dns_unit_dir }}"
             patterns: "{{ dns_listener_units }}"
           register: dns_find_units
+        - name: Read the snapshot of an earlier run
+          ansible.builtin.slurp:
+            src: "{{ dns_snapshot_manifest }}"
+          register: dns_snap_read
+          failed_when: dns_snap_read is failed and 'file not found' not in (dns_snap_read.msg | default('') | lower)
+        - name: Look for the reload marker
+          ansible.builtin.stat:
+            path: "{{ dns_reload_marker }}"
+          register: dns_marker
+        - name: Finish a commit that was interrupted after its revision was written
+          ansible.builtin.include_tasks: tasks/dns-commit.yml
+          vars:
+            dns_commit_snap: "{{ dns_snap_old }}"
+          when: dns_stale_snapshot
 
         - name: Publish the newer revision
           when: not dns_superseded
@@ -241,28 +286,68 @@
             - name: Change the Node
               when: dns_changing
               block:
-                # Save the installed files as the last good set before anything changes. On the first run that is the files of the old
-                # listener setup, so the rollback of the cutover is one restore away.
-                - name: Make the folders of the last good set
+                - name: Make the folders
                   ansible.builtin.file:
                     path: "{{ item }}"
                     state: directory
                     mode: "0755"
                   loop: ["{{ dns_dir }}", "{{ dns_previous }}", "{{ dns_previous }}/legacy", "{{ dns_dir }}/disabled"]
-                - name: Save the installed files
+
+                # The snapshot of the state before this publication changes anything: the files (the new set and the old listener setup), the
+                # states of dnsmasq and the listener units, and who holds the listen addresses. The manifest is written last, so a snapshot
+                # without one is a run that died while it was being taken, before any change, and it is taken again. A snapshot that has a
+                # manifest is reused: it is the state to go back to until a publication commits, so a retry never saves a half-changed Node.
+                - name: Take the snapshot of the Node
+                  when: dns_snap_current is none
+                  block:
+                    - name: Remove what an unfinished snapshot left
+                      ansible.builtin.file:
+                        path: "{{ dns_snapshot }}"
+                        state: absent
+                    - name: Make the folder of the snapshot
+                      ansible.builtin.file:
+                        path: "{{ dns_snapshot }}/files"
+                        state: directory
+                        mode: "0700"
+                    - name: Read who holds the listen addresses
+                      ansible.builtin.command:
+                        argv: [ss, -H, -tulpn, src, "{{ item }}:{{ dns_port }}"]
+                      register: dns_snap_holders
+                      loop: "{{ dns.listen }}"
+                      changed_when: false
+                      failed_when: false
+                    - name: Copy the files that the publication changes
+                      ansible.builtin.copy:
+                        src: "{{ item }}"
+                        dest: "{{ dns_snapshot }}/files/{{ item | replace('/', '%') }}"
+                        remote_src: true
+                        mode: preserve
+                      loop: "{{ dns_snap_present }}"
+                      register: dns_snap_copies
+                    - name: Describe the snapshot
+                      ansible.builtin.set_fact:
+                        dns_snap: "{{ lookup('ansible.builtin.template', 'dns-snapshot.j2') | from_json }}"
+                      vars:
+                        snap_revision: "{{ dns.revision | string }}"
+                        snap_copies: "{{ dns_snap_copies.results }}"
+                        snap_new: "{{ dns_new_files }}"
+                        snap_absent: "{{ dns_snap_absent }}"
+                        snap_binders: "{{ dns_binders }}"
+                        snap_dnsmasq: "{{ dns_unit.status | default({}) }}"
+                        snap_listeners: "{{ dns_listener_state.results | default([]) }}"
+                        snap_holders: "{{ dns_snap_holders.results }}"
+                    - name: Write the manifest of the snapshot
+                      ansible.builtin.copy:
+                        content: "{{ dns_snap | to_json }}"
+                        dest: "{{ dns_snapshot_manifest }}"
+                        mode: "0600"
+                # A reload is owed from here until the commit: the records are replaced before dnsmasq reads them again, and a run that is
+                # killed in between would leave files that match and a dnsmasq that does not know them.
+                - name: Note that a reload is owed
                   ansible.builtin.copy:
-                    src: "{{ item }}"
-                    dest: "{{ dns_previous }}/{{ item | basename }}"
-                    remote_src: true
-                    mode: preserve
-                  loop: "{{ dns_save_keep }}"
-                - name: Save the files of the old listener setup
-                  ansible.builtin.copy:
-                    src: "{{ item }}"
-                    dest: "{{ dns_previous }}/legacy/{{ item | basename }}"
-                    remote_src: true
-                    mode: preserve
-                  loop: "{{ dns_save_legacy }}"
+                    content: "{{ dns.revision }}\n"
+                    dest: "{{ dns_reload_marker }}"
+                    mode: "0644"
 
                 # Install, each file in one rename. orbit.conf first, and dnsmasq --test validates it before it replaces the old one (a refusal
                 # is `failed to validate`, which the rescue reports as dns.config_invalid): every file stays as it was. The records
@@ -318,7 +403,7 @@
                     argv: >-
                       {{ ['sh', '-c', 'if [ "$#" -gt 0 ]; then systemctl stop -- "$@" || exit 1; fi; exec systemctl restart dnsmasq', 'sh']
                       + dns_listener_started }}
-                  async: 90
+                  async: "{{ dns_cutover_budget }}"
                   poll: 0
                   register: dns_cutover_job
                   changed_when: true
@@ -328,7 +413,7 @@
                     jid: "{{ dns_cutover_job.ansible_job_id }}"
                   register: dns_cutover
                   until: dns_cutover.finished
-                  retries: 90
+                  retries: "{{ dns_cutover_budget }}"
                   delay: 1
                   changed_when: false
                   failed_when: dns_cutover.finished and (dns_cutover.rc | default(1)) != 0
@@ -396,6 +481,68 @@
                 fail_msg: dns.check_failed
                 quiet: true
 
+            # The vpn Node resolves through this dnsmasq too: systemd-resolved sends its own queries to dns_local_resolver (the drop-in). The
+            # Node-local address must answer, and the Node's normal resolver must resolve a private name, a public name, and give NODATA for the
+            # AAAA of an exact name. The resolver checks apply on a Node that has the drop-in, where the outage would otherwise go unseen.
+            - name: Pick a record to ask the Node's own resolver for
+              ansible.builtin.set_fact:
+                dns_probe: >-
+                  {{ (dns.records | selectattr('pair') | list | first) if (dns.records | selectattr('pair') | list | length > 0)
+                  else ((dns.records | first) if (dns.records | length > 0) else none) }}
+            - name: Ask the Node's own resolver address
+              ansible.builtin.command:
+                argv: ["timeout", "30", "dig", "@{{ dns_local_resolver }}", "-p", "{{ dns_port }}", "+short", "+tries=1", "+time=3", "{{ dns_probe.name }}", "A"]
+              register: dns_local_answer
+              changed_when: false
+              failed_when: false
+              when: dns_probe is not none
+            - name: Look for the resolver drop-in of the Node
+              ansible.builtin.stat:
+                path: "{{ dns_resolved_dropin }}"
+              register: dns_dropin
+            - name: Look for resolvectl
+              ansible.builtin.stat:
+                path: /usr/bin/resolvectl
+              register: dns_resolvectl
+            - name: Flush the caches of the Node's resolver
+              ansible.builtin.command:
+                argv: [resolvectl, flush-caches]
+              changed_when: false
+              failed_when: false
+              when: dns_dropin.stat.exists and dns_resolvectl.stat.exists
+            - name: Ask the Node's resolver for a private name
+              ansible.builtin.command:
+                argv: ["timeout", "30", "getent", "ahostsv4", "{{ dns_probe.name }}"]
+              register: dns_resolver_private
+              changed_when: false
+              failed_when: false
+              when: dns_dropin.stat.exists and dns_probe is not none
+            - name: Ask the Node's resolver for a public name
+              ansible.builtin.command:
+                argv: ["timeout", "30", "getent", "ahostsv4", "{{ dns_public_check_name }}"]
+              register: dns_resolver_public
+              changed_when: false
+              failed_when: false
+              when: dns_dropin.stat.exists
+            - name: Ask the Node's resolver for the AAAA of an exact name
+              ansible.builtin.command:
+                argv: ["timeout", "30", "resolvectl", "query", "--type=AAAA", "{{ dns_probe.name }}"]
+              register: dns_resolver_aaaa
+              changed_when: false
+              failed_when: false
+              when: dns_dropin.stat.exists and dns_resolvectl.stat.exists and dns_probe is not none and dns_probe.pair
+            - name: Check the answers of the Node's own resolvers
+              ansible.builtin.assert:
+                that:
+                  - dns_probe is none or dns_probe.address in (dns_local_answer.stdout_lines | default([]))
+                  - not dns_dropin.stat.exists or dns_probe is none or dns_probe.address in (dns_resolver_private.stdout | default(''))
+                  - not dns_dropin.stat.exists or (dns_resolver_public.rc | default(1)) == 0
+                  - >-
+                    dns_resolver_aaaa is skipped or ((dns_resolver_aaaa.rc | default(0)) != 0
+                    and 'does not have any RR' in (dns_resolver_aaaa.stderr | default('')))
+                fail_msg: dns.check_failed
+                quiet: true
+
             # Last: a failed run leaves the old revision, so the next publication renders and writes the whole state again.
             - name: Record the revision
               ansible.builtin.copy:
@@ -406,6 +553,13 @@
               ansible.builtin.set_fact:
                 dns_committed: true
                 dns_result: {revision: "{{ dns.revision | string }}", dnsmasq: "{{ dns_action }}"}
+            # The commit: the new files become the last good set, the old listener's files go to previous/legacy/, and the snapshot and the
+            # marker go. A run that dies in between is finished by the next one (see dns_stale_snapshot).
+            - name: Commit the publication
+              ansible.builtin.include_tasks: tasks/dns-commit.yml
+              vars:
+                dns_commit_snap: "{{ dns_snap_current }}"
+              when: dns_snap_current is not none
 
         - name: Note that a newer publication holds this change
           ansible.builtin.set_fact:
@@ -464,64 +618,138 @@
           delegate_to: localhost
           become: false
           vars: *local
-        # Only a run that replaced files puts them back, and only before the revision is recorded. These tasks never fail the rescue:
-        # the phase fails with the code above whatever the restore does.
-        - name: Put the last good files back
-          when: dns_touched | default(false) and not (dns_committed | default(false))
+        # A run that changed the Node puts the snapshot back, and only before the revision is recorded. The snapshot is the state before the
+        # publication that is not yet committed: after a killed first cutover and a failed retry it is still the original old listener setup,
+        # never the candidate. No task here ends the rescue: each is checked afterwards, and the answers of the restored resolvers decide whether
+        # the Node is recovered. The result says so (`recovered`), and a recovery that failed is dns.rollback_failed with the cause.
+        - name: Put the snapshot back
+          when: (dns_touched | default(false)) and not (dns_committed | default(false)) and dns_snap_current is not none
           block:
+            - name: Name the snapshot to restore
+              ansible.builtin.set_fact:
+                dns_restore: "{{ dns_snap_current }}"
+                dns_restore_dnsmasq: >-
+                  {{ (dns_snap_current.units | selectattr('name', 'equalto', 'dnsmasq') | list | first)
+                  | default({'name': 'dnsmasq', 'active': false, 'enabled': false}) }}
             - name: Forget the configuration dnsmasq started with
               ansible.builtin.file:
                 path: "{{ dns_loaded_file }}"
                 state: absent
-              when: dns_switching | default(false)
-              failed_when: false
-            - name: Restore the files of the last good set
+              ignore_errors: true
+              register: dns_r_loaded
+            - name: Restore the files that the Node held
               ansible.builtin.copy:
-                src: "{{ dns_previous }}/{{ item | basename }}"
-                dest: "{{ item }}"
+                src: "{{ dns_snapshot }}/files/{{ item.copy }}"
+                dest: "{{ item.path }}"
                 remote_src: true
                 mode: preserve
-              loop: "{{ dns_save_keep }}"
-              failed_when: false
-            - name: Remove the files that this run created
+              loop: "{{ dns_restore.files | selectattr('present') | list }}"
+              loop_control:
+                label: "{{ item.path }}"
+              ignore_errors: true
+              register: dns_r_files
+            - name: Remove the files that the Node did not hold
               ansible.builtin.file:
-                path: "{{ item }}"
+                path: "{{ item.path }}"
                 state: absent
-              loop: "{{ [dns_conf_file, dns_hosts_file, dns_servers_file] | difference(dns_save_keep) }}"
-              failed_when: false
-            - name: Restore the files of the old listener setup
-              ansible.builtin.copy:
-                src: "{{ dns_previous }}/legacy/{{ item | basename }}"
-                dest: "{{ item }}"
-                remote_src: true
-                mode: preserve
-              loop: "{{ dns_save_legacy }}"
-              failed_when: false
-            - name: Restart dnsmasq on the restored files
+              loop: "{{ dns_restore.files | rejectattr('present') | list }}"
+              loop_control:
+                label: "{{ item.path }}"
+              ignore_errors: true
+              register: dns_r_absent
+            - name: Remove the copies of the snippets that were moved away
+              ansible.builtin.file:
+                path: "{{ dns_dir }}/disabled/{{ item.path | basename }}"
+                state: absent
+              loop: "{{ dns_restore.files | selectattr('binder') | list }}"
+              loop_control:
+                label: "{{ item.path }}"
+              ignore_errors: true
+              register: dns_r_disabled
+            - name: Read the restored units
+              ansible.builtin.systemd:
+                daemon_reload: true
+              ignore_errors: true
+              register: dns_r_daemon
+            - name: Put dnsmasq back in the state it had, on the restored files
               ansible.builtin.systemd:
                 name: dnsmasq
-                state: restarted
-              when: dns_switching | default(false)
-              failed_when: false
-              register: dns_restored_restart
+                state: "{{ 'restarted' if dns_restore_dnsmasq.active else 'stopped' }}"
+                enabled: "{{ dns_restore_dnsmasq.enabled }}"
+              ignore_errors: true
+              register: dns_r_dnsmasq
             - name: Remember the restored configuration
               ansible.builtin.copy:
                 src: "{{ dns_conf_file }}"
                 dest: "{{ dns_loaded_file }}"
                 remote_src: true
                 mode: "0644"
-              when: (dns_switching | default(false)) and dns_conf_file in dns_save_keep and dns_restored_restart is succeeded
-              failed_when: false
-            - name: Start the old listener again
+              when: dns_restore_dnsmasq.active and dns_r_dnsmasq is succeeded and dns_conf_file in (dns_restore.files | selectattr('present') | map(attribute='path') | list)
+              ignore_errors: true
+              register: dns_r_remember
+            - name: Put the enabled state of the old listener units back
               ansible.builtin.systemd:
-                name: "{{ item }}"
+                name: "{{ item.name }}"
+                enabled: "{{ item.enabled }}"
+              loop: "{{ dns_restore.units | rejectattr('name', 'equalto', 'dnsmasq') | list }}"
+              loop_control:
+                label: "{{ item.name }}"
+              ignore_errors: true
+              register: dns_r_enabled
+            - name: Start the old listener units that ran, socket first
+              ansible.builtin.systemd:
+                name: "{{ item.name }}"
                 state: started
-              loop: "{{ dns_listener_started }}"
-              when: dns_switching | default(false)
-              failed_when: false
+              loop: "{{ dns_restore.units | rejectattr('name', 'equalto', 'dnsmasq') | selectattr('active') | list }}"
+              loop_control:
+                label: "{{ item.name }}"
+              ignore_errors: true
+              register: dns_r_started
+            - name: Ask the restored resolvers, over UDP and TCP, on the VPN address and the Node's own address
+              ansible.builtin.command:
+                argv: >-
+                  {{ ['timeout', '30', 'dig', '@' ~ item.server, '-p', dns_port | string, '+noall', '+comments', '+tries=1', '+time=3']
+                  + (['+tcp'] if item.tcp else []) + [(dns.records | first).name if (dns.records | length > 0) else 'gateway.orbit', 'A'] }}
+              register: dns_r_dig
+              loop:
+                - {server: "{{ dns.listen[0] }}", tcp: false}
+                - {server: "{{ dns.listen[0] }}", tcp: true}
+                - {server: "{{ dns_local_resolver }}", tcp: false}
+                - {server: "{{ dns_local_resolver }}", tcp: true}
+              loop_control:
+                label: "{{ item.server }} tcp={{ item.tcp }}"
+              changed_when: false
+              failed_when: >-
+                dns_r_dig.rc != 0 or (dns_r_dig.stdout | regex_search('status[:] (NOERROR|NXDOMAIN)')) is none
+              ignore_errors: true
+            - name: Decide whether the Node is recovered
+              ansible.builtin.set_fact:
+                dns_recovered: >-
+                  {{ [dns_r_loaded, dns_r_files, dns_r_absent, dns_r_disabled, dns_r_daemon, dns_r_dnsmasq, dns_r_enabled, dns_r_started, dns_r_dig]
+                  | map(attribute='failed', default=false) | select | list | length == 0 }}
+            - name: Keep the failure and what the recovery did
+              ansible.builtin.copy:
+                content: >-
+                  {{ ({'error_code': dns_failure.code, 'recovered': true} if dns_recovered
+                  else {'error_code': 'dns.rollback_failed', 'recovered': false, 'cause': dns_failure.code}) | to_json }}
+                dest: "{{ run }}/result.json"
+                mode: "0600"
+              changed_when: false
+              delegate_to: localhost
+              become: false
+              vars: *local
+            # The snapshot stays when the recovery failed: the next run starts from it.
+            - name: Remove the snapshot and the marker of the recovered Node
+              ansible.builtin.file:
+                path: "{{ item }}"
+                state: absent
+              loop: ["{{ dns_reload_marker }}", "{{ dns_snapshot }}"]
+              when: dns_recovered
+              ignore_errors: true
+              register: dns_r_cleanup
         - name: Fail the phase
           ansible.builtin.fail:
-            msg: "{{ dns_failure.msg }}"
+            msg: "{{ dns_failure.msg if (dns_recovered | default(true)) else 'dns.rollback_failed: ' ~ dns_failure.msg }}"
 
       always:
         # Stop the holder: flock ends with its child and the lock goes with it. The pid file is a file of /run, not state of the Node.

@@ -1,0 +1,24 @@
+{#-
+  The manifest of the snapshot that a publication takes before it changes the Node. Pure: it prints one JSON object.
+  Inputs: snap_revision, snap_copies (the results of the copy of each file that the Node held), snap_new (the paths of the new file set),
+  snap_absent (the paths of the new file set that the Node did not hold), snap_binders (the snippets that bind interfaces),
+  snap_dnsmasq (the systemd status of dnsmasq), snap_listeners (the results of the status reads of the old listener units),
+  snap_holders (the results of reading who holds each listen address).
+  The files are `present` when the Node held them (then `copy` names the copy in snapshot/files and `sha256` its checksum), `legacy` when
+  they belong to the old listener setup, and `binder` when they are snippets that bind interfaces. A unit is `active` and `enabled`.
+-#}
+{%- set ns = namespace(files=[], units=[], holders=[]) -%}
+{%- for r in snap_copies -%}
+{%- set ns.files = ns.files + [{'path': r.item, 'copy': r.item | replace('/', '%'), 'sha256': r.checksum, 'present': true, 'legacy': r.item not in snap_new, 'binder': r.item in snap_binders}] -%}
+{%- endfor -%}
+{%- for path in snap_absent -%}
+{%- set ns.files = ns.files + [{'path': path, 'copy': none, 'sha256': none, 'present': false, 'legacy': false, 'binder': false}] -%}
+{%- endfor -%}
+{%- set ns.units = [{'name': 'dnsmasq', 'active': snap_dnsmasq.ActiveState | default('') == 'active', 'enabled': snap_dnsmasq.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
+{%- for r in snap_listeners -%}
+{%- set ns.units = ns.units + [{'name': r.item, 'active': r.status.ActiveState | default('') == 'active', 'enabled': r.status.UnitFileState | default('') in ['enabled', 'enabled-runtime']}] -%}
+{%- endfor -%}
+{%- for r in snap_holders -%}
+{%- set ns.holders = ns.holders + [{'address': r.item, 'owners': r.stdout_lines | default([])}] -%}
+{%- endfor -%}
+{{ {'revision': snap_revision, 'files': ns.files, 'units': ns.units, 'holders': ns.holders} | to_json }}

@@ -12,7 +12,7 @@ use App\Support\ValidatedData;
 
 /**
  * The phase prints `{revision, dnsmasq}` (plus `skipped` when a newer publication already held the change) or `{error_code}` in its
- * terminal step. The shared reader parses that stdout into `$data['result']` and takes the failed run's `error_code` from it.
+ * terminal step; after a failure that changed the Node it adds `recovered` (and `cause` when the recovery failed). The shared reader parses that stdout into `$data['result']` and takes the failed run's `error_code` from it.
  */
 final readonly class DnsPublishProjection implements DirectOperationProjection
 {
@@ -28,7 +28,7 @@ final readonly class DnsPublishProjection implements DirectOperationProjection
         $reported = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['revision', 'dnsmasq', 'skipped']));
         $result = match ($status) {
             OperationStatus::Succeeded => $reported,
-            OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
+            OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code, ...array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['recovered', 'cause']))],
             default => [],
         };
 

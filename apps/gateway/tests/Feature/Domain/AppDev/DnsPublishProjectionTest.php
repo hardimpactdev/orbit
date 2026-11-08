@@ -157,4 +157,21 @@ describe('DnsPublishProjection', function (): void {
             ->and($projected->error_code)->toBe('dns.check_failed')
             ->and($projected->result)->toBe(['error_code' => 'dns.check_failed']);
     });
+
+    it('records whether the Node was recovered after a failure, and the cause when the recovery failed', function (): void {
+        $operation = dnsPublishOperation();
+        dnsPublishServe(dnsPublishHistory($operation, 'failed', ['error_code' => 'dns.rollback_failed', 'recovered' => false, 'cause' => 'dns.check_failed']));
+
+        $projected = projectDnsPublishTerminal($operation);
+
+        expect($projected->error_code)->toBe('dns.rollback_failed')
+            ->and($projected->result)->toBe(['error_code' => 'dns.rollback_failed', 'recovered' => false, 'cause' => 'dns.check_failed']);
+    });
+
+    it('records a recovered Node', function (): void {
+        $operation = dnsPublishOperation();
+        dnsPublishServe(dnsPublishHistory($operation, 'failed', ['error_code' => 'dns.check_failed', 'recovered' => true]));
+
+        expect(projectDnsPublishTerminal($operation)->result)->toBe(['error_code' => 'dns.check_failed', 'recovered' => true]);
+    });
 });
