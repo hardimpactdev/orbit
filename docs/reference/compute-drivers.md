@@ -3,7 +3,7 @@ title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand}.php}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - {bin/{php-build,git-build-watch}}
@@ -371,7 +371,7 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snap
 
 The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
 
-`task-vms:prepare-host` sends the configured project, bridge, subnet, pool, and optional ZFS dataset to `incus.prepare-host`. The command validates existing storage, project network scope, and bridge address before changing them. It refuses to create a pool on a dataset that already exists. Rust owns the ACL, isolated profile NIC, project restrictions, stock image copy, and UFW forwarding rule. Repeated calls converge the same resources under the host and firewall locks. A setup failure returns `task_vm.setup_failed`; it does not claim to undo a partly completed setup.
+The first phase of every base refresh prepares its host through Ansible. It validates existing storage, project network scope, and bridge address before changing them, then converges the pool, project, bridge, ACL, profile, stock image and forwarding rule. The agent observes only; it does not prepare hosts.
 
 `incus.volumes` reads the custom volumes in the configured project and pool. Swamp owns volume changes through keyed Operation children; the Gateway keeps volume ownership and inventory reads.
 
@@ -907,9 +907,9 @@ Restore the prior Gateway release with its loader and recipe, and select its ret
 
 ### Prepare an Incus host
 
-Run `task-vms:prepare-host {node}` once for each host. It calls `incus.prepare-host` through the pinned agent runner. The command returns readiness after convergence.
+Every base refresh starts with the shared `host-prepare` Ansible phase. It checks existing resources before changing them. A missing pool is created from a new `zfs_dataset` when configured; an existing dataset is refused because Incus takes ownership of its source. Without a dataset, Incus creates a ZFS pool on its own loop file, sized by `pool_size` (default `640GiB`). An existing pool must use ZFS, and a configured dataset must match its source. Existing pools are never resized or replaced.
 
-First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
+On a host whose pool source is a regular file, this phase caps the host-wide ZFS ARC at 2 GiB, both now and after reboot. That is about 6.6% of a 30.24 GiB host and leaves room for databases and other services. The phase does not change ARC settings on native-ZFS hosts, including an existing native pool with no `zfs_dataset` setting. It installs the ZFS userspace tools when needed and loads the kernel module before creating a pool. Then it sets up these parts:
 
 - The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the creation of the base VM of a host launches it.
 - The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
@@ -922,9 +922,9 @@ First it checks the ZFS storage pool that the host's `pool` names. It creates a 
 
 Task VMs need nothing that the restrictions forbid, except low-level config: medium and large VMs set `raw.qemu.conf` for free page reporting. Only the Gateway sets instance config in the project.
 
-The command takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
+The phase takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The bridge and ACL live in the Incus project `default`. The phase preserves unrelated projects, pools and networks.
 
-Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus.prepare-host` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
+Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only the shared host preparation phase creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
 The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
 
@@ -936,7 +936,7 @@ Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume
 
 Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
-A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that `task-vms:prepare-host` copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
+A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that host preparation copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
 
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
@@ -1043,6 +1043,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 
 | Step | What it does |
 |---|---|
+| `Prepare the host` | Phase `host-prepare` of `task-vm-host.yml`: validates and converges the pool, project, bridge, ACL, profile, stock image and forwarding rule. |
 | `Log egress` | Phase `egress-log` of `task-vm-host.yml`, in a job of its own that runs first: sets up the [egress log](#log-task-vm-egress) of the host bridge. |
 | `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
 | `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It wipes no identity. It builds a missing nested fleet. |
@@ -1126,11 +1127,10 @@ There is no fallback image. A claim copies the recorded base snapshot of its hos
 
 ### Add a task VM host
 
-A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
+A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. Then:
 
-1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
-2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
-3. Run `task-vms:refresh-image {node}`. The first refresh makes the base VM and its first snapshot ([the base VM and its snapshot](#the-base-vm-and-its-snapshot)).
+1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
+2. Run `task-vms:refresh-image {node} --from-stock`. Its host phase prepares the host, then the refresh builds the base and proves one start from its snapshot.
 
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
@@ -1184,6 +1184,8 @@ While task VMs are configured and the range or Swamp hostname is invalid, every 
 A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be the workspace its group [owns](/reference/tasks#workspace-ownership), in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`.
 
 ### Configure task VMs
+
+Choose `max_vms` from measured peak memory, with a separate margin for the host's own services, QEMU overhead and ZFS ARC. A Large VM takes three units and 12 GiB. Count a running base during a refresh; it stops before the candidate proof starts. A machine's CPU count or free disk does not establish its RAM budget. Sabre starts at `max_vms=3`, one Large CI proof VM. Its ceiling is two VMs (`max_vms=6`), and that increase requires a measured smaller VM profile that fits with the host margin.
 
 Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment. Per-host configuration lives in the operator-owned [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) on each host Node, not in the environment and not in its roles.
 
