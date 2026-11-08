@@ -100,6 +100,8 @@ sequenceDiagram
   opt added or changed cases opt into replay, in CI
     SW->>SW: Check main verdicts
     %%> Continue only after every head case passed and CI supplied merge_base and head.
+    SW->>VM: Read runner capabilities
+    %%> Read the head runner help. An older head without the replay command skips selection and replay.
     SW->>VM: Check out the merge base
     %%> A second checkout supplies definitions and is never mounted in the fleet.
     SW->>VM: Select replay cases<br/>runner case-level comparison

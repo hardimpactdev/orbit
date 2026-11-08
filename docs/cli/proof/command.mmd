@@ -23,6 +23,8 @@ sequenceDiagram
     %%> The runner schedules cases within the fleet's existing concurrency and isolation rules. Keep every verdict line in the output artifact.
     opt CI replay after every head case passed
       SW->>SW: Check head verdicts
+      SW->>VM: Read runner capabilities
+      %%> Read head runner help. Without replay support, skip selection and replay.
       SW->>VM: Check out the base
       SW->>VM: Select replay cases
       %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.

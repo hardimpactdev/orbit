@@ -304,6 +304,8 @@ Set `fails_on_base: true` when a case proves new or fixed behavior that the merg
 
 CI replays only flagged cases that the runner’s case-level comparison identifies as added or changed in this PR, including changes to their expanded fixtures, vars, settings or batch setup. It also limits replay to the cases admitted to this proof batch. Code or tooling changes that select a whole file do not make its unchanged flagged cases replay. Cases without the flag never replay. Coverage of behavior that main already has, such as refusals or offline handling, normally leaves the flag unset.
 
+CI checks the head runner for replay support first. Older heads without that command skip selection and replay. With no eligible flagged cases, CI skips replay entirely.
+
 Every replayed case must end `failed` with cause `assertion` on the merge base. A passing case, an infrastructure failure or a missing verdict fails the proof with a `CASE@merge-base` verdict. The [stage 3 chart](/reference/command-development-pipeline#3-proof) owns the replay steps and limits. Once the case is merged, later PRs leave it out unless its definition changes again. Keep the flag; no cleanup is needed. `fails_today` is a temporary spec note and does not opt into replay.
 
 ## Where the code is
