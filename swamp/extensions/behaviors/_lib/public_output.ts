@@ -97,16 +97,18 @@ const segments = (name: string): string[] =>
         .split("_");
 
 /** The Gateway field rule: a structured field with this name holds a secret. */
-export function secretField(name: string): boolean {
-    const parts = segments(name);
+function secretParts(parts: string[]): boolean {
     return !NON_SECRET_KEYS.has(parts.join("_")) &&
         parts.some((part) => SECRET_WORDS.has(part));
 }
 
+export function secretField(name: string): boolean {
+    return secretParts(segments(name));
+}
+
 /** In text a bare `key` is prose, so it needs a prefix, as in the Gateway text rule. */
-function secretName(name: string): boolean {
-    const parts = segments(name);
-    return secretField(name) &&
+function secretName(parts: string[]): boolean {
+    return secretParts(parts) &&
         !(parts.length === 1 && (parts[0] === "key" || parts[0] === "keys"));
 }
 
@@ -194,21 +196,38 @@ function valueEnd(
  */
 function replaceFields(text: string): string {
     let out = "", copied = 0;
+    // Names repeat in command output. Cache only their policy for this capture,
+    // never a value or its context-dependent end position.
+    const fields = new Map<string, {
+        secret: boolean;
+        header: boolean;
+        numericMetric: boolean;
+    }>();
     FIELD.lastIndex = 0;
     for (let match; (match = FIELD.exec(text));) {
         const [whole, opener, name, closer] = match;
         const from = match.index + whole.length;
-        if (!secretName(name)) {
+        let field = fields.get(name);
+        if (!field) {
+            const parts = segments(name);
+            field = {
+                secret: secretName(parts),
+                header: CREDENTIAL_HEADERS.has(parts.join("_")),
+                numericMetric: NUMERIC_METRIC_SUFFIXES.has(parts.at(-1)!),
+            };
+            fields.set(name, field);
+        }
+        if (!field.secret) {
             FIELD.lastIndex = from;
             continue;
         }
         const header = !closer && whole.trimEnd().endsWith(":") &&
-            CREDENTIAL_HEADERS.has(segments(name).join("_"));
+            field.header;
         const end = valueEnd(text, from, header, closer ? undefined : opener);
         const value = text.slice(from, end);
         const kept = value === "" || /^(?:true|false|null)$/.test(value) ||
             (/^-?\d+(?:\.\d+)?$/.test(value) &&
-                NUMERIC_METRIC_SUFFIXES.has(segments(name).at(-1)!));
+                field.numericMetric);
         if (!kept) {
             out += text.slice(copied, from) + REDACTED;
             copied = end;
