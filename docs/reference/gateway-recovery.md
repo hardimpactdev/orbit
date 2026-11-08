@@ -606,6 +606,10 @@ A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/f
 
 Full Node footprint convergence remains the Nodes family's operation. Release rollout changes only the CLI, its public connection profile and the observer binary. It does not apply Caddy, DNS, PHP or role configuration.
 
+For that repair, use [`orbit node:converge NODE`](/cli/node/converge). It admits one active, managed Linux Node against recorded state, reserves that Node and its recorded VPN hub, and runs the [seven scoped phases](/reference/node-provisioning#converge-the-orbit-footprint). Unlike automatic rollout membership, standalone admission allows a roleless Node or the Gateway Node. The default includes the base and all recorded roles; `--base` limits repair to Orbit's own layer, and `--roles=a,b` limits it to the base and those existing assignments. It changes no Instance or role assignment.
+
+A standalone repeat is another full attempt, even when the recorded intent matches. With no drift it must report zero changed tasks on the target and finish within 120 seconds; hub changes do not count as target changes. A phase failure keeps completed and partial changes, with no rollback. Fix the reported cause and start a new attempt from input, rather than expecting a resume at the failed phase. A Tool's own failure is recorded separately and does not alone fail the parent Operation. This is not a fleet rollout pass and does not change rollout order or its stop-on-failure rule.
+
 A lost or unknown command result leaves the Operation unresolved; it is not reported as success.
 
 ### A failed Node
