@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The proof runner: `runner plan --file F` prints the batches and cases; `runner case ID --file F` runs one case.
+"""The proof runner: `runner plan --file F` prints the batches and cases; `runner case ID --file F` runs one case;
+`runner batch BATCH --file F` runs every case of a batch, several at a time.
 
 Format and verdicts: docs/reference/verification-cases. A case ends with one JSON line of at most 1 KB; the receipt goes to
 the evidence directory ($PROOF_EVIDENCE). Exit 0 passed, 1 failed, 2 unrun.
@@ -19,13 +20,16 @@ import steps
 
 BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
+STEP_OUTPUT_LIMIT = 4096   # Swamp cuts the output of a step here
+CUT_LINE_BYTES = 40        # room kept for the line that counts what was cut
 
 
 class Run:
     """The state of one case: bound names, the rules the case made, the baseline of `unchanged` and the evidence."""
 
-    def __init__(self, fleet, spec, evidence):
+    def __init__(self, fleet, spec, evidence, target=None):
         self.fleet, self.spec, self.evidence = fleet, spec, Path(evidence)
+        self.target = target or spec.target   # the Node that plays the target of the file for this case
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
@@ -47,7 +51,7 @@ class Run:
     def sleep(self, seconds):
         """Wait on the target Node, so that the wait is one fleet call and not a loop of the runner."""
         if seconds > 0:
-            self.fleet.sh(self.spec.target, f'sleep {int(seconds) + 1}', timeout=int(seconds) + 30)
+            self.fleet.sh(self.target, f'sleep {int(seconds) + 1}', timeout=int(seconds) + 30)
 
     def evidence_text(self, name, text):
         (self.evidence / name).write_text(text)
@@ -68,12 +72,12 @@ class Run:
 
     def source_of(self, node, family):
         """The address `node` really uses to reach the target, from the kernel route."""
-        target = self.fleet.nodes[self.spec.target].get('bridge6' if family == 6 else 'bridge')
+        target = self.fleet.nodes[self.target].get('bridge6' if family == 6 else 'bridge')
         if target is None:
-            raise steps.Infra(f'${{{node}.src6}}: {self.spec.target} has no IPv6 address; the batch needs ipv6_addresses')
+            raise steps.Infra(f'${{{node}.src6}}: {self.target} has no IPv6 address; the batch needs ipv6_addresses')
         words = self.fleet.sh(node, f'ip -{family} route get ' + target).stdout.split()
         if 'src' not in words:
-            raise steps.Infra(f'no source address from {node} to {self.spec.target}')
+            raise steps.Infra(f'no source address from {node} to {self.target}')
         return words[words.index('src') + 1]
 
     def resolve(self, value):
@@ -122,7 +126,7 @@ def execute(case, fleet, spec, evidence, negative=False):
     and is proven when each expectation named in `must_fail` fails."""
     started = time.time()
     deadline = started + case.timeout
-    run = Run(fleet, spec, evidence)
+    run = Run(fleet, spec, evidence, case.node)
     failures, verdict, cause = [], 'passed', None
     try:
         if negative and (not case.negative or len(case.stages) > 1):
@@ -189,18 +193,28 @@ def command_plan(args):
         print(f"batch {batch['batch']}: {batch['summary']}")
         for case_id in batch['cases']:
             case = spec.case(case_id)
-            print(f'  {case_id}  covers {case.covers}')
+            print(f'  {case_id}  on {case.node}, {"alone" if case.lock == "all" else "alone on its Node"}  covers {case.covers}')
             if args.steps:
                 for step in case.setup + [item for stage in case.stages for item in stage.act + stage.expect]:
                     print(f'    {step.where.split(" ", 2)[-1]} {step.name} {json.dumps(step.args, sort_keys=True)}')
     return 0
 
 
+def run_case(case, fleet, spec, root, negative=False, discovery=0):
+    """Run one case and write its receipt under `root/<case id>/<time>`. Returns the result."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    evidence = Path(root) / case.id / stamp
+    result, receipt = execute(case, fleet, spec, evidence, negative)
+    receipt['phase_secs']['discover'] = discovery
+    (evidence / 'receipt.json').write_text(json.dumps(receipt, indent=2, default=str))
+    print('evidence ' + str(evidence), file=sys.stderr)
+    return result
+
+
 def command_case(args):
     spec = spec_module.load(args.file, args.batches)
     case = spec.case(args.id)
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    evidence = Path(args.evidence or fleet_module.evidence_root()) / case.id / stamp
+    root = Path(args.evidence or fleet_module.evidence_root())
     discovered = time.time()
     try:
         fleet = fleet_module.from_environment()
@@ -208,13 +222,94 @@ def command_case(args):
         result = {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]}
         print(verdict_line(result))
         return 1
-    discovery = round(time.time() - discovered, 2)
-    result, receipt = execute(case, fleet, spec, evidence, args.negative)
-    receipt['phase_secs']['discover'] = discovery
-    (evidence / 'receipt.json').write_text(json.dumps(receipt, indent=2, default=str))
+    result = run_case(case, fleet, spec, root, args.negative, round(time.time() - discovered, 2))
     print(verdict_line(result))
-    print('evidence ' + str(evidence), file=sys.stderr)
     return {'passed': 0, 'failed': 1, 'unrun': 2}[result['verdict']]
+
+
+def may_start(case, active):
+    """A case that runs alone waits for the others to end and holds the fleet; any other case needs a Node no running case works on."""
+    if any(other.lock == 'all' for other in active):
+        return False
+    if case.lock == 'all':
+        return not active
+    return all(other.node != case.node for other in active)
+
+
+def schedule(cases, limit, work):
+    """Run `work(case)` for the cases, at most `limit` at a time, and yield `(case, result)` as each ends. The cases that share the fleet
+    with others go first, in file order; the ones that run alone follow. A case waits for a free Node, and the next that can start goes on."""
+    waiting = [case for case in cases if case.lock != 'all'] + [case for case in cases if case.lock == 'all']
+    running = {}
+    with concurrent.futures.ThreadPoolExecutor(limit) as pool:
+        while waiting or running:
+            for case in list(waiting):
+                if len(running) < limit and may_start(case, list(running.values())):
+                    waiting.remove(case)
+                    running[pool.submit(work, case)] = case
+            done, _ = concurrent.futures.wait(running, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                yield running.pop(future), future.result()
+
+
+def compact(result):
+    """A failed or unrun result cut down to two short failure messages, for a report that would not fit."""
+    failed = [message[:100] for message in result.get('failed', [])[:2]]
+    return {**result, **({'failed': failed} if failed else {})}
+
+
+def fit(results, limit=STEP_OUTPUT_LIMIT):
+    """The verdict lines that fit in the output of one Swamp step, which cuts at 4096 bytes. The cases that did not pass come first, so a cut
+    never hides one. When the lines do not fit, those cases keep two short messages each; the lines still left out are counted in a last
+    line, and the workflow reports their cases as having printed no verdict."""
+    ordered = sorted(results, key=lambda result: result['verdict'] == 'passed')
+    lines = [verdict_line(result) for result in ordered]
+    if sum(len(line.encode()) + 1 for line in lines) > limit:
+        lines = [verdict_line(compact(result)) if result['verdict'] != 'passed' else line for result, line in zip(ordered, lines)]
+    kept, size = [], 0
+    for index, line in enumerate(lines):
+        cost = len(line.encode()) + 1
+        if size + cost + (0 if index == len(lines) - 1 else CUT_LINE_BYTES) > limit:
+            kept.append(json.dumps({'cut': len(lines) - index}))
+            break
+        kept.append(line)
+        size += cost
+    return kept
+
+
+def command_batch(args):
+    """Run the cases of one batch with the fleet (guests, addresses, Node IDs) read once. One verdict line a case, those that did not pass first.
+    The exit status is the worst verdict. `--only` names the cases to run, in one argument."""
+    spec = spec_module.load(args.file, args.batches)
+    if args.batch not in spec.batches:
+        raise spec_module.SpecError('unknown batch: ' + args.batch)
+    cases = [case for case in spec.cases if case.batch == args.batch]
+    if args.only is not None:
+        wanted = args.only.split()
+        unknown = [name for name in wanted if name not in {case.id for case in cases}]
+        if unknown:
+            raise spec_module.SpecError(f'unknown case in batch {args.batch}: {unknown[0]}')
+        cases = [case for case in cases if case.id in wanted]
+    root = Path(args.evidence or fleet_module.evidence_root())
+    limit = args.parallel or spec.parallel
+    discovered = time.time()
+    try:
+        fleet = fleet_module.from_environment()
+    except fleet_module.FleetError as error:
+        print('\n'.join(fit([{'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [str(error)]} for case in cases])))
+        return 1
+    discovery = round(time.time() - discovered, 2)
+
+    def work(case):
+        try:
+            return run_case(case, fleet, spec, root, False, discovery)
+        except Exception as error:  # a case whose receipt cannot be written is a failed case, never a pass
+            return {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [f'{type(error).__name__}: {error}']}
+
+    results = [result for _, result in schedule(cases, limit, work)]
+    print('\n'.join(fit(results)), flush=True)
+    verdicts = {result['verdict'] for result in results}
+    return 1 if 'failed' in verdicts else 2 if 'unrun' in verdicts else 0
 
 
 def command_setup(args):
@@ -224,10 +319,10 @@ def command_setup(args):
         raise spec_module.SpecError('unknown batch: ' + args.batch)
     started = time.time()
     failures = []
+    root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
-        evidence = Path(args.evidence or fleet_module.evidence_root()) / ('batch-' + args.batch)
-        run = Run(fleet_module.from_environment(), spec, evidence)
+        run = Run(fleet_module.from_environment(), spec, root / ('batch-' + args.batch))
         run_steps(run, items, 'setup', failures, started + 120)
     except steps.Unrun as error:
         failures.append(str(error))
@@ -250,12 +345,17 @@ def main(argv=None):
     setup = commands.add_parser('setup', help='run the setup steps of one batch on the fleet')
     setup.add_argument('batch')
     setup.add_argument('--evidence')
-    for command in (plan, case, setup):
+    batch = commands.add_parser('batch', help='run every case of one batch on the fleet, several at a time')
+    batch.add_argument('batch')
+    batch.add_argument('--evidence')
+    batch.add_argument('--parallel', type=int, help='cases at a time; the cases file sets the default')
+    batch.add_argument('--only', help='run only these cases of the batch: their IDs in one argument, separated by spaces')
+    for command in (plan, case, setup, batch):
         command.add_argument('--file', required=True)
         command.add_argument('--batches', default=str(BATCHES))
     args = parser.parse_args(argv)
     try:
-        return {'plan': command_plan, 'case': command_case, 'setup': command_setup}[args.command](args)
+        return {'plan': command_plan, 'case': command_case, 'setup': command_setup, 'batch': command_batch}[args.command](args)
     except spec_module.SpecError as error:
         print(f'cases file refused: {error}', file=sys.stderr)
         return 3

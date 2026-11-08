@@ -23,7 +23,7 @@ sequenceDiagram
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its task VM parked or still running, an open pull request, and no running operation
   %%> What it does:
-  %%> - captures, in one transaction, the resume of the VM, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
+  %%> - captures, in one transaction, the task VM identity, its resume only when parked, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
   %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the review of the owner is an input of the call. The gate check of stage 4 makes the call when the owner's latest review requests changes on the current head of the draft PR, with the review text and his inline comments as `corrections`, keyed by group and review (`pr-gate:prep-fix:42:REVIEW`). A person or the orchestrator can still make the call
@@ -34,9 +34,12 @@ sequenceDiagram
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
-  SW->>VM: Resume the VM<br/>operation-task-vm-resume
-  %%> What it does:
-  %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi session are as the park left them
+  opt the VM is parked
+    SW->>VM: Resume the VM<br/>operation-task-vm-resume
+    %%> What it does:
+    %%> - starts the parked VM and waits for its agent and Pi; the workspace and the Pi session are as the park left them
+    %%> - a ready VM skips this step and goes straight to the corrections
+  end
   SW->>VM: Apply the corrections<br/>operation-task-turn
   %%> What it does:
   %%> - the author thread of the prep run gets the corrections as its prompt

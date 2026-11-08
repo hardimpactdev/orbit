@@ -185,7 +185,8 @@ class FakeFleet:
         elif args[0] == 'firewall:allow':
             document, code = self.allow(args)
         elif args[0] == 'doctor':
-            drift = sum(1 for record in self.records if not any(row[:3] == (f"{record['port']}/{record['protocol']}", 'ALLOW', record['source']) for row in self.ufw['app-dev']))
+            name = next((role for role, number in NODE_IDS.items() if f'--node={number}' in args), 'app-dev')
+            drift = sum(1 for record in self.records if record.get('node', 'app-dev') == name and not any(row[:3] == (f"{record['port']}/{record['protocol']}", 'ALLOW', record['source']) for row in self.ufw[name]))
             document, code = {'summary': {'drift': drift}}, 1 if drift else 0
         else:
             raise AssertionError('the fake fleet does not know: ' + ' '.join(args))
@@ -218,14 +219,15 @@ class FakeFleet:
         if not any(item.startswith('--node=') for item in args):
             return {'error': {'code': 'firewall.node_id_invalid', 'message': 'Node ID must be a positive integer.', 'request_id': None}}, 1
         port, source = args[1], next(item[7:] for item in args if item.startswith('--from='))
+        name = next((role for role, number in NODE_IDS.items() if f'--node={number}' in args), 'app-dev')
         operation = {'id': self.next_id, 'status': self.allow_status}
         self.next_id += 1
         if self.allow_status != 'succeeded':
             return operation, 1
         if self.allow_skipped:
             return {**operation, 'result': {'skipped': self.allow_skipped}}, 0
-        self.records.append({'id': operation['id'], 'node': 'app-dev', 'action': 'allow', 'source': source, 'protocol': 'tcp', 'port': port, 'status': 'active'})
+        self.records.append({'id': operation['id'], 'node': name, 'action': 'allow', 'source': source, 'protocol': 'tcp', 'port': port, 'status': 'active'})
         if self.allow_effect:
-            first_test_rule = next((index for index, row in enumerate(self.ufw['app-dev']) if row[3].startswith('proof:')), 1)
-            self.ufw['app-dev'].insert(first_test_rule, (f'{port}/tcp', 'ALLOW', source, 'orbit'))
+            first_test_rule = next((index for index, row in enumerate(self.ufw[name]) if row[3].startswith('proof:')), 1)
+            self.ufw[name].insert(first_test_rule, (f'{port}/tcp', 'ALLOW', source, 'orbit'))
         return operation, 0

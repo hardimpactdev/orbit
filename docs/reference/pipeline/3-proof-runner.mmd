@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, and a case that did not pass triggers a restore; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
+  %% Target design: the proof runner inside stage 3 of the command development pipeline (design: reference/verification-cases). One shared runner executes the cases of one command; each batch restores the task's base snapshot once, cases use their own resources and undo nothing, the cases of a batch run in one step, several at a time on different Nodes; a case is a specification built from a fixed set of steps. Orbit's own Swamp runs the runner over SSH in the task VM, as part of the "Run the proof" child of proof:run. The Gateway only admits the request and records the verdicts.
   %% status: draft
   %% command: development pipeline stage 3 · proof runner
   %% kind: pipeline.3-proof-runner
@@ -36,13 +36,15 @@ sequenceDiagram
       %%> What it does:
       %%> - runs the setup steps of the batch, such as extra addresses on the Nodes
     end
-    loop each case, one at a time
-      SW->>VM: Run one case<br/>runner case ID
-      %%> What it does:
-      %%> - runs the setup, act and expect steps of the case in order
-      %%> - no undo and no cleanup: the case uses its own resources (free ports, its own listeners, a new Instance), so it does not touch the other cases of the batch
-      %%> Result:
-      %%> - one verdict line; the full receipt stays in the evidence directory
+    SW->>VM: Run the batch<br/>runner batch BATCH
+    %%> What it does:
+    %%> - one Swamp step runs every case of the batch; the runner reads the fleet once
+    %%> - the cases that share the fleet run several at a time (the `parallel` key of the cases file, 4 by default), never two on one Node: each case acts on one Node of the cases file's `spread`, and the Gateway lets one firewall write run on a Node at a time
+    %%> - the cases that change or compare what every case shares (the Operation list, a fault, a held lock) run alone, after the others
+    %%> - no restore after a failed case: cases use their own resources, undo nothing, and the next batch restores anyway
+    %%> Result:
+    %%> - one verdict line a case, those that did not pass first; the full receipt of each stays in the evidence directory
+    loop each case, several at a time
       VM->>NT: Set up the case<br/>listener · ufw_rule · probe
       %%> What it does:
       %%> - builds the starting state, then probes it, for example a blocked port and a working control port
@@ -56,16 +58,11 @@ sequenceDiagram
       %%> What it does:
       %%> - the `expect` steps check traffic, rule order, the Gateway record and Doctor
       %%> - every step runs, so one verdict lists all failures
-      VM-->>SW: Verdict<br/>one JSON line
-      %%> Returns:
-      %%> - the case id, `passed`, `failed` (cause `assertion` or `infrastructure`) or `unrun` (cause `precondition`), the failed checks and the seconds
-      opt the case did not pass
-        SW->>NT: Restore base<br/>then the batch start state
-        %%> Why:
-        %%> - a failed case can leave anything behind; the next case starts clean
-        %%> - the last case of a batch skips it, because the next batch restores anyway
-      end
     end
+    VM-->>SW: Verdicts<br/>one JSON line a case
+    %%> Returns:
+    %%> - the case id, `passed`, `failed` (cause `assertion` or `infrastructure`) or `unrun` (cause `precondition`), the failed checks and the seconds
+    %%> - Swamp cuts a step's output at 4096 bytes: the runner prints the lines that did not pass first, and counts the lines it had to leave out; a case without a line is reported as having printed no verdict
   end
   alt every case passed
     SW-->>GW: Run succeeded<br/>verdicts + receipt

@@ -590,6 +590,8 @@ A failed phase leaves finished work in place. A rerun skips each phase whose dig
 
 ### Park and resume
 
+Park, resume and release share one task VM name rule: a slot VM is `<host>-tvm-<slot_number>`, using the host name it had when created; an old-pool VM without a slot number is `tvm-<id>`. Any other name is refused before provider work. Prep corrections, builds and review rounds resume only a parked VM; they use a ready VM directly.
+
 Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner and records an immutable park intent. One native Swamp root stops and observes the admitted VM on its exact Incus host. The result projection records `waiting_for_review` only after stopped power is confirmed.
 
 It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting. Parking has one dispatch path: the native `tasks.park` root replaces its PHP stop executor and the unused internal `task_vm.park` parent and `task_vm.confirm_stopped` child. The same root owns soft-stop, hard-stop and observation; it starts no child Operations.

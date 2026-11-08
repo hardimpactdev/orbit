@@ -27,6 +27,10 @@ it('puts the command and its files in the draft, review and fix prompts', functi
         ->and($prompts->fix())->toContain('`firewall:deny`', '--amend --no-edit');
 });
 
+it('lets the reviewer accept a target behavior the runner cannot check yet when an uncovered request names it', function (): void {
+    expect(TaskPrepPrompts::for('node:metrics')->review())->toContain('has an `uncovered` request that names that behavior', 'blocks nothing at this stage');
+});
+
 it('refuses a command that is not family:command in lower case', function (string $command): void {
     expect(fn () => TaskPrepPrompts::for($command))->toThrow(ResourceOperationException::class, 'family:command');
 })->with(['', 'firewall', 'Firewall:deny', 'firewall:', ':deny', 'node:role:', 'node::list', 'firewall: deny', "firewall:deny\n", '../x:y']);

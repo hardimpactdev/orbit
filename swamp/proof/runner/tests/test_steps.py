@@ -431,7 +431,8 @@ class StepTest(unittest.TestCase):
         case = spec.load(Path(__file__).resolve().parents[2] / 'firewall/allow.cases.yaml',
                          Path(__file__).resolve().parents[2] / 'batches.yaml').case('partial-application')
         self.assertEqual(case.stages[0].act[0].args['expect']['steps'], {'name': 'Change the rules', 'count': 1})
-        checks = [self.run.resolve(step.args) for step in case.stages[0].expect if step.name == 'ufw']
+        # The file may place the case on another Node; the rows below are those of app-dev.
+        checks = [self.run.resolve(spec.swap_roles(step.args, 'app-dev', case.node)) for step in case.stages[0].expect if step.name == 'ufw']
         self.assertEqual(len(checks), 2)
         tcp = (f'{port}/tcp', 'ALLOW', BRIDGE['gateway'], 'proof:existing')
         udp = (f'{port}/udp', 'ALLOW', BRIDGE['gateway'], 'orbit')
