@@ -18,7 +18,7 @@ sequenceDiagram
   CLI->>GW: task:publish 42<br/>--check=17
   %%> Command:
   %%> - `orbit task:publish 42 --check=17`
-  %%> - syntax: `[group] --check=ID [--title=TEXT --body=TEXT [--draft]] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `[task] --check=ID [--title=TEXT --body=TEXT [--draft]] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the task group, and the passed handoff check whose commit is published
   %%> - optionally a title and body together, to open or update the pull request; without them it only pushes

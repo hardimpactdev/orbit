@@ -15,7 +15,7 @@ sequenceDiagram
   CLI->>GW: task:park 42
   %%> Command:
   %%> - `orbit task:park 42 --idempotency-key=park-1`
-  %%> - syntax: `<group> [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `<task> [--idempotency-key=KEY] [--json]`
   Note over GW: Admit review parking<br/>group 42 · owned VM
   %%> Requirements:
   %%> - the external group has an open published PR, and every subtask is ended or still `todo`

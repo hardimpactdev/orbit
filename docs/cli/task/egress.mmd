@@ -13,7 +13,7 @@ sequenceDiagram
   CLI->>GW: task:egress GROUP
   %%> Command:
   %%> - `orbit task:egress GROUP`
-  %%> - syntax: `<group> [--json]`
+  %%> - syntax: `<task> [--json]`
   alt the tasks extension is off
     GW--xCLI: 409 extension.disabled<br/>nothing is read
     %%> Requirements:

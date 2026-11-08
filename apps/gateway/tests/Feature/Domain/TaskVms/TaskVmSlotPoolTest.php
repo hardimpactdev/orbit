@@ -537,7 +537,7 @@ it('has the removal of a group\'s workspace admit the release of its slot and wa
 
     expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskWorkspaceWaiting::class, 'removes the workspace');
     $releases = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->get();
-    expect($releases)->toHaveCount(1)->and($releases->sole()->triggered_by)->toBe('task-complete')
+    expect($releases)->toHaveCount(1)->and($releases->sole()->triggered_by)->toBe('tasks-complete')
         ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 
     // A second removal waits for that release and admits no other.
