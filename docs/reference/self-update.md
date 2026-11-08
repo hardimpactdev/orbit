@@ -248,8 +248,8 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 `orbit self-update` has these limits.
 
 - It replaces only the CLI. A Node gets `orbit-agent` from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch).
-- The fleet rollout re-applies the Gateway-rendered footprint, such as the Caddyfile or the `tmpfiles` rule, over SSH.
-- The fleet rollout publishes the [managed PHP request and upload limits](/reference/php-runtime#request-and-upload-limits) through the Node footprint. Changed modules reload valid active FPM masters.
+- Fleet rollout delivers the CLI and pinned observer. It has no direct private DNS publication step.
+- [Node convergence](/reference/node-provisioning#converge-the-orbit-footprint) and DNS-affecting lifecycle operations apply their own desired state. VPN Node convergence invokes the complete [private DNS publication](/reference/private-dns).
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.
 

@@ -528,6 +528,8 @@ The private-SSH-home permission proof keeps real `sudo` and the Caddy identity. 
 
 Private DNS publication fixtures source their scripted service, socket, sleep and PID-matching commands as shell functions. The PID matcher consumes the scripted socket output without starting `grep` on each retry; it handles the numeric PID query used by the publication program and delegates other queries, including release-retention file checks, to real `grep`. The restore proof still performs and checks all 100 failed socket probes and the real fragment rollback.
 
+The shared [private DNS publication](/reference/private-dns) also has real Ubuntu Molecule scenarios for the VPN resolver, Cluster resolver and member delegate, including preparation while the old VPN listener still serves. They exercise actual resolved restarts and WireGuard hook persistence. A local macOS source or template check does not replace these Linux resolver checks.
+
 The shared Git cleanup regression runs stock Pest against a native fixture with real frozen release seeds and the class-cleanup trait. It does not boot a nested Laravel application merely to test class cleanup before the run directory is removed. The parent waits through PHP's `exec`, with captured output and an asserted exit code. It does not leave a Symfony pipe error handler installed while waiting for the child.
 
 Python deadline fixtures block until the timeout kills them; they do not race a short sleep against a nearby deadline. A following immediate command proves that the shared host remains usable.

@@ -14,6 +14,8 @@ covers:
 
 The CLI reaches the Gateway over HTTPS. The Gateway certificate chains to the Orbit root certificate authority (CA). The CLI pins that root certificate on each Gateway profile and installs it in the operating-system trust store. The [`gateway`](/cli/gateway) commands run these steps.
 
+[Private DNS selection](/reference/private-dns) chooses the address used to reach a name; it does not change certificate trust. A Cluster LAN resolver keeps the same CA boundary. `gateway.orbit` retains its canonical WireGuard answer, and a Cluster resolver forwards it to VPN DNS.
+
 ## Profiles
 
 The CLI keeps its profiles in `$ORBIT_HOME/config.json`. `ORBIT_HOME` defaults to `$HOME/.orbit`. The file holds the active profile name and one entry per profile with its `url` and `ca_path`. The CLI writes the file with mode `0600` under a lock. It refuses a `config.json` that is a symlink, belongs to another user, or has group or other permission bits, with `gateway.config_not_private`.

@@ -93,7 +93,7 @@ Setup places these pieces on the collector Node and in Gateway settings.
 | Process `ai-router-collector` | The collector Node | systemd, listens on `127.0.0.1:8787` |
 | Compiled collector | The collector Node | The delivered `/usr/local/bin/orbit-agent` binary |
 | Orbit CA leaf and Caddy site | The collector Node | HTTPS on the Node's WireGuard address |
-| Private DNS `host-record` | VPN DNS | `collector.ai-router.orbit` to the Node's WireGuard address |
+| Rendered private DNS record | VPN DNS | `collector.ai-router.orbit` to the Node's WireGuard address |
 | Management key, read token, and control token | Gateway settings | Stored as secrets |
 
 The Process runs `/usr/local/bin/orbit-agent service ai-router-collector`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `AI_ROUTER_*` values as `Environment=` directives: the CLIProxyAPI URL and management key (`AI_ROUTER_MANAGEMENT_KEY`), the read and control tokens, the port, and the Valkey host, port, username, and password. The service uses that management key to read auth-file models. It receives no client API key. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
@@ -116,7 +116,7 @@ Setup runs the shared [Caddy package step](/reference/node-provisioning#package-
 
 The `ai-router` provider contributes the collector site to the [Node Caddy build](/reference/caddy-configuration#node-caddy-build) through a [plug-in point](/reference/extensions#plug-in-points). The site renders on the collector Node while setup holds the collector and the Node has the collector certificate.
 
-The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `ai-router` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.ai-router.orbit`, and the reservation of that name. The footprint artifact converges the collector on the delivered agent pin. VPN DNS publishes the record while setup holds the collector. The name stays reserved while the extension is off.
+The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `ai-router` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.ai-router.orbit`, and the reservation of that name. The footprint artifact converges the collector on the delivered agent pin. Setup and teardown use the shared [private DNS publication](/reference/private-dns) to render the complete desired state, including the collector record while setup holds it. They publish no separate DNS fragment over SSH. The name stays reserved while the extension is off.
 
 ## Collection
 

@@ -26,6 +26,8 @@ orbit node:role:add gateway websocket
 
 The role is a singleton and conflicts with no other role, so it can share a Node with `gateway` and `vpn`. No Project, Instance, Route, or `.env` edit is involved. To move or remove it, use [`node:role:relocate`](/cli/node/role-relocate) and `node:role:remove`; [Reverb apps](/reference/websocket-apps#remove-a-dead-websocket-node) covers a dead Node.
 
+Role publication uses the shared [private DNS desired state](/reference/private-dns), rather than a Reverb-specific DNS fragment. `reverb.orbit` retains the role Node's WireGuard address. Cluster LAN resolvers forward this reserved name to VPN DNS.
+
 Four things go wrong:
 
 - **Composer fails on a fresh Node.** `composer install` fails its platform check on Ubuntu 26.04 unless `php-curl` and `php-xml` are installed. The role baseline installs both.

@@ -62,6 +62,8 @@ The Analytics footprint requires these resources. Role convergence is unavailabl
 
 After initial Analytics startup, its Ansible readiness phase waits up to 60 seconds for `/api/health` before publication. Convergence checks the existing Process without running initialization again.
 
+The dashboard record uses the shared [private DNS publication](/reference/private-dns). It renders complete VPN and Cluster resolver state instead of a separate Analytics DNS fragment. `analytics.orbit` keeps its canonical WireGuard answer; a Cluster resolver forwards that reserved name to VPN DNS.
+
 The firewall phase replaces a previous local storage port only when the rest of its owned rule matches.
 
 Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
