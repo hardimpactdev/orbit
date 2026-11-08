@@ -51,7 +51,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         $assignments = ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]);
         foreach ($assignments as $index => $assignment) {
             $verifications[] = [...ValidatedData::object($input['verify']), 'command' => $assignment['command'], 'file' => $assignment['file'],
-                'batch' => $assignment['batch'], 'step' => 'Prove assigned batches-'.$index, 'restore_first' => true];
+                'batch' => $assignment['batch'], ...($assignment['cases'] === [] ? [] : ['case_ids' => $assignment['cases']]), 'step' => 'Prove assigned batches-'.$index, 'restore_first' => true];
         }
 
         return [

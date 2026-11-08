@@ -61,3 +61,14 @@ it('accounts for every assigned case and fails missing duplicate malformed and u
     'malformed' => ['ROW{"id":"a","verdict":"passed"}', false],
     'unexpected' => ['ROW{"id":"extra","verdict":"passed","secs":1}', false],
 ]);
+
+it('plans selected ids only, retains their batch setup and rejects an unknown id', function (): void {
+    $source = Mockery::mock(ProofCommitSource::class);
+    $source->shouldReceive('file')->with('head', 'swamp/proof/batches.yaml')->andReturn("batches: {fresh: {setup: [{ipv6_addresses: {nodes: [gateway]}}]}, unused: {}}\n");
+    $source->shouldReceive('file')->with('head', 'cases.yaml')->andReturn("command: demo:run\ncases: [{id: a, batch: fresh}, {id: b, batch: fresh}, {id: c, batch: unused}]\n");
+    $plan = new ProofBatchPlan($source);
+    $selected = ['command' => 'demo:run', 'file' => 'cases.yaml', 'only' => ['b']];
+    expect($plan->read('head', [$selected]))->toHaveCount(1)
+        ->and($plan->read('head', [$selected])[0])->toMatchArray(['batch' => 'fresh', 'cases' => ['b']]);
+    expect(fn () => $plan->read('head', [[...$selected, 'only' => ['missing']]]))->toThrow(ResourceOperationException::class);
+});

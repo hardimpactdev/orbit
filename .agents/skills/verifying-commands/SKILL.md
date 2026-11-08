@@ -41,8 +41,12 @@ Keep each protocol's bound firewall identity and select the placement anchor for
 
 ## CI
 
-Run the whole affected proof, including commands that consume a changed shared workflow, extension or role: list them in `swamp/proof/selection.txt` ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
+Run the cases selected by `swamp/proof/selection.txt` and definition comparison ([choose the cases](../../../docs/reference/feature-flow.md#choose-the-cases)). Command code selects the whole file. Cases-only changes select changed or added entries and users of changed fixtures, vars or batch setup. Shared code selects nothing by itself. Documentation alone never starts the proof CI. A missing result or an unrun selected case fails the run.
 
 ## Report
 
 State the commit, the cases selected and run, the verdicts, the functional assertions and the Doctor result. Name unsupported cases and harness limits.
+
+The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.
+
+Runner, selection code and selection-list changes disable narrowing for commands selected by the same diff. Tooling changes alone still select nothing. Keep this guard in the shared runner result.

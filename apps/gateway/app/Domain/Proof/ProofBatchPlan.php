@@ -16,7 +16,7 @@ final readonly class ProofBatchPlan
     public function __construct(private ProofCommitSource $source) {}
 
     /**
-     * @param  list<array{command:string,file:string}>  $commands
+     * @param  list<array{command:string,file:string,only?:list<string>,reasons?:array<string,string>}>  $commands
      * @return list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float}>
      */
     public function read(string $commit, array $commands): array
@@ -55,8 +55,13 @@ final readonly class ProofBatchPlan
                         throw $this->invalid('Selected command '.$command['command'].' repeats case '.$id.'.');
                     }
                     $seen[$id] = true;
-                    $grouped[$case['batch']][] = $id;
+                    if (! isset($command['only']) || in_array($id, $command['only'], true)) {
+                        $grouped[$case['batch']][] = $id;
+                    }
                 }
+            }
+            if ($grouped === [] || (isset($command['only']) && array_diff($command['only'], array_keys($seen)) !== [])) {
+                throw $this->invalid('Selected command has no matching case ids.');
             }
             foreach ($definitions as $name => $definition) {
                 if (! isset($grouped[$name])) {
