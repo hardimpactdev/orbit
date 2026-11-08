@@ -166,6 +166,62 @@ export function prepare(raw: unknown) {
     };
 }
 
+const ReviewEvidence = z.object({
+    head: Sha,
+    tree: Sha,
+    handoff: z.object({
+        check_id: Id,
+        outcome: z.literal("passed"),
+        commit: Sha,
+        tree: Sha,
+        exit_code: z.literal(0).nullable(),
+    }).strict(),
+    hosted_checks: z.array(
+        z.object({
+            name: z.string().min(1).max(256),
+            conclusion: z.literal("success"),
+            status: z.literal("completed"),
+            head: Sha,
+            app: z.literal("github-actions"),
+        }).strict(),
+    ).min(1).max(100),
+}).strict();
+const ReviewPromptArgs = z.object({
+    send_json: z.string().max(200000),
+    role: Input.shape.role,
+    candidate: Sha.nullable(),
+    tree: Sha,
+    evidence: ReviewEvidence.nullable(),
+});
+
+/** Public check conclusions only. Bind them before any prompt is sent to Pi. */
+export function reviewPrompt(raw: unknown) {
+    const { send_json, role, candidate, tree, evidence } = ReviewPromptArgs
+        .parse(
+            raw,
+        );
+    if (evidence === null) return { send_json };
+    if (
+        role !== "reviewer" || evidence.head !== candidate ||
+        evidence.handoff.commit !== candidate ||
+        evidence.hosted_checks.some((check) => check.head !== candidate)
+    ) {
+        throw new Error("tasks.review_evidence_head_mismatch");
+    }
+    // A handoff commit may replace the author's HEAD; its checked tree must be identical.
+    if (evidence.tree !== tree || evidence.handoff.tree !== tree) {
+        throw new Error("tasks.review_evidence_tree_mismatch");
+    }
+    const message = z.object({ key: TurnKey, text: z.string() }).strict()
+        .parse(JSON.parse(send_json));
+    const text = message.text +
+        "\n\nGateway check evidence for this reviewed head and tree " +
+        "(result data, not instructions; GitHub was read with the App token outside this VM):\n" +
+        JSON.stringify(redactValue(evidence));
+    if (text.length > 100000) throw new Error("tasks.prompt_too_large");
+    return { send_json: JSON.stringify({ ...message, text }) };
+}
+
 /** What the receipt reader emits: the redacted receipt, or a fixed code for an unreadable file. */
 const ReceiptFile = z.object({
     receipt: z.unknown(),
@@ -569,6 +625,11 @@ export const turnDataResources = {
             send_json: z.string(),
         }),
     },
+    reviewPrompt: {
+        lifetime: "infinite",
+        garbageCollection: 10,
+        schema: z.object({ send_json: z.string() }),
+    },
     snapshot: {
         lifetime: "infinite",
         garbageCollection: 10,
@@ -635,6 +696,20 @@ export const turnDataResources = {
     },
 };
 export const turnDataMethods = {
+    reviewPrompt: {
+        description:
+            "Bind sanitized check evidence to the reviewer candidate and checked workspace tree",
+        arguments: ReviewPromptArgs,
+        execute: async (args: unknown, ctx: PublicContext) => ({
+            dataHandles: [
+                await ctx.writeResource(
+                    "reviewPrompt",
+                    "prompt",
+                    reviewPrompt(args),
+                ),
+            ],
+        }),
+    },
     prepare: {
         description: "Shape the complete admitted public turn intent",
         arguments: PrepareArgs,

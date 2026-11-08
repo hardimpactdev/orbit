@@ -20,6 +20,8 @@ inputs:
     candidate:
       type: string
       pattern: ^(?:[a-f0-9]{40}|[a-f0-9]{64})$
+    review_evidence:
+      type: object
     prompt_append:
       type: string
       maxLength: 60000
@@ -248,10 +250,27 @@ jobs:
       inputs:
         head: ${{ steps.snapshot_before_head.outputs.stdout }}
         tree: ${{ steps.snapshot_before_tree.outputs.stdout }}
-  - name: receipt_prepare
+  - name: review_prompt
     labels: {role: swamp}
     dependsOn:
     - step: snapshot_before
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: ${{ "task-turn-review-prompt-" + string(inputs.node_id) }}
+      methodName: reviewPrompt
+      inputs:
+        send_json: ${{ steps.prepare.outputs.send_json }}
+        role: ${{ inputs.intent.role }}
+        candidate: '${{ has(inputs.candidate) ? inputs.candidate : inputs.intent.candidate }}'
+        tree: ${{ steps.snapshot_before.outputs.tree }}
+        evidence: '${{ has(inputs.review_evidence) ? inputs.review_evidence : null }}'
+  - name: receipt_prepare
+    labels: {role: swamp}
+    dependsOn:
+    - step: review_prompt
       condition:
         type: succeeded
     task:
@@ -349,7 +368,7 @@ jobs:
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_PATH: ${{ "/sessions/" + inputs.intent.session_id + "/messages" }}
-          ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
+          ORBIT_PI_BODY: ${{ steps.review_prompt.outputs.send_json }}
       behaviorName: ${{ "task-turn-message_send-" + string(inputs.node_id) }}
     writes: true
   - name: observe
