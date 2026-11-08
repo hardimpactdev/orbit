@@ -213,6 +213,8 @@ The VM and repository commands receive none. The push token is revoked after use
 
 The check run ends after local execution and CI admission. A native `trigger.schedule` runs about once a minute and performs one bounded status observation per pending check: one `gh api` read of the latest check runs for the exact SHA, at most 100, without paging. TypeScript on 209 keeps only the public run fields.
 
+A queued or running GitHub Actions job on that candidate keeps CI pending while the aggregate Required check has not appeared. Another head or App cannot extend this wait. Without active jobs, a missing Required check fails after ten minutes; active CI keeps the existing 55-minute limit. Only the named Required check can supply passing evidence.
+
 Each observation of a settled result also snapshots the workspace with the same four argv steps (`snapshot-<operation>-index`, `-add`, `-tree`, `-head`); when HEAD or the tree differs from the candidate, the result is `changed`. The observation never waits or retries inside a step.
 
 The collector prints one row per settled check, and a check result with long output exceeds what Swamp inlines in the run history. The Gateway then reads the `output` data artifact of `task-check-ci-data` with `data.get`, at the version the history names. Pending CI remains ineligible for reviewer and publication admission. A pending observation keeps the original Operation running. The family applies recorded cancellation intent on the next delivered valid observation; this does not claim that GitHub or the completed original native run was cancelled. Native pending records settle on a terminal result or 55 minutes after the push.
