@@ -10,6 +10,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,11 @@ final readonly class ExpireOperationAction
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $deadline = OperationRunBudgets::deadline($current);
             if ($current->status->terminal() || $deadline === null || $deadline->isFuture()) {
+                return $current;
+            }
+            if (isset($current->input['capacity_request'])) {
+                app(TaskVmAdmission::class)->fail($current, 'tasks.capacity_timeout', 'No place became free within the two-hour admission budget.');
+
                 return $current;
             }
             $state = $current->state ?? [];

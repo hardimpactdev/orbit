@@ -87,6 +87,8 @@ sequenceDiagram
     Note over GW: Record scheduled CI
     %%> What it does:
     %%> - on each native schedule tick, `collect` shapes public observations for admitted checks after their SSH snapshots
+    %%> - queued or running GitHub Actions jobs on the candidate keep CI pending even before Required checks appears
+    %%> - another head or App cannot extend the wait; missing CI still expires after ten minutes, active CI after 55 minutes
     %%> - the existing reader takes these rows directly from the collector output; no reporting shell runs
     %%> - Swamp inlines only a small step output in the run history; a larger one, such as a check with long output, is read as the `output` data artifact of `task-check-ci-data` with `data.get`, at the version the history names
   end

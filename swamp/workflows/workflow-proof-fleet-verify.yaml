@@ -31,8 +31,27 @@ jobs:
 - name: plan
   labels: {role: swamp}
   steps:
-  # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. The forEach below reads it.
-  - name: plan
+  # A previous batch's new-case check can leave the checkout at the merge base.
+  - name: Restore the head checkout
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.?head.orValue("") == "" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-restore-head-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-restore-head-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
+      inputs:
+        hosts: name:target
+        timeoutSec: 130
+        argv: ['timeout', '120', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?head.orValue("") }}']
+  # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. Keep that original interface for older heads.
+  - name: Read the runner plan
+    dependsOn: [{step: Restore the head checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     labels: {role: swamp}
     task:
       type: behavior
@@ -61,6 +80,20 @@ jobs:
         - --lines
         - --file
         - ${{ inputs.intent.checkout_path + "/" + inputs.intent.file }}
+  # Every later consumer reads this scoped plan, including new-case checks and missing-verdict reporting.
+  - name: plan
+    dependsOn: [{step: Read the runner plan, condition: {type: succeeded}}]
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: proof-verify-assigned-plan
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$PLAN"
+        env:
+          PLAN: '${{ steps["Read the runner plan"].outputs.stdout.trim().split("\n").filter(l, inputs.intent.?batch.orValue("") == "" || l.startsWith(inputs.intent.?batch.orValue("") + " ")).map(l, l.split(" ", 3)).map(p, [p[0], p[1], p[2].split(" ").filter(c, !has(inputs.intent.case_ids) || c in inputs.intent.case_ids).join(" ")]).filter(p, p[2] != "").map(p, p.join(" ")).join("\n") }}'
 # Before the first batch (3-proof.mmd): the fleet is made ready for the cases. A step that fails stops the run, and every case is unrun with cause infrastructure.
 - name: prepare
   labels: {role: swamp}

@@ -60,6 +60,8 @@ additionalFiles:
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
   - ansible/task-vm-role.yml
+  - ansible/task-host-firewall-remove.yml
+  - ansible/tasks/task-host-firewall-remove.yml
   - ansible/task-vm-host.yml
   - ansible/tasks/task-vm-host-prepare.yml
   - ansible/task-vm-start.yml

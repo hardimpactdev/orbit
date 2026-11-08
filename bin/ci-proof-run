@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Run `orbit proof:run` for a pull request head and report assertions separately from capacity refusals.
+"""Run `orbit proof:run` for a pull request head and require complete passing verdicts.
 
-With PROOF_REPORT_ONLY=1 (the report-only job of ci.yml) it passes `--report-only`, and its VMs use the shared per-host CI/refresh reserve.
+The authenticated ci-runner Node uses the CI pool. Capacity waits within its admission budget.
 
 The job passes only the full commit SHA and an idempotency key built from the workflow run and its attempt. Orbit
 fetches the commit and chooses the cases itself. The runner acts as an enrolled Node, so no secret is involved.
 """
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 SHA = re.compile(r'[0-9a-f]{40}([0-9a-f]{24})?')
-# The proof budget is 30 minutes after the fleet is ready; the job timeout in ci.yml and proof-outside.yml is 45.
-WAIT = 45 * 60
+# Two hours of admission plus the execution budget and cancellation margin.
+WAIT = 190 * 60
 
 
 def find_result(document):
@@ -52,9 +52,11 @@ def evaluate(code, output):
     reason = f"Error: {error.get('code') or ''} {error.get('detail') or ''}".rstrip() if error and (error.get('code') or error.get('detail')) else None
     if result is None:
         return False, [f'The proof printed no result (exit status {code}).', *([reason] if reason else [])]
-    cases = [case for case in result.get('cases') or [] if isinstance(case, dict)]
-    lines = ['| Command | Case | Verdict |', '| --- | --- | --- |']
-    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('verdict', '')} |"
+    raw_cases = result.get('cases')
+    cases = [case for case in raw_cases or [] if isinstance(case, dict)] if isinstance(raw_cases, list) else []
+    well_formed = isinstance(raw_cases, list) and len(cases) == len(raw_cases)
+    lines = ['| Command | Case | Reason | Verdict |', '| --- | --- | --- | --- |']
+    lines += [f"| {case.get('command', '')} | {case.get('case') or os.path.basename(str(case.get('file') or case.get('program') or ''))} | {case.get('reason') or ''} | {case.get('verdict', '')} |"
               for case in cases]
     if not cases:
         lines.append('No case ran.')
@@ -67,15 +69,19 @@ def evaluate(code, output):
         lines.append(f"Receipt: {result['receipt_url']}")
     outcome = result.get('outcome')
     ran = outcome == 'passed' and cases and all(case.get('verdict') == 'passed' for case in cases)
-    passed = code == 0 and (ran or (outcome == 'nothing_to_prove' and not cases))
+    selected = result.get('selected_commands')
+    covered = (selected is None or (isinstance(selected, list) and (bool(selected) or not cases) and all(
+        isinstance(command, str) and bool(command) and any(case.get('command') == command and case.get('verdict') == 'passed' for case in cases)
+        for command in selected)))
+    passed = code == 0 and well_formed and covered and (ran or (outcome == 'nothing_to_prove' and not cases and not selected))
     return bool(passed), lines
 
 
 COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
 
-def report(code, output, sha, key, report_only):
-    """Classify explicit admission capacity refusals without converting them into passing proofs."""
+def report(code, output, sha, key):
+    """Record the final proof verdict and a receipt. Every nonpassing outcome fails the job."""
     try:
         document = json.loads(output)
     except ValueError:
@@ -85,14 +91,8 @@ def report(code, output, sha, key, report_only):
     commands = result.get('selected_commands')
     selection_known = (isinstance(commands, list) and bool(commands)
                        and all(isinstance(command, str) and COMMAND.fullmatch(command) for command in commands))
-    capacity = (report_only and code != 0 and error.get('code') == 'tasks.capacity_unavailable'
-                and result.get('commit') == sha and result.get('outcome') == 'failed'
-                and result.get('cases') == [] and selection_known)
     passed, lines = evaluate(code, output)
-    outcome = 'not_run_capacity' if capacity else ('passed' if passed else 'failed')
-    if capacity:
-        lines = ['Not run: capacity unavailable. No case ran; this is not a passing proof.',
-                 'Error: tasks.capacity_unavailable', 'Selected commands: ' + ', '.join(commands)]
+    outcome = 'passed' if passed else 'failed'
     operation_id = None
     if isinstance(document, dict):
         for holder in (document, document.get('data'), document.get('operation')):
@@ -106,8 +106,7 @@ def report(code, output, sha, key, report_only):
 
 
 def run(sha, key, orbit):
-    flags = ['--report-only'] if os.environ.get('PROOF_REPORT_ONLY') == '1' else []
-    child = subprocess.Popen([orbit, 'proof:run', sha, *flags, '--json', '--idempotency-key', key],
+    child = subprocess.Popen([orbit, 'proof:run', sha, '--json', '--idempotency-key', key],
                              stdout=subprocess.PIPE, text=True)
     # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
     for name in (signal.SIGINT, signal.SIGTERM):
@@ -130,9 +129,8 @@ def main():
         sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
     key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
     code, output = run(sha, key, orbit)
-    outcome, lines, receipt = report(code, output, sha, key, os.environ.get('PROOF_REPORT_ONLY') == '1')
-    label = 'not run: capacity unavailable' if outcome == 'not_run_capacity' else outcome
-    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {label}", '', *lines, ''])
+    outcome, lines, receipt = report(code, output, sha, key)
+    text = '\n'.join([f"## Proof run of `{sha[:12]}`: {outcome}", '', *lines, ''])
     print(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
@@ -142,7 +140,7 @@ def main():
             outputs.write(f'outcome={outcome}\n')
     if os.environ.get('PROOF_RECEIPT'):
         Path(os.environ['PROOF_RECEIPT']).write_text(json.dumps(receipt, indent=2) + '\n')
-    sys.exit(0 if outcome in ('passed', 'not_run_capacity') else code or 1)
+    sys.exit(0 if outcome == 'passed' else code or 1)
 
 
 if __name__ == '__main__':

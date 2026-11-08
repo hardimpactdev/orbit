@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tasks\StartTaskParkAction;
 use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\Tasks\TaskPrepFixIntent;
 use App\Domain\Tasks\TaskPrepFixProjection;
 use App\Domain\Tasks\TaskPrepProjection;
 use App\Domain\Tasks\TaskPrepThreads;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmSlotReleaseProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
@@ -246,7 +246,7 @@ it('reads the Operation without writing the Pi token, writes it once at run star
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
 });
 
-it('records the commit, the rounds and the thread metrics of a run that pushed, parks the group once, and keeps a refused park', function (): void {
+it('records the commit, the rounds and the thread metrics of a run that pushed, releases its VM once', function (): void {
     [$operation, $group, $vm, $instance] = prepRun();
     $vm->update(['state' => TaskVmState::Parked]);
     $subtask = Task::query()->create(['parent_id' => $group->id, 'title' => 'Spec', 'brief' => 'Brief', 'status' => TaskStatus::Completed, 'position' => 1]);
@@ -262,17 +262,16 @@ it('records the commit, the rounds and the thread metrics of a run that pushed, 
         'result' => ['steps' => ['Resume the VM' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded', 'failed_steps' => []], 'head' => str_repeat('a', 40), 'findings' => 'Approved; runner tests pin the old file.',
             'author' => $turn(100), 'review_1' => $turn(20), 'review_2' => $turn(30)],
     ];
-    $parks = refusedParks();
+    Queue::fake();
 
     $projected = app(TaskPrepFixProjection::class)->apply($operation, $end);
     $again = app(TaskPrepFixProjection::class)->apply($projected, $end);
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 2, 'notes' => 'Approved; runner tests pin the old file.', 'park_refused' => 'tasks.park_refused'])
-        ->and($parks->calls)->toBe(1)
+        ->and($projected->result)->toMatchArray(['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40), 'rounds' => 2, 'notes' => 'Approved; runner tests pin the old file.'])
         ->and($again->result)->toBe($projected->result)
         ->and([$author->refresh()->tokens, $reviews[0]->refresh()->tokens, $reviews[1]->refresh()->tokens])->toBe([100, 20, 30])
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Ready);
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
 });
 
 /** The terminal event of a prep run that opened its draft pull request. */
@@ -288,55 +287,35 @@ function prepEnd(TaskVm $vm): array
     ];
 }
 
-/** A park that counts its calls and is refused, as it is for a group that is not parkable. */
-function refusedParks(): object
-{
-    $parks = new class
-    {
-        public int $calls = 0;
-
-        public function execute(Task $group, string $caller, ?string $request): never
-        {
-            $this->calls++;
-
-            throw new ResourceOperationException('tasks.park_refused', 'Refused.', 409);
-        }
-    };
-    app()->instance(StartTaskParkAction::class, $parks);
-
-    return $parks;
-}
-
-it('parks the group once after a manual-mode run opened its draft PR, and keeps a refused park', function (): void {
+it('releases the VM once after publishing a manual-mode prep PR', function (): void {
     [$operation, $group, $vm] = prepRun();
     $operation->update(['input' => [...$operation->input, 'mode' => 'manual']]);
-    $parks = refusedParks();
+    Queue::fake();
 
     $projected = app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
     $again = app(TaskPrepProjection::class)->apply($projected, prepEnd($vm));
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toMatchArray(['pull_request_number' => 2825, 'park_refused' => 'tasks.park_refused'])
-        ->and($parks->calls)->toBe(1)
+        ->and($projected->result)->toMatchArray(['pull_request_number' => 2825])
         ->and($again->result)->toBe($projected->result);
+    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
 });
 
-it('parks nothing after an automatic-mode run', function (): void {
+it('also releases the VM after publishing in automatic mode', function (): void {
     [$operation, , $vm] = prepRun();
     $operation->update(['input' => [...$operation->input, 'mode' => 'automatic']]);
-    $parks = refusedParks();
+    Queue::fake();
 
     $projected = app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->not->toHaveKey('park_refused')
-        ->and($parks->calls)->toBe(0);
+        ->and($projected->result)->not->toHaveKey('park_refused');
 });
 
-it('parks nothing after a manual-mode run that failed', function (): void {
+it('releases the partial claim after a manual-mode run that failed', function (): void {
     [$operation] = prepRun();
     $operation->update(['input' => [...$operation->input, 'mode' => 'manual']]);
-    $parks = refusedParks();
+    Queue::fake();
 
     app(TaskPrepProjection::class)->apply($operation, [
         'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
@@ -344,24 +323,47 @@ it('parks nothing after a manual-mode run that failed', function (): void {
         'failure' => ['failed_step' => 'Review has no findings', 'detail' => 'tasks.prep_review_unresolved', 'stderr_recorded' => false],
     ]);
 
-    expect($parks->calls)->toBe(0);
+    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
 });
 
-it('parks a manual-mode group whose run was admitted before the mode was captured', function (): void {
+it('releases a manual-mode group whose run was admitted before the mode was captured', function (): void {
     [$operation, , $vm] = prepRun();
-    $parks = refusedParks();
+    Queue::fake();
 
     app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
 
-    expect($parks->calls)->toBe(1);
+    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
 });
 
-it('leaves the group eligible for the park once a run opened its draft PR', function (): void {
+it('queues deletion and frees the workspace and identity after publication', function (): void {
     [$operation, $group, $vm, $instance] = prepRun();
     $group->taskable()->associate($instance)->save();
-    refusedParks();
+    Queue::fake();
 
     app(TaskPrepProjection::class)->apply($operation, prepEnd($vm));
 
-    expect(TaskParkIntent::requireEligible($group->refresh())->is($vm))->toBeTrue();
+    Queue::assertPushed(ReleaseTaskVmSlot::class);
+    app(TaskVmSlotReleaseProjection::class)->record($vm, true, null);
+    expect($vm->refresh()->state)->toBe(TaskVmState::Destroyed)->and($group->refresh()->taskable_id)->toBeNull();
 });
+
+it('releases a standalone publication only when it publishes a PR', function (bool $pull): void {
+    [$operation, $group, $vm, $instance] = prepRun();
+    $group->taskable()->associate($instance)->save();
+    $vm->update(['state' => TaskVmState::Ready]);
+    $operation->update(['kind' => 'tasks.publish', 'input' => ['branch' => 'task-'.$group->id, 'commit' => str_repeat('a', 40)]]);
+    Queue::fake([ReleaseTaskVmSlot::class]);
+
+    app(TaskPublishProjection::class)->apply($operation, [
+        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded',
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => $pull ? ['pull_receipt' => json_encode(['pull_request_number' => 1, 'pull_request_url' => 'https://github.com/hardimpactdev/orbit/pull/1'])] : [],
+    ]);
+
+    expect($vm->refresh()->state)->toBe($pull ? TaskVmState::Releasing : TaskVmState::Ready);
+    if ($pull) {
+        Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
+    } else {
+        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
+    }
+})->with([false, true]);

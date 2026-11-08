@@ -19,7 +19,8 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         return ['intent' => ['ssh' => $operation->input['ssh'],
-            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'group']))]];
+            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'group'])),
+            'task_host_input_comments' => $operation->input['task_host_input_comments'] ?? []]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -32,17 +33,20 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
             $code = $data['error_code'] = 'node.settings_root_failed';
         }
         $result = ValidatedData::object($data['result'] ?? []);
-        if ($status === OperationStatus::Succeeded && (NativeRunResult::stepStatus($result, 'Check owner and mode') !== 'succeeded' || $code !== null)) {
-            throw new ResourceOperationException('operation.result_invalid', 'The storage action has no successful result.', 422);
+        $storage = ($operation->input['root'] ?? null) !== null;
+        $firewall = ($operation->input['task_host_input_comments'] ?? []) !== [];
+        if ($status === OperationStatus::Succeeded && (($storage && NativeRunResult::stepStatus($result, 'Check owner and mode') !== 'succeeded')
+            || ($firewall && NativeRunResult::stepStatus($result, 'Withdraw task host input') !== 'succeeded') || $code !== null)) {
+            throw new ResourceOperationException('operation.result_invalid', 'The settings action has no successful result.', 422);
         }
         // The end check is the folder's stat in Swamp's run data: the managed user's real folder, mode 0755.
-        if ($status === OperationStatus::Succeeded && ! $this->owned($operation, $result)) {
+        if ($status === OperationStatus::Succeeded && $storage && ! $this->owned($operation, $result)) {
             $status = OperationStatus::Failed;
             $code = $data['error_code'] = 'node.settings_root_failed';
             $data['status'] = $status->value;
         }
         if (($status === OperationStatus::Failed && $code === null) || ($status !== OperationStatus::Failed && $code !== null)) {
-            throw new ResourceOperationException('operation.result_invalid', 'The storage action needs its refusal code.', 422);
+            throw new ResourceOperationException('operation.result_invalid', 'The settings action needs its refusal code.', 422);
         }
         $result = match ($status) {
             OperationStatus::Succeeded => ['prepared' => true],

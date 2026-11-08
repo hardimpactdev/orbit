@@ -70,10 +70,50 @@ final readonly class ProofRunSettlement
                 $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
             }
 
+            // The parent also checks coverage, so even an absent shard or incomplete child projection cannot pass.
+            $runs = $input['runs'] ?? [];
+            $expectedRuns = array_column(is_array($runs) ? $runs : [], 'operation_id');
+            $passed = $passed && count($expectedRuns) === $children->count()
+                && array_diff($expectedRuns, $children->modelKeys()) === [];
+            foreach (ProofBatchPlan::stored($input['batches'] ?? []) as $batch) {
+                foreach ($batch['cases'] as $id) {
+                    $matches = array_filter($cases, static fn (array $case): bool => ($case['program'] ?? null) === $batch['file'].'#'.$id
+                        && ($case['command'] ?? null) === $batch['command']);
+                    if (count($matches) !== 1) {
+                        $passed = false;
+                        $cases[] = ['program' => $batch['file'].'#'.$id, 'command' => $batch['command'], 'case' => $id, 'verdict' => 'unrun', 'seconds' => 0];
+                    }
+                }
+            }
+            foreach (ValidatedData::stringList($input['selected_commands'] ?? []) as $command) {
+                if (! array_any($cases, static fn (array $case): bool => ($case['command'] ?? null) === $command && ($case['verdict'] ?? null) === 'passed')) {
+                    $passed = false;
+                }
+            }
+
+            $reasons = [];
+            $selections = $input['cases'] ?? [];
+            foreach (is_array($selections) ? $selections : [] as $selection) {
+                $selection = ValidatedData::object($selection);
+                $command = ValidatedData::string($selection['command']);
+                $reasons[$command] = ValidatedData::stringMap($selection['reasons'] ?? []);
+            }
+            foreach ($cases as &$case) {
+                $command = ValidatedData::string($case['command'] ?? '');
+                $id = ValidatedData::string($case['case'] ?? '');
+                if (str_ends_with($id, '@merge-base')) {
+                    $id = substr($id, 0, -11);
+                }
+                if (isset($reasons[$command][$id]) || isset($reasons[$command]['*'])) {
+                    $case['reason'] = $reasons[$command][$id] ?? $reasons[$command]['*'];
+                }
+            }
+            unset($case);
+
             $this->store->change($proof, [
                 'status' => $passed ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
                 'error_code' => $passed ? null : ($ran ? 'proof.cases_failed' : ($workspace !== [] ? ProofCommandProjection::WorkspaceCommitMismatch : ($interrupted ? self::AdmissionInterrupted : 'proof.run_failed'))),
-                'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null,
+                'result' => ['commit' => $input['commit'], 'outcome' => $passed ? 'passed' : 'failed', 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null, 'selected_commands' => $input['selected_commands'] ?? [],
                     ...($workspace === [] ? [] : ['workspace' => $workspace]), ...($kept === [] ? [] : ['kept' => $kept])],
             ]);
         });

@@ -25,6 +25,7 @@
         "check": [
             "Composer\\Config::disableProcessTimeout",
             "@docs-openapi",
+            "@mcp-tools",
             "@docs-build",
             "bin/review-check"
         ]

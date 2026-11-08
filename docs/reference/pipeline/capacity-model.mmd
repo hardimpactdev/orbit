@@ -1,0 +1,24 @@
+sequenceDiagram
+  %% status: reviewed
+  %% kind: pipeline.capacity
+  autonumber
+  participant T as Task<br/>prep · build
+  participant TP as Task pool<br/>beast 2 · shark 2
+  participant PR as Pull request
+  participant Q as CI queue<br/>FIFO
+  participant CP as CI pool<br/>2 per host
+  participant VM as Proof VMs
+  T->>TP: Claim a task place<br/>wait when full
+  TP-->>T: Fresh task VM<br/>from the base
+  T->>PR: Publish the PR
+  T->>TP: Delete the task VM
+  Note over T,TP: Later work claims again<br/>base + task branch
+  PR->>Q: Prove the PR head
+  Q->>CP: Take every free place<br/>at least 1 · up to batches
+  CP-->>VM: Fresh VMs<br/>from the base
+  Q->>VM: Split whole batches<br/>balance by measured time
+  VM->>VM: Restore each fleet<br/>run its cases
+  VM-->>Q: Verdict per case
+  Q->>CP: Delete the proof VMs
+  Q-->>PR: One merged report
+  Note over Q,PR: Full pools wait<br/>two-hour budget

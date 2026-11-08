@@ -8,6 +8,7 @@ use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\TaskVms\TaskVmProviderWorkflowInput;
 use App\Domain\TaskVms\TaskVmResumeIntent;
 use App\Domain\TaskVms\TaskVmState;
@@ -35,7 +36,7 @@ final readonly class TaskPrepFixIntent
     public function start(Task $group, StartTaskPrepFixData $data, string $caller, ?string $request): Operation
     {
         // The capture checks the group; the shared admission needs a validate step only for the checks it makes itself.
-        return $this->operations->start($group, 'tasks.prep_fix', [], static function (Task $group): void {}, $caller, $request, fn (Task $group): array => $this->capture($group, $data));
+        return $this->operations->start($group, 'tasks.prep_fix', $data->toArray(), static function (Task $group): void {}, $caller, $request, fn (Task $group): array => $this->capture($group, $data));
     }
 
     /**
@@ -53,7 +54,7 @@ final readonly class TaskPrepFixIntent
         }
         $prep = Operation::query()->where('kind', 'tasks.prep')->where('target_type', 'task_group')->where('target_id', $group->id)
             ->where('status', OperationStatus::Succeeded)->latest('id')->first();
-        if (! $prep instanceof Operation || ! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true) || ! $group->pr_url || $group->watched_pr_state !== 'open'
+        if (! $prep instanceof Operation || ! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready, TaskVmState::Provisioning], true) || ! $group->pr_url || $group->watched_pr_state !== 'open'
             || ! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
             throw new ResourceOperationException('tasks.prep_fix_refused', 'The corrections need a prep group whose run succeeded, with its task VM parked or running, its Pi credential and its pull request open.', 409);
         }
@@ -62,15 +63,26 @@ final readonly class TaskPrepFixIntent
     }
 
     /** @return array<string,mixed> */
-    private function capture(Task $group, StartTaskPrepFixData $data): array
+    public function capture(Task $group, StartTaskPrepFixData $data): array
     {
+        $group->loadMissing('project');
+        $vm = TaskVm::forGroup($group);
+        if ($vm?->state === TaskVmState::Releasing) {
+            throw new TaskCapacityException(TaskWait::Capacity, 'The previous task VM is still being deleted.');
+        }
+        $provision = $vm === null
+            ? TaskVmReentry::capture($group, app(RemoteBranchHeads::class)->head($group->project, TaskWorkspaceName::for($group))) : null;
         [$prep, $vm, $instance] = $this->context($group);
         $earlier = ValidatedData::object($prep->input);
         $author = AgentThread::query()->where('task_group_id', $group->id)->where('role', 'implementer')->find(ValidatedData::integer(ValidatedData::object($earlier['draft'])['thread_id']));
         $subtask = $group->tasks()->orderBy('position')->orderBy('id')->first();
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
-        if (! $author instanceof AgentThread || ! $subtask instanceof Task || $repository === null) {
+        if (($provision === null && ! $author instanceof AgentThread) || ! $subtask instanceof Task || $repository === null) {
             throw new ResourceOperationException('tasks.prep_fix_refused', 'The group has no author thread, subtask or GitHub repository to continue from.', 409);
+        }
+        if ($provision !== null) {
+            $author = TaskPrepThreads::create($group, $subtask, $instance, 'implementer');
+            Task::query()->whereKey($subtask->id)->update(['implementer_agent_thread_id' => $author->id]);
         }
         $prompts = TaskPrepPrompts::for(ValidatedData::string($earlier['command']));
         $resume = $vm->state === TaskVmState::Parked ? TaskVmProviderWorkflowInput::envelope($this->resume->capture($vm)) : null;
@@ -82,9 +94,10 @@ final readonly class TaskPrepFixIntent
         return [
             'command' => $prompts->command, 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'task_vm_id' => $vm->id,
+            ...($provision === null ? [] : ['provision' => $provision]),
             ...($resume === null ? [] : ['resume' => $resume['intent'], 'resume_secrets' => $resume['execution_secrets']]),
             // The author thread continues its session; the Pi server answers it again after the resume.
-            'author' => $turn($author, $prompts->corrections($data->corrections), false),
+            'author' => $turn($author, $prompts->corrections($data->corrections), $provision !== null),
             'fix' => $turn($author, $prompts->fixCorrections(), false),
             'reviews' => array_map(static fn (AgentThread $thread): array => $turn($thread, $prompts->reviewCorrections($data->corrections), true), $reviewers),
             'plan' => ['cases_file' => $prompts->cases()],

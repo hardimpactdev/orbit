@@ -1,0 +1,26 @@
+---
+- name: Read the configured firewall rules
+  ansible.builtin.command: {argv: [ufw, show, added]}
+  register: task_host_firewall_before
+  changed_when: false
+
+# UFW's own canonical commands work while disabled too, and tuple deletion removes both address families.
+- name: Withdraw owned task host input rules
+  ansible.builtin.command:
+    cmd: "{{ item | regex_replace('^ufw ', 'ufw --force delete ') }}"
+  loop: >-
+    {{ task_host_firewall_before.stdout_lines
+       | select('match', "^ufw .* comment '(?:" ~ owned_input_comments ~ ")'$") | list }}
+  register: task_host_firewall_removed
+  changed_when: task_host_firewall_removed.stdout is not search('non-existent')
+
+- name: Read the remaining configured firewall rules
+  ansible.builtin.command: {argv: [ufw, show, added]}
+  register: task_host_firewall_after
+  changed_when: false
+
+- name: Prove the owned task host input rules are absent
+  ansible.builtin.assert:
+    that: >-
+      task_host_firewall_after.stdout is not search("(?m) comment '(?:" ~ owned_input_comments ~ ")'$")
+    fail_msg: node.task_host_firewall_remove_failed

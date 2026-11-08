@@ -16,12 +16,17 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or [`node:update`](/cli/node/update). The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
+A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Adding task-host settings or changing capacity is stored at once. Removing an existing task host or changing its bridge or CIDR records an Operation that withdraws its owned DHCP/DNS input rules before saving the settings. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 
-The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
+The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target, any resolved apps folder with the managed user and group, and the catalog comments of any task-host input rules to withdraw. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 
 The steps are:
 
+`Withdraw task host input` runs when a task host is removed or its bridge changes. The shared Ansible phase deletes rows with the admitted catalog comments and checks that none remain. Reachable Node removal uses the same phase.
+
+When no apps folder needs preparation, the withdrawal step is the terminal check. Its successful result lets Orbit save the settings even though the folder check is skipped.
+
+The apps-folder steps run only when the patch needs folder preparation:
 - `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
 - `Check owner and mode` reads the folder with one `stat`. It is the end check.
 - The Gateway reads its output from Swamp's run data.
@@ -29,13 +34,13 @@ The steps are:
 - Any other output fails the task with `node.settings_root_failed`.
 - The Gateway stores the settings only after that check passed.
 
-The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in any of these steps reports `node.settings_root_failed`; the failure detail holds the reason.
+The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. An apps-folder failure reports `node.settings_root_failed`; the failure detail holds the reason. A firewall withdrawal failure keeps the old settings, so its owned rules remain visible for retry.
 
 Gateway admission resolves the root and checks it: path grammar, protected paths, managed checkouts, and the managed home `/home/<user>` that Orbit creates. It refuses `/`, `/home`, any home folder itself (`/root` or a folder directly under `/home`), `/etc` and `/usr`. It performs no account lookup or filesystem action.
 
-An action on an apps root requires Linux. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
+Execution requires Linux for apps preparation and for firewall withdrawal. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
 
-State-only patches, such as task VM host intent, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
+State-only patches, such as task-host capacity changes, stay synchronous in the Gateway. Node enrollment keeps its synchronous storage preparation until its parent Operation cutover. A settings completion changes only the requested members and preserves other updates made while it was queued.
 
 ## Set the apps root
 
@@ -66,12 +71,12 @@ A patch changes only the members it names. Other stored keys stay, and the API n
 
 ## Configure a task VM host
 
-Task VM placement uses Incus hosts only. The fleet uses Beast and Shark. Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
+Task VM placement uses Incus hosts only. Task places run on Beast and Shark. CI places also run on Sabre. Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
 The common converge brings a task VM on such a host to the pins of the release, on every base refresh and every task start. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
 
 ```bash
-orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","max_vms":12,"task_max_vms":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 This is an example, not the live configuration of beast. Preserve a host's current values when changing its configuration. The API patch takes the object directly:
@@ -80,8 +85,8 @@ This is an example, not the live configuration of beast. Preserve a host's curre
 {
   "task_vms": {
     "cidr": "10.251.77.0/24",
-    "max_vms": 12,
-    "task_max_vms": 2,
+    "task_places": 2,
+    "ci_places": 2,
     "pool": "orbit-tasks",
     "image_alias": "orbit-task-base"
   }
@@ -97,9 +102,8 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | Field | Required | Default | Meaning and validation |
 | --- | --- | --- | --- |
 | `cidr` | Yes | | Private IPv4 bridge network from `/16` to `/28`, not a host address; it must not overlap the VPN subnet or another host's bridge |
-| `max_vms` | Yes | | Slot capacity, integer from 1 to 64; VM sizes consume one, two, or three slots |
-| `task_max_vms` | No | `null` | Task-work VM count from 0 to `max_vms`. Parked VMs and operator proofs count; authenticated CI and base refresh proofs are exempt. Null adds no limit |
-| `ci_only` | No | `false` | Boolean. Only authenticated CI proofs and this host’s own base refresh proof may use this host; CI prefers it over shared hosts |
+| `task_places` | Yes | | Independent task pool, integer from 0 to 64. One live VM holds one place until deletion |
+| `ci_places` | Yes | | Independent CI pool, integer from 0 to 64. Authenticated CI proofs and proofs of a refreshed base use it |
 | `project` | No | `orbit-tasks` | Incus project name |
 | `network` | No | `orbittask0` | Bridge name: `orbittask` followed by 1 to 6 lowercase letters or digits |
 | `pool` | No | `orbit-tasks` | Incus ZFS storage pool for images, root disks, topology seeds, and their clones |
@@ -113,11 +117,11 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-Each Large VM consumes three `max_vms` units. `task_max_vms` counts VMs, not units. With `max_vms=12` and `task_max_vms=2`, task work may hold two Large VMs and CI or base refresh proofs may use the remaining two places. Prep, build, review, provision and parked task VMs share the limit; only an authenticated CI proof or a base refresh proof is exempt. Lowering the limit removes no claim; new task work is refused with `tasks.capacity_unavailable` until the count falls below it.
+Task provision, prep, build, fix turns, review rounds and operator proofs use the task pool. Only an active caller Node with an active `ci-runner` role grants access to the CI pool. A full pool records a wait for up to two hours. Failed VMs still hold their place until deletion succeeds. Publishing the PR releases the VM, Node and keys. Later work claims a fresh VM from the base and the task branch.
 
-Shared hosts keep one Large place for authenticated CI proofs and refresh proofs; task work and operator proofs cannot take it. A CI-only host with `max_vms=6` admits up to two Large proof VMs. A task start takes the lowest free public slot number on its host, names the VM `<node>-tvm-<n>`, and mints a new Node and keys for it; the end of its group deletes the VM, the Node and the keys (chart `docs/cli/task/start.mmd`).
+The approved pool sizes are Beast 2 task / 2 CI, Shark 2 task / 2 CI, and Sabre 0 task / 2 CI. The operator sets these sizes after the pool implementation ships. Existing stored resource-unit settings grant no places under this model.
 
-Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
+Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `task_places` and `ci_places`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 
 ### Migrate the environment host list
 
@@ -163,7 +167,7 @@ The Gateway refuses an invalid value without changing the stored setting.
 
 | Code | Condition |
 | --- | --- |
-| `node.settings_platform_unsupported` | An apps-root action requires a Linux Node. |
+| `node.settings_platform_unsupported` | Apps preparation and firewall withdrawal require a Linux Node. |
 | `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member or is not an object or null. An unknown top-level member or an empty body returns `validation.failed`. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |

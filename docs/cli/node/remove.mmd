@@ -52,6 +52,7 @@ sequenceDiagram
     SW->>N: Remove Orbit from the Node<br/>Ansible phase: remove
     %%> What it does:
     %%> - restores public SSH, removes the services, files, configuration, containers and firewall rules Orbit created, and the agent and worker footprint
+    %%> - withdraws residual catalog-owned task-host DHCP/DNS input rules through the shared Ansible phase before removing the management keys
     %%> Retained:
     %%> - packages, users, user data, package managers and unrelated SSH keys
     SW->>N: Check the removal<br/>Ansible phase: check

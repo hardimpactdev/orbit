@@ -55,7 +55,7 @@ function egress_world(TaskVmState $state = TaskVmState::Ready, bool $grouped = t
         'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519',
         'ssh_host_key' => 'fixture-public-key', 'settings' => $settings ?: null,
     ]));
-    $host = $node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4]]);
+    $host = $node('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2]]);
     $guest = $node('shark-tvm-1', '10.44.0.133');
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
@@ -201,7 +201,7 @@ it('names the bridge in the watch list of a task VM host only', function (): voi
     expect(app(AgentWatchListAction::class)->execute($host)['egress'])->toBe(['network' => 'orbittask0'])
         ->and(app(AgentWatchListAction::class)->execute($other)['egress'])->toBeNull();
 
-    $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'max_vms' => 4, 'network' => 'orbittaskb']]]);
+    $host->update(['settings' => ['task_vms' => ['cidr' => '10.251.78.0/24', 'task_places' => 4, 'ci_places' => 2, 'network' => 'orbittaskb']]]);
     expect(app(AgentWatchListAction::class)->execute($host->refresh())['egress'])->toBe(['network' => 'orbittaskb']);
 });
 

@@ -29,6 +29,7 @@ sequenceDiagram
   %%> - creates a missing native dataset pool, or an Incus-managed loop-backed ZFS pool with the configured size
   %%> - caps ARC at 2 GiB only when the actual pool source is a regular file; native-ZFS hosts keep their setting
   %%> - converges the isolated NAT bridge, ACL, project, profile, stock Ubuntu image and forwarding rule; an unchanged rerun changes nothing
+  %%> - permits DHCP requests (UDP 68 to 67) from the task bridge and DNS (TCP/UDP 53) to its host address through UFW before first boot, using the orbit:task-vms-* catalog ownership shown by firewall:list --managed; a forwarding rule alone cannot admit these host input packets
   SW->>H: Log egress<br/>host bridge, log only
   %%> What it does:
   %%> - sets up the egress log of the host bridge (Ansible part `egress-log`): an nftables rule logs each new outside connection of a task VM, rsyslog writes it to its own file, and dnsmasq logs the DNS queries; nothing is blocked
@@ -38,7 +39,7 @@ sequenceDiagram
   %%> What it does:
   %%> - before starting, converges the base VM's `raw.qemu.conf`: `[boot-opts]` with `menu = "on"` and `splash-time = "0"` skips OVMF's 3 s menu wait; every snapshot and task copy inherit it
   %%> - starts the stopped base VM; about 10 s to its guest agent; its containers start with it
-  %%> - a host without a base VM gets it here, once: `incus init` from the stock Ubuntu VM image that host preparation copied, an empty seed volume, and a first boot that makes the `orbit` account with the key of the Swamp control Node and installs the SSH server; the converge builds everything else
+  %%> - a host without a recorded base snapshot discards any unpromoted base VM and seed left by a failed build, then uses `incus init` from the stock Ubuntu VM image and an empty seed volume; first boot makes the `orbit` account and installs the SSH server; the converge builds everything else
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
   %%> - `task-vms:refresh-image <host> --from-stock` withdraws the recorded base at admission, so no task start copies it, and the run first deletes the base VM and its seed with their snapshots and builds the base from stock; after a failure the next refresh builds it as on a new host
   SW->>VM: Converge<br/>the same converge as a task start

@@ -11,9 +11,11 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\TaskVms\TaskVmHubPolicy;
@@ -23,6 +25,33 @@ use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
+    public const array TaskHostInputComments = ['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp'];
+
+    /** @return list<UfwManagedRule> */
+    public function taskHostInput(Node $node): array
+    {
+        $host = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
+        if ($host === null) {
+            return [];
+        }
+        $network = $host->network;
+        [$bridge] = Ipv4Subnet::from($host->cidr)->usableRange();
+        $rules = [];
+        foreach (self::TaskHostInputComments as $comment) {
+            $dhcp = $comment === 'orbit:task-vms-dhcp';
+            $protocol = $comment === 'orbit:task-vms-dns-tcp' ? 'tcp' : 'udp';
+            $destination = $dhcp ? 'any' : $bridge;
+            $port = $dhcp ? '67' : '53';
+            $rules[] = new UfwManagedRule(
+                new UfwRuleShape($comment, 'allow', 'in', 'any', $destination, $port, $protocol, $network, null, 'v4', $dhcp ? '68' : 'any'),
+                ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', $protocol, 'from', 'any',
+                    ...($dhcp ? ['port', '68'] : []), 'to', $destination, 'port', $port, 'comment', $comment],
+            );
+        }
+
+        return $rules;
+    }
+
     public function __construct(
         private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
     ) {}

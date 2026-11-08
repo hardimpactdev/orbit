@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -124,6 +125,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire): Operation
     {
+        if ($operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request'])) {
+            app(TaskVmAdmission::class)->admit($operation->id);
+
+            return $operation->refresh();
+        }
         $direct = app(DirectOperation::class);
         $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {

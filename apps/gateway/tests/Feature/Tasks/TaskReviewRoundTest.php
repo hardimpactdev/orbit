@@ -271,7 +271,7 @@ it('reads the Operation without writing the Pi token, writes it once at run star
     expect(fn () => $projection->workflowInput($operation))->toThrow(ResourceOperationException::class, 'Pi credential');
 })->with([TaskVmState::Ready, TaskVmState::Parked]);
 
-it('records a pass: the verdict, the thread metrics, the VM as ready, and the check row as cancelled', function (TaskVmState $state): void {
+it('records a pass: the verdict, the thread metrics, the VM as releasing, and the check row as cancelled', function (TaskVmState $state): void {
     [$operation, , $vm, , $round] = runningRound($state);
     $thread = AgentThread::query()->findOrFail($operation->input['review']['thread_id']);
 
@@ -285,7 +285,7 @@ it('records a pass: the verdict, the thread metrics, the VM as ready, and the ch
         ->and($round->refresh()->verdict)->toBe(TaskReviewRoundVerdict::Pass)
         ->and([$round->summary, $round->pushed_commit])->toBe(['Nothing to fix.', null])
         ->and($thread->refresh()->tokens)->toBe(40)
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Ready)
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing)
         ->and(TaskCheck::query()->findOrFail($round->check_id)->status)->toBe(TaskCheckStatus::Cancelled);
 })->with([TaskVmState::Ready, TaskVmState::Parked]);
 

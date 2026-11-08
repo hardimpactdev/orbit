@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
@@ -21,8 +22,13 @@ use Illuminate\Support\Facades\DB;
  * Projects the terminal event of one `operation-task-build` run once: the task VM as ready once its resume step succeeded, the metrics
  * of the implementer thread, and the branch with the approved head. The group stays `running` for its driver. See docs/cli/task/build.mmd.
  */
-final readonly class TaskBuildProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskBuildProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationWorkflowInput
 {
+    public function refused(Operation $operation): void
+    {
+        TaskVmReentry::refused($operation);
+    }
+
     /** The workflow steps whose failure has a code of its own; the first implementer turn, and any other failed step, is `tasks.turn_failed`. */
     private const array StepCodes = ['Resume the VM' => 'task_vm.resume_failed', 'Sync the refs' => 'tasks.sync_failed'];
 
@@ -36,7 +42,7 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
         $input = ValidatedData::object($operation->input);
 
         return [
-            'intent' => ['task_vm_id' => $input['task_vm_id'], ...(isset($input['resume']) ? ['resume' => $input['resume']] : []), 'sync' => $input['sync'], 'turn' => $input['turn']],
+            'intent' => ['task_vm_id' => $input['task_vm_id'], ...(isset($input['provision']) ? ['provision' => $input['provision']] : []), ...(isset($input['resume']) ? ['resume' => $input['resume']] : []), 'sync' => $input['sync'], 'turn' => $input['turn']],
             'execution_secrets' => $input['execution_secrets'],
             // An empty map must reach the workflow as an object, not as an empty JSON list.
             'resume_secrets' => (object) ValidatedData::object($input['resume_secrets'] ?? []),
@@ -80,6 +86,7 @@ final readonly class TaskBuildProjection implements DirectOperationProjection, D
                 return app(DirectOperation::class)->project($operation, $data, ValidatedData::object($operation->result ?? []));
             }
             $intent = ValidatedData::object($operation->input);
+            TaskVmReentry::record($operation, $native);
             $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
             $code = $failed ? (self::StepCodes[$step ?? ''] ?? 'tasks.turn_failed') : null;
 
