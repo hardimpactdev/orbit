@@ -289,7 +289,7 @@ class StepTest(unittest.TestCase):
         self.assertEqual(created, ['cli firewall:allow: created Operation [1], expected no request'])
 
     def test_cross_node_and_unresolved_cli_targets_cannot_hide_a_created_operation(self):
-        for selector in ('--node=212', '--node=unknown'):
+        for selector in ('--node=212', '--node=unknown', '--node=app-dev'):
             with self.subTest(selector=selector):
                 def side_effect(*args, **kwargs):
                     self.fleet.operation_rows.append(self.operation(1, target_id=212))

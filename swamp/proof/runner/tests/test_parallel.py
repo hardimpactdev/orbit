@@ -125,7 +125,7 @@ class PlacementTest(unittest.TestCase):
         self.assertEqual(load_text(text).cases[0].lock, 'all')
 
     def test_cli_cross_node_and_unresolved_targets_exclude_every_reader_and_writer(self):
-        for selector in (['--node=${app-prod.id}'], ['--node', '${app-prod.id}'], ['--node=${gateway.src}'], ['--node=unknown'], [],
+        for selector in (['--node=${app-prod.id}'], ['--node', '${app-prod.id}'], ['--node=${gateway.src}'], ['--node=unknown'], ['--node=app-dev'], ['--node', 'app-dev'], [],
                          ['--node=${app-dev.id}', '--node=${app-prod.id}'], ['--', '--node=${app-dev.id}']):
             for build in (writing, refusal):
                 text = build('cross').replace(', "--node=${app-dev.id}"', ''.join(', ' + json.dumps(word) for word in selector))

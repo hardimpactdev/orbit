@@ -340,7 +340,8 @@ def case_steps(case):
 
 def cli_scope(args, nodes=None):
     """The Operation kind, target type and Node named by this call, or no scope when any part is unknown.
-    Before placement only literal fleet roles and their ID placeholders are known; during an audit the fleet resolves numeric IDs too."""
+    Before placement only the `${role.id}` placeholders are known; during an audit the fleet resolves numeric IDs too.
+    A bare role name is not a Node ID the CLI accepts, so it has no scope."""
     argv = [str(word) for word in args['run']]
     operation = CLI_OPERATIONS.get(argv[0]) if argv else None
     selectors = [word.partition('=')[2] if word.startswith('--node=') else (argv[i + 1] if i + 1 < len(argv) else '')
@@ -348,7 +349,7 @@ def cli_scope(args, nodes=None):
     if operation is None or len(selectors) != 1 or '--' in argv:
         return None
     value = selectors[0]
-    node = next((role for role in NODES if value in (role, '${' + role + '.id}')
+    node = next((role for role in NODES if value == '${' + role + '.id}'
                  or (nodes is not None and value == str(nodes[role]['node_id']))), None)
     return (*operation, node) if node else None
 
