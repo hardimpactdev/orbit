@@ -450,7 +450,13 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 ### Place task VMs
 
-Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `AllocateTaskVmAction` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
+Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied slots, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free slots. Hosts with equal capacity use their configuration order.
+
+A host with `task_vms.ci_only: true` admits only authenticated CI proofs and its own base refresh proof. It admits no task work or operator proof. CI prefers available CI-only hosts before shared hosts, regardless of their relative free capacity. `max_vms=6` provides up to two Large VMs on a CI-only host. The host’s own refresh proves there through the same pinned-host admission.
+
+Each shared host reserves slot number 1 for authenticated CI command proofs and refresh candidate proofs. An active caller Node with an active `ci-runner` role qualifies for the reserve. Orbit records this server-derived eligibility and the caller Node before queueing proof admission, then carries them into allocation and preemption. Neither request flags nor the command kind grants access. Reporting mode grants none either. Operator proofs and task provision, prep, build and review take only slots numbered 2 or above. CI and refresh proofs take the reserve first, then any free task slot. CI proofs cannot be preempted by another proof.
+
+The reserve is one Large VM (3 `max_vms` units), not one budget unit; `max_vms=9` provides two task VMs plus the reserve. An occupied reserve counts once, so a running proof does not subtract a second reserve from task capacity. A task VM that already held slot 1 before this rule keeps it until release; drain that VM during rollout.
 
 Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no Incus host has room, the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
 
@@ -1055,7 +1061,7 @@ A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM st
 
 The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. It waits for the nested Gateway only while it builds the fleet.
 
-The proof task start needs one free slot of the host. The refresh VM of the old design and its group in the proof Project are not part of this run.
+The proof task start may use the shared CI reserve or any free task slot of the host. It cannot be starved by task work. An existing command proof can hold the reserve, so a full host still refuses the refresh until the next trigger. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
 ##### Build the nested fleet in the converge
 

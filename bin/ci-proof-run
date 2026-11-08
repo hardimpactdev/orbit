@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run `orbit proof:run` for a pull request head and report assertions separately from capacity refusals.
 
-With PROOF_REPORT_ONLY=1 (the report-only job of ci.yml) it passes `--report-only`, and its VMs yield capacity to task and proof work.
+With PROOF_REPORT_ONLY=1 (the report-only job of ci.yml) it passes `--report-only`, and its VMs use the shared per-host CI/refresh reserve.
 
 The job passes only the full commit SHA and an idempotency key built from the workflow run and its attempt. Orbit
 fetches the commit and chooses the cases itself. The runner acts as an enrolled Node, so no secret is involved.

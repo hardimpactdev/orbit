@@ -178,7 +178,7 @@ Required checks invoke the Gateway renderer without deployment credentials and v
 
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
 
-When the two files differ, only the check fails: the load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
+When the two files differ, the `Check the Ansible collections` step fails. The load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
