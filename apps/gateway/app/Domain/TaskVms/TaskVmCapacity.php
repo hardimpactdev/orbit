@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Node;
 use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The slots of the task VM hosts. Placement transactions serialize writers, so two
@@ -45,8 +46,7 @@ final readonly class TaskVmCapacity
      */
     public function freeSlots(array $hosts, bool $proof = false): array
     {
-        $used = TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)
-            ->where('capacity_pool', $proof ? 'ci' : 'task')->selectRaw('host_node_id, count(*) as total')
+        $used = $this->placed()->where('capacity_pool', $proof ? 'ci' : 'task')->selectRaw('host_node_id, count(*) as total')
             ->groupBy('host_node_id')->pluck('total', 'host_node_id');
         $free = [];
         foreach ($hosts as [$host]) {
@@ -54,5 +54,15 @@ final readonly class TaskVmCapacity
         }
 
         return $free;
+    }
+
+    /**
+     * The VMs that hold a place: each live VM, in the pool it was admitted to.
+     *
+     * @return Builder<TaskVm>
+     */
+    public function placed(): Builder
+    {
+        return TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus);
     }
 }

@@ -43,6 +43,7 @@ final readonly class TaskPublishIntent
             return $existing;
         }
         $group->refresh()->load('taskable', 'project');
+        TaskProvisionPending::refuse($group);
         $this->assertIdle($group);
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);

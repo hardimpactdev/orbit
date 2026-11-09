@@ -35,6 +35,7 @@ final readonly class TaskPackageIntent
                 return $existing;
             }
             $group->refresh()->load('taskable', 'project');
+            TaskProvisionPending::refuse($group);
             if (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);

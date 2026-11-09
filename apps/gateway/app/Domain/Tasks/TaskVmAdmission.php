@@ -26,6 +26,7 @@ use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -45,7 +46,7 @@ final readonly class TaskVmAdmission
     {
         try {
             return DB::transaction(function () use ($group, $kind, $capture, $caller, $requestId): Operation {
-                if (TaskVm::forGroup($group) === null && Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')->whereNotNull('input->capacity_request')->exists()) {
+                if (TaskVm::forGroup($group) === null && self::queue()->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
                 }
                 $input = $capture();
@@ -60,6 +61,17 @@ final readonly class TaskVmAdmission
 
             return $operation;
         }
+    }
+
+    /**
+     * The task queue: every admission on a group that waits for a task place, front first (docs/reference/tasks.md#task-places).
+     *
+     * @return Builder<Operation>
+     */
+    public static function queue(): Builder
+    {
+        return Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')
+            ->whereNotNull('input->capacity_request')->orderBy('id');
     }
 
     /** @param array<string,mixed> $request */
@@ -102,7 +114,7 @@ final readonly class TaskVmAdmission
 
                     return;
                 }
-                if (Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')->whereNotNull('input->capacity_request')->where('id', '<', $id)->exists()) {
+                if (self::queue()->where('id', '<', $id)->exists()) {
                     throw new TaskCapacityException(TaskWait::Capacity, 'An earlier task is waiting for a place.');
                 }
                 $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);

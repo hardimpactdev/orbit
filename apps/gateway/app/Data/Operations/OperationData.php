@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Data\Operations;
 
+use App\Data\Tasks\TaskPlaceWaitData;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\TaskPlaces;
+use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -46,17 +50,42 @@ final class OperationData extends Data
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
         public array|Optional $steps = new Optional,
+        public ?TaskPlaceWaitData $capacityWait = null,
     ) {}
 
     /** Public reads retain domain results without returning the execution plan. */
     public static function summary(Operation $operation, ?string $callerNodeName = null): self
     {
         $data = self::fromModel($operation, $callerNodeName);
-        $data->input = array_filter($operation->input, static fn (mixed $value): bool => $value === null || is_bool($value) || is_int($value) || is_float($value)
-            || (is_string($value) && strlen($value) <= 512));
+        $data->input = self::scalars($operation->input);
+        // A waiting admission's input is only the caller's request; it keeps the same shape until admission replaces it.
+        if (is_array($operation->input['capacity_request'] ?? null)) {
+            $data->input['capacity_request'] = self::scalars($operation->input['capacity_request']);
+        }
         $data->steps = self::recordedSteps($operation);
 
         return $data;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $input
+     * @return array<array-key, mixed>
+     */
+    private static function scalars(array $input): array
+    {
+        return array_filter($input, static fn (mixed $value): bool => $value === null || is_bool($value) || is_int($value) || is_float($value)
+            || (is_string($value) && strlen($value) <= 512));
+    }
+
+    /** docs/reference/operations.md#follow-an-operation-by-polling: null once terminal, 20 while waiting for a place, else 2 growing to 15. */
+    private static function pollAfterSeconds(Operation $operation): ?int
+    {
+        return match (true) {
+            $operation->status->terminal() => null,
+            $operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request']) => TaskVmAdmission::RetrySeconds,
+            $operation->started_at === null => 2,
+            default => min(15, 2 + intdiv(max(0, (int) $operation->started_at->diffInSeconds(now()) - 10), 10)),
+        };
     }
 
     /** @return list<OperationStepData> */
@@ -110,13 +139,14 @@ final class OperationData extends Data
             createdAt: $operation->created_at?->format(DateTimeInterface::ATOM),
             startedAt: $operation->started_at?->format(DateTimeInterface::ATOM),
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),
-            pollAfterSeconds: null,
+            pollAfterSeconds: self::pollAfterSeconds($operation),
             assistance: null,
             currentStepStartedAt: self::progressTime($operation, 'started_at'),
             currentStepObservedAt: self::progressTime($operation, 'observed_at'),
             error: is_array($failure) && is_string($failure['detail'] ?? null)
                 ? ['code' => $operation->error_code, 'detail' => $failure['detail'],
                     ...($operation->error_code !== 'operation.timed_out' ? ['stderr_recorded' => ($failure['stderr_recorded'] ?? false) === true] : [])] : null,
+            capacityWait: app(TaskPlaces::class)->waitOf($operation),
         );
     }
 }

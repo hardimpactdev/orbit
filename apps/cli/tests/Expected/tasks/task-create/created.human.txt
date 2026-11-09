@@ -19,6 +19,8 @@ Creating task group...
 │
 ├  Preview             no
 │
+├  Last activity       —
+│
 ├  Assistance          no
 │
 ├  Kind                —

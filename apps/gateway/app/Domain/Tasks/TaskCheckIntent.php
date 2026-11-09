@@ -30,6 +30,7 @@ final readonly class TaskCheckIntent
         if (($existing = $this->idempotency->replay('tasks.check')) !== null) {
             return $existing;
         }
+        TaskProvisionPending::refuse($group);
         TaskVmAwake::require($group);
 
         return DB::transaction(function () use ($group, $input, $caller, $request): Operation {

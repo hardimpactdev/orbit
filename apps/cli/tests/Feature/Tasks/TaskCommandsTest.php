@@ -795,6 +795,7 @@ describe('assistance columns', function (): void {
                         'assistance_reason' => 'The check failed.',
                     ],
                 ],
+                'capacity' => ['hosts' => [], 'queue' => []],
             ])),
         ]);
 

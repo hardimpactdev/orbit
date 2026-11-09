@@ -340,7 +340,7 @@ A client that has no Reverb connection, such as an MCP agent, polls:
 3. Read it with `after_sequence` set to the last `sequence` you have. Apply the steps it returns.
 4. Repeat until `status` is terminal. Then read `result` according to `kind` and `status`; for failure also read `failed_step` and `error_code`. A failed operation's typed result is evidence, not success.
 
-`poll_after_seconds` is 2 while the operation is queued and in the first 10 seconds of its run. It then grows by one second for each 10 seconds of run time, to at most 15. While the operation waits for a place, it is 20, the interval at which admission tries again. The Gateway computes it on every read, from the status and `started_at`.
+`poll_after_seconds` is 2 while the operation is queued and in the first 10 seconds of its run. It then grows by one second for each 10 seconds of run time, to at most 15. While an admission waits for a place, with `input.capacity_request`, it is 20, the interval at which admission tries again. The Gateway computes it on every read, from the status and `started_at`.
 
 Every read returns the whole record and the steps that changed. So a client that missed reads, or starts again from 0, still ends with the current state.
 
