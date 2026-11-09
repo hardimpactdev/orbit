@@ -20,6 +20,17 @@ sequenceDiagram
   %%> - the lowest free slot number under the capacity of the host with the most room: `shark-tvm-3`
   %%> - a fresh identity: the Node record with its `app-dev` role, a WireGuard key pair, the agent secret and an SSH host key, pinned on the Node from the start so nothing is read back
   %%> - the claim's Pi token and Pi models file in the vault; the file holds the model router guard origin and the one fixed model key, the same for every VM
+  opt no task place is free
+    Note over GW: Wait in the task queue<br/>first come, first served
+    %%> What it does:
+    %%> - records the Operation as `waiting`, with the caller's request as its input; no VM, identity or workspace yet
+    %%> - retries the claim every 20 s, in queue order, for up to two hours; then fails with `tasks.capacity_timeout`
+    %%> Returns:
+    %%> - `operation:show` gives the input, `poll_after_seconds` 20 and `capacity_wait`: the queue position and the groups that hold the task places, each with its status and last activity
+    %%> - `task:show` gives the same `capacity_wait` on the group; `task:status` gives the places of every host and the whole queue
+    %%> Next:
+    %%> - a place frees when a holder publishes, ends or is cancelled; the claim then runs as above
+  end
   GW->>SW: Start run, full intent<br/>operation-task-provision
   SW->>VM: Start and converge<br/>one Ansible run
   %%> What it does:

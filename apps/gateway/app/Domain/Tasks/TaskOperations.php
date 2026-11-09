@@ -74,6 +74,7 @@ final readonly class TaskOperations
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
+        TaskProvisionPending::refuse($group);
         $holder = $this->holders($group, $except)->first();
         if ($holder instanceof Operation) {
             // The holder may have appeared after the replay read.

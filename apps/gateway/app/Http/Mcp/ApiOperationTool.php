@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Support\ValidatedData;
 use Illuminate\Http\Request as HttpRequest;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -49,11 +50,12 @@ final class ApiOperationTool extends Tool
      * (docs/reference/mcp.mdx#operations).
      *
      * @param  array<string, mixed>  $json
-     * @return array{operation: mixed, poll: array{tool: string, after_seconds: int}, meta?: mixed}
+     * @return array{operation: mixed, poll: array{tool: string, after_seconds: mixed}, meta?: mixed}
      */
     private static function startedOperation(array $json): array
     {
-        $started = ['operation' => $json['data'], 'poll' => ['tool' => 'operation-show', 'after_seconds' => 2]];
+        $operation = ValidatedData::object($json['data']);
+        $started = ['operation' => $operation, 'poll' => ['tool' => 'operation-show', 'after_seconds' => $operation['poll_after_seconds'] ?? null]];
 
         return array_key_exists('meta', $json) ? [...$started, 'meta' => $json['meta']] : $started;
     }

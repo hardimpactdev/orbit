@@ -103,7 +103,7 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 }
 ```
 
-Call `operation-show` with the numeric `operation` ID after `poll.after_seconds`. Each reply returns the parent record, its status, result and error code. The MCP follow hint uses a fixed two-second interval; it does not depend on execution state. Repeat reads until `status` is `succeeded`, `failed`, or `cancelled`. Replies carry the current parent record, never step deltas or an output tail. Each call is one database read.
+Call `operation-show` with the numeric `operation` ID after `poll.after_seconds`. Each reply returns the parent record, its status, result and error code. `poll.after_seconds` is the record's `poll_after_seconds`; each `operation-show` reply carries the next interval in the same field. It is null when the Operation has already ended, such as a keyed replay of a finished one. Repeat reads until `status` is `succeeded`, `failed`, or `cancelled`. Replies carry the current parent record, never step deltas or an output tail. Each call is one database read.
 
 `task-check` keeps `{ subtask, phase }` and its existing optional idempotency key. The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) adds `result.ci`, null for baseline/no-policy, without a new tool or caller-selected CI option. The Gateway still refuses external review-and-merge groups. A required-CI handoff waits for its push and hosted check; `result.commit` is the candidate HEAD, not the pre-commit `result.head`. Only a completed passed operation with passed CI on that check/commit supplies a candidate for reviewer or publish admission. Cancellation after push stops observation, not GitHub workflows, and preserves evidence. The generated tool input remains unchanged; [Tasks](/reference/tasks#check-an-external-group) owns the result fields and eligibility rule.
 
@@ -119,7 +119,7 @@ The `task-*` tools belong to the Gateway-switched [tasks](/reference/tasks) exte
 
 `task-comment-create` and `task-comment-list` use a numeric `group` and require Gateway access. Create accepts only `type` (`assistance_requested` or `resolution`), nonblank `body`, and `author`; list accepts optional `type` and `limit` filters and returns an array. These are [group-owned assistance comments](/reference/tasks#group-assistance-after-all-children-end), separate from child comments, with the same guards and no-work semantics as the API. A successful create returns 201, not an exact-retry 200 receipt.
 
-`task-status` returns whether the extension is on, the groups asking for assistance and the open review-and-merge groups.
+`task-status` returns whether the extension is on, the groups asking for assistance, the open review-and-merge pull requests, and the [task places](/reference/tasks#task-places) of each host with the waiting queue.
 
 ## Connect a client
 

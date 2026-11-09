@@ -9,11 +9,12 @@ use App\Data\Tasks\TaskMergeData;
 use App\Data\Tasks\TasksStatusData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlaces;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
 {
-    public function __construct(private TaskExtensionState $extension) {}
+    public function __construct(private TaskExtensionState $extension, private TaskPlaces $places) {}
 
     public function execute(): TasksStatusData
     {
@@ -28,6 +29,7 @@ final readonly class ShowTasksStatusAction
         $merges = array_values(Task::topLevel()
             ->with('project')
             ->whereNotIn('status', TaskGroupStatus::endedStatuses())
+            ->whereNotNull('pr_url')
             ->where(static fn ($query) => $query->whereHas('project', static fn ($project) => $project->where('review_and_merge', true))->orWhereNotNull('pr_branch'))
             ->orderBy('id')
             ->get()
@@ -39,6 +41,7 @@ final readonly class ShowTasksStatusAction
             assistance: $assistance,
             lastTickAt: null,
             merges: $merges,
+            capacity: $this->places->capacity(),
         );
     }
 }

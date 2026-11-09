@@ -1,0 +1,32 @@
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+└  Status   enabled
+
+No groups are asking for assistance.
+Task places
+
+ ┌───────┬──────┬─────────────┬───────┬─────────┬───────────────────────────┬────────────────┐
+ │ HOST  │ POOL │ VM          │ GROUP │ STATUS  │ LAST ACTIVITY             │ OPEN OPERATION │
+ ├───────┼──────┼─────────────┼───────┼─────────┼───────────────────────────┼────────────────┤
+ │ beast │ task │ beast-tvm-1 │ #12   │ running │ 2026-11-09T10:00:00+00:00 │ —              │
+ │ beast │ task │ beast-tvm-2 │ #13   │ running │ 2026-11-09T11:50:00+00:00 │ 91             │
+ │ beast │ ci   │ beast-tvm-3 │ —     │ —       │ —                         │ —              │
+ │ beast │ ci   │ free        │ —     │ —       │ —                         │ —              │
+ └───────┴──────┴─────────────┴───────┴─────────┴───────────────────────────┴────────────────┘
+Waiting for a place
+
+ ┌──────────┬───────┬──────────────┬───────────┬─────────────────┬───────────────────────────┐
+ │ POSITION │ GROUP │ TITLE        │ OPERATION │ KIND            │ WAITING SINCE             │
+ ├──────────┼───────┼──────────────┼───────────┼─────────────────┼───────────────────────────┤
+ │ 1        │ #14   │ Manual group │ 95        │ tasks.provision │ 2026-11-09T11:55:00+00:00 │
+ └──────────┴───────┴──────────────┴───────────┴─────────────────┴───────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Operations;
 
 use InvalidArgumentException;
+use Orbit\Sdk\Responses\Tasks\TaskPlaceWaitResponse;
 use SensitiveParameter;
 use stdClass;
 
@@ -45,6 +46,7 @@ final readonly class OperationResponse
         public ?string $currentStepObservedAt = null,
         /** @var list<array<string, mixed>>|null */
         public ?array $steps = null,
+        public ?TaskPlaceWaitResponse $capacityWait = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -88,6 +90,7 @@ final readonly class OperationResponse
             currentStepStartedAt: self::text($data, 'current_step_started_at'),
             currentStepObservedAt: self::text($data, 'current_step_observed_at'),
             steps: self::steps($data['steps'] ?? null),
+            capacityWait: TaskPlaceWaitResponse::fromGatewayData($data['capacity_wait'] ?? null, $requestId),
         );
     }
 
@@ -128,6 +131,7 @@ final readonly class OperationResponse
             'started_at' => $this->startedAt,
             'finished_at' => $this->finishedAt,
             'poll_after_seconds' => $this->pollAfterSeconds,
+            'capacity_wait' => $this->capacityWait?->toArray(),
         ];
 
         return [...$data, ...($this->steps === null ? [] : ['steps' => $this->steps]), 'request_id' => $this->requestId];

@@ -25,6 +25,7 @@ final readonly class TaskScriptIntent
         if (($existing = $this->idempotency->replay('tasks.script')) !== null) {
             return $existing;
         }
+        TaskProvisionPending::refuse($group);
         TaskVmAwake::require($group);
         $group->refresh()->load('taskable', 'project');
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {

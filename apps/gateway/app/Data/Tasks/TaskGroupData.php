@@ -6,11 +6,14 @@ namespace App\Data\Tasks;
 
 use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -60,6 +63,9 @@ final class TaskGroupData extends Data
         public TaskReviewMode $review = TaskReviewMode::Manual,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
+        public ?string $lastActivityAt = null,
+        public ?string $previewUrl = null,
+        public ?TaskPlaceWaitData $capacityWait = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -72,13 +78,17 @@ final class TaskGroupData extends Data
         return $data;
     }
 
-    public static function fromModel(Task $group): self
+    /** @param  array{last_activity_at: string|null, active_operation_id: int|null}|null  $activity  read for many groups at once by a list */
+    public static function fromModel(Task $group, ?array $activity = null): self
     {
         $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
         $status = $group->groupStatus();
 
         return new self(
+            lastActivityAt: ($activity ?? TaskGroupActivity::ofGroup($group->id))['last_activity_at'],
+            previewUrl: self::previewUrl($group, $taskable),
+            capacityWait: $group->capacity_wait_reason === null ? null : app(TaskPlaces::class)->waitOfGroup($group),
             orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
@@ -119,6 +129,17 @@ final class TaskGroupData extends Data
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->all()),
         );
+    }
+
+    /** The workspace's own active Route, as the URL a preview opens; null until the workspace has one. */
+    private static function previewUrl(Task $group, mixed $taskable): ?string
+    {
+        if (! $taskable instanceof Instance || $taskable->task_workspace_owner_id !== $group->id) {
+            return null;
+        }
+        $route = $taskable->authoritativeRoute();
+
+        return $route instanceof Route ? "https://{$route->domain}" : null;
     }
 
     private static function vmPower(Task $group): ?VmPower

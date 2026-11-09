@@ -14,12 +14,13 @@ final class TasksStatusData extends Data
     /**
      * @param  list<TaskAssistanceData>  $assistance
      * @param  string|null  $lastTickAt  Retired scheduler observation; always null.
-     * @param  list<TaskMergeData>  $merges  Open tasks of review-and-merge Projects, in ascending id order.
+     * @param  list<TaskMergeData>  $merges  Open tasks with a pull request that Orbit reviews and merges, in ascending id order.
      */
     public function __construct(
         public bool $enabled,
         public array $assistance,
         public ?string $lastTickAt,
-        public array $merges = [],
+        public array $merges,
+        public TaskCapacityData $capacity,
     ) {}
 }
