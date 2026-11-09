@@ -23,8 +23,9 @@
   ansible.builtin.command: { argv: [git, -C, "{{ intent.checkout.path }}", rev-parse, --verify, "HEAD^{commit}"] }
   register: checkout_head
   changed_when: false
+# A fresh clone has no files yet, and its HEAD is already the commit when the commit is the tip of main, as at a release.
 - name: Move the checkout to the commit
-  when: checkout_head.stdout | trim != intent.checkout.commit
+  when: not checkout_git.stat.exists or checkout_head.stdout | trim != intent.checkout.commit
   block:
     - name: Fetch the commit
       become: true

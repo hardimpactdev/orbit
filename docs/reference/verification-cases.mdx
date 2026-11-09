@@ -284,7 +284,7 @@ Each case ends with one JSON line of at most 1 KB, because Swamp cuts step outpu
 | `failed` | `assertion` | An `act` or `expect` step failed. |
 | `failed` | `infrastructure` | A step could not run, for example the fleet is unreachable. |
 | `unrun` | `precondition` | A `setup` step failed, such as a port that was not blocked before the command. |
-| `unrun` | `infrastructure` | A failed restore stopped the run before the case. |
+| `unrun` | `infrastructure` | A failed restore stopped the run before the case, or a proof in CI reached the run budget of its shard before the batch of the case ended. |
 
 Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
 

@@ -144,7 +144,7 @@ sequenceDiagram
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
   %%> - each case ended with one JSON line of at most 1 KB (Swamp cuts step output at 4,096 bytes): id, verdict, cause, seconds and the failed checks
-  %%> - verdicts: `passed`; `failed` with cause `assertion` or `infrastructure`; `unrun` with cause `precondition` (setup failed, the command never ran) or `infrastructure` (a failed restore stopped the run first)
+  %%> - verdicts: `passed`; `failed` with cause `assertion` or `infrastructure`; `unrun` with cause `precondition` (setup failed, the command never ran) or `infrastructure` (a failed restore stopped the run first, or a proof in CI reached the run budget of its shard before the batch of the case ended)
   %%> - the full receipt (every step, command output, firewall state, timings) stays in the task VM's evidence directory
   alt every case passes
     SW-->>GW: Verdict per case<br/>PASS

@@ -197,10 +197,15 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         foreach (array_keys($direct->definitions()) as $kind) {
             $definition = $direct->definition($kind);
-            if ($definition === null || ! is_subclass_of($definition['projection'], DirectOperationChildProjection::class)) {
+            // A kind records its child runs through its own projection, or through the child projection it declares beside it.
+            if ($definition === null) {
                 continue;
             }
-            $projection = app($definition['projection']);
+            $class = $definition['child_projection'] ?? $definition['projection'];
+            if (! is_subclass_of($class, DirectOperationChildProjection::class)) {
+                continue;
+            }
+            $projection = app($class);
             if ($projection instanceof DirectOperationChildProjection && $projection->acceptsParent($operation)
                 && $definition['workflow'] !== ($run['workflowName'] ?? null) && isset($definition['terminal_result'])) {
                 $declarations[$definition['workflow']] = [$projection, $definition['terminal_result']];
@@ -210,16 +215,28 @@ final readonly class SwampCommandStep
             return;
         }
         $children = [];
+        $other = [];
         $recorded = ValidatedData::object($operation->state['native_children'] ?? []);
         foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $childId) {
             if (isset($recorded[$childId])) {
                 continue;
             }
             $child = $this->history($childId);
-            if (($child['id'] ?? null) === $childId && is_string($child['workflowName'] ?? null) && isset($declarations[$child['workflowName']])
-                && in_array($child['status'] ?? null, ['succeeded', 'failed', 'interrupted'], true)) {
-                $children[] = $child;
+            if (($child['id'] ?? null) !== $childId || ! in_array($child['status'] ?? null, ['succeeded', 'failed', 'interrupted', 'cancelled'], true)) {
+                continue;
             }
+            if (is_string($child['workflowName'] ?? null) && isset($declarations[$child['workflowName']]) && $child['status'] !== 'cancelled') {
+                $children[] = $child;
+            } elseif (! is_string($child['workflowName'] ?? null) || ! isset($declarations[$child['workflowName']])) {
+                // An ended run of a workflow no projection declares never records anything: it is not read again on the next pass.
+                $other[$childId] = true;
+            }
+        }
+        if ($other !== []) {
+            DB::transaction(static function () use ($operation, $other): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                $current->update(['state' => [...($current->state ?? []), 'native_children' => [...ValidatedData::object($current->state['native_children'] ?? []), ...$other]]]);
+            });
         }
         usort($children, static fn (array $left, array $right): int => strcmp(ValidatedData::string($left['completedAt'] ?? ''), ValidatedData::string($right['completedAt'] ?? '')));
         foreach ($children as $child) {

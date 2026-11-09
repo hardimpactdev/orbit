@@ -72,3 +72,21 @@ it('plans selected ids only, retains their batch setup and rejects an unknown id
         ->and($plan->read('head', [$selected])[0])->toMatchArray(['batch' => 'fresh', 'cases' => ['b']]);
     expect(fn () => $plan->read('head', [[...$selected, 'only' => ['missing']]]))->toThrow(ResourceOperationException::class);
 });
+
+it('gives a shard the budget of its batches and keeps more batches than one budget fits out of one shard', function (): void {
+    // Proof 14651: 17 batches of about 75 measured seconds each, about 81 cases.
+    $batches = array_map(static fn (int $index): array => ['command' => 'node:add', 'file' => 'cases.yaml', 'batch' => 'b'.$index, 'cases' => ['c'.$index], 'seconds' => 75.0], range(1, 17));
+    $one = ProofBatchPlan::split($batches, 1);
+    $two = ProofBatchPlan::split($batches, 2);
+
+    // (600 + 3 x 180 + 3 x 100) x 1.5 = 2,160, rounded up to five minutes.
+    expect(ProofBatchPlan::budget(array_fill(0, 3, ['seconds' => 100.0])))->toBe(2400)
+        // On one place the shard needs (600 + 17 x 255) x 1.5 = 7,402 s: more than one shard may take.
+        ->and(ProofBatchPlan::overBudget($one[0]))->toBeTrue()
+        ->and(ProofBatchPlan::budget($one[0]))->toBe(ProofBatchPlan::MaxShardSeconds)
+        ->and(array_map(ProofBatchPlan::overBudget(...), $two))->toBe([false, false])
+        ->and(array_map(ProofBatchPlan::budget(...), $two))->toBe([4500, 4200])
+        // One batch cannot be split: it runs with the longest budget.
+        ->and(ProofBatchPlan::overBudget([['seconds' => 9000.0]]))->toBeFalse()
+        ->and(ProofBatchPlan::budget([['seconds' => 9000.0]]))->toBe(ProofBatchPlan::MaxShardSeconds);
+});
