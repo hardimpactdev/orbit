@@ -8,5 +8,11 @@
         "reference/development-containers"
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/reference/task-containers",
+      "destination": "/reference/development-containers#nested-fleet"
+    }
   ]
 }

@@ -377,7 +377,7 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-[Task containers](/reference/task-containers) specify a second runtime for task groups, added to a host by its [`containers` setting](/reference/node-settings#task-container-fields). Only the setting, the separate container places and the placement switch are built; every task group still runs on a task VM.
+A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Every task group still runs on a task VM.
 
 Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
@@ -944,7 +944,7 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Prepare a container host
 
-A host whose [`settings.task_vms`](/reference/node-settings#task-container-fields) has a `containers` member also runs [task containers](/reference/task-containers). The same `host-prepare` phase prepares that side, in two task files that run only on such a host:
+A host whose [`settings.task_vms`](/reference/node-settings#task-container-fields) has a `containers` member also gets the container host preparation below, which [Instance containers](/reference/development-containers#nodes) reuse. The same `host-prepare` phase prepares that side, in two task files that run only on such a host:
 
 - `tasks/task-container-host-system.yml` runs before the VM part, because the VM part needs Incus.
 - `tasks/task-container-host-prepare.yml` runs after it, because it needs the pool.
@@ -961,7 +961,7 @@ The system file sets up the kernel and Incus side of the host.
 - **SCTP.** The `sctp` module cannot load, as described below.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
 - **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
-- **Subordinate IDs.** Root's range in `/etc/subuid` and in `/etc/subgid` must hold one [isolated range](/reference/task-containers#the-outer-container) per place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. A smaller range fails the phase with both numbers and changes nothing.
+- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs: one isolated range per place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
 A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
@@ -1028,7 +1028,7 @@ Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modu
 
 ### Prepare an Instance container host
 
-An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Development containers](/reference/development-containers#prepare-a-node) describes the result.
+An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Instance containers](/reference/development-containers#prepare-a-node) describes the result.
 
 The branch shares the two task files of a [container host](#prepare-a-container-host). `container_host` names what differs:
 
@@ -1336,7 +1336,7 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | Key | Variable | Meaning |
 | --- | --- | --- |
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
-| `task_vms.container_placement` | `ORBIT_TASK_VMS_CONTAINER_PLACEMENT` | Lets normal placement take [container places](#place-task-vms). Default `false`. It applies to every host; turn it on only when a host [switches](/reference/task-containers#switch-a-host) |
+| `task_vms.container_placement` | `ORBIT_TASK_VMS_CONTAINER_PLACEMENT` | Lets normal placement take [container places](#place-task-vms). Default `false`. It applies to every host; nothing turns it on, and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes it |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
 | `task_vms.swamp_host` | `ORBIT_TASK_VMS_SWAMP_HOST` | One DNS hostname for the private Swamp Route, such as `swamp.orbit`, served on TCP 443 by the `swamp` Node. No scheme, port, path, wildcard, or list. Unset or empty admits no Swamp site |
