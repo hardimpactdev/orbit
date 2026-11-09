@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Actions;
 
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -29,16 +30,15 @@ final readonly class RegisterConnEnvironmentAction
     /** The scopes the Gateway needs to mint and revoke device sessions. */
     private const array REQUIRED_SCOPES = ['access:read', 'access:write'];
 
-    public function __construct(private T3ServerClient $server) {}
+    public function __construct(private T3ServerClient $server, private NodeAccessAuthorizer $access) {}
 
     public function execute(Node $node, RegisterConnEnvironmentData $data): ConnEnvironment
     {
-        // A server stays with the Node that registered it; only its own Node registers it again.
-        $owner = ConnEnvironment::query()->where('environment_id', $data->environmentId)->first()?->node_id;
-        if ($owner !== null && $owner !== $node->id) {
-            throw new ResourceOperationException('conn.environment_owned', "Another Node registered environment {$data->environmentId}.", 409);
-        }
-
+        // The transaction below refuses any change to this row since this read, so the owner check holds until the write.
+        $prior = ConnEnvironment::query()->where('environment_id', $data->environmentId)->first();
+        $this->assertMayRegister($node, $prior);
+        $revision = $prior?->cleanup_version;
+        $marker = $this->cleanupMarker($prior?->id);
         $descriptor = $this->server->describe($data->url);
 
         if ($descriptor->environmentId !== $data->environmentId) {
@@ -49,9 +49,6 @@ final readonly class RegisterConnEnvironmentAction
             );
         }
 
-        $prior = ConnEnvironment::query()->where('environment_id', $data->environmentId)->first();
-        $revision = $prior?->cleanup_version;
-        $marker = $this->cleanupMarker($prior?->id);
         $session = $this->server->session($data->url, $data->adminSession);
         $missing = array_values(array_diff(self::REQUIRED_SCOPES, $session->scopes));
         if ($missing !== []) {
@@ -83,6 +80,20 @@ final readonly class RegisterConnEnvironmentAction
         });
 
         return $environment;
+    }
+
+    /**
+     * A server stays with the Node that registered it. Only that Node registers it again; a server whose Node
+     * was removed needs Gateway access, so no other Node can take a known environment id.
+     */
+    private function assertMayRegister(Node $node, ?ConnEnvironment $prior): void
+    {
+        if ($prior === null || $prior->node_id === $node->id
+            || ($prior->node_id === null && $this->access->hasGatewayAuthority($node))) {
+            return;
+        }
+
+        throw new ResourceOperationException('conn.environment_owned', "Another Node registered environment {$prior->environment_id}.", 409);
     }
 
     /** A revocation during validation may revoke the candidate; never store that stale candidate. */

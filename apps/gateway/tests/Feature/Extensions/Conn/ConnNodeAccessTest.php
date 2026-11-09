@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Testing\TestResponse;
@@ -34,6 +36,17 @@ function conn_server(string $environmentId, ?Node $node): ConnEnvironment
         'node_id' => $node?->id, 'admin_session' => 'admin-token', 'admin_session_expires_at' => Carbon::now()->addDays(30),
         'registered_at' => Carbon::now(),
     ]);
+}
+
+/** A Node with an edge to the active Gateway Node has Gateway access: it reaches every Node. */
+function conn_operator(): Node
+{
+    $gateway = conn_node('gateway', '10.44.0.2');
+    NodeRole::withoutEvents(fn () => $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']));
+    $operator = conn_node('orbit-ops', '10.44.0.5');
+    $operator->accessibleNodes()->attach($gateway->id);
+
+    return $operator;
 }
 
 /** @param array<string, mixed> $body */
@@ -68,6 +81,25 @@ describe('servers', function (): void {
         conn_call($this->phone, 'GET', 'environments/env-orphan/pairings')->assertStatus(403)
             ->assertJsonPath('error.code', 'node_access.required')
             ->assertJsonPath('error.details.serving_node', null);
+
+        $operator = conn_operator();
+        expect(array_column(conn_call($operator, 'GET', 'environments')->json('data'), 'environment_id'))
+            ->toBe(['env-beast', 'env-mini', 'env-orphan']);
+        conn_call($operator, 'GET', 'environments/env-orphan/pairings')->assertOk();
+    });
+
+    it('lets a caller with access read its pairing and revoke sessions of another Node on that server', function (): void {
+        $pairing = ConnPairing::query()->create([
+            'node_id' => $this->phone->id, 'conn_environment_id' => $this->onBeast->id, 'pairing_link_id' => 'link-2',
+            'client_label' => 'phone via Orbit def', 'expires_at' => Carbon::now()->addMinutes(5), 'credential' => 'secret',
+        ]);
+
+        // Past the access check, an unfinished pairing answers 409 and keeps its credential.
+        conn_call($this->phone, 'GET', "environments/env-beast/pairings/{$pairing->id}")->assertStatus(409);
+        expect($pairing->fresh()?->credential)->toBe('secret');
+
+        $revoke = conn_call($this->phone, 'POST', 'environments/env-beast/pairings/revoke', ['node_id' => $this->mini->id]);
+        expect($revoke->status())->not->toBe(403);
     });
 
     it('reads the pairings of a server the caller has access to', function (): void {
@@ -110,6 +142,8 @@ describe('servers', function (): void {
         'create profile' => ['POST', 'profiles'],
         'settings' => ['GET', 'profiles/1/settings'],
         'patch settings' => ['PATCH', 'profiles/1/settings'],
+        'replace settings' => ['PUT', 'profiles/1/settings'],
+        'cleanup' => ['POST', 'environments/env-beast/sessions/cleanup'],
         'environments' => ['GET', 'environments'],
         'pairings' => ['GET', 'environments/env-beast/pairings'],
         'pair' => ['POST', 'environments/env-beast/pairings'],
@@ -157,12 +191,43 @@ describe('registration', function (): void {
             ->and($this->onBeast->fresh()?->url)->toBe('http://10.44.0.30:3773');
     });
 
-    it('lets the registering Node, a new server, or a server without a Node reach the T3 check', function (string $environmentId): void {
-        conn_server('env-orphan', null);
-
+    it('lets the registering Node, or anyone for a new server, reach the T3 check', function (string $environmentId): void {
         conn_call($this->beast, 'POST', 'environments', conn_registration($environmentId))->assertStatus(502)
             ->assertJsonPath('error.code', 'conn.server_unreachable');
-    })->with(['own' => 'env-beast', 'new' => 'env-new', 'orphan' => 'env-orphan']);
+    })->with(['own' => 'env-beast', 'new' => 'env-new']);
+
+    it('lets only a Node with Gateway access take a server whose Node was removed', function (): void {
+        conn_server('env-orphan', null);
+
+        conn_call($this->beast, 'POST', 'environments', conn_registration('env-orphan'))->assertStatus(409)
+            ->assertJsonPath('error.code', 'conn.environment_owned');
+        conn_call(conn_operator(), 'POST', 'environments', conn_registration('env-orphan'))->assertStatus(502)
+            ->assertJsonPath('error.code', 'conn.server_unreachable');
+    });
+
+    it('refuses a registration when another Node registered the same id while the T3 server was checked', function (): void {
+        $beast = $this->beast;
+        app()->instance(T3ServerClient::class, new class($beast) implements T3ServerClient
+        {
+            public function __construct(private readonly Node $beast) {}
+
+            public function describe(string $baseUrl): T3EnvironmentDescriptor
+            {
+                conn_server('env-new', $this->beast);
+
+                return new T3EnvironmentDescriptor('env-new', 'spike', '0.9.1');
+            }
+
+            public function session(string $baseUrl, string $adminSession): T3AdminSession
+            {
+                return new T3AdminSession($adminSession, CarbonImmutable::now()->addDays(30), ['access:read', 'access:write']);
+            }
+        });
+
+        conn_call($this->taskVm, 'POST', 'environments', conn_registration('env-new'))->assertStatus(409)
+            ->assertJsonPath('error.code', 'conn.environment_changed');
+        expect(ConnEnvironment::query()->where('environment_id', 'env-new')->sole()->node_id)->toBe($this->beast->id);
+    });
 
     it('needs no access edge to register', function (): void {
         conn_call($this->taskVm, 'POST', 'environments', conn_registration('env-new'))->assertStatus(502)

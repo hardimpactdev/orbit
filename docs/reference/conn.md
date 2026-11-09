@@ -38,7 +38,7 @@ For example, a phone with an edge to `beast` sees and pairs with the servers tha
 
 ### Registration stays with its Node
 
-The calling Node becomes the server's Node. Once a Node registered an environment id, another Node cannot register it again: it gets `conn.environment_owned` (409). When the Node is removed, the server has no Node, and the next registration takes it.
+The calling Node becomes the server's Node. Once a Node registered an environment id, another Node cannot register it again: it gets `conn.environment_owned` (409). When the Node is removed, the server has no Node. Then only a Node with Gateway access can register it again, which makes that Node the server's Node.
 
 ### Removing an edge
 
@@ -146,7 +146,7 @@ t3 auth session issue --label "Orbit Gateway" --token-only
 
 The job sends that token as `admin_session`, with the server's environment id, its label, and the URL that devices use to reach it over WireGuard.
 
-1. The environment id must be new, or registered by the calling Node, or have no Node; otherwise the request fails with `conn.environment_owned` (409).
+1. The environment id must be new or registered by the calling Node. An id whose Node was removed needs a caller with Gateway access. Otherwise the request fails with `conn.environment_owned` (409).
 2. The Gateway reads `GET <url>/.well-known/t3/environment`. The served `environmentId` must equal `environment_id`, or the request fails with `conn.environment_mismatch` (422) before the session is sent.
 3. It reads `GET <url>/api/auth/session` with the session as its bearer token. A session T3 does not accept fails with `conn.session_rejected` (502).
 4. The session must carry `access:read` and `access:write`. `t3 auth session issue` grants both. A session without them fails with `conn.admin_scope_missing` (422).
@@ -227,7 +227,7 @@ A pairing gives a device admin access to a T3 server, and the server runs agents
 
 The server is keyed on the Node that registered it, not on the host of its URL. A container's server is registered by its host Node, and a URL can name a forwarded port, so the URL does not identify the Node.
 
-A registration cannot move an environment id to another Node. Otherwise any Node could register a server of its own under a known id and send devices that pair with it there.
+A registration cannot move an environment id to another Node. Otherwise any Node could register a server of its own under a known id and send devices that pair with it there. The same holds for a server whose Node was removed, so taking it over needs Gateway access. The ownership check reads the same row that the registration transaction locks and compares, so a concurrent registration by another Node fails with `conn.environment_changed`.
 
 Removing an edge does not revoke paired sessions. The `node:access:remove` command lives in core, which cannot call an extension, and a hook for it is a plug-in point of its own.
 
