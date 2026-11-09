@@ -77,7 +77,7 @@ The first command adds a 180-second step and lowers `build-assets` by 180 second
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
-A container default has no setup steps: its development deploy steps install and migrate. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
+A container Instance has no setup steps: the default's development deploy steps install and migrate, and a clone copies the result. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Checkout access
 

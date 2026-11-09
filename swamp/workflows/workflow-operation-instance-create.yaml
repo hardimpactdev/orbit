@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children. A container default runs its container, workspace, Process and seed phases instead.
+description: Development Instance create from 209; the checkout with its .env and the Project setup steps are two Ansible phases, the database, Process and Route work are children. A container default runs its container, workspace, Process and seed phases instead; a clone of it its clone, workspace, agent, Process, T3 and registration phases.
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -12,15 +12,15 @@ inputs:
     kind: {type: string, const: instance.create}
     intent: {type: object}
     # Names only: git_credential and environment, member_<Process id> for each development Process environment,
-    # server_database_create and server_database_check for an owned server database, and step_<index> for each development
-    # deploy step of a container default.
+    # server_database_create and server_database_check for an owned server database, step_<index> for each development
+    # deploy step of a container default, and model_environment for a clone's placeholder model key.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01]))$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -70,7 +70,9 @@ jobs:
               ORBIT_ENVIRONMENT_TESTING: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.environment_testing ? inputs.execution_secrets.environment_testing.key : inputs.execution_secrets.environment.key) }}'
       # A Project's first default Instance on a Node of the build list is a container, not a checkout
       # (docs/cli/instance/container/create-default.mmd). Container: create it from the image with its address and its ACL, start it, and
-      # fetch the default branch into the Node's mirror with the read token, which never enters the container.
+      # fetch the default branch into the Node's mirror with the read token, which never enters the container. A clone of the default
+      # (docs/cli/instance/container/create.mmd) runs the `clone` tag instead: a copy of the default's seed snapshot with its own
+      # address, ACL, firewall rules and T3 proxy device, and its own branch in the mirror.
       - name: container
         labels: {role: swamp}
         writes: true
@@ -82,8 +84,9 @@ jobs:
           behaviorName: '${{ "ic-container-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags container "$ORBIT_ANSIBLE/instance-container.yml"
+            run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASE" "$ORBIT_ANSIBLE/instance-container.yml"
             env:
+              ORBIT_PHASE: '${{ inputs.intent.container != null && inputs.intent.container.clone != null ? "clone" : "container" }}'
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
@@ -93,7 +96,7 @@ jobs:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
       # Workspace: the branch in as a bundle, checked out in /srv/workspace as `orbit`, and .env for `orbit` with group `work`. No
-      # /etc/orbit/instance, so T3 never starts in the default Instance.
+      # /etc/orbit/instance, so T3 never starts in the default Instance; a clone's agent step writes it.
       - name: workspace
         labels: {role: swamp}
         writes: true
@@ -115,6 +118,29 @@ jobs:
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
+      # Agent: a clone's placeholder model key, the agents' settings, the note links and /etc/orbit/instance, inside the container.
+      - name: agent
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: workspace, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-agent-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags agent "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              # Swamp evaluates a skipped step's inputs too, so the reference falls back to a key every run has.
+              ORBIT_MODEL_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, "model_environment" in inputs.execution_secrets ? inputs.execution_secrets.model_environment.key : inputs.execution_secrets.environment.key) }}'
       # Deploy: each development deploy step in list order, as `orbit` in the workspace with the runtime folder's PATH, from its own
       # vault copy on standard input. A best-effort step prints its exit status, so it never fails the run.
       - name: deploy
@@ -362,6 +388,52 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps && steps["route-csr-" + string(i)].status == "succeeded" ? steps["route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
+      # T3: a clone's T3 starts for the first time, with its own identity, and the workspace becomes its project.
+      - name: t3
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: agent, condition: {type: succeeded}}
+          - {step: container-processes, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-t3-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags t3 "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *container_phase
+      # Register (docs/cli/instance/container/t3-register.mmd): `agent` issues the Gateway's and Swamp's sessions and T3 answers about
+      # each; the reply waits in the run folder for the next step, which never lets a session into the run's outputs.
+      - name: t3-sessions
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: t3, condition: {type: succeeded}}
+          - {step: route, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "ic-register-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags register "$ORBIT_ANSIBLE/instance-container.yml"
+            env: *container_phase
+      # The checks of POST /conn/environments, then both sessions as native sensitive fields; the receipt names only their vault keys.
+      - name: t3-register
+        labels: {role: swamp}
+        dependsOn: [{step: t3-sessions, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-t3'
+          behaviorName: '${{ "ic-t3-register" }}'
+          methodName: register
+          inputs:
+            instance_id: '${{ inputs.intent.instance_id }}'
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
       # Seed: the first `seed-<commit>` snapshot, taken with the Processes stopped for a moment; clones copy it.
       - name: seed
         labels: {role: swamp}
@@ -369,7 +441,7 @@ jobs:
         dependsOn:
           - {step: container-processes, condition: {type: succeeded}}
           - {step: route, condition: {type: always}}
-        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed") }}'
+        guard: '${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone != null || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -396,6 +468,10 @@ jobs:
           - {step: deploy, condition: {type: always}}
           - {step: container-processes, condition: {type: always}}
           - {step: seed, condition: {type: always}}
+          - {step: agent, condition: {type: always}}
+          - {step: t3, condition: {type: always}}
+          - {step: t3-sessions, condition: {type: always}}
+          - {step: t3-register, condition: {type: always}}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
@@ -409,7 +485,7 @@ jobs:
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
-            container: '${{ inputs.intent.container == null ? null : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped"} }}'
+            container: '${{ inputs.intent.container == null ? null : {"launch": "container" in steps ? steps.container.status : "skipped", "workspace": "workspace" in steps ? steps.workspace : null, "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "agent": "agent" in steps ? steps.agent.status : "skipped", "t3": "t3" in steps ? steps.t3.status : "skipped", "register": "t3-sessions" in steps && steps["t3-sessions"].status == "failed" ? "failed" : ("t3-register" in steps ? steps["t3-register"].status : "skipped"), "server": "t3-register" in steps && steps["t3-register"].status == "succeeded" ? steps["t3-register"].outputs.terminal.stdout : null} }}'
       # Withdraw the Route: a create that failed after its key was made takes back what it published, the reverse of the publication that the
       # Gateway captured at admission (the site, the pool, the DNS records, the certificate folders). The failure the run reports is the one
       # that finish read; the Instance and its checkout stay, marked failed. It runs before accepted, so a failing accepted does not cut it short.
@@ -461,6 +537,10 @@ jobs:
           - {step: workspace, condition: {type: always}}
           - {step: container-processes, condition: {type: always}}
           - {step: seed, condition: {type: always}}
+          - {step: agent, condition: {type: always}}
+          - {step: t3, condition: {type: always}}
+          - {step: t3-sessions, condition: {type: always}}
+          - {step: t3-register, condition: {type: always}}
           - {step: stop-container, condition: {type: always}}
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}

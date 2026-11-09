@@ -190,11 +190,10 @@ describe('the first default Instance of a Project on a build-list Node', functio
             ->and(Instance::query()->count())->toBe(0);
     });
 
-    it('refuses what a container cannot run yet: a Database server and the Project\'s development Processes', function (): void {
+    it('refuses what a container cannot run yet: the Project\'s development Processes', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
 
-        expect(containerRefusal(fn () => containerCreate($project, $node, databaseServer: 'beast-postgres')))->toBe('operation.kind_unavailable');
         ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'queue', 'environments' => ['development'],
             'spec' => ['runtime' => 'systemd', 'command' => ['php', 'artisan', 'queue:work']]]);
         expect(containerRefusal(fn () => containerCreate($project, $node)))->toBe('operation.kind_unavailable')
@@ -203,14 +202,14 @@ describe('the first default Instance of a Project on a build-list Node', functio
 });
 
 describe('other Instances of a Project with a container default', function (): void {
-    it('are made on the default\'s Node only, and not before clones exist', function (): void {
+    it('are made on the default\'s Node only, and not before the default has its seed snapshot', function (): void {
         $beast = containerDefaultNode();
         $shark = containerDefaultNode('shark', '10.44.0.11', listed: false);
         $project = containerDefaultProject();
         containerCreate($project, $beast);
 
         expect(containerRefusal(fn () => containerCreate($project, $shark, 'feature')))->toBe('instance.default_missing')
-            ->and(containerRefusal(fn () => containerCreate($project, $beast, 'feature')))->toBe('operation.kind_unavailable')
+            ->and(containerRefusal(fn () => containerCreate($project, $beast, 'feature')))->toBe('instance.default_missing')
             ->and(Instance::query()->count())->toBe(1);
     });
 

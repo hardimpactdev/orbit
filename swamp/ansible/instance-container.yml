@@ -1,7 +1,9 @@
 ---
-# The container of a Project's default Instance on its app-dev Node (docs/reference/development-containers.md#the-default-instance):
-# its first build (instance:create) and its development deployments (instance:deploy). One tagged part per Swamp phase.
-#   create: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
+# The container of a development Instance on its app-dev Node (docs/reference/development-containers.md#lifecycle): a Project's
+# default Instance, its first build (instance:create) and its development deployments (instance:deploy), and every other Instance,
+# a clone of the default's seed snapshot with T3. One tagged part per Swamp phase.
+#   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
+#   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure.
 #   deploy: `start`, `fetch`, `checkout`, `seed`, `check`.
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
@@ -27,7 +29,7 @@
   hosts: container_node
   gather_facts: false
   become: true
-  tags: [container, workspace, processes, seed, stop, start, fetch, checkout, check]
+  tags: [container, clone, workspace, agent, processes, t3, register, seed, stop, start, fetch, checkout, check]
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
@@ -60,7 +62,7 @@
           ansible.builtin.copy:
             content: >-
               {{ {'error_code': ansible_failed_result.msg
-                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z_]+$'))
+                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
                   else 'instance.container_' ~ (ansible_run_tags | first) ~ '_failed'} | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"

@@ -207,3 +207,42 @@ Deno.test("a container default takes its commit from the workspace and finishes 
     assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: "" } }, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "workspace");
     assertEquals(create({ launch: "failed", workspace: null, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "container");
 });
+Deno.test("a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed", () => {
+    const server = JSON.stringify({
+        environment_id: "env-9",
+        server_version: "0.1.7",
+        expires_at: "2026-12-10T10:00:00.000Z",
+        gateway_session: { vault: "orbit-control-inputs", key: "gateway-key" },
+        swamp_session: { vault: "orbit-control-inputs", key: "swamp-key" },
+    });
+    const container: NonNullable<Parameters<typeof createResult>[1]["container"]> = {
+        launch: "succeeded",
+        workspace: { status: "succeeded", outputs: { stdout: `"msg": "orbit-commit=${commit}"` } },
+        deploy: [],
+        processes: "succeeded",
+        seed: "skipped",
+        agent: "succeeded",
+        t3: "succeeded",
+        register: "succeeded",
+        server,
+    };
+    const create = (changes: Partial<typeof container>) =>
+        JSON.parse(createResult({ ...intent, setup_steps: [], route: { route_id: 1 }, container: { clone: { source: "instance-1" } } }, {
+            ...phases,
+            checkout: { status: "skipped" },
+            setup: "skipped",
+            processes: [],
+            route: "succeeded",
+            container: { ...container, ...changes },
+        }).stdout);
+    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit, t3: JSON.parse(server) });
+    const failure = (changes: Partial<typeof container>) => [create(changes).failed_step, create(changes).error_code];
+    assertEquals(failure({ launch: "failed", workspace: null }), ["clone", "instance.create_clone_failed"]);
+    assertEquals(failure({ agent: "failed" }), ["agent", "instance.create_agent_failed"]);
+    // T3 that never answered has its own code, and the registration after it did not run.
+    assertEquals(failure({ t3: "failed", register: "skipped", server: null }), ["t3", "instance.t3_unready"]);
+    assertEquals(failure({ register: "failed", server: null }), ["register", "instance.create_register_failed"]);
+    // A registration without its receipt is no registration, and a failed create carries no server.
+    assertEquals(failure({ server: null }), ["register", "instance.create_register_failed"]);
+    assertEquals(create({ agent: "failed" }).t3, undefined);
+});

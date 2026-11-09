@@ -1,5 +1,5 @@
 /**
- * Stateful Incus boundary for the container phases of a default Instance. A container is a folder under the fixture, its root file
+ * Stateful Incus boundary for the container phases of a default Instance and its clones. A container is a folder under the fixture, its root file
  * system; `incus exec` runs the command on this machine with the container's paths mapped into that folder, as `runuser` would run
  * it, and records `systemctl` calls instead of running them. No live host commands.
  */
@@ -40,7 +40,9 @@ if (args[0] === "query") {
       console.log(
         JSON.stringify(container.snapshots.map((name: string) => ({ name }))),
       );
-    } else console.log(JSON.stringify({ name: parts[1], status: container.status, query }));
+    } else {
+      console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {} }));
+    }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);
 }
@@ -68,6 +70,23 @@ if (family === "init") {
   Deno.mkdirSync(`${rootfs(name)}/etc/systemd/system`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/tmp`, { recursive: true });
   Deno.mkdirSync(`${rootfs(name)}/usr/local/bin`, { recursive: true });
+} else if (family === "copy") {
+  // A copy of a snapshot: the source's root file system as it is, a new container with the overridden devices.
+  const [, from, name] = args;
+  const [source, snapshot] = from.split("/");
+  if (!state.containers[source]?.snapshots.includes(snapshot)) fail("Snapshot not found");
+  if (state.containers[name]) fail("Instance already exists");
+  const devices: string[] = [];
+  for (let device = take("--device"); device !== null; device = take("--device")) devices.push(device);
+  new Deno.Command("cp", { args: ["-R", rootfs(source), rootfs(name)] }).outputSync();
+  for (const path of ["home/agent/.codex", "home/agent/.config/orbit", "etc/orbit"]) {
+    Deno.mkdirSync(`${rootfs(name)}/${path}`, { recursive: true });
+  }
+  state.containers[name] = { project, source: from, status: "Stopped", devices, snapshots: [] };
+} else if (family === "config" && args[1] === "device" && args[2] === "add") {
+  const [, , , name, device, type, ...settings] = args;
+  state.containers[name].added ??= {};
+  state.containers[name].added[device] = { type, settings };
 } else if (family === "start" || family === "stop") {
   const name = args.at(-1)!;
   if (!state.containers[name]) fail("Instance not found");
@@ -105,12 +124,42 @@ if (family === "init") {
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
+    if (command[1] === "start" && command.includes("t3.service")) state.containers[name].t3 = true;
     save();
     if (command[1] === "is-active") {
       const inactive = command.slice(3).filter((unit) => (state.inactive ?? []).includes(unit));
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.
+  if (command[0] === "curl") {
+    const url = command.at(-1)!;
+    if (!state.containers[name].t3) Deno.exit(7);
+    if (url.endsWith("/.well-known/t3/environment")) {
+      console.log(JSON.stringify({ environmentId: `env-${name}`, label: "t3", serverVersion: "0.1.7" }));
+    } else {
+      const token = (await new Response(Deno.stdin.readable).text()).replace("Authorization: Bearer ", "").trim();
+      const known = (state.sessions ?? []).find((session: { token: string }) => session.token === token);
+      Deno.stdout.writeSync(new TextEncoder().encode(known
+        ? JSON.stringify({ authenticated: true, scopes: known.scopes, expiresAt: "2026-12-10T10:00:00.000Z" }) + "\n200"
+        : "\n401"));
+    }
+    Deno.exit(0);
+  }
+  if (command[0].endsWith("/t3")) {
+    if (command[1] === "project") {
+      state.projects = [...(state.projects ?? []), command[3]];
+      console.log(`project-${state.projects.length}`);
+    } else {
+      const label = command[command.indexOf("--label") + 1];
+      state.sessions ??= [];
+      const token = `token-${state.sessions.length + 1}`;
+      state.sessions.push({ token, label, scopes: label === "Orbit Gateway" ? ["access:read", "access:write"] : ["orchestration:read"] });
+      console.log(token);
+    }
+    save();
     Deno.exit(0);
   }
   const done = new Deno.Command(command[0], {

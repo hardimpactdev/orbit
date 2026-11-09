@@ -111,7 +111,9 @@ The app runs as `orbit`: FrankenPHP, queue workers, development servers and ever
 
 T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell. Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`.
 
-An agent may start its own development server, such as `npm run dev`, as `agent`. It views it in T3's browser through T3's own port preview, which PR 5 must prove; no spike tested it. Orbit does not publish it and does not restrict it. Such a server can read what `agent` can read, so no Route points at it.
+An agent may start its own development server, such as `npm run dev`, as `agent`. Orbit does not publish it and does not restrict it. Such a server can read what `agent` can read, so no Route points at it.
+
+T3's port preview does not reach such a server yet. Conn resolves a server port of a remote T3 server to `http://<server host>:<port>`, and a clone's server host is its Node's WireGuard address, which publishes only T3's own port. Conn names an authenticated preview gateway for this case, which it does not have yet. The [plan](/solutions/development-container-runtime#pr-5-create-an-instance-as-a-clone-of-the-default) holds the decision this needs.
 
 ### PHP
 
@@ -274,15 +276,37 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Seed | After the first build and each deployment that passes, Orbit stops the units, takes `seed-<commit>` and starts them again. It deletes older seeds, and the runtime row records the commit |
 | Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
 
-A container default cannot reach a Database server yet, so it uses the database its Project names in the workspace; `--database-server` refuses with `operation.kind_unavailable`. A Project with development Process definitions refuses the same way. Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
+A container default without `--database-server` uses the database its Project names in the workspace, such as SQLite. With `--database-server`, the database family creates its database on that server, and the container reaches it by its own [database rules](#network). A Project with development Process definitions refuses with `operation.kind_unavailable`. Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
 
-A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and with `operation.kind_unavailable` on that Node until clones are built.
+A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Destroy, setup, `env:sync`, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and on that Node until the default is active with a seed snapshot. Every other Instance is a [clone](#create).
 
 ### Create
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container, creates the Instance's branch from the default branch, and writes the `.env`, the agent settings, the note links and `/etc/orbit/instance`. Last, it starts T3 and the Processes, adds the T3 project at `/srv/workspace`, publishes the Route and registers the T3 server. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
-A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
+A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
+
+It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
+
+#### What is built for clones
+
+Clones are built for the Nodes of the [build list](#the-build-list).
+
+| Part | What Orbit does |
+| --- | --- |
+| Default | The Project's `default` runs in a container on the same Node, is active and has a seed snapshot. Otherwise `instance.default_missing` |
+| Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
+| Runtime row | The next free bridge address, the lowest free T3 port from 3800, and the default as clone source |
+| Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
+| ACL | The Node's Caddy reaches port 8080, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
+| T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
+| UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |
+| Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance` |
+| Processes | FrankenPHP's unit, rewritten for the clone's own address |
+| T3 | Its first start, a check of `/.well-known/t3/environment` within 30 seconds, and the T3 project `/srv/workspace` |
+| Registration | [T3 registration](#t3-registration-and-pairing), from the run's result |
+
+A failed clone stops its container; the same command resumes it. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again.
 
 ### Clone the database
 
@@ -291,7 +315,12 @@ The database family clones every database, whether the server is on the Instance
 - **PostgreSQL, same server.** `CREATE DATABASE <new> TEMPLATE <default>`. PostgreSQL copies only from a database without other sessions.
 - **The moment of the copy.** Orbit refuses new connections to the default database and ends its sessions. It copies, then allows connections again. The default Instance sees refused connections for that moment.
 - **A failed copy.** A cleanup step that always runs allows connections again.
-- **PostgreSQL, another server.** `pg_dump` of the default database in one snapshot, restored into the new database with `pg_restore --no-owner --no-privileges --single-transaction`.
+- **The owner.** Every object of the default's owner in the copy passes to the clone's owner. Only the clone's owner may connect.
+
+Other servers and drivers:
+
+- **PostgreSQL, another server.** `pg_dump` of the default database in one snapshot, restored with `pg_restore --no-owner --no-privileges --single-transaction`.
+- **Not built yet.** A clone that names another server refuses with `instance.database_clone_unsupported`.
 - **MySQL.** A dump and restore, as the database family copies MySQL today.
 - **SQLite.** A file in the workspace comes with the ZFS clone.
 - **Valkey.** No data is copied; the Instance gets its own connection, as `database:create` makes it.
@@ -329,14 +358,25 @@ A failed move leaves the checkout Instance serving as before. The [migration cha
 
 The Instance's create flow registers its T3 server with the [Conn layer](/reference/conn#registration), with the same record and the same checks as a server that registers itself:
 
-1. A step in the container issues a session with `t3 auth session issue --label "Orbit Gateway" --token-only`, as `agent`. Swamp stores it in the vault, never in the run.
-2. The same step issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). Swamp keeps that one in the vault.
-3. The same step checks the served environment id and both sessions' scopes, as `POST /conn/environments` does.
-4. The run returns the environment id and the URL: the Node's WireGuard address and the container's port.
-5. The Gateway records the server from the run's result and moves the Gateway session from the vault into its encrypted record. The Swamp session stays in the vault. It does not check the result again.
-6. The server's Node is the container's Node, and the record names the Instance.
+In the container, as `agent`:
 
-The container cannot call the Gateway, so registration never comes from inside it. Orbit issues a new session when it wakes a container whose session expires within seven days, and a daily check renews the sessions of running containers. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) has the steps.
+1. A phase in the container issues a session with `t3 auth session issue --label "Orbit Gateway" --token-only`, as `agent`.
+2. The same phase issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
+3. It reads the served environment and asks T3 about both sessions at `/api/auth/session`. The reply waits in the run folder, mode 0600.
+
+On the Swamp worker:
+
+1. The next step, `@nckrtl/instance-t3`, makes the checks of `POST /conn/environments`. T3 must know both sessions, and the Gateway's must carry `access:read` and `access:write`.
+2. That step stores both sessions in the vault, as native sensitive fields.
+3. It returns the environment id, the server version, the expiry and the two vault keys.
+
+In the Gateway:
+
+1. The Gateway records the server with the admitted URL: the Node's WireGuard address and the T3 port. It does not call T3 again.
+2. It reads the Gateway session from the vault into its encrypted record. The vault copy stays, as a pairing's credential does.
+3. The server's Node is the container's Node, and the record names the Instance ([Instance servers](/reference/conn#instance-servers)).
+
+The container cannot call the Gateway, so registration never comes from inside it. Its renewal is not built yet: a session lasts 30 days. PR 13 of the plan adds it: Orbit issues a new session when it wakes a container whose session expires within seven days, and a daily check renews the sessions of running containers. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) has the steps.
 
 A device pairs as with any T3 server: [`conn:pairing:create`](/reference/conn#pairing-and-revocation), with node access to the container's Node. Pairing with a sleeping Instance's server refuses with `conn.environment_asleep`; the device wakes it first. T3 prints a pairing token to its journal at each start; only root and `agent` can read it, and that is accepted.
 
@@ -597,7 +637,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
-| `instance.t3_unready` | 502 | The T3 server did not answer after the container started |
+| `instance.t3_unready` | 502 | The T3 server did not answer within 30 seconds of its first start in a clone |
+| `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
+| `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |

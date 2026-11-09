@@ -8,6 +8,10 @@
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--'] }}
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    # A clone's T3 and its agents run as `agent`, which alone reaches T3's port in the container.
+    as_agent: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--'] }}
     in_workspace: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] }}
@@ -22,12 +26,12 @@
   register: container_read
   changed_when: false
   failed_when: false
-  when: phase in ['container', 'stop', 'start']
+  when: phase in ['container', 'clone', 'stop', 'start']
 
 # The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
-# FrankenPHP. Network ACLs live in the default project.
+# FrankenPHP, a clone's T3 clients reach T3, and the container reach its database server. Network ACLs live in the default project.
 - name: Converge the container's ACL
-  when: phase == 'container'
+  when: phase in ['container', 'clone']
   block:
     - name: Read the network ACLs
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/network-acls?project=default&recursion=1"] }
@@ -46,7 +50,7 @@
         stdin: "{{ container.acl_rules | to_json }}"
       changed_when: true
     - name: Create the container from the image
-      when: container_read.rc != 0
+      when: phase == 'container' and container_read.rc != 0
       ansible.builtin.command:
         argv: >-
           {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
@@ -56,8 +60,52 @@
               '--device', 'eth0,security.acls.default.ingress.action=reject'] }}
       changed_when: true
 
+# A clone copies the default's seed snapshot, which the default took with its units stopped: a ZFS clone that needs no start of the
+# default. The copy takes its own address and ACL; T3 is published on the Node's WireGuard address in NAT mode, so T3 sees its
+# client's own address.
+- name: Copy the default's seed snapshot
+  when: phase == 'clone'
+  block:
+    - name: Copy the snapshot
+      when: container_read.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
+              '--device', 'eth0,ipv4.address=' ~ container.address,
+              '--device', 'eth0,security.acls=' ~ container.network ~ '-egress,' ~ container.acl] }}
+      changed_when: true
+    - name: Read the copy's devices
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: clone_read
+      changed_when: false
+    - name: Publish T3 on the Node's WireGuard address
+      when: container.clone.t3.device not in ((clone_read.stdout | from_json).devices | default({}))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['config', 'device', 'add', container.name, container.clone.t3.device, 'proxy',
+              'listen=tcp:' ~ container.clone.t3.listen ~ ':' ~ container.clone.t3.port,
+              'connect=tcp:' ~ container.address ~ ':' ~ container.clone.t3.internal_port, 'nat=true'] }}
+      changed_when: true
+
+# UFW on the Node, each rule under the Instance's comment prefix: T3's route rules, the task VM range's deny first, and the way to
+# the database server.
+- name: Admit the container's own paths on the Node
+  when: phase in ['container', 'clone'] and container.firewall | default([]) | length > 0
+  community.general.ufw:
+    rule: "{{ item.rule }}"
+    route: "{{ item.route | default('no') | bool }}"
+    interface_in: "{{ item.interface_in }}"
+    interface_out: "{{ item.interface_out | default(omit) }}"
+    from_ip: "{{ item.from_ip }}"
+    to_ip: "{{ item.to_ip }}"
+    to_port: "{{ item.to_port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ container.firewall }}"
+  loop_control: { label: "{{ item.comment }}" }
+
 - name: Start the container
-  when: phase in ['container', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
+  when: phase in ['container', 'clone', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
 
@@ -98,7 +146,7 @@
 
 # The branch comes from a mirror on the Node: a container cannot reach GitHub, and the read token never enters it.
 - name: Fetch the branch on the Node
-  when: phase in ['container', 'fetch']
+  when: phase in ['container', 'clone', 'fetch']
   vars:
     credential_path: "/tmp/orbit-git-credential-{{ run_id }}"
   block:
@@ -121,17 +169,37 @@
       register: mirror_before
       changed_when: false
       failed_when: false
-    - name: Fetch
-      ansible.builtin.command:
-        argv: >-
+    - name: Name the remote Git command
+      ansible.builtin.set_fact:
+        remote_git: >-
           {{ ['/usr/bin/timeout', '300', '/usr/bin/env', 'GIT_TERMINAL_PROMPT=0', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null']
           + mirror_git
           + ['-c', 'credential.helper=', '-c', 'credential.helper=store --file=' ~ credential_path,
           '-c', 'protocol.allow=never', '-c', 'http.followRedirects=false',
           '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
-          '-c', 'protocol.' ~ container.protocols[0] ~ '.allow=always',
-          'fetch', '--quiet', '--no-tags', '--', container.repository, '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}
+          '-c', 'protocol.' ~ container.protocols[0] ~ '.allow=always'] }}
+    # A clone's branch is the matching origin branch, or a new branch at the seed's commit, which the workspace already holds.
+    - name: Read whether the origin has the clone's branch
+      when: phase == 'clone'
+      ansible.builtin.command: { argv: "{{ remote_git + ['ls-remote', '--heads', '--', container.repository, 'refs/heads/' ~ container.branch] }}" }
+      register: clone_remote
       changed_when: false
+    - name: Fetch
+      when: phase != 'clone' or clone_remote.stdout | trim != ''
+      ansible.builtin.command:
+        argv: "{{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository, '+refs/heads/' ~ container.branch ~ ':refs/heads/' ~ container.branch] }}"
+      changed_when: false
+    - name: Fetch the default branch, which holds the seed's commit
+      when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ remote_git + ['fetch', '--quiet', '--no-tags', '--', container.repository,
+              '+refs/heads/' ~ container.clone.default_branch ~ ':refs/heads/' ~ container.clone.default_branch] }}
+      changed_when: false
+    - name: Create the branch at the seed's commit
+      when: phase == 'clone' and clone_remote.stdout | trim == '' and mirror_before.rc != 0
+      ansible.builtin.command: { argv: "{{ mirror_git + ['branch', '--', container.branch, container.clone.seed_commit] }}" }
+      changed_when: true
     - name: Read the fetched branch
       ansible.builtin.command: { argv: "{{ mirror_git + ['rev-parse', '--verify', 'refs/heads/' ~ container.branch] }}" }
       register: mirror_after
@@ -336,6 +404,141 @@
       ansible.builtin.command:
         argv: "{{ as_root + ['systemctl', 'restart', '--'] + (units_written.results | selectattr('changed', 'defined') | selectattr('changed') | map(attribute='item.item.name') | list) }}"
       changed_when: true
+
+# The agent's side of a clone: the placeholder model key, the Claude Code and Codex settings, the note links, and the instance file,
+# whose presence starts T3. Each file is compared by digest, so a rerun changes nothing; the key comes through the vault.
+- name: Prepare the agent
+  when: phase == 'agent'
+  vars:
+    agent_files: >-
+      {{ container.clone.files + [{'path': container.clone.model_environment, 'uid': 2750, 'gid': 2750, 'mode': '0600',
+          'content': lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT')}] }}
+  block:
+    - name: Make the agent's Claude Code folder
+      ansible.builtin.command: { argv: "{{ as_agent + ['mkdir', '-p', '-m', '0700', '/home/agent/.claude'] }}" }
+      changed_when: false
+    - name: Read the digests of the agent's files
+      ansible.builtin.command: { argv: "{{ as_root + ['sha256sum', '--', item.path] }}" }
+      loop: "{{ agent_files }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_digests
+      changed_when: false
+      failed_when: false
+    - name: Write the changed files
+      when: (item.stdout | default('')).split(' ') | first != item.item.content | hash('sha256')
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
+              '-', container.name ~ item.item.path] }}
+        stdin: "{{ item.item.content }}"
+        stdin_add_newline: false
+      loop: "{{ agent_digests.results }}"
+      loop_control: { label: "{{ item.item.path }}" }
+      no_log: true
+      changed_when: true
+    - name: Read the note links
+      ansible.builtin.command: { argv: "{{ as_agent + ['readlink', '--', item.path] }}" }
+      loop: "{{ container.clone.links }}"
+      loop_control: { label: "{{ item.path }}" }
+      register: agent_links
+      changed_when: false
+      failed_when: false
+    - name: Link the agents' instructions to the note
+      when: item.stdout | trim != item.item.target
+      ansible.builtin.command: { argv: "{{ as_agent + ['ln', '-sfn', '--', item.item.target, item.item.path] }}" }
+      loop: "{{ agent_links.results }}"
+      loop_control: { label: "{{ item.item.path }}" }
+      changed_when: true
+
+# T3 starts for the first time and makes its own identity: the default never ran it, so no clone shares one. The workspace becomes
+# its project once; the project's id stays in the agent's settings, so a rerun adds none.
+- name: Start T3
+  when: phase == 't3'
+  vars:
+    t3_project_mark: /home/agent/.config/orbit/t3-project
+  block:
+    - name: Start the T3 unit
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--', container.clone.t3.unit] }}" }
+      changed_when: false
+    - name: Wait for T3
+      ansible.builtin.command:
+        argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '2', 'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}"
+      register: t3_ready
+      until: t3_ready.rc == 0
+      retries: "{{ container.clone.t3.ready_seconds }}"
+      delay: 1
+      changed_when: false
+      failed_when: false
+    - name: Require a ready T3
+      ansible.builtin.assert:
+        that: t3_ready.rc == 0
+        fail_msg: instance.t3_unready
+        quiet: true
+    - name: Read the T3 project mark
+      ansible.builtin.command: { argv: "{{ as_agent + ['cat', '--', t3_project_mark] }}" }
+      register: t3_project
+      changed_when: false
+      failed_when: false
+    - name: Add the workspace as T3 project
+      when: t3_project.rc != 0
+      block:
+        - name: Add the project
+          ansible.builtin.command: { argv: "{{ as_agent + [container.clone.t3.t3, 'project', 'add', container.workspace] }}" }
+          register: t3_added
+          changed_when: true
+        - name: Keep the project's id
+          ansible.builtin.command:
+            argv: "{{ as_agent + ['sh', '-c', 'umask 077 && cat > \"$1\"', 'sh', t3_project_mark] }}"
+            stdin: "{{ t3_added.stdout | trim }}"
+          changed_when: true
+
+# Registration (docs/cli/instance/container/t3-register.mmd): `agent` issues the Gateway's and Swamp's sessions and asks T3 about
+# each, inside the container. The reply goes into the run folder on the worker, 0600; the next step checks it and stores the sessions
+# in the vault. No session enters a log, an argument or the run's outputs.
+- name: Register the T3 server
+  when: phase == 'register'
+  vars:
+    t3_url: "http://127.0.0.1:{{ container.clone.t3.internal_port }}"
+  block:
+    - name: Read the served environment
+      ansible.builtin.command: { argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '5', t3_url ~ '/.well-known/t3/environment'] }}" }
+      register: t3_environment
+      changed_when: false
+    - name: Issue the sessions
+      ansible.builtin.command:
+        argv: "{{ as_agent + [container.clone.t3.t3, 'auth', 'session', 'issue', '--label', item, '--token-only'] }}"
+      loop: [Orbit Gateway, Orbit Swamp]
+      register: t3_sessions
+      no_log: true
+      changed_when: true
+    - name: Ask T3 about each session
+      ansible.builtin.command:
+        # curl's own `\n` puts the status on a last line of its own.
+        argv: >-
+          {{ as_agent + ['curl', '--silent', '--max-time', '5', '--header', '@-', '--write-out', '\n%{http_code}', t3_url ~ '/api/auth/session'] }}
+        stdin: "Authorization: Bearer {{ item.stdout | trim }}"
+      loop: "{{ t3_sessions.results }}"
+      register: t3_checks
+      no_log: true
+      changed_when: false
+    - name: Write the reply into the run folder
+      ansible.builtin.copy:
+        content: >-
+          {{ {'environment': t3_environment.stdout,
+              'gateway': {'token': t3_sessions.results[0].stdout | trim, 'status': t3_checks.results[0].stdout.splitlines() | last | default('0') | int,
+                          'body': t3_checks.results[0].stdout.splitlines()[:-1] | join},
+              'swamp': {'token': t3_sessions.results[1].stdout | trim, 'status': t3_checks.results[1].stdout.splitlines() | last | default('0') | int,
+                        'body': t3_checks.results[1].stdout.splitlines()[:-1] | join}} | to_json }}
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/t3.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+      # The reply lives in the run folder on the worker: no change to the Node.
+      changed_when: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it.
 - name: Take the seed snapshot
