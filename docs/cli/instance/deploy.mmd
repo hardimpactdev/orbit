@@ -80,6 +80,30 @@ sequenceDiagram
     SW->>N: Clean stale directories<br/>ssh exec argv
     SW->>N: Check out the commit<br/>ssh exec argv
   end
+  opt Development default in a container
+    Note over SW: Write the container intent<br/>ansible-input
+    SW->>N: Start the container<br/>Ansible · tags start
+    %%> What it does:
+    %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
+    SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
+    %%> What it does:
+    %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle
+    %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
+    SW->>N: Check out in the container<br/>Ansible · tags checkout
+    %%> What it does:
+    %%> - refuses tracked changes with `deployment.checkout_dirty` and a branch the commit does not fast-forward with `deployment.branch_diverged`
+    SW->>N: Run dev deploy steps<br/>incus exec · vault copy
+    %%> What it does:
+    %%> - each Project command as `orbit` in the workspace, with the runtime folder's PATH
+    SW->>N: Take the seed snapshot<br/>Ansible · tags seed
+    %%> What it does:
+    %%> - stops the units, snapshots `seed-<commit>`, starts them again and deletes older seeds
+    SW->>N: Check the container<br/>Ansible · tags check
+    Note over SW: Read the container result<br/>result file
+    %%> Returns:
+    %%> - the deployed commit, or the public code of the refusal
+    Note over SW: Remove the run folder<br/>always
+  end
   opt Production release
     SW->>N: Write release credential<br/>cfgmgmt/file apply
     SW->>N: Prepare the release<br/>ssh exec argv

@@ -43,6 +43,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Sleep | A development container sleeps after one hour idle, never while a task runs in it. Development Instances have no Schedules. Production containers never sleep |
 | Setup | There are no development setup steps. Only a Project's first default Instance is built from scratch |
 | Default Instance | It deploys every merge to the default branch, so clones match it; a clone installs its own dependency changes. There is no separate source container |
+| One default per Project | A Project has one `default` Instance in the whole fleet. The Node that holds it is where every clone of the Project is made |
 | Git | Orbit fetches and pushes from the Node |
 | History | T3 history is deleted with its Instance. Swamp records the transcript of each task turn, so task transcripts outlive a clone |
 | Migration | Existing checkout Instances move into containers with their code and database |
@@ -89,7 +90,7 @@ These come from other work and must land first.
 
 ## Build PRs
 
-The PRs land in this order, and PR 3b before PR 4. The task track, PRs 7 to 12, is the critical path. PR 13 and PR 14 can run beside it after PR 6.
+The PRs land in this order, and PR 3b before PR 4. PR 4b can run beside PR 5. The task track, PRs 7 to 12, is the critical path. PR 13 and PR 14 can run beside it after PR 6.
 
 | PR | Part | State |
 | --- | --- | --- |
@@ -97,7 +98,8 @@ The PRs land in this order, and PR 3b before PR 4. The task track, PRs 7 to 12, 
 | 2 | Runtime records and the build list | Merged, [#3291](https://github.com/hardimpactdev/orbit/pull/3291) |
 | 3 | Node preparation and the shared folders | Merged, [#3292](https://github.com/hardimpactdev/orbit/pull/3292) |
 | 3b | The static PHP build | Open, [#3294](https://github.com/hardimpactdev/orbit/pull/3294) |
-| 4 | The first default Instance and its deployments | |
+| 4 | The first default Instance and its deployments | Open |
+| 4b | The Project's development Processes in a container | |
 | 5 | Create an Instance as a clone, with T3 and its sessions | |
 | 6 | Destroy a container Instance | |
 | 7 | Run a task in a clone: start, check, publish, end | |
@@ -144,7 +146,7 @@ These points stay open after PR 2. Each named PR settles its point.
 
 | Point | Fact | PR |
 | --- | --- | --- |
-| One default per Project | Instance names are unique per Project, so a Project has one `default` in the fleet. Its clones must share its Node. PR 4 keeps or changes that | 4 |
+| One default per Project | Kept, as [Decided](#decided) records: one `default` per Project in the fleet, and its clones on its Node. PR 4 refuses another Instance of the Project on any other Node with `instance.default_missing` | 4, settled |
 | Registration race | Registration reads the environment's Instance only before its T3 calls. The create flow bumps the cleanup revision, or registration reads it again in its lock | 5 |
 | Destroy order | An environment that names an Instance keeps the Instance from deletion. Destroy removes the environment through the Conn contribution first | 6 |
 
@@ -206,7 +208,8 @@ No fixture can prove these claims; only real Incus on the first test Node can.
 Three points of the first plan moved, because the code showed they belong elsewhere:
 
 - **The static PHP build** moved to PR 3b. No published artifact gives FrankenPHP and a PHP CLI from one build.
-- **Database access** moved to PR 5. A container reaches only its Instance's own database server, which only the create flow knows. That access is a rule on the container's NIC.
+- **Database access** moved to PR 5. A container reaches only its Instance's own database server, which only the create flow knows.
+- That access is a rule on the container's NIC and a firewall rule on the Node. The default Instance needs it too, so PR 5 brings it for the default and its clones together.
 - **T3's published port** moved to PR 5, with the proxy device of each container.
 
 The firewall uses no Molecule cases: the repository tests Ansible with fixture tests that run the shipped tasks against a stateful Incus stand-in.
@@ -239,20 +242,55 @@ Live on Beast, after the pin PR: `php -i`, a `composer install` with scripts and
 
 ### PR 4: the first default Instance and its deployments
 
-The spec commit adds [container/create-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) and [container/deploy-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) to the create and deployment pages and cases.
+The spec commit adds [container/create-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) and [container/deploy-default.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) to the create and deployment pages.
 
-- The first default Instance of a Project on a Node is a container from the image, with the default branch pushed in from the Node.
-- The database family creates its database. Orbit writes `.env` and runs the development deploy steps as `orbit`.
-- FrankenPHP and the other development Processes as `orbit` units in the container; the Route to FrankenPHP at the container's bridge address.
-- The automatic development deployment of each merge runs in the default container, and starts a sleeping one first.
+The container:
 
-Tests: Pest for the intent and projection of both flows; Ansible `unit` cases; the cases of both. Live on Beast:
+- The first default Instance of a Project on a Node of the build list is a container from the image, `instance-<id>`.
+- It takes the lowest free address of the bridge. No other Node gets one, and an existing Instance keeps its checkout.
+- The default branch is fetched into a mirror on the Node and pushed in as a bundle. The read token never enters the container.
+- The default runs no T3: it has no `/etc/orbit/instance`. T3 starts and registers in each clone, from PR 5.
+
+Its work:
+
+- Orbit writes `.env` for `orbit` with group `work`. There are no setup steps.
+- The development deploy steps run as `orbit`, each from its own vault copy.
+- FrankenPHP runs as the `orbit` unit `orbit-frankenphp.service` on port 8080 of the bridge address.
+- The container's own ACL lets only the Node's Caddy reach that port, and the Route proxies to it.
+- After the first build and each deployment, Orbit stops the units and takes the snapshot `seed-<commit>`. It deletes older seeds and records the commit on the runtime row.
+- The automatic development deployment of each merge runs in the default container as the variant `container`. It starts a stopped container first.
+
+The code changed these points of this plan:
+
+- **Database.** A container reaches no Database server until PR 5 adds its NIC rule and the Node's firewall rule. Until then a container default uses the database in its workspace, such as SQLite.
+- **`--database-server`** on a container default refuses with `operation.kind_unavailable` until PR 5.
+- **Processes.** A Project's development Process definitions carry environment values that must go through the vault. Their records and the `process:*` commands must reach the container. PR 4b builds that.
+- **Until PR 4b** a Project with development Process definitions refuses with `operation.kind_unavailable`, and FrankenPHP is the only unit.
+- **PHP.** A PHP Project needs the static PHP build of its version in the runtime folder. Until PR 3b's pin records the build's SHA-256, a PHP Project refuses with `instance.host_unavailable`.
+
+Another Instance of a Project whose default is a container refuses with `instance.default_missing` on any other Node, and with `operation.kind_unavailable` on the default's Node until PR 5 makes clones.
+
+Tests: Pest for the admission, the runtime row, the intent, the Route site, both projections, the deployment variant and its outcome. Deno for the create receipt. An Ansible fixture test runs every container phase against a stateful Incus stand-in, with a rerun that changes nothing and the deployment refusals.
+
+`instance:create` and `instance:deploy` have no cases file yet. Their container cases need a proof Node with the Instance pool and image, which the proof fleet does not build yet. Live on Beast, once PR 3b's pin has landed:
 
 1. The default Instance answers on its Route, served by FrankenPHP as `orbit`, with the PHP Data Bridge toolbar.
 2. A merge to the default branch deploys, and the Instance serves the new commit.
 3. A merge that changes `composer.lock` installs the change through the deploy steps.
 4. T3 does not run in the default container.
-5. The PR records the build and deployment times.
+5. A second Project's default on Beast gets the next bridge address.
+6. The PR records the build and deployment times.
+
+### PR 4b: the Project's development Processes in a container
+
+The Project's development Process definitions run as `orbit-*` units in the container, with Process records:
+
+- Their environment values reach the container through the vault, never the intent.
+- `process:start`, `stop`, `restart` and `logs` act in the container through `incus exec`.
+- The status observation reads the units in the container.
+- A deployment restarts the Processes whose code changed and installs a changed definition.
+
+It reuses the Process classes from `task-4193` that the reuse table names. Tests: Pest for the records and the target; Ansible fixture tests for the units. Live: a queue worker of the test Project runs in its default container, and `process:restart` restarts it.
 
 ### PR 5: create an Instance as a clone of the default
 
@@ -261,6 +299,7 @@ This PR changes `instance:create`, so its spec commit updates the create page an
 The create flow gets these parts:
 
 - The clone of the default container and the database clone through the database family: a template copy on the same server, a dump and restore across servers.
+- The default's database on a Database server: `--database-server` for a container default, refused until this PR.
 - The branch from the Node, the workspace, `.env`, the agent settings, the note links and `/etc/orbit/instance`.
 - The first start of T3, the Processes and the Route.
 The registration and the container's paths:
@@ -574,8 +613,8 @@ The unpushed branch `task-4193` (bundle `~/apps/orbit-container-plan/.backup/pro
 | --- | --- | --- |
 | `InstanceRuntime` and the migration `add_development_runtime_ownership` | PR 2 | Drop the Project VM columns and the state volume. `InstanceRuntimeKind` and `instances.runtime_kind` are dropped: a runtime row marks a container Instance |
 | `ContainerCreateInput`, `ContainerCreateProjection`, `ContainerDestroyInput`, `ContainerDestroyProjection` | PR 5, PR 6 | Drop the source hold, receipts and compensation admission |
-| `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation`, `RefreshContainerProcessStatus` | PR 4 | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
-| `swamp/ansible/tasks/process-systemd.yml`, `swamp/ansible/process-container.yml`, `swamp/ansible/process-guest.yml`, `swamp/ansible/tasks/process-container-target.yml` and their tests | PR 4 | Remove the VM checks; units get `User=orbit` |
+| `ContainerProcessTarget`, `ContainerProcessDefinitions`, `ContainerProcessInspection`, `ContainerProcessObservation`, `RefreshContainerProcessStatus` | PR 4b | The target is an Incus project and container on the Node, not a VM; the directory is `/srv/workspace` |
+| `swamp/ansible/tasks/process-systemd.yml`, `swamp/ansible/process-container.yml`, `swamp/ansible/process-guest.yml`, `swamp/ansible/tasks/process-container-target.yml` and their tests | PR 4b | Remove the VM checks; units get `User=orbit` |
 | `swamp/ansible/tasks/container-feature-branch.yml` | PR 5 | The branch comes from the Node |
 | `swamp/ansible/library/orbit_postgres_copy.py`, `swamp/ansible/postgres-copy.yml` with `swamp/ansible/tasks/postgres-copy.yml`, `PostgresCopyDatabase`, `PostgresDatabaseCopyInput`, the PostgreSQL copy in `DatabaseStatements`, and `ansible_postgres_copy_test.py` | PR 5 | The dump path across servers; the database family adds the template copy on one server |
 | `swamp/ansible/files/container-delete.py`, parts of `swamp/ansible/tasks/container-disposal-remove.yml` and `container-disposal-teardown.yml`, `swamp/tests/container_delete_test.py` | PR 6 | No offline credential path and no state volume |

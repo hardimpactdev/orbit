@@ -49,11 +49,14 @@ sequenceDiagram
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
   end
+  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
+  %%> What it does:
+  %%> - stops the Processes for a moment and snapshots the container as `seed-<commit>`, which clones copy
   alt all steps pass in budget
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record default Instance<br/>active · seed commit
     %%> Result:
-    %%> - the default Instance is active; its first `seed-<commit>` snapshot, taken with the Processes stopped for a moment, is what clones copy
+    %%> - the default Instance is active and its container runs; the runtime records the seed commit
   else a step fails or the budget ends
     SW--xGW: Run failed<br/>failed step, error_code
     %%> What stays:

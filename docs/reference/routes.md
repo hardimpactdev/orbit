@@ -242,6 +242,8 @@ An empty pool answers HTTP 503 with `Orbit Route unavailable`. A failed connecti
 
 Orbit does not change session, cookie, or encryption settings when it builds a pool. Shared sessions need the application to use one shared session store and compatible cookie settings. Round-robin does not pin a client to one target.
 
+An Instance in a container is served by FrankenPHP in the container. Its Route's site proxies to port 8080 of the container's bridge address, with no PHP pool or checkout access on the Node. See [the default Instance](/reference/development-containers#the-default-instance).
+
 ## Serve several web roots
 
 A Project has one repository. An Instance is one checkout of it, and it can serve several sites: one Route for each web root. A Route's `web_root` names a directory relative to the repository, such as `apps/docs/public`. Null serves the Instance's effective root, as every Route did before.
