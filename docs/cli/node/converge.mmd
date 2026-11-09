@@ -98,7 +98,7 @@ sequenceDiagram
       %%> - a changed hub endpoint, read from the previous `orbit.peers`, moves in one detached job on the Node: it installs the staged files, ends the old session and accepts only a handshake from after the move; without one, it puts the previous files back and loads them, and the phase fails with the assertion `node.hub_switch_no_handshake`
       %%> - applies the recorded Node side and waits for the tunnel handshake
       %%> - both arrows are one phase; the peer arrow is only for a peer target
-      %%> - a target hub is applied once and needs no handshake without peers
+      %%> - a target hub is applied once; it requires every recorded peer on its interface (assertion `vpn.hub_peer_missing`) and waits only for the peers that had a handshake in the 120 seconds before the change, each for a handshake in the last 180 seconds, so an offline peer does not fail it
     else no recorded network in scope
       %% path: no-recorded-network
       Note over SW: Network: no peer change<br/>Ansible phase: network
@@ -107,7 +107,7 @@ sequenceDiagram
     end
     SW->>N: Check the Node<br/>Ansible phase: check
     %%> What it does:
-    %%> - checks the selected software, units and role configuration, plus the recorded tunnel
+    %%> - checks the selected software, units and role configuration, plus the recorded tunnel; on a target hub, every recorded peer on its interface, with no handshake wait
     %%> - all seven phases run in order, idempotently; an empty scope item needs no mutation
     opt phases completed or failed
       %% path: cleanup

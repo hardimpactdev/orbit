@@ -1,0 +1,17 @@
+---
+# A target hub's own converge. Every recorded peer must be loaded. Only a peer that was live before the change must
+# handshake again: an offline peer, such as a laptop or a parked task VM, has no handshake to give.
+- name: Read the hub's loaded peers
+  ansible.builtin.command: wg show orbit peers
+  register: hub_loaded
+  changed_when: false
+  check_mode: false
+- name: Require every recorded peer on the hub
+  ansible.builtin.assert:
+    that: hub_peer_keys | difference(hub_loaded.stdout_lines) | length == 0
+    fail_msg: vpn.hub_peer_missing
+    quiet: true
+- name: Wait for the recorded peers that were live before the change
+  ansible.builtin.include_tasks: node-converge-handshake.yml
+  loop: "{{ hub_peer_keys | intersect(hub_live_keys) }}"
+  loop_control: { loop_var: peer_key }
