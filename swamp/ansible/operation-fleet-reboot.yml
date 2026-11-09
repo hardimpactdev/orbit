@@ -249,23 +249,34 @@
     record: "{{ lookup('ansible.builtin.file', record_path, errors='ignore') | default('{}', true) | from_json }}"
     github_tokens: "{{ lookup('ansible.builtin.env', 'ORBIT_GITHUB') | default('{}', true) | from_json }}"
   tasks:
-    # Only a rebooted Node whose drain stopped a runner can have lost a job.
-    - name: Keep a Node without stopped runners
-      ansible.builtin.meta: end_play
-      when: record.outcome | default('') != 'rebooted' or not (record.ci_stopped | default([]))
-    # A failure here leaves the Node rebooted: it records the error and never halts the pass.
+    # Only a rebooted Node whose drain stopped a runner can have lost a job. A failure here leaves the Node rebooted: it records
+    # the error and never halts the pass. The tokens are revoked at the end in every case.
     - name: Re-run the lost jobs
       block:
         - name: Find and re-run the lost jobs
           ansible.builtin.import_tasks: tasks/fleet-reboot-rerun.yml
           vars:
             stopped: "{{ record.ci_stopped }}"
-            rebooted_at: "{{ record.rebooted_at }}"
+          when: record.outcome | default('') == 'rebooted' and (record.ci_stopped | default([]) | length > 0)
       rescue:
         - name: Record why the re-run failed
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:
             record_update: { rerun_error: fleet.reboot_rerun_failed }
+      always:
+        - name: Revoke the Actions tokens of the pass
+          ansible.builtin.uri:
+            url: https://api.github.com/installation/token
+            method: DELETE
+            status_code: [204, 401]
+            headers:
+              Authorization: "Bearer {{ item.value }}"
+              Accept: application/vnd.github+json
+              X-GitHub-Api-Version: "2022-11-28"
+          loop: "{{ github_tokens | dict2items }}"
+          loop_control: { label: "{{ item.key }}" }
+          failed_when: false
+          no_log: true
 
 - name: Report the pass
   hosts: localhost

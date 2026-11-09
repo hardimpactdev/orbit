@@ -729,13 +729,15 @@ The `mint` step asks the Gateway for the pass's GitHub tokens. Each repository o
 The `rerun` phase then looks for lost jobs:
 
 - It lists the runs of each repository created from two hours before the first freeze, one page of 100.
-- It keeps the runs that changed after the first freeze and did not succeed, and reads the jobs of each run's current attempt.
-- It waits up to 15 minutes for a job of a stopped runner to end.
-- A lost job ran on a stopped runner, started before the reboot and at most a minute before the freeze, and ended `failure` or `cancelled`.
+- It keeps the runs that changed after the first freeze and failed or have not ended. It never keeps a cancelled run.
+- It gives each kept run up to 4 minutes to end. It records a run that is still running in `rerun_pending`.
+- It reads the jobs of each failed run's attempt and keeps the lost jobs.
 
-For each run with a lost job, the phase reads the run again. It calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` only while the run is still completed at the attempt that lost the job.
+A lost job ran on a stopped runner and failed. It started at most a minute after that runner's freeze and was still running at the freeze.
 
-So a run is re-run at most once for one attempt: a second Node of the pass, or a later pass, finds the newer attempt and leaves it alone. The Node's result lists the re-run runs in `reran`, each with its repository, run, attempt and lost jobs. A GitHub error records `rerun_error` and leaves the Node `rebooted`.
+For each run with a lost job, the phase reads the run again. It calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` only while the run is still completed at the attempt that lost the job. That call also repeats any other failed job of the attempt. At the end, in every case, the phase revokes the pass's tokens.
+
+So a run is re-run at most once for one attempt: a second Node of the pass, a later pass, or a person who re-ran it finds the newer attempt and leaves it alone. The Node's result lists the re-run runs in `reran`, each with its repository, run, attempt and lost jobs, and the runs GitHub refused in `rerun_refused`. `rerun_truncated` is true when a list filled its page of 100. Any other error records `rerun_error` and leaves the Node `rebooted`.
 
 ### The swamp Node
 

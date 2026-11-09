@@ -71,16 +71,20 @@ it('mints one Actions write token per admitted repository the App is installed o
 
 it('mints only for the running pass, on the Swamp Node, for its own run, without a purpose', function (string $case): void {
     $pass = rebootTokenPass($case === 'finished' ? 'succeeded' : 'running');
+    if ($case === 'cancel') {
+        $pass->update(['cancel_requested_at' => now()]);
+    }
     [$caller, $run, $purpose] = match ($case) {
         'caller' => [SwampNodeFixture::Id + 1, REBOOT_RUN, null],
         'purpose' => [SwampNodeFixture::Id, REBOOT_RUN, 'publish'],
+        'run' => [SwampNodeFixture::Id, '6b69badf-4f06-4f2e-82d7-21b62c1f5872', null],
         default => [SwampNodeFixture::Id, REBOOT_RUN, null],
     };
 
     expect(fn () => app(FleetRebootGitHubTokens::class)->issue($pass, $caller, $run, $purpose))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.github_token_forbidden'))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBeIn(['operation.github_token_forbidden', 'operation.run_mismatch']))
         ->and($this->grants)->toBe([]);
-})->with(['caller', 'purpose', 'finished']);
+})->with(['caller', 'purpose', 'finished', 'cancel', 'run']);
 
 it('lets a grant ask for Actions write, which the App already holds', function (): void {
     expect(GitHubTokenGrant::from(['repository' => 'hardimpactdev/orbit', 'permissions' => ['actions' => 'write']])->permissions)->toBe(['actions' => 'write']);

@@ -183,48 +183,98 @@ Deno.test("a failed drain starts what it stopped, and each task guest is recorde
 const rerunTasks = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-rerun.yml`)) as Task[];
 const rerunTask = (name: string) => rerunTasks.find((t) => t.name === name)!;
 
-Deno.test("the rerun picks only jobs a stopped runner took just before its freeze, and only runs still at that attempt", async () => {
+Deno.test("the rerun picks only failed jobs still running on a stopped runner at its freeze, in runs still at that attempt", async () => {
     const folder = await Deno.makeTempDir();
     try {
-        const run = (id: number, updated: string, conclusion: string | null, attempt = 1) =>
-            ({ id, updated_at: updated, status: conclusion === null ? "in_progress" : "completed", conclusion, run_attempt: attempt });
-        const job = (name: string, runner: string, started: string, conclusion = "failure") =>
-            ({ name, runner_name: runner, started_at: started, status: "completed", conclusion });
+        const run = (id: number, updated: string, conclusion: string | null) =>
+            ({ id, updated_at: updated, status: conclusion === null ? "in_progress" : "completed", conclusion, run_attempt: 1 });
+        const job = (name: string, runner: string, started: string, completed: string, conclusion = "failure") =>
+            ({ name, runner_name: runner, started_at: started, completed_at: completed, status: "completed", conclusion });
         const repo = "hardimpactdev/orbit";
+        const ended = (id: number, json: Record<string, unknown> | null) => json === null
+            ? { item: { repository: repo, run_id: id }, failed: true, msg: "retries exhausted" }
+            : { item: { repository: repo, run_id: id }, json };
         const vars = {
             stopped: [{ name: "ci-a", frozen_at: "2026-11-10T03:10:00Z" }],
-            rebooted_at: "2026-11-10T03:20:00Z",
             rerun_runs: { results: [{ item: { key: repo }, json: { workflow_runs: [
-                run(1, "2026-11-10T03:15:00Z", "failure"), run(2, "2026-11-10T03:15:00Z", "success"),
-                run(3, "2026-11-10T02:00:00Z", "failure"), run(4, "2026-11-10T03:30:00Z", "cancelled", 2), run(5, "2026-11-10T03:16:00Z", "failure"),
+                run(1, "2026-11-10T03:15:00Z", "failure"), run(2, "2026-11-10T03:15:00Z", "success"), run(3, "2026-11-10T02:00:00Z", "failure"),
+                // A run a newer push cancelled is never re-run, even when one of its jobs ran on a stopped runner.
+                run(6, "2026-11-10T03:15:00Z", "cancelled"), run(4, "2026-11-10T03:30:00Z", "failure"), run(5, "2026-11-10T03:16:00Z", "failure"),
+                run(7, "2026-11-10T03:16:00Z", null), run(8, "2026-11-10T03:16:00Z", null),
             ] } }] },
+            rerun_ended: { results: [
+                ended(1, { status: "completed", conclusion: "failure", run_attempt: 1 }), ended(4, { status: "completed", conclusion: "failure", run_attempt: 2 }),
+                ended(5, { status: "completed", conclusion: "failure", run_attempt: 1 }),
+                // Run 7 is still busy with other jobs after the wait, and the wait for run 8 failed: both are left pending.
+                ended(7, { status: "in_progress", conclusion: null, run_attempt: 1 }), ended(8, null),
+            ] },
             rerun_jobs: { results: [
-                // Run 1: ci-a took `php` 30 s before its freeze and lost it; `web` failed on a runner the drain did not stop.
-                { item: { repository: repo, run_id: 1, attempt: 1 }, json: { jobs: [job("php", "ci-a", "2026-11-10T03:09:30Z"), job("web", "ci-b", "2026-11-10T03:09:40Z")] } },
-                // Run 4: ci-a ran `old` long before the freeze, and `new` after the reboot, when the runner was back.
-                { item: { repository: repo, run_id: 4, attempt: 2 }, json: { jobs: [job("old", "ci-a", "2026-11-10T03:00:00Z"), job("new", "ci-a", "2026-11-10T03:25:00Z")] } },
-                // Run 5: lost a job too, but another Node of the pass re-ran it already.
-                { item: { repository: repo, run_id: 5, attempt: 1 }, json: { jobs: [job("lint", "ci-a", "2026-11-10T03:10:05Z", "cancelled")] } },
+                // Run 1: ci-a still ran `php` at its freeze and lost it. `lint` failed for real on ci-a before the freeze;
+                // `web` failed on a runner the drain did not stop.
+                { item: { repository: repo, run_id: 1, attempt: 1 }, json: { jobs: [
+                    job("php", "ci-a", "2026-11-10T03:09:30Z", "2026-11-10T03:14:00Z"), job("lint", "ci-a", "2026-11-10T03:09:00Z", "2026-11-10T03:09:50Z"),
+                    job("web", "ci-b", "2026-11-10T03:09:40Z", "2026-11-10T03:14:00Z")] } },
+                // Run 4: ci-a ran `new` after its boot, when the runner was back.
+                { item: { repository: repo, run_id: 4, attempt: 2 }, json: { jobs: [job("new", "ci-a", "2026-11-10T03:25:00Z", "2026-11-10T03:28:00Z")] } },
+                // Run 5: lost a job too, but someone re-ran it already.
+                { item: { repository: repo, run_id: 5, attempt: 1 }, json: { jobs: [job("deno", "ci-a", "2026-11-10T03:10:05Z", "2026-11-10T03:15:00Z")] } },
             ] },
             rerun_now: { results: [
                 { item: { repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }, json: { run_attempt: 1, status: "completed" } },
-                { item: { repository: repo, run_id: 5, attempt: 1, jobs: ["lint"] }, json: { run_attempt: 2, status: "queued" } },
+                { item: { repository: repo, run_id: 5, attempt: 1, jobs: ["deno"] }, json: { run_attempt: 2, status: "queued" } },
             ] },
         };
-        const keep = (name: string) => ({ name: `Keep ${name}`, "ansible.builtin.copy": { dest: `${folder}/${name}`, content: `{{ ${name} }}` } });
+        const keep = (name: string) => ({ name: `Keep ${name}`, "ansible.builtin.copy": { dest: `${folder}/${name}`, content: `{{ ${name} | to_json }}` } });
         const result = await play(folder, vars, [
-            rerunTask("Bound the search by the freezes"), rerunTask("Bound the run list"),
-            rerunTask("Pick the runs that changed after the first freeze and did not succeed"),
-            rerunTask("Pick the runs that lost a job to a stopped runner"), rerunTask("Keep the lost runs still at the attempt that lost the job"),
-            keep("rerun_created_since"), keep("rerun_candidates"), keep("rerun_lost"), keep("rerun_due"),
+            rerunTask("Bound the run list"), rerunTask("Pick the runs that changed after the first freeze and did not succeed or end cancelled"),
+            rerunTask("Split the ended failed runs from the pending ones"), rerunTask("Pick the runs that lost a job to a stopped runner"),
+            rerunTask("Keep the lost runs still at the attempt that lost the job"),
+            keep("rerun_created_since"), keep("rerun_candidates"), keep("rerun_failed"), keep("rerun_pending"), keep("rerun_lost"), keep("rerun_due"),
         ]);
         assertEquals(result.code, 0, result.output);
-        const read = async (name: string) => JSON.parse(await Deno.readTextFile(`${folder}/${name}`));
-        assertEquals(await Deno.readTextFile(`${folder}/rerun_created_since`), "2026-11-10T01:09:00Z");
-        assertEquals((await read("rerun_candidates")).map((c: { run_id: number }) => c.run_id), [1, 4, 5]);
-        assertEquals(await read("rerun_lost"), [{ repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }, { repository: repo, run_id: 5, attempt: 1, jobs: ["lint"] }]);
+        const read = async (name: string) => {
+            const value = JSON.parse(await Deno.readTextFile(`${folder}/${name}`));
+            // A decision is a JSON text; a plain fact is its value.
+            return typeof value === "string" && /^\s*[[{]/.test(value) ? JSON.parse(value) : value;
+        };
+        assertEquals(await read("rerun_created_since"), "2026-11-10T01:10:00Z");
+        assertEquals((await read("rerun_candidates")).map((c: { run_id: number }) => c.run_id), [1, 4, 5, 7, 8]);
+        assertEquals((await read("rerun_failed")).map((c: { run_id: number; attempt: number }) => [c.run_id, c.attempt]), [[1, 1], [4, 2], [5, 1]]);
+        assertEquals((await read("rerun_pending")).map((c: { run_id: number }) => c.run_id), [8, 7]);
+        assertEquals(await read("rerun_lost"), [{ repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }, { repository: repo, run_id: 5, attempt: 1, jobs: ["deno"] }]);
         assertEquals(await read("rerun_due"), [{ repository: repo, run_id: 1, attempt: 1, jobs: ["php"] }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the rerun records each accepted call on its own and the refused ones apart", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const record = `${folder}/result-000-9.json`;
+        await Deno.writeTextFile(record, JSON.stringify({ node_id: 9, outcome: "rebooted" }));
+        const a = { repository: "hardimpactdev/orbit", run_id: 1, attempt: 1, jobs: ["php"] };
+        const b = { repository: "hardimpactdev/orbit", run_id: 2, attempt: 1, jobs: ["web"] };
+        const recordTask = structuredClone(rerunTask("Record the re-run jobs and the runs left alone"));
+        recordTask["ansible.builtin.include_tasks"] = `${ansible}tasks/fleet-reboot-record.yml`;
+        const result = await play(folder, { record_path: record, rerun_pending: [], rerun_truncated: false,
+            rerun_posted: { results: [{ item: a, status: 201 }, { item: b, status: 409 }] } }, [recordTask]);
+        assertEquals(result.code, 0, result.output);
+        const written = JSON.parse(await Deno.readTextFile(record));
+        assertEquals([written.reran, written.rerun_refused, written.rerun_truncated], [[a], [b], false]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the waits and calls of the rerun never fail the phase, and the tokens are always revoked", async () => {
+    const wait = rerunTask("Wait for each candidate run to end");
+    assertEquals([wait.retries, wait.delay, wait.ignore_errors], [8, 30, true]);
+    assertEquals(rerunTask("Re-run the failed jobs of each lost run").failed_when, false);
+    const block = plays.find((p) => p.name === "Re-run the CI jobs the drain cut")!.tasks[0] as Record<string, Task[]>;
+    const revoke = block.always[0]["ansible.builtin.uri"] as Record<string, unknown>;
+    assertEquals([revoke.url, revoke.method], ["https://api.github.com/installation/token", "DELETE"]);
+});
+
+Deno.test("a runner registers under its container name, which the rerun matches against job runner names", async () => {
+    const setup = await Deno.readTextFile(new URL("../../tools/ci-runners/setup.sh", import.meta.url));
+    assertMatch(setup, /--name "\$2"[\s\S]*config "\$REPO_URL" "\$name"/);
 });
 
 Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and never fails the Node", async () => {
@@ -232,7 +282,6 @@ Deno.test("the rerun posts re-run-failed-jobs once per due run, records it, and 
     assertEquals([post.method, post.status_code, post.url], ["POST", 201,
         "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}/rerun-failed-jobs"]);
     assertEquals(rerunTask("Re-run the failed jobs of each lost run").loop, "{{ rerun_due | from_json }}");
-    assertEquals((rerunTask("Record the re-run jobs").vars as Record<string, Record<string, string>>).record_update.reran, "{{ rerun_due | from_json }}");
     const rerun = plays.find((p) => p.name === "Re-run the CI jobs the drain cut")!;
     assertEquals(rerun.tags, ["rerun"]);
     const node = workflow("fleet-reboot-node").jobs[0].steps as Array<Record<string, any>>;

@@ -1,24 +1,19 @@
 ---
-# After a confirmed reboot of a CI host: re-run the jobs that a stopped runner accepted in the instant before its freeze and
-# lost when it stopped (ADR 0251). The App's own `Actions: write` token per repository, which the pass minted, is in
-# `github_tokens`; no runner administration is needed (ADR 0223). Each lost run's failed jobs are re-run once with the
-# re-run-failed-jobs API, only while the run is still at the attempt that lost the job: a later pass, or another Node of the
-# same pass, finds a newer attempt and leaves it alone. Each decision is a JSON text, decoded where it is read.
-# Inputs: `stopped` (the runners the drain stopped, each with `name` and `frozen_at`) and `rebooted_at`.
-- name: Bound the search by the freezes
-  ansible.builtin.set_fact:
-    # A lost job started on its runner at most a minute before that runner's freeze, and before the reboot.
-    rerun_starts: >-
-      {% set ns = namespace(s={}) %}{% for runner in stopped %}{% set ns.s = ns.s | combine({runner.name: '%Y-%m-%dT%H:%M:%SZ'
-      | strftime(((runner.frozen_at | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - ('1970-01-01T00:00:00Z' | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds()
-      | int - 60, utc=true)}) %}{% endfor %}{{ ns.s | to_json }}
+# After a confirmed reboot of a CI host: re-run the jobs that a stopped runner lost (ADR 0251). The drain stopped a runner only
+# when it ran no `Runner.Worker`, so a job that GitHub still counted as running on it at its freeze was lost when it stopped.
+# The App's own `Actions: write` token per repository, which the pass minted, is in `github_tokens`; no runner administration
+# is needed (ADR 0223). Each run with a lost job gets one call of the re-run-failed-jobs API, only while it is still at the
+# attempt that lost the job: a later pass, or another Node of the same pass, finds a newer attempt and leaves it alone. The
+# call also repeats any other failed job of that attempt. Each decision is a JSON text, decoded where it is read.
+# Inputs: `stopped` (the runners the drain stopped, each with `name` and `frozen_at`).
 - name: Bound the run list
   ansible.builtin.set_fact:
-    # A run that was queued for at most two hours before the first freeze; one page of 100 runs per repository.
+    # A run queued for at most two hours before the first freeze; one page of 100 runs per repository.
     rerun_created_since: >-
-      {{ '%Y-%m-%dT%H:%M:%SZ' | strftime((((rerun_starts | from_json).values() | min | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
+      {{ '%Y-%m-%dT%H:%M:%SZ' | strftime(((stopped | map(attribute='frozen_at') | min | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
       - ('1970-01-01T00:00:00Z' | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int - 7200, utc=true) }}
-    rerun_first: "{{ (rerun_starts | from_json).values() | min }}"
+    rerun_first: "{{ stopped | map(attribute='frozen_at') | min }}"
+    rerun_frozen: "{{ stopped | items2dict(key_name='name', value_name='frozen_at') | to_json }}"
 - name: List the runs of each repository since the search start
   ansible.builtin.uri:
     url: "https://api.github.com/repos/{{ item.key }}/actions/runs?created=%3E%3D{{ rerun_created_since }}&per_page=100"
@@ -30,40 +25,70 @@
   loop_control: { label: "{{ item.key }}" }
   register: rerun_runs
   no_log: true
-- name: Pick the runs that changed after the first freeze and did not succeed
+# A cancelled run, such as one a newer push superseded, is never re-run.
+- name: Pick the runs that changed after the first freeze and did not succeed or end cancelled
   ansible.builtin.set_fact:
     rerun_candidates: >-
       {% set ns = namespace(c=[]) %}{% for listed in rerun_runs.results %}{% for found in listed.json.workflow_runs | default([]) %}
-      {% if found.updated_at >= rerun_first and (found.status != 'completed' or found.conclusion in ['failure', 'cancelled']) %}
-      {% set ns.c = ns.c + [{'repository': listed.item.key, 'run_id': found.id, 'attempt': found.run_attempt}] %}{% endif %}{% endfor %}{% endfor %}
+      {% if found.updated_at >= rerun_first and (found.status != 'completed' or found.conclusion == 'failure') %}
+      {% set ns.c = ns.c + [{'repository': listed.item.key, 'run_id': found.id}] %}{% endif %}{% endfor %}{% endfor %}
       {{ ns.c | to_json }}
-# A job whose runner went away ends after GitHub notices; wait up to 15 minutes, every 30 seconds, for the jobs that ran on a
-# stopped runner before the reboot to end. A run that still has one then is left alone.
-- name: Read the jobs of each candidate run
+    rerun_truncated: >-
+      {{ rerun_runs.results | selectattr('json.workflow_runs', 'defined') | map(attribute='json.workflow_runs') | map('length')
+      | select('ge', 100) | list | length > 0 }}
+# A job whose runner went away ends after GitHub notices. Each run gets up to 4 minutes, every 30 seconds, to end; a run that
+# has not ended then is recorded as pending and left alone. The wait never fails the phase.
+- name: Wait for each candidate run to end
   ansible.builtin.uri:
-    url: "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}/attempts/{{ item.attempt }}/jobs?per_page=100"
+    url: "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}"
     headers:
       Authorization: "Bearer {{ github_tokens[item.repository] }}"
       Accept: application/vnd.github+json
       X-GitHub-Api-Version: "2022-11-28"
   loop: "{{ rerun_candidates | from_json }}"
   loop_control: { label: "{{ item.repository }}#{{ item.run_id }}" }
-  register: rerun_jobs
-  until: >-
-    rerun_jobs.json.jobs | default([]) | selectattr('runner_name', 'in', rerun_starts | from_json) | selectattr('started_at', 'string')
-    | selectattr('started_at', 'lt', rebooted_at) | rejectattr('status', 'equalto', 'completed') | list | length == 0
-  retries: 30
+  register: rerun_ended
+  until: rerun_ended.json.status | default('') == 'completed'
+  retries: 8
   delay: 30
-  failed_when: false
+  ignore_errors: true
   no_log: true
+- name: Split the ended failed runs from the pending ones
+  ansible.builtin.set_fact:
+    rerun_failed: >-
+      {% set ns = namespace(f=[]) %}{% for ended in rerun_ended.results %}{% if ended.json is defined and ended.json.status == 'completed'
+      and ended.json.conclusion == 'failure' %}{% set ns.f = ns.f + [ended.item | combine({'attempt': ended.json.run_attempt})] %}{% endif %}{% endfor %}
+      {{ ns.f | to_json }}
+    rerun_pending: >-
+      {{ rerun_ended.results | rejectattr('json.status', 'defined') | map(attribute='item') | list
+      + (rerun_ended.results | selectattr('json.status', 'defined') | rejectattr('json.status', 'equalto', 'completed') | map(attribute='item') | list) }}
+- name: Read the jobs of each failed run's attempt
+  ansible.builtin.uri:
+    url: "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}/attempts/{{ item.attempt }}/jobs?per_page=100"
+    headers:
+      Authorization: "Bearer {{ github_tokens[item.repository] }}"
+      Accept: application/vnd.github+json
+      X-GitHub-Api-Version: "2022-11-28"
+  loop: "{{ rerun_failed | from_json }}"
+  loop_control: { label: "{{ item.repository }}#{{ item.run_id }}" }
+  register: rerun_jobs
+  no_log: true
+# A lost job ran on a stopped runner, started at most a minute after that runner's freeze, was still running at the freeze, and
+# failed. A job that ended before the freeze failed for its own reason; one that started later ran on the runner after boot.
 - name: Pick the runs that lost a job to a stopped runner
   ansible.builtin.set_fact:
     rerun_lost: >-
-      {% set ns = namespace(l=[]) %}{% for listed in rerun_jobs.results %}{% set lost = namespace(jobs=[]) %}
-      {% for job in listed.json.jobs | default([]) %}{% if job.runner_name in (rerun_starts | from_json) and job.started_at is string
-      and job.started_at >= (rerun_starts | from_json)[job.runner_name] and job.started_at < rebooted_at and job.status == 'completed'
-      and job.conclusion in ['failure', 'cancelled'] %}{% set lost.jobs = lost.jobs + [job.name] %}{% endif %}{% endfor %}
-      {% if lost.jobs %}{% set ns.l = ns.l + [listed.item | combine({'jobs': lost.jobs})] %}{% endif %}{% endfor %}{{ ns.l | to_json }}
+      {% set frozen = rerun_frozen | from_json %}{% set ns = namespace(l=[]) %}{% for listed in rerun_jobs.results %}{% set lost = namespace(jobs=[]) %}
+      {% for job in listed.json.jobs | default([]) %}{% if job.runner_name in frozen and job.started_at is string and job.completed_at is string
+      and job.conclusion == 'failure' and job.completed_at >= frozen[job.runner_name]
+      and job.started_at <= '%Y-%m-%dT%H:%M:%SZ' | strftime(((frozen[job.runner_name] | to_datetime('%Y-%m-%dT%H:%M:%SZ'))
+      - ('1970-01-01T00:00:00Z' | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() | int + 60, utc=true) %}
+      {% set lost.jobs = lost.jobs + [job.name] %}{% endif %}{% endfor %}
+      {% if lost.jobs %}{% set ns.l = ns.l + [listed.item | combine({'jobs': lost.jobs})] %}{% endif %}{% endfor %}
+      {{ ns.l | to_json }}
+    rerun_truncated: >-
+      {{ rerun_truncated | bool or (rerun_jobs.results | selectattr('json.jobs', 'defined') | map(attribute='json.jobs') | map('length')
+      | select('ge', 100) | list | length > 0) }}
 - name: Read each lost run again
   ansible.builtin.uri:
     url: "https://api.github.com/repos/{{ item.repository }}/actions/runs/{{ item.run_id }}"
@@ -77,7 +102,7 @@
   no_log: true
 - name: Keep the lost runs still at the attempt that lost the job
   ansible.builtin.set_fact:
-    # A run another Node or an earlier pass already re-ran is at a newer attempt: it is never re-run twice for one attempt.
+    # A run another Node, an earlier pass or a person already re-ran is at a newer attempt: it is never re-run twice for one attempt.
     rerun_due: >-
       {% set ns = namespace(d=[]) %}{% for now in rerun_now.results %}
       {% if now.json.run_attempt == now.item.attempt and now.json.status == 'completed' %}{% set ns.d = ns.d + [now.item] %}{% endif %}{% endfor %}
@@ -93,9 +118,18 @@
       X-GitHub-Api-Version: "2022-11-28"
   loop: "{{ rerun_due | from_json }}"
   loop_control: { label: "{{ item.repository }}#{{ item.run_id }}" }
-  changed_when: true
+  register: rerun_posted
+  changed_when: rerun_posted.status | default(0) == 201
+  failed_when: false
   no_log: true
-- name: Record the re-run jobs
+# Each call is recorded on its own, so a refused one does not hide one that succeeded.
+- name: Record the re-run jobs and the runs left alone
   ansible.builtin.include_tasks: fleet-reboot-record.yml
   vars:
-    record_update: { reran: "{{ rerun_due | from_json }}" }
+    record_update:
+      reran: "{{ rerun_posted.results | selectattr('status', 'defined') | selectattr('status', 'equalto', 201) | map(attribute='item') | list }}"
+      rerun_refused: >-
+        {{ rerun_posted.results | rejectattr('status', 'defined') | map(attribute='item') | list
+        + (rerun_posted.results | selectattr('status', 'defined') | rejectattr('status', 'equalto', 201) | map(attribute='item') | list) }}
+      rerun_pending: "{{ rerun_pending }}"
+      rerun_truncated: "{{ rerun_truncated | bool }}"

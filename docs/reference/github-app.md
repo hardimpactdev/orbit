@@ -230,7 +230,7 @@ The read of the workflow runs uses the App's existing `Actions: read`. The flow 
 
 ## How the fleet reboot re-runs a lost CI job
 
-The [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) re-runs a job that a self-hosted runner lost when the drain stopped it. After the Node's reboot, Swamp asks the Gateway for one token per repository with only `actions: write`, from the App's existing `Actions: write`. It lists runs and jobs and calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` once per run attempt. The App gets no runner administration ([ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge)).
+The [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) re-runs a job that a self-hosted runner lost when the drain stopped it. After the Node's reboot, Swamp asks the Gateway for one token per repository with only `actions: write`, from the App's existing `Actions: write`. It lists runs and jobs, calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` once per run attempt, and revokes the tokens at the end. The App gets no runner administration ([ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge)).
 
 An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 

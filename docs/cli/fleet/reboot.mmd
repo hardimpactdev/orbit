@@ -41,7 +41,7 @@ sequenceDiagram
       %%> - one `actions: write` token per Project repository, from the App's existing permission; no runner administration (ADR 0223)
       SW->>SW: Re-run lost CI jobs<br/>rerun phase
       %%> Picks:
-      %%> - failed or cancelled jobs a stopped runner started from a minute before its freeze until the reboot
+      %%> - failed jobs a stopped runner was still running at its freeze; never a cancelled run
       %%> - `rerun-failed-jobs` once, only while the run is still at that attempt; the Node's result lists them
     end
   end

@@ -196,6 +196,19 @@ it('records each Node in pass order, parks the stopped task VMs and alerts on th
         ->toBe(['reboot_halted|fleet-node:'.$this->prod->id.'|boot-a|fleet.reboot_units_failed']);
 });
 
+it('keeps the CI re-run record of a Node: stopped runners, re-run and refused runs, pending runs and errors', function (): void {
+    $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null,
+        'status' => 'running', 'state' => ['swamp_run_id' => 'run-3'], 'input' => ['intent' => ['order' => [$this->beast->id]], 'task_hosts' => []]]);
+    $rerun = ['ci_stopped' => [['name' => 'ci-a', 'frozen_at' => '2026-11-10T03:10:00Z']], 'reran' => [['repository' => 'hardimpactdev/orbit', 'run_id' => 1, 'attempt' => 1, 'jobs' => ['php']]],
+        'rerun_refused' => [], 'rerun_pending' => [['repository' => 'hardimpactdev/orbit', 'run_id' => 7]], 'rerun_truncated' => false, 'rerun_error' => 'fleet.reboot_rerun_failed'];
+
+    $projected = app(FleetRebootProjection::class)->apply($operation, ['run_id' => 'run-3', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'error_code' => null, 'failure' => null, 'result' => ['nodes' => [
+            ['node_id' => $this->beast->id, 'name' => 'beast', 'outcome' => 'rebooted', ...$rerun]]]]);
+
+    expect(array_intersect_key($projected->result['nodes'][0], $rerun))->toBe($rerun);
+});
+
 it('refuses a result with an unknown outcome', function (): void {
     $operation = Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null,
         'status' => 'running', 'input' => ['intent' => ['order' => [$this->prod->id]]]]);
