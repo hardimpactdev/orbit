@@ -141,13 +141,15 @@ final readonly class NodeRoleRuntimeInput
     public function removal(Node $node, RoleName $role, bool $purge = false): ?array
     {
         $input = ['role' => $role->value, 'node_id' => $node->id, 'agent_sha256' => $this->agents->pin($node), 'purge_data' => $purge];
+        $analytics = $role === RoleName::Analytics ? Process::query()->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)->where('name', PlausibleProcess::NAME)->first() : null;
 
         return match ($role) {
             RoleName::Metrics => [...$input, 'address' => $node->wireguard_ip],
             RoleName::WebSocket => [...$input, 'install_path' => config('orbit.websocket.install_path')],
             RoleName::Swamp => [...$input, 'workers' => self::SwampWorkers],
-            RoleName::Analytics => [...$input, 'process_id' => $this->plausible($node)->id,
-                'name' => $this->docker->containerName($this->plausible($node))],
+            RoleName::Analytics => $analytics === null ? null : [...$input, 'process_id' => $analytics->id,
+                'name' => $this->docker->containerName($analytics)],
             default => null,
         };
     }

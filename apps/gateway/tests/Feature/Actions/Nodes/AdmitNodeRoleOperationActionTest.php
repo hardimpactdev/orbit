@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -168,3 +169,8 @@ function roleRemovalAdmissionNode(): Node
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]));
 }
+
+it('captures failed Analytics removal even when initialization never recorded its Process', function (): void {
+    $node = roleRemovalAdmissionNode();
+    expect(app(NodeRoleRuntimeInput::class)->removal($node, RoleName::Analytics))->toBeNull();
+});

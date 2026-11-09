@@ -169,42 +169,50 @@ jobs:
   dependsOn:
   - job: intent
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: input
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: reach
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: ci
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: recovery
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: fleet
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: remove
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: purge
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
 - name: cleanup
@@ -223,47 +231,56 @@ jobs:
   dependsOn:
   - job: intent
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: input
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: reach
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: ci
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: recovery
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: fleet
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: remove
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: purge
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
   - job: result
     condition:
-      or:
+      type: or
+      conditions:
       - type: completed
       - type: skipped
 inputs:

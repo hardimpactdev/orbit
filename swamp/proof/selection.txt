@@ -193,6 +193,7 @@ swamp/extensions/behaviors/operations/firewall/native_fixture.ts  skip
 # Standalone role removal and its admitted captured resources.
 apps/cli/app/Commands/Nodes/RemoveNodeRoleCommand.php       node:role:remove
 apps/gateway/app/Domain/Nodes/NativeNodeRoleRemovalInput.php  node:role:remove node:role:relocate node:remove
+apps/gateway/app/Domain/Nodes/NodeRoleRuntimeInput.php      node:role:add node:role:remove node:role:relocate
 apps/gateway/app/Domain/Nodes/NodeRoleRemoveInput.php       node:role:remove
 apps/gateway/app/Domain/Nodes/NodeRoleRemovalProjection.php  node:role:remove
 apps/gateway/app/Http/Requests/Nodes/RemoveNodeRoleRequest.php  node:role:remove
