@@ -176,7 +176,7 @@ One file per peer lets a run that adds one Node, such as task VM enrollment, wri
 
 The converge's Ansible `network` phase reaches the hub over SSH as root:
 
-1. It reads the live peers: those with a handshake in the last 180 seconds.
+1. It reads the live peers: those with a handshake in the last 120 seconds, so an idle one still has a handshake for the wait in step 7.
 2. It writes `orbit.conf` and each peer file (0600, root).
 3. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
 4. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port and the mark, then every peer file.

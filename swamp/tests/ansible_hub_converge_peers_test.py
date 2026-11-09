@@ -82,15 +82,15 @@ class HubConvergePeersTest(unittest.TestCase):
     def test_a_peer_that_was_live_before_the_change_must_handshake_again(self):
         code, output, _ = self.check([LIVE, LAPTOP], [LIVE, LAPTOP, PARKED], LIVEKEY=30, LAPTOPKEY=2664, PARKEDKEY=None)
         self.assertNotEqual(code, 0, output)
-        self.assertIn('Wait for the recorded peer', output)
+        self.assertIn('"attempts": 1', output)
 
     def test_a_recorded_peer_missing_from_the_hub_fails(self):
         code, output, _ = self.check([], [LIVE, LAPTOP], LIVEKEY=30, LAPTOPKEY=30)
         self.assertNotEqual(code, 0, output)
         self.assertIn('vpn.hub_peer_missing', output)
 
-    def test_the_live_peers_are_those_with_a_handshake_in_the_last_180_seconds(self):
-        code, output, live = self.read_live(True, LIVEKEY=30, LAPTOPKEY=2664, PARKEDKEY=None)
+    def test_the_live_peers_are_those_with_a_handshake_in_the_last_120_seconds(self):
+        code, output, live = self.read_live(True, LIVEKEY=30, IDLEKEY=170, LAPTOPKEY=2664, PARKEDKEY=None)
         self.assertEqual((code, live), (0, [LIVE]), output)
 
     def test_a_hub_without_its_interface_has_no_live_peer(self):

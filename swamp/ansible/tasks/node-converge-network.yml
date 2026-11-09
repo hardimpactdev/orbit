@@ -1,16 +1,18 @@
 ---
-# A peer with a handshake in the last 180 seconds is live; a hub without its interface has none.
+# A peer with a handshake in the last 120 seconds is live, so it still has one in the 180-second wait while idle.
+# A hub without its interface has no live peer.
 - name: Read a target hub's live peers before any change
   when: intent.network.mode == 'hub'
   ansible.builtin.shell:
     cmd: |-
       set -o pipefail
       if ip link show orbit > /dev/null 2>&1; then
-        wg show orbit latest-handshakes | awk -v since="$(( $(date +%s) - 180 ))" '$2 > since { print $1 }'
+        wg show orbit latest-handshakes | awk -v since="$(( $(date +%s) - 120 ))" '$2 > since { print $1 }'
       fi
     executable: /bin/bash
   register: hub_live
   changed_when: false
+  check_mode: false
 - name: Reconcile a target hub exactly once
   when: intent.network.mode == 'hub'
   ansible.builtin.include_tasks: node-converge-hub.yml

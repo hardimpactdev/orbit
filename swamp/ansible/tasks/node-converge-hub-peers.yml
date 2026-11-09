@@ -5,6 +5,7 @@
   ansible.builtin.command: wg show orbit peers
   register: hub_loaded
   changed_when: false
+  check_mode: false
 - name: Require every recorded peer on the hub
   ansible.builtin.assert:
     that: hub_peer_keys | difference(hub_loaded.stdout_lines) | length == 0
