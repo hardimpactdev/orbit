@@ -14,6 +14,20 @@ from fakes import FakeFleet
 
 
 class RoleEffectsTest(unittest.TestCase):
+    def test_role_cases_read_the_named_assignment_and_refuse_missing_or_duplicate_roles(self):
+        root = Path(__file__).resolve().parents[4]
+        loaded = spec.load(root / 'swamp/proof/node/role-add.cases.yaml', runner.BATCHES)
+        assignments = [{'id': 7, 'role': 'app-dev', 'status': 'active'}, {'id': 9, 'role': 'database', 'status': 'active'}]
+        for case_id in ['required-only', 'application-repeat', 'failure-after-partial-change']:
+            for stage in loaded.case(case_id).stages:
+                for step in stage.act:
+                    if step.name != 'cli' or step.args['run'][0] != 'node:role:list':
+                        continue
+                    wanted = step.args['expect']['json']
+                    self.assertEqual(steps.check_json({'assignments': list(reversed(assignments))}, wanted), [])
+                    self.assertTrue(steps.check_json({'assignments': []}, wanted))
+                    self.assertTrue(steps.check_json({'assignments': assignments * 2}, wanted))
+
     def test_zero_change_check_rejects_changed_failed_missing_and_empty_phase(self):
         args = {'phases': ['tools'], 'changed': 0}
         good = {'status': 'succeeded', 'hosts': [{'host': 'n7', 'changed': 0, 'failed': 0, 'unreachable': 0}]}

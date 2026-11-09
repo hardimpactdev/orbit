@@ -321,14 +321,20 @@ def json_value(document, path):
     """A dotted path, with optional array index or unique row selection: nodes[id=7].roles. Missing is not null."""
     value = document
     for part in path.split('.'):
-        match = re.fullmatch(r'([^\[\]]+)(?:\[(?:id=)?([0-9]+)\])?', part)
+        match = re.fullmatch(r'([^\[\]]+)(?:\[(?:([a-z_][a-z0-9_]*)=)?([a-zA-Z0-9_-]+)\])?', part)
         if not match or not isinstance(value, dict) or match[1] not in value:
             raise Infra(f'JSON path {path}: missing {part}')
         value = value[match[1]]
-        if match[2] is not None:
+        if match[3] is not None:
             if not isinstance(value, list):
                 raise Infra(f'JSON path {path}: {part} is not a list')
-            selected = [row for row in value if isinstance(row, dict) and row.get('id') == int(match[2])] if '[id=' in part else value[int(match[2]):int(match[2]) + 1]
+            if match[2] is not None:
+                expected = int(match[3]) if match[3].isdigit() else match[3]
+                selected = [row for row in value if isinstance(row, dict) and row.get(match[2]) == expected]
+            elif match[3].isdigit():
+                selected = value[int(match[3]):int(match[3]) + 1]
+            else:
+                raise Infra(f'JSON path {path}: {part} needs an index or field selector')
             if len(selected) != 1:
                 raise Infra(f'JSON path {path}: {part} selects {len(selected)} rows')
             value = selected[0]

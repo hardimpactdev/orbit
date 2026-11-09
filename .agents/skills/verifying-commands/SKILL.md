@@ -50,3 +50,5 @@ State the commit, the cases selected and run, the verdicts, the functional asser
 The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.
 
 Runner, selection code and selection-list changes disable narrowing for commands selected by the same diff. Tooling changes alone still select nothing. Keep this guard in the shared runner result.
+
+Exercise a case's JSON selectors against the shared runner before running the fleet. A rejected selector does not prove a missing record. Test native-output readers against complete recorded artifacts, and report safe exception types and locations when a guest helper fails; never print raw output or exception arguments.
