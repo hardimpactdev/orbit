@@ -16,6 +16,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -35,7 +36,8 @@ final readonly class TaskVmImageRefreshIntent
     public const string Next = 'refresh_next';
 
     public function __construct(private StartOperationAction $operations, private OperationStore $store, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
-        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots) {}
+        private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots,
+        private TaskContainerHostIntent $containers) {}
 
     /**
      * The refresh that is open on `$host`, if any: a second admission returns it.
@@ -46,6 +48,17 @@ final readonly class TaskVmImageRefreshIntent
     {
         return Operation::query()->where('kind', self::Kind)->where('target_type', 'task_vm_host')->where('target_id', $host instanceof Node ? $host->id : $host)
             ->whereNotIn('status', OperationStatus::terminalValues())->first();
+    }
+
+    /**
+     * Whether an open refresh runs its candidate proof in `$vm`. A refresh that waits for a CI place has no slot yet, so it holds none.
+     *
+     * @phpstan-impure
+     */
+    public static function holds(TaskVm $vm): bool
+    {
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'task_vm_host')->where('target_id', $vm->host_node_id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->where('input->task_vm_id', $vm->id)->exists();
     }
 
     /** Refuses a host that cannot refresh: not a configured, active task VM host. */
@@ -86,7 +99,7 @@ final readonly class TaskVmImageRefreshIntent
                 // The run deletes the base before it builds the new one, so the recorded base is withdrawn at once: starts on the host are
                 // refused until the run promotes the new base, and after a failure the next refresh builds the base as on a new host.
                 if ($fromStock) {
-                    $this->images->withdraw($host);
+                    $this->images->withdraw($host, TaskVmRuntime::Vm);
                 }
 
                 return $this->operations->execute(self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit, $fromStock), $caller, $request,
@@ -131,7 +144,7 @@ final readonly class TaskVmImageRefreshIntent
     {
         $location = $this->assertCanRefresh($host);
         // A rebuild from stock has no base to roll back to or to keep: the run deletes it before it builds the new one.
-        $base = $fromStock ? null : $this->images->recorded($host, $location);
+        $base = $fromStock ? null : $this->images->recorded($host, $location, TaskVmRuntime::Vm);
         $commit ??= $this->converge->releaseCommit();
         $club = config('swamp.proof_club_api_key');
         if (! is_string($club) || trim($club) === '') {
@@ -156,6 +169,8 @@ final readonly class TaskVmImageRefreshIntent
                     'cidr' => $location->cidr, 'zfs_dataset' => $location->zfsDataset, 'pool_size' => $location->poolSize,
                     'image' => TaskVmHost::SourceImage, 'current' => $base['snapshot'] ?? null, 'snapshot' => $snapshot, 'rebuild' => $fromStock,
                     'clean' => TaskVmHostLeftovers::intent(),
+                    // The task container side that host preparation sets up beside the VM side; null on a host without containers.
+                    'containers' => $this->containers->for($host, $location),
                     'base' => ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'seed_size' => TaskVmVolumes::SeedSize,
                         'cpus' => $large->cpus, 'memory' => $large->memory, 'disk' => $location->disk,
                         'launch_config' => TaskVmLaunchConfig::for($identity['public_key']), 'club_key' => self::ClubKey]],

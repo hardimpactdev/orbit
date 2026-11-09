@@ -38,7 +38,7 @@ final readonly class TaskVmEnrollmentIntent
         return DB::transaction(function () use ($vm): Node {
             $vm->refresh();
             if ($vm->state !== TaskVmState::Provisioning || $vm->slot_project_id === null) {
-                throw new TaskVmException('task_vm.enrollment_invalid', 'A task start requires its provisioning slot.');
+                throw new TaskVmException('task_vm.enrollment_invalid', 'A task start requires its task place.');
             }
             $node = $this->reserveNode($vm);
             $this->delivery->pin($node);

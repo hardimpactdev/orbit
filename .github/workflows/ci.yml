@@ -543,6 +543,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           PROOF_REQUIRED: ${{ github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
+          # Set the repository variable ORBIT_PROOF_BLOCKING to false to report the proof without blocking this result.
+          PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}
           FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
@@ -572,6 +574,9 @@ jobs:
               if status is None or status['state'] != 'success':
                   sys.exit('The outside proof has not passed on this head. Approve and run it, then rerun Required checks.')
               needs['proof-run']['result'] = 'success'
+          if os.environ['PROOF_BLOCKING'] != 'true':
+              selected['proof-run'] = False
+              needs['proof-run']['result'] = 'skipped'
           failed = {job: needs[job]['result'] for job, touched in selected.items()
                     if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
           if failed:

@@ -14,10 +14,10 @@ sequenceDiagram
   participant HUB as VPN hub<br/>over ssh
   Note over GW: Admit the release
   %%> Requirements:
-  %%> - the VM has a task VM name: `<host>-tvm-<n>` for slot n, or `tvm-<id>` for the old pool; its seed clone follows from that name. Any other name, such as a base or a seed, refuses with `task_vm.release_refused`
+  %%> - the VM has a task VM name: `<host>-tvm-<n>` for place n, or `tvm-<id>` for the old pool; its seed clone follows from that name. Any other name, such as a base or a seed, refuses with `task_vm.release_refused`
   %%> - the host is a configured task VM host (otherwise `task_vm.unknown_host`), and the VM's Node records the WireGuard public key that names its hub peer (otherwise `task_vm.slot_refused`)
-  %%> - a sweep release locks the row and checks the host again: a refresh that opened after the selection leaves the row alone
-  %%> - a VM of the old pool, with no slot number, is released the same way: its seed clone is `<name>-topology-seed`
+  %%> - a sweep release locks the row and checks it again: the place of an open refresh's proof stays; a refresh that waits for a CI place holds none, so the failed places of earlier refreshes are released for it
+  %%> - a VM of the old pool, with no place number, is released the same way: its seed clone is `<name>-topology-seed`
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
   SW->>H: Delete the VM<br/>and its seed clone
   %%> What it does:
@@ -27,10 +27,10 @@ sequenceDiagram
   %%> What it does:
   %%> - the VM's peer leaves the WireGuard hub; there is no model key to revoke
   alt the run passes
-    SW-->>GW: Run succeeded<br/>slot free
+    SW-->>GW: Run succeeded<br/>place free
     Note over GW: Delete the Node record
   else a step failed
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
-    %%> - the VM keeps its slot and its Node; the sweep releases it again
+    %%> - the VM keeps its place and its Node; the sweep releases it again
   end

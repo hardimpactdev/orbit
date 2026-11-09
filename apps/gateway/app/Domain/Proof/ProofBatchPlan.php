@@ -13,6 +13,15 @@ use Symfony\Component\Yaml\Yaml;
 /** Admission data only: whole batches from trusted YAML, weighted by the latest measured case times. */
 final readonly class ProofBatchPlan
 {
+    /** The fixed work of one shard: the claim of its VM, the workspace check, the release of the VM and the report. */
+    public const int ShardSeconds = 600;
+
+    /** The fixed work of one batch beside its cases: the restore of the fleet, the runner plan, the token check and the batch setup. */
+    public const int BatchSeconds = 180;
+
+    /** The longest run budget of one shard. A CI place is held two hours at most, as long as a proof may wait for one. */
+    public const int MaxShardSeconds = 7200;
+
     public function __construct(private ProofCommitSource $source) {}
 
     /**
@@ -103,6 +112,36 @@ final readonly class ProofBatchPlan
         }
 
         return $shards;
+    }
+
+    /**
+     * The run budget of one shard, from its assigned batches: the fixed work of the shard and of each batch, and the measured case
+     * times, times 1.5, rounded up to five minutes. It is at most {@see MaxShardSeconds}.
+     *
+     * @param  list<array{seconds:float}>  $assignments
+     */
+    public static function budget(array $assignments): int
+    {
+        return min(self::MaxShardSeconds, self::seconds($assignments));
+    }
+
+    /**
+     * Whether a shard is planned beyond the longest shard budget. A shard of one batch cannot be split further; any larger one must
+     * wait for another place instead, so that it does not run out of its budget half way.
+     *
+     * @param  list<array{seconds:float}>  $assignments
+     */
+    public static function overBudget(array $assignments): bool
+    {
+        return count($assignments) > 1 && self::seconds($assignments) > self::MaxShardSeconds;
+    }
+
+    /** @param  list<array{seconds:float}>  $assignments */
+    private static function seconds(array $assignments): int
+    {
+        $work = self::ShardSeconds + array_sum(array_map(static fn (array $batch): float => self::BatchSeconds + $batch['seconds'], $assignments));
+
+        return (int) ceil($work * 1.5 / 300) * 300;
     }
 
     /**

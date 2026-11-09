@@ -51,7 +51,9 @@ Each family commits its domain changes and terminal result in its own short tran
 
 A `completed` event can carry a failed run status. Native `interrupted` remains `interrupted`; it is a terminal non-success status. A failed or cancelled run can have no selected output because the step was skipped. A failed or interrupted run with an empty result, or a selected JSON outcome of `succeeded`, projects `{"error_code":"operation.native_failed"}`. A cleanup failure therefore fails the Operation even when the selected action succeeded. Cancellation keeps any selected evidence, or an empty result when none was recorded.
 
-A projection that implements `DirectOperationChildProjection` can also record its declared workflow when it ends inside a parent. The same shared reader finds children through recorded ancestry, bounded to 60 runs and four levels, then reads their fixed terminal selectors. It applies children in completion order under a short parent row lock and records their run IDs to suppress duplicates. Parent identity and held thread IDs constrain task turn evidence. Cancelled children supply no new transcript. No family adds a history reader.
+A projection that implements `DirectOperationChildProjection` can also record its declared workflow when it ends inside a parent. A kind whose own projection records only its own runs declares a separate `child_projection` instead: `proof.verify` records each batch of a `proof.command` through `ProofBatchProjection`.
+
+The same shared reader finds children through recorded ancestry, bounded to 60 runs and four levels, then reads their fixed terminal selectors. It applies children in completion order under a short parent row lock and records their run IDs to suppress duplicates. An ended run of a workflow that nothing declares is recorded too, so the next pass does not read it again. Parent identity and held thread IDs constrain task turn evidence. Cancelled children supply no new transcript. No family adds a history reader.
 
 A running parent can record child evidence before its own terminal result; a timed-out parent can retain that evidence while awaiting native settlement. Timeout settlement releases the hold without projecting new root evidence. Native cancellation can skip finalization; a cancelled task turn keeps its previous transcript.
 
@@ -181,4 +183,4 @@ Unexpected errors in retained `directOperation` actions fail the native step wit
 
 A family with admission records may implement `DirectOperationStartRefusal`. The shared start owner calls it inside the failure transaction only after a definite refusal with no bound native run. It closes those records without claiming Node effects. An uncertain submission keeps its pending record and awaits native terminal evidence.
 
-Task build, prep corrections and review rounds capture an optional fresh claim as `Claim a task place`. The child `operation-task-provision` copies the base at the published head. Publication releases the VM through the existing slot release; there is no task park workflow.
+Task build, prep corrections and review rounds capture an optional fresh claim as `Claim a task place`. The child `operation-task-provision` copies the base at the published head. Publication releases the VM through the existing place release (`operation-task-vm-slot-release`); there is no task park workflow.

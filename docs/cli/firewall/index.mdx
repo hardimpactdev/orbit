@@ -18,7 +18,7 @@ orbit-agent will be the only collector of live UFW facts, with `observed_at`, an
 
 [Database servers](/reference/database-servers#private-publication) publish only on explicit WireGuard and LAN addresses. Ports published by Docker bypass UFW. These servers trust the private Orbit networks and have no port firewall; operator UFW rules do not restrict their Docker publications.
 
-Task VM hosts also own three input rules: `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`. They appear with `--managed`, apply during the base refresh, and withdraw before host settings removal or during reachable Node removal. The live comparison includes the DHCP source port.
+Task VM hosts also own three input rules: `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`. A host with task containers owns three more for its container bridge: `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. They appear with `--managed`, apply during the base refresh, and withdraw before host settings removal, before a change of their bridge, or during reachable Node removal. The live comparison includes the DHCP source port.
 
 Task VM ingress rules apply to the Incus guest Nodes. Provider-side cloud firewall rules are not part of this family.
 

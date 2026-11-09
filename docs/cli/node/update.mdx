@@ -25,6 +25,7 @@ orbit node:update 3 --name=vpn
 orbit node:update 5 --platform=ipados
 orbit node:update 7 --apps-path=/mnt/apps
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}'
 ```
 
 The command needs at least one option. In a terminal, an omitted Node is chosen from an interactive list; without a terminal, or with `--json`, it is refused with `node.id_invalid`. Only an apps folder change runs on the Node. Every other change is a record that Orbit saves at once without contacting the machine.
@@ -35,7 +36,7 @@ Repeating a value that is already stored succeeds with `Skipped — already set 
 
 - **Name.** ASCII letters, digits, dashes, and underscores, at most 63 characters, unique among Nodes. The name is only a label: keys, addresses, SSH identity, and roles stay the same. Orbit holds the [lifecycle lock](/reference/node-provisioning#one-lifecycle-owner-per-node-name) for the current name and for the new name, so a concurrent `node:add` cannot take the new name. The WireGuard hub configuration names each peer in a comment; that comment keeps the old name until Orbit next projects the hub. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
 - **Platform.** Only an unmanaged Node takes a platform: it has no pinned SSH host fingerprint and no role. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. Enrollment observes a managed Node's platform, so a managed Node is refused with `node.platform_managed` and nothing changes. `node:add` does not accept `ipados`, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what is refused or skipped.
-- **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host.
+- **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host. The optional [`containers` member](/reference/node-settings#task-container-fields) adds task container places with their own project, bridge and CIDR. Orbit refuses to remove it, or to change its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. Removing it, or changing its `network` or `cidr`, starts a run that withdraws the container bridge's DHCP and DNS input rules first, as a change of the VM bridge does for its own rules.
 
 ## The apps folder
 
@@ -46,6 +47,8 @@ A change never moves an existing checkout; new development Instances use the new
 ## Output
 
 A saved change prints `Node #<id> [<name>] updated.` with the request ID. With `--json`, the CLI prints only the Node, or the final Operation.
+
+A skipped repeat prints `Skipped — already set (node.unchanged)`. With `--json`, the Node then has one more member, `"skipped": "node.unchanged"`. The Gateway's response carries the same reason as `meta.skipped`.
 
 ## Errors
 
@@ -59,6 +62,7 @@ A saved change prints `Node #<id> [<name>] updated.` with the request ID. With `
 | `node.platform_managed` | The Node has a pinned SSH host fingerprint or a role. Nothing changes. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock or the new name's lock. Nothing changes. |
 | `node.settings_*` | The apps folder or the task VM host settings failed a check. [Node settings](/reference/node-settings#failure-codes) lists the codes. |
+| `task_vm.runtime_in_use` | The request removes `containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. HTTP 409. Nothing changes. |
 
 ## How it works
 

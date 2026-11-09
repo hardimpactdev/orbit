@@ -12,7 +12,7 @@ A container on an agent Node holds only the placeholder model key. It calls a fo
 
 In progress.
 
-Nick decided on 2026-11-09 that a T3 (Conn) server runs inside each development and task container as user `agent`, with Claude Code and Codex, and that no secret lives in the container. The app user `orbit` must not reach the model route. The forwarder, the source rule and the query rule below follow from that and from ADR 0250 (Run Instances and task groups in Incus containers, in review) rules 3 and 5: no secrets on agent hosts, and placeholder keys only.
+Nick decided on 2026-11-09 that a T3 (Conn) server runs inside each development and task container as user `agent`, with Claude Code and Codex, and that no secret lives in the container. The app user `orbit` must not reach the model route. The forwarder, the source rule and the query rule below follow from that and from [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) rules 3 and 5: no secrets on agent hosts, and placeholder keys only.
 
 Principle: [Lean](/mission#principles). The guard stays the one rule; the forwarder adds no key and no rule.
 
@@ -99,6 +99,6 @@ The guard sees the Node's address, not the container's. These are the options:
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: applies rules 3 and 5 of ADR 0250 (in review) to containers
+- ADRs: applies rules 3 and 5 of [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) to containers
 - Detail: [Task VM guard](/reference/ai-router#task-vm-guard), [Container model forwarder](/reference/ai-router#container-model-forwarder), [Credentials in task VMs](/reference/tasks#credentials-in-task-vms), and the charts `docs/cli/ai-router/task-guard.mmd` and `docs/cli/ai-router/model-forwarder.mmd`. The change also touches `swamp/`: the `ai_router.model_forwarder` workflow and its Ansible phase
 - Verify: the Gateway tests run the rendered guard and forwarder on real Caddy, chained, and load the rendered table on a real kernel in CI; a first run on an agent Node ends with the end checks through the forwarder, straight to the guard and from the Node

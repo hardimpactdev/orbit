@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees the slot. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
+  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees its place. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
   %% status: draft
   %% command: task:cancel
   %% kind: tasks.cancel
@@ -29,22 +29,31 @@ sequenceDiagram
   %%> Result:
   %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first, which resumes a parked VM
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
-  Note over GW: Admit the release<br/>stop work · VM reserved
-  %%> What it does:
-  %%> - cancellation takes precedence over the group's capacity wait or running task; cancel that task before acquiring its group lock for cleanup
-  %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
-  %%> Result:
-  %%> - the run carries only the release; it pushes nothing and never starts a parked VM
-  %%> - a start that Swamp refuses fails the cancel and marks the VM `failed`, so the reservation goes and another cancel reserves it again
-  GW->>SW: Start run, full intent<br/>operation-task-cancel
-  SW->>H: Delete the VM<br/>and its seed clone
-  %%> What it does:
-  %%> - one host phase: `incus delete --force`, the seed clone and the identity volume; a few seconds
-  SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
-  %%> Runs beside the step before it: Swamp starts both at once.
-  %%> What it does:
-  %%> - the VM's peer leaves the WireGuard hub; the Pi token goes with the VM. There is no model key to revoke: the fixed key stays with the guard, for every other VM
-  SW-->>GW: Run succeeded<br/>slot free
-  Note over GW: Delete the Node record<br/>target under 10 s
-  %%> Result:
-  %%> - the Node, its role and its Process go; the slot number is free for the next task start
+  alt no VM and no workspace
+    Note over GW: End the task at admission<br/>R1: no run
+    %%> When:
+    %%> - the task holds no task VM and no workspace, such as a `todo` task or one that waits for a place; its waiting Operation is cancelled first
+    %%> Result:
+    %%> - in the admission transaction, the task and its open subtasks are `cancelled` and the Operation is recorded as succeeded; no Swamp run starts (R1)
+    %%> - the HTTP 202 already carries the succeeded Operation, so `task:show` reads `cancelled` from then on
+  else the task holds a VM
+    Note over GW: Admit the release<br/>stop work · VM reserved
+    %%> What it does:
+    %%> - cancellation takes precedence over the group's capacity wait or running task; cancel that task before acquiring its group lock for cleanup
+    %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
+    %%> Result:
+    %%> - the run carries only the release; it pushes nothing and never starts a parked VM
+    %%> - a start that Swamp refuses fails the cancel and marks the VM `failed`, so the reservation goes and another cancel reserves it again
+    GW->>SW: Start run, full intent<br/>operation-task-cancel
+    SW->>H: Delete the VM<br/>and its seed clone
+    %%> What it does:
+    %%> - one host phase: `incus delete --force`, the seed clone and the identity volume; a few seconds
+    SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
+    %%> Runs beside the step before it: Swamp starts both at once.
+    %%> What it does:
+    %%> - the VM's peer leaves the WireGuard hub; the Pi token goes with the VM. There is no model key to revoke: the fixed key stays with the guard, for every other VM
+    SW-->>GW: Run succeeded<br/>place free
+    Note over GW: Delete the Node record<br/>target under 10 s
+    %%> Result:
+    %%> - the Node, its role and its Process go; the place is free for the next task start
+  end

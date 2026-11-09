@@ -309,6 +309,7 @@ Each policy tick reads the branch head through the Gateway with `git ls-remote` 
 - The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
 - Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
+- The tick finds the holder with `operation:list`. List rows carry no input, so it reads the holder with `operation:show` to compare its commit.
 
 A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
 

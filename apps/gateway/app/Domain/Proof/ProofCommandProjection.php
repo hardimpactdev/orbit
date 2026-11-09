@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -75,9 +76,24 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
         return ($input['keep_failed'] ?? false) === true ? ['keep_failed' => true] : [];
     }
 
-    /** A run the Gateway timed out may leave its VM; the group is cancelled the normal way. */
+    /**
+     * A run the Gateway timed out keeps the verdicts of the batches that ended before it ({@see ProofBatchProjection::applyChild()});
+     * the cases of the others are unrun. It may leave its VM; the group is cancelled the normal way.
+     */
     public function timedOut(Operation $operation): void
     {
+        $input = ValidatedData::object($operation->input);
+        $lines = [];
+        foreach (ValidatedData::object($operation->state[ProofBatchProjection::BatchReports] ?? []) as $key => $report) {
+            foreach (explode("\n", trim(ValidatedData::string($report))) as $line) {
+                if (trim($line) !== '') {
+                    $lines[] = $key."\t".trim($line);
+                }
+            }
+        }
+        $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments'] ?? [['command' => $input['command'], 'file' => $input['file'], 'batch' => '']]), implode("\n", $lines));
+        app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'commit' => $input['commit'], 'command' => $input['command'],
+            'file' => $input['file'], 'outcome' => 'failed', 'cases' => $verdicts['cases']]]);
         DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
         $this->settle($operation);
     }
@@ -104,7 +120,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             // The slot and the workspace of the group, as a claim records them. The run releases the slot itself, always.
             $claimed = is_array($native['provision'] ?? null);
             if ($status === 'succeeded' && ! $claimed) {
-                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed slot.', 422);
+                throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed place.', 422);
             }
             $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
                 $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
@@ -124,7 +140,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
             // The run's own destroy step ends the group. A failed run that kept its VM (`keep_failed`) leaves the group open for 60 minutes; any other end leaves the VM to the normal cancel.
             $kept = null;
-            if (NativeRunResult::stepStatus($native, 'Release the slot') === 'succeeded') {
+            if (NativeRunResult::stepStatus($native, 'Release the place') === 'succeeded') {
                 $group = Task::topLevel()->lockForUpdate()->find(ValidatedData::integer($input['group_id']));
                 if ($group instanceof Task && $group->status !== TaskGroupStatus::Cancelled) {
                     $this->ending->settle($group, ValidatedData::object($input['cancel']), 'tasks.cancel');
@@ -156,7 +172,7 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     private function kept(Operation $run, array $input, array $native, array $data): ?array
     {
         if (($input['keep_failed'] ?? false) !== true || ($data['status'] ?? null) !== 'failed'
-            || NativeRunResult::stepStatus($native, 'Release the slot') !== 'skipped') {
+            || NativeRunResult::stepStatus($native, 'Release the place') !== 'skipped') {
             return null;
         }
         $groupId = ValidatedData::integer($input['group_id']);

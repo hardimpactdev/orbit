@@ -56,6 +56,8 @@ use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
+use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmContainers;
 use App\Domain\TaskVms\TaskVmConvergeInput;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -64,6 +66,7 @@ use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Domain\TaskVms\TaskVmPromotedImage;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmSlotIdentity;
@@ -352,25 +355,44 @@ it('refuses work of another Project at once, so it never waits in or holds up th
         ->and($foreign->refresh()->capacity_wait_reason)->toBeNull()->and($earlier->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
-it('has the sweep leave a host alone while its refresh is open, and go on past a row whose release cannot be built', function (): void {
+it('has the sweep leave only the slot of an open refresh alone, and go on past a row whose release cannot be built', function (): void {
     [$host, $project] = slotPoolHost(taskPlaces: 12);
     $pool = app(TaskVmSlotPool::class);
     $broken = $pool->take(slotPoolGroup($project));
     $stale = $pool->take(slotPoolGroup($project));
+    $proving = $pool->take(slotPoolGroup($project));
     // A row without its Node has no hub peer to remove, so its intent cannot be built.
     $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
     $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
+    $proving->update(['group_id' => null]);
     slotPoolSweepWorld();
     $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+        'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $proving->id], 'triggered_by' => 'test']);
 
-    app()->call([new SweepTaskVmHosts, 'handle']);
-    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
-
-    $refresh->update(['status' => OperationStatus::Succeeded]);
     app()->call([new SweepTaskVmHosts, 'handle']);
     expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->pluck('target_id')->all())->toBe([$stale->id])
+        ->and($proving->refresh()->state)->toBe(TaskVmState::Provisioning)
         ->and($broken->refresh()->state)->toBe(TaskVmState::Failed);
+});
+
+it('frees the slots that failed refreshes left while the next refresh of the host waits for a CI place', function (): void {
+    Queue::fake();
+    [$host] = slotPoolHost(taskPlaces: 0);
+    slotPoolSweepWorld();
+    $pool = app(TaskVmSlotPool::class);
+    // Two refreshes failed before their candidate proof: each slot stays failed until a release frees it, and the CI pool is full.
+    $first = $pool->take(null, $host->id);
+    $second = $pool->take(null, $host->id);
+    $first->update(['state' => TaskVmState::Failed]);
+    $second->update(['state' => TaskVmState::Failed]);
+    $waiting = app(TaskVmAdmission::class)->wait('task_vm.image_refresh', 'task_vm_host', $host->id, $host->id, ['commit' => str_repeat('a', 40), 'from_stock' => false], 'test', null);
+    expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+
+    // The waiting refresh holds no slot, so it does not keep the sweep from the places it waits for.
+    app()->call([new SweepTaskVmHosts, 'handle']);
+
+    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->orderBy('target_id')->pluck('target_id')->all())->toBe([$first->id, $second->id])
+        ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
 it('leaves task VM Nodes out of the workers\' known hosts and keeps every other pinned Node', function (): void {
@@ -403,9 +425,11 @@ it('unbinds a failed start\'s group from the workspace its release deletes, and 
     $release->update(['status' => OperationStatus::Succeeded]);
     expect($group->refresh()->taskable_id)->toBeNull();
 
+    // Nothing is left to release, so the cancel closes the group at admission with no run (R1).
     $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
     expect($cancel->input['instance_id'])->toBeNull()->and($cancel->input['release'])->toBeNull()
-        ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['group_id'])->toBe($group->id);
+        ->and($cancel->status)->toBe(OperationStatus::Succeeded)
+        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
 
 it('lets a cancel admitted before a failed start\'s release still close the group the release unbound, and keeps the slot destroyed', function (): void {
@@ -537,7 +561,7 @@ it('refuses a task start while the ai-router has no guard', function (): void {
 });
 
 it('rebuilds the base from stock only when asked: the run deletes the base first, keeps no recorded snapshot, and cleans the host after', function (): void {
-    [$host, $project] = slotPoolHost();
+    [$host, $project] = slotPoolHost(ciPlaces: 3);
     slotPoolSweepWorld(dispatch: false);
     $services = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux',
         'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.3', 'wireguard_ip' => '10.44.0.3', 'user' => 'orbit',
@@ -560,11 +584,21 @@ it('rebuilds the base from stock only when asked: the run deletes the base first
     try {
         $refresh = app(TaskVmImageRefreshIntent::class)->input($host)['intent'];
         $rebuild = app(TaskVmImageRefreshIntent::class)->input($host, fromStock: true)['intent'];
+        // A host with a container side gets it in the intent of its host phase.
+        $settings = app(TaskVmSettings::class);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+            [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 2, 4, '8GiB', '20GiB', ciPlaces: 3,
+                containers: new TaskVmContainers(1, 1, 'orbit-task-containers', 'orbittaskc0', '10.252.8.0/24'))],
+            '/pi', str_repeat('a', 64), ['gpt-6']));
+        $containers = app(TaskVmImageRefreshIntent::class)->input($host)['intent']['host']['containers'];
     } finally {
         File::deleteDirectory($home);
     }
 
-    expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm'])
+    expect($containers)->toMatchArray(['project' => 'orbit-task-containers', 'network' => 'orbittaskc0', 'address' => '10.252.8.1/24',
+        'alias' => 'ubuntu-26.04-ct', 'places' => 2])
+        ->and(array_column($containers['incus']['packages'], 'name'))->toBe(['incus', 'incus-base', 'incus-client']);
+    expect($refresh['host'])->toMatchArray(['rebuild' => false, 'current' => 'r20261107120000', 'image' => 'ubuntu-26.04-vm', 'containers' => null])
         ->and($rebuild['host'])->toMatchArray(['rebuild' => true, 'current' => null])->and($rebuild['with_pi'])->toBeTrue()
         ->and($refresh['host']['clean'])->toBe(['keep_images' => ['ubuntu-26.04-vm'], 'prefixes' => ['orbit-topology-seed-', 'orbit-baseline-'],
             'retired_projects' => ['orbit-baselines', 'orbit-measure-nr'], 'image_projects' => ['orbit-proto']]);
@@ -574,10 +608,10 @@ it('withdraws the recorded base for a rebuild, and refuses a rebuild while a ref
     [$host, $project] = slotPoolHost();
     $images = app(TaskVmPromotedImage::class);
 
-    expect($images->latest($host))->not->toBeNull();
-    $images->withdraw($host);
+    expect($images->latest($host, TaskVmRuntime::Vm))->not->toBeNull();
+    $images->withdraw($host, TaskVmRuntime::Vm);
     // No start copies a withdrawn base; the pool skips a host without one.
-    expect($images->latest($host))->toBeNull()
+    expect($images->latest($host, TaskVmRuntime::Vm))->toBeNull()
         ->and(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
 
     Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -733,17 +767,18 @@ it('refuses the release of a VM whose Node has no WireGuard public key, which na
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
 });
 
-it('has the sweep leave a VM alone that a refresh started after the sweep selected it', function (): void {
+it('has the sweep leave a VM alone that a refresh took for its proof after the sweep selected it', function (): void {
     [$host] = slotPoolHost();
     slotPoolSweepWorld();
     $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
-    // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
+    // The refresh commits between the sweep's selection and its release: at the locked read of the row, the second read.
     $started = false;
-    TaskVm::retrieved(function () use (&$started, $host): void {
-        if (! $started) {
+    $reads = 0;
+    TaskVm::retrieved(function () use (&$started, &$reads, $host, $vm): void {
+        if (++$reads === 2 && ! $started) {
             $started = true;
             Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-                'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
+                'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $vm->id], 'triggered_by' => 'test']);
         }
     });
 
@@ -1363,10 +1398,12 @@ it('lets task cancellation take precedence over a capacity wait or admitted task
     expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and($work->cancel_requested_at)->not->toBeNull()
         ->and($work->lock_key)->toBeNull();
+    // A waiting group holds no VM, so its cancel ends it at admission with no run (R1); a claimed VM needs the release run.
     expect($cancel->kind)->toBe('tasks.cancel')
-        ->and($cancel->status)->toBe(OperationStatus::Queued)
-        ->and($cancel->lock_key)->not->toBeNull();
-    expect($group->refresh()->capacity_wait_reason)->toBeNull();
+        ->and($cancel->status)->toBe($waiting ? OperationStatus::Succeeded : OperationStatus::Queued)
+        ->and($cancel->lock_key === null)->toBe($waiting)
+        ->and($group->refresh()->status)->toBe($waiting ? TaskGroupStatus::Cancelled : TaskGroupStatus::Reserved);
+    expect($group->capacity_wait_reason)->toBeNull();
     if ($waiting) {
         app(TaskVmAdmission::class)->admit($work->id);
         expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
@@ -1378,3 +1415,97 @@ it('lets task cancellation take precedence over a capacity wait or admitted task
             ->and($cancel->input['release'])->not->toBeNull();
     }
 })->with([true, false]);
+
+/**
+ * The slot pool host with a container side of `$containerTask` task and `$containerCi` CI places, normal placement of
+ * containers switched by `$placement`, and a promoted container base unless `$containerBase` is false.
+ *
+ * @return array{Node, Project}
+ */
+function containerPoolHost(bool $placement, bool $containerBase = true, int $taskPlaces = 0, int $ciPlaces = 0, int $containerTask = 1, int $containerCi = 1): array
+{
+    [$host, $project] = slotPoolHost($taskPlaces, ciPlaces: $ciPlaces);
+    $settings = app(TaskVmSettings::class);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $settings->devClusterId, $settings->wireguardRange,
+        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: $ciPlaces,
+            containers: new TaskVmContainers($containerTask, $containerCi, 'orbit-task-containers', 'orbittaskc0', '10.252.8.0/24'))],
+        '/pi', str_repeat('a', 64), ['gpt-6'], containerPlacement: $placement));
+    if ($containerBase) {
+        TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'runtime' => TaskVmRuntime::Container, 'recipe_identity' => 'recipe-1',
+            'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now()->addMinute(),
+            'images' => ['base' => ['project' => 'orbit-task-containers', 'type' => 'snapshot', 'vm' => 'beast-base', 'snapshot' => 'c20261109120000']]]);
+    }
+
+    return [$host, $project];
+}
+
+it('skips container places until the switch', function (): void {
+    [, $project] = containerPoolHost(placement: false);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class)
+        ->and(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class)
+        ->and(fn () => $pool->freeCiPlaces())->toThrow(TaskCapacityException::class);
+});
+
+it('takes container places after the switch on a host with a container base, and records their runtime', function (): void {
+    [, $project] = containerPoolHost(placement: true);
+    $pool = app(TaskVmSlotPool::class);
+    expect($pool->freeCiPlaces())->toBe(1);
+
+    $task = $pool->take(slotPoolGroup($project));
+    $ci = $pool->take(slotPoolGroup($project), proof: true);
+    expect([$task->refresh()->runtime, $task->capacity_pool, $ci->refresh()->runtime, $ci->capacity_pool])->toBe([TaskVmRuntime::Container, 'task', TaskVmRuntime::Container, 'ci'])
+        ->and(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('takes no container place after the switch on a host without a container base', function (): void {
+    [, $project] = containerPoolHost(placement: true, containerBase: false);
+
+    expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('counts container places apart from VM places', function (): void {
+    [$host, $project] = containerPoolHost(placement: true, taskPlaces: 1);
+    $pool = app(TaskVmSlotPool::class);
+    $location = app(TaskVmSettings::class)->host($host->id);
+    $free = static fn (TaskVmRuntime $runtime): int => app(TaskVmCapacity::class)->freeSlots([[$location, $host]], false, $runtime)[$host->id];
+
+    // Equal room keeps the runtime order, so the VM place goes first.
+    expect($pool->take(slotPoolGroup($project))->runtime)->toBe(TaskVmRuntime::Vm)
+        ->and([$free(TaskVmRuntime::Vm), $free(TaskVmRuntime::Container)])->toBe([0, 1])
+        ->and($pool->take(slotPoolGroup($project))->runtime)->toBe(TaskVmRuntime::Container)
+        ->and([$free(TaskVmRuntime::Vm), $free(TaskVmRuntime::Container)])->toBe([0, 0])
+        ->and(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
+});
+
+it('has a base refresh take a VM CI place, never a container one', function (): void {
+    [$host] = containerPoolHost(placement: true, ciPlaces: 1);
+    $pool = app(TaskVmSlotPool::class);
+
+    expect($pool->take(null, $host->id)->runtime)->toBe(TaskVmRuntime::Vm)
+        ->and(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
+});
+
+it('keeps one recorded base per runtime, so a newer container base never replaces the VM base', function (): void {
+    [$host] = containerPoolHost(placement: true);
+    $location = app(TaskVmSettings::class)->host($host->id);
+    $images = app(TaskVmPromotedImage::class);
+
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm)['snapshot'] ?? null)->toBe('r20261107120000')
+        ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000')
+        ->and(app(TaskVmSlotPool::class)->currentImage($host, $location)['snapshot'] ?? null)->toBe('r20261107120000');
+
+    // A rebuild of one runtime's base from stock withdraws only that base.
+    $images->withdraw($host, TaskVmRuntime::Vm);
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
+        ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000');
+});
+
+it('counts the CI places a proof can wait for: VM places before the container switch, VM and container places after', function (bool $placement, int $places): void {
+    [$host, $project] = containerPoolHost(placement: $placement, ciPlaces: 2, containerCi: 3);
+    // A taken place still counts: it is a place the proof can wait for.
+    app(TaskVmSlotPool::class)->take(slotPoolGroup($project), proof: true);
+
+    expect(app(TaskVmSlotPool::class)->usableCiPlaces())->toBe($places);
+})->with(['before the switch' => [false, 2], 'after the switch' => [true, 5]]);

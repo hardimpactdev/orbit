@@ -60,7 +60,7 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
-Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-vms`. Each live VM holds one place in its pool until deletion. See [Task VM fields](/reference/node-settings#task-vm-fields).
+Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-vms`. Each live VM holds one place in its pool until deletion. See [Task VM fields](/reference/node-settings#task-vm-fields). The optional `task_vms.containers` member adds [task container places](/reference/node-settings#task-container-fields), counted apart from the VM places.
 
 ## Repair managed state
 

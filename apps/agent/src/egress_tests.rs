@@ -87,8 +87,13 @@ struct World {
 
 impl World {
     fn new() -> Self {
+        Self::under("orbittask0")
+    }
+
+    /// A host with the bridge `network` and one VM on it.
+    fn under(network: &str) -> Self {
         let root = TempDir::new();
-        let paths = Paths::under(&root.0, "orbittask0");
+        let paths = Paths::under(&root.0, network);
         for directory in [
             &paths.hosts_dir,
             paths.dns_log.parent().unwrap(),
@@ -1373,13 +1378,10 @@ fn rows_are_sorted_by_destination_numeric_port_and_protocol_whatever_the_order_s
 fn the_watch_list_names_a_bridge_or_nothing() {
     use crate::workspace::parse_watch_egress;
     let named = |network: &str| json!({"data": {"egress": {"network": network}}});
-    assert_eq!(
-        parse_watch_egress(&named("orbittask0")),
-        Some("orbittask0".into())
-    );
+    assert_eq!(parse_watch_egress(&named("orbittask0")), vec!["orbittask0"]);
     assert_eq!(
         parse_watch_egress(&named("orbittaskab12cd")),
-        Some("orbittaskab12cd".into())
+        vec!["orbittaskab12cd"]
     );
     for bad in [
         "orbittask",
@@ -1390,26 +1392,47 @@ fn the_watch_list_names_a_bridge_or_nothing() {
         "",
         "orbittask 0",
     ] {
-        assert_eq!(parse_watch_egress(&named(bad)), None, "{bad:?}");
+        assert!(parse_watch_egress(&named(bad)).is_empty(), "{bad:?}");
     }
-    assert_eq!(parse_watch_egress(&json!({"data": {"egress": null}})), None);
-    assert_eq!(parse_watch_egress(&json!({"data": {}})), None);
+    assert!(parse_watch_egress(&json!({"data": {"egress": null}})).is_empty());
+    assert!(parse_watch_egress(&json!({"data": {}})).is_empty());
+    assert!(parse_watch_egress(&json!({"data": {"egress": {"network": 5}}})).is_empty());
+}
+
+#[test]
+fn the_watch_list_names_the_container_bridge_beside_the_vm_bridge() {
+    use crate::workspace::parse_watch_egress;
+    let both = |vm: Value, container: Value| json!({"data": {"egress": {"network": vm, "container_network": container}}});
     assert_eq!(
-        parse_watch_egress(&json!({"data": {"egress": {"network": 5}}})),
-        None
+        parse_watch_egress(&both(json!("orbittask0"), json!("orbittaskc0"))),
+        vec!["orbittask0", "orbittaskc0"]
+    );
+    assert_eq!(
+        parse_watch_egress(&both(json!("orbittask0"), Value::Null)),
+        vec!["orbittask0"]
+    );
+    assert_eq!(
+        parse_watch_egress(&both(json!("orbittask0"), json!("eth0"))),
+        vec!["orbittask0"]
+    );
+    assert_eq!(
+        parse_watch_egress(&both(json!("orbittask0"), json!("orbittask0"))),
+        vec!["orbittask0"]
     );
 }
 
 fn step(runner: &mut Runner, world: &World, network: Option<&str>) -> Step {
-    runner.step_with(network, Instant::now(), STAMP, |name| {
+    let networks: Vec<String> = network.into_iter().map(str::to_owned).collect();
+    runner.step_with(&networks, Instant::now(), STAMP, |name| {
         Observer::with_paths(name, world.paths.clone())
     })
 }
 
 fn dirty(runner: &Runner) -> bool {
     runner
-        .observer
-        .as_ref()
+        .observers
+        .values()
+        .next()
         .unwrap()
         .vms
         .values()
@@ -1431,7 +1454,7 @@ fn without_egress_in_the_watch_list_the_runner_holds_no_state_and_starts_at_the_
     step(&mut runner, &world, Some("orbittask0"));
     let cleared = step(&mut runner, &world, None);
     assert!(!runner.active());
-    assert!(runner.observer.is_none());
+    assert!(runner.observers.is_empty());
     assert!(cleared.facts.is_empty() && cleared.known.is_empty());
 
     let back = step(&mut runner, &world, Some("orbittask0"));
@@ -1445,9 +1468,68 @@ fn another_bridge_starts_a_new_observer() {
     let world = World::new();
     let mut runner = Runner::default();
     step(&mut runner, &world, Some("orbittask0"));
-    assert_eq!(runner.observer.as_ref().unwrap().network(), "orbittask0");
+    assert_eq!(
+        runner.observers.keys().collect::<Vec<_>>(),
+        vec!["orbittask0"]
+    );
     step(&mut runner, &world, Some("orbittask1"));
-    assert_eq!(runner.observer.as_ref().unwrap().network(), "orbittask1");
+    assert_eq!(
+        runner.observers.keys().collect::<Vec<_>>(),
+        vec!["orbittask1"]
+    );
+}
+
+#[test]
+fn a_container_host_observes_each_bridge_with_its_own_files_and_state() {
+    let vms = World::new();
+    let containers = World::under("orbittaskc0");
+    std::fs::remove_file(containers.paths.hosts_dir.join("project_beast-tvm-3.eth0")).unwrap();
+    containers.set_vm(
+        "project_beast-tc-1.eth0",
+        "10:66:6a:00:00:c1",
+        "beast-tc-1",
+        "10.251.78.5",
+    );
+    let networks = vec!["orbittask0".to_owned(), "orbittaskc0".to_owned()];
+    let mut runner = Runner::default();
+    let paths = |name: &str| {
+        if name == "orbittaskc0" {
+            containers.paths.clone()
+        } else {
+            vms.paths.clone()
+        }
+    };
+    let first = runner.step_with(&networks, Instant::now(), STAMP, |name| {
+        Observer::with_paths(name, paths(name))
+    });
+    let mut facts: Vec<(String, String)> = first
+        .facts
+        .iter()
+        .map(|(name, data)| (name.clone(), data["network"].as_str().unwrap().to_owned()))
+        .collect();
+    facts.sort();
+    assert_eq!(
+        facts,
+        vec![
+            ("beast-tc-1".to_owned(), "orbittaskc0".to_owned()),
+            ("beast-tvm-3".to_owned(), "orbittask0".to_owned()),
+        ]
+    );
+    assert_eq!(
+        first.known,
+        BTreeSet::from(["beast-tc-1".to_owned(), "beast-tvm-3".to_owned()])
+    );
+
+    // A bridge the watch list no longer names drops its state; the other keeps its own.
+    let vms_only = vec!["orbittask0".to_owned()];
+    let after = runner.step_with(&vms_only, Instant::now(), STAMP, |name| {
+        Observer::with_paths(name, paths(name))
+    });
+    assert_eq!(after.known, BTreeSet::from(["beast-tvm-3".to_owned()]));
+    assert_eq!(
+        runner.observers.keys().collect::<Vec<_>>(),
+        vec!["orbittask0"]
+    );
 }
 
 #[test]

@@ -100,8 +100,42 @@ it('sends task VM host settings and their removal without changing apps', functi
     'task-limited host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
     'proof-only host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
     'shared host' => [['cidr' => '10.251.77.0/24', 'task_places' => 12, 'ci_places' => 2]],
+    'host with task containers' => [['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2, 'containers' => ['cidr' => '10.251.78.0/24', 'task_places' => 1, 'ci_places' => 1, 'network' => 'orbittaskc0']]],
     'removed host' => [null],
 ]);
+
+it('reports a skip when the Gateway wrote nothing, in human and JSON output', function (): void {
+    node_update_profile();
+    $host = ['cidr' => '10.251.77.0/24', 'task_places' => 2, 'ci_places' => 2];
+    MockClient::global([
+        '*/api/v1/nodes/9' => MockResponse::make([
+            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'settings' => ['task_vms' => $host]],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844', 'skipped' => 'node.unchanged'],
+        ]),
+    ]);
+
+    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host)])
+        ->expectsOutputToContain('Skipped — already set (node.unchanged)')
+        ->doesntExpectOutputToContain('updated.')
+        ->assertExitCode(0);
+    $this->artisan('node:update', ['node' => '9', '--task-vms' => json_encode($host), '--json' => true])
+        ->expectsOutputToContain('"skipped":"node.unchanged"')
+        ->assertExitCode(0);
+});
+
+it('reports no skip for a saved change', function (): void {
+    node_update_profile();
+    MockClient::global([
+        '*/api/v1/nodes/9' => MockResponse::make([
+            'data' => ['id' => 9, 'name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9'],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+    ]);
+
+    $this->artisan('node:update', ['node' => '9', '--name' => 'beast', '--json' => true])
+        ->doesntExpectOutputToContain('skipped')
+        ->assertExitCode(0);
+});
 
 it('sends a null apps path for an empty --apps-path and the record fields beside it', function (): void {
     node_update_profile();
@@ -142,6 +176,9 @@ it('refuses missing and malformed input before making a request', function (arra
     'non-string pool size' => [['node' => '2', '--task-vms' => '{"cidr":"10.252.10.0/24","max_vms":3,"pool_size":512}'], 'node.setting_invalid'],
     'non-string operator-owned resource' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":["orbit-ci/*",7]}'], 'node.setting_invalid'],
     'operator-owned object instead of list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":{"resource":"orbit-ci/*"}}'], 'node.setting_invalid'],
+    'containers without places' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24"}}'], 'node.setting_invalid'],
+    'containers unknown field' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"image_alias":"base"}}'], 'node.setting_invalid'],
+    'containers as a list' => [['node' => '2', '--task-vms' => '{"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":[]}'], 'node.setting_invalid'],
 ]);
 
 it('renders a Gateway refusal through the shared boundary', function (): void {

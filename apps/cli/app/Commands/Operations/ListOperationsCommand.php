@@ -20,6 +20,8 @@ final class ListOperationsCommand extends GatewayCommand
         {--status= : queued, running, waiting, succeeded, failed, or cancelled}
         {--kind= : An operation kind, such as instance.deploy}
         {--instance= : Only operations on this Instance}
+        {--limit= : Rows per page, 1 to 100 (default 20)}
+        {--cursor= : Read the page after the one that returned this cursor}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,6 +32,8 @@ final class ListOperationsCommand extends GatewayCommand
         $status = $this->option('status');
         $kind = $this->option('kind');
         $instance = $this->option('instance');
+        $limit = $this->option('limit');
+        $cursor = $this->option('cursor');
 
         if ($status !== null && ! in_array($status, self::Statuses, true)) {
             return $this->renderGatewayFailure('input.invalid', '--status must be queued, running, waiting, succeeded, failed, or cancelled.', details: ['field' => 'status']);
@@ -37,6 +41,14 @@ final class ListOperationsCommand extends GatewayCommand
 
         if ($instance !== null && preg_match('/\A[1-9][0-9]*\z/', $instance) !== 1) {
             return $this->renderGatewayFailure('instance.id_invalid', '--instance must be a positive Instance ID.', details: ['field' => 'instance']);
+        }
+
+        if ($limit !== null && (preg_match('/\A[1-9][0-9]*\z/', $limit) !== 1 || (int) $limit > 100)) {
+            return $this->renderGatewayFailure('input.invalid', '--limit must be a whole number from 1 to 100.', details: ['field' => 'limit']);
+        }
+
+        if ($cursor !== null && preg_match('/\A[1-9][0-9]*\z/', $cursor) !== 1) {
+            return $this->renderGatewayFailure('input.invalid', '--cursor must be the next_cursor of an earlier page.', details: ['field' => 'cursor']);
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -52,6 +64,8 @@ final class ListOperationsCommand extends GatewayCommand
                 kind: $kind,
                 targetType: $instance === null ? null : 'instance',
                 targetId: $instance === null ? null : (int) $instance,
+                limit: $limit === null ? null : (int) $limit,
+                cursor: $cursor,
             ),
             OperationsResponse::class,
             ['List operations', 'Loading operations', 'Loaded operations'],
@@ -72,6 +86,10 @@ final class ListOperationsCommand extends GatewayCommand
             array_map(OperationOutput::row(...), $operations->operations),
             'No operations found.',
         ));
+
+        if ($operations->nextCursor !== null) {
+            $this->line("More operations: --cursor={$operations->nextCursor}");
+        }
 
         return self::SUCCESS;
     }

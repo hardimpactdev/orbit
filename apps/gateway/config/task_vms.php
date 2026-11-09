@@ -14,6 +14,8 @@ $projectIds = static fn (string $key): mixed => json_decode((string) (env($key) 
 
 return [
     'enabled' => (bool) env('ORBIT_TASK_VMS_ENABLED', false),
+    // Lets normal placement take task container places (docs/reference/task-containers.md#placement-before-the-switch).
+    'container_placement' => (bool) env('ORBIT_TASK_VMS_CONTAINER_PLACEMENT', false),
     'dev_cluster_id' => env('ORBIT_TASK_VMS_DEV_CLUSTER_ID'),
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',
     // One private HTTPS site for Swamp workers; not a list of admitted sites.
@@ -44,6 +46,11 @@ return [
             'zfs_dataset' => null,
             // Incus instances and custom volumes the operator owns, as <project>/<name> or <project>/*: the stray report skips them.
             'operator_owned' => [],
+            // The defaults of a host's optional `containers` member; a host without the member has no container side.
+            'containers' => [
+                'project' => 'orbit-task-containers',
+                'network' => 'orbittaskc0',
+            ],
         ],
     ],
 ];

@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, task-host input withdrawal and apps.path are Node work, one node:update. docs/reference/node-settings.md.
-  %% status: reviewed
+  %% status: draft
   %% command: node:update
   %% kind: node.update
   autonumber
@@ -12,6 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as Target Node<br/>reached over ssh
+  %% path: main
   CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
   %%> - `orbit node:update NODE --apps-path=PATH`
@@ -26,12 +27,29 @@ sequenceDiagram
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
   %%> - `task_vms.task_places` and `task_vms.ci_places` are separate VM counts from 0 to 64; one live VM holds one place until deletion is confirmed
+  %%> - the optional `task_vms.containers` member has its own `task_places` and `ci_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR
   %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
   %%> - whether the apps folder changes and needs Node work, so a run starts
-  alt apps folder changes or task host is removed or its bridge changes
+  alt task VM host settings invalid
+    %% path: settings-refused
+    GW--xCLI: Settings refused<br/>node.settings_invalid
+    %%> When:
+    %%> - a field fails its check, or a bridge of the host overlaps the VPN subnet, another bridge of the host, or a bridge of another host
+    %%> - `containers` uses the host's VM project or bridge name
+    %%> Result:
+    %%> - nothing changes and no run starts
+  else task containers still live
+    %% path: runtime-in-use
+    GW--xCLI: Containers in use<br/>task_vm.runtime_in_use
+    %%> When:
+    %%> - the request removes `containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed
+    %%> Result:
+    %%> - nothing changes; change the container side after its containers are released
+  else apps folder changes or a task host bridge goes or moves
+    %% path: node-work
     GW->>SW: Start run, full intent<br/>operation-node-update
     %%> Inputs:
     %%> - the new apps folder, and the managed user and group that must own it
@@ -45,10 +63,12 @@ sequenceDiagram
     %%> - the task ID, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt existing task host removed or bridge / CIDR changed
+    opt a task host bridge goes, or its name or CIDR changes
+      %% path: withdraw-input
       SW->>N: Withdraw task host input<br/>shared Ansible phase
       %%> What it does:
-      %%> - removes only rules with the three catalog-owned task-host input comments, including duplicates and IPv6 rows
+      %%> - removes only rules with the three catalog-owned input comments of each bridge that goes or moves, including duplicates and IPv6 rows
+      %%> - the VM bridge's are `orbit:task-vms-*`; the container bridge's, when `containers` goes or its `network` or `cidr` changes, are `orbit:task-containers-*`
       %%> - reads the firewall again and asserts none remain; failure keeps the stored settings
     end
     SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
@@ -61,6 +81,7 @@ sequenceDiagram
     %%> Why:
     %%> - it is the one end check: a real folder of the managed user and group, mode 0755
     alt folder is ready
+      %% path: folder-ready
       N-->>SW: owner, group, mode
       SW-->>GW: Run succeeded<br/>terminal event
       %%> How the Gateway learns it:
@@ -70,6 +91,7 @@ sequenceDiagram
       %%> - the apps folder is set, and any task VM host change in the same request is saved with it
       %%> - the task succeeds
     else a step fails
+      %% path: run-failed
       N--xSW: wrong owner or exit ≠ 0
       %%> When:
       %%> - the folder can't be created, a file is in the way, or the check doesn't match
@@ -87,6 +109,7 @@ sequenceDiagram
       GW-->>CLI: status + result
     end
   else only records change
+    %% path: records
     Note over GW: Save the records
     %%> What it does:
     %%> - saves the name, platform or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted

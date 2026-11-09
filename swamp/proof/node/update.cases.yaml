@@ -1,0 +1,116 @@
+# Stage 1 spec. Format and step vocabulary: docs/reference/verification-cases.
+# These cases cover the task VM host settings and their `containers` member. Most changes are records: app-dev has no
+# task VM host settings in the base. Removing the `containers` member starts the run that withdraws its bridge's input rules.
+command: node:update
+chart: node/update
+target: app-dev
+sources: [gateway]
+baseline: [operations, node_records]
+
+uncovered:
+  "path:main": "Need apps-folder fixtures and folder owner and mode assertions to prove that an apps folder change runs on the Node and saves the setting only after the end check."
+  "path:folder-ready": "Same need as path:main: the folder check passes and the Gateway saves the settings from the run."
+  "path:run-failed": "Need a fixture that makes the apps folder check fail, such as a file in the way, and an assertion that the stored settings stay unchanged."
+  "path:withdraw-input": "Need a task VM host fixture with its DHCP and DNS input rules on the target, then a bridge change that withdraws them, checked with ufw rows."
+  "path:runtime-in-use": "Need a fixture that records a live task container row on the target host, so a removal or a project, network or CIDR change of containers is refused with task_vm.runtime_in_use. No command makes a task container yet."
+  "flag:--name": "Name changes are records with their own refusals; their cases are build work of the record fields."
+  "flag:--platform": "Platform changes need an unmanaged Node fixture, such as one from node_fixture, to prove the record and node.platform_managed on a managed Node."
+  "flag:--apps-path": "Same need as path:main."
+  "code:node.id_invalid": "Local refusal of a missing or non-positive Node ID; the CLI standard covers it for every Node command."
+  "code:node.option_required": "Local refusal before a request; needs no fleet, and the CLI tests cover it."
+  "code:node.platform_managed": "Same need as flag:--platform."
+  "code:node.provisioning_busy": "Need a fixture that holds the Node's lifecycle name lock while the update arrives."
+  "code:validation.failed": "Name and platform refusals; build work of the record fields."
+  "code:node.settings_platform_unsupported": "Need a non-Linux Node fixture with task VM host settings whose bridge change starts the run."
+  "code:task_vm.runtime_in_use": "Same need as path:runtime-in-use."
+
+cases:
+  - id: containers-set
+    batch: fresh-fleet
+    covers: [records, node-work]
+    summary: Add task VM host settings with a containers member and change the container places, which are records. Removing the member then runs the withdrawal of the container bridge's input rules and saves the settings after it.
+    stages:
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+              expect:
+                exit: 0
+                request: none
+                json:
+                  - {path: settings.task_vms.containers.task_places, equals: 1}
+                  - {path: settings.task_vms.containers.ci_places, equals: 1}
+                  - {path: settings.task_vms.containers.project, equals: orbit-task-containers}
+                  - {path: settings.task_vms.containers.network, equals: orbittaskc0}
+                  - {path: settings.task_vms.containers.cidr, equals: 10.251.78.0/24}
+                  - {path: settings.task_vms.task_places, equals: 0}
+      - act:
+          - cli:
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":2,"ci_places":0}}']
+              expect:
+                exit: 0
+                request: none
+                json:
+                  - {path: settings.task_vms.containers.task_places, equals: 2}
+                  - {path: settings.task_vms.containers.ci_places, equals: 0}
+          - cli:
+              run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0}']
+              expect:
+                exit: 0
+                status: succeeded
+                steps: {name: Withdraw task host input, count: 1}
+          - cli:
+              run: [node:show, "${app-dev.id}"]
+              expect:
+                exit: 0
+                request: none
+                json:
+                  - {path: settings.task_vms.containers, absent: true}
+                  - {path: settings.task_vms.cidr, equals: 10.251.77.0/24}
+
+  - id: containers-repeat
+    batch: fresh-fleet
+    covers: [records]
+    summary: Repeating stored task VM host settings with a containers member writes nothing and reports the skip.
+    setup:
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+          expect: {exit: 0}
+    act:
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}']
+          forms: [human, json]
+          expect: {exit: 0, request: none, skipped: node.unchanged}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}
+
+  - id: containers-refused
+    batch: fresh-fleet
+    covers: [settings-refused]
+    summary: A containers member that reuses the VM bridge name, overlaps the VM bridge or another host's bridge, uses the VM project, or misses its places is refused, and nothing changes.
+    setup:
+      - cli:
+          run: [node:update, "${gateway.id}", '--task-vms={"cidr":"10.251.79.0/24","task_places":0,"ci_places":0}']
+          expect: {exit: 0}
+    act:
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.79.0/24","task_places":1,"ci_places":1}}']
+          forms: [human, json]
+          expect: {exit: 1, code: node.settings_invalid, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"network":"orbittask0"}}']
+          forms: [human, json]
+          expect: {exit: 1, code: node.settings_invalid, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.77.128/25","task_places":1,"ci_places":1}}']
+          forms: [human, json]
+          expect: {exit: 1, code: node.settings_invalid, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1,"project":"orbit-tasks"}}']
+          forms: [human, json]
+          expect: {exit: 1, code: node.settings_invalid, request: none}
+      - cli:
+          run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24"}}']
+          forms: [human, json]
+          expect: {exit: 1, code: node.setting_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}

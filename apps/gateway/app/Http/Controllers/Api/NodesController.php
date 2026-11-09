@@ -14,6 +14,7 @@ use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
 use App\Data\Operations\OperationData;
 use App\Domain\Nodes\NodeUpdates;
+use App\Domain\Nodes\UpdateNodeResult;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -120,8 +121,9 @@ final class NodesController extends Controller
         UpdateNodeAction $action,
     ): JsonResponse {
         $caller = $request->user();
-        $result = $action->execute($node, $request->name(), $request->platform(), $request->settings(),
+        $update = $action->execute($node, $request->name(), $request->platform(), $request->settings(),
             $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+        $result = $update->result;
         if ($result instanceof Operation) {
             return response()->json([
                 'data' => OperationData::fromModel($result)->toArray(),
@@ -131,7 +133,7 @@ final class NodesController extends Controller
 
         return response()->json([
             'data' => NodeData::fromModel($result)->toArray(),
-            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id'), ...($update->unchanged ? ['skipped' => UpdateNodeResult::Unchanged] : [])],
         ]);
     }
 }

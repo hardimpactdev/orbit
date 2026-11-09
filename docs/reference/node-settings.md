@@ -3,7 +3,7 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and explicit host configuration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -67,7 +67,7 @@ orbit node:update app-dev --apps-path=/mnt/apps
 
 The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. The request needs at least one member; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
 
-A patch changes only the members it names. Other stored keys stay, and the API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+A patch changes only the members it names. Other stored keys stay, and the API never returns them. When a patch needs no run and every value equals the stored one, Orbit writes nothing, and the response adds `meta.skipped: node.unchanged`. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Configure a task VM host
 
@@ -114,6 +114,34 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
 | `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
+| `containers` | No | absent | [Task container](/reference/task-containers) places of the host, with their own project, bridge and CIDR. See [Task container fields](#task-container-fields) |
+
+### Task container fields
+
+The optional `containers` object gives a host task container places beside its task VM places. A host without it runs only task VMs.
+
+```json
+{
+  "task_vms": {
+    "cidr": "10.251.77.0/24",
+    "task_places": 2,
+    "ci_places": 2,
+    "containers": { "cidr": "10.251.78.0/24", "task_places": 1, "ci_places": 1 }
+  }
+}
+```
+
+| Field | Required | Default | Meaning and validation |
+| --- | --- | --- | --- |
+| `task_places` | Yes | | Task places for containers, integer from 0 to 64, apart from the VM `task_places` |
+| `ci_places` | Yes | | CI places for containers, integer from 0 to 64, apart from the VM `ci_places` |
+| `project` | No | `orbit-task-containers` | Incus project of the containers and their base, with the VM `project` rule. It must differ from the host's VM `project` |
+| `network` | No | `orbittaskc0` | Bridge of the containers, with the VM `network` rule. It must differ from the host's VM `network` |
+| `cidr` | Yes | | Bridge network, with the VM `cidr` rule. It must not overlap the VPN subnet, the host's VM bridge, or any bridge of another host |
+
+The host's `pool`, `cpus`, `memory`, `disk` and `operator_owned` apply to both runtimes. `image_alias` is a VM field only.
+
+Container places are counted apart from VM places, and normal placement skips them until the operator turns on `task_vms.container_placement`; see [Place task VMs](/reference/compute-drivers#place-task-vms). While the host has a task container that is not destroyed, Orbit refuses to remove `containers` or to change its `project`, `network` or `cidr`, with HTTP 409 `task_vm.runtime_in_use`. Its places can change at any time.
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
@@ -168,11 +196,12 @@ The Gateway refuses an invalid value without changing the stored setting.
 | Code | Condition |
 | --- | --- |
 | `node.settings_platform_unsupported` | Apps preparation and firewall withdrawal require a Linux Node. |
-| `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member or is not an object or null. An unknown top-level member or an empty body returns `validation.failed`. |
+| `node.settings_invalid` | The `apps` or `task_vms` value has an unknown member, is not an object or null, or fails a field check. An unknown top-level member or an empty body returns `validation.failed`. |
 | `node.settings_path_invalid` | The path is empty or not absolute and normalized. |
 | `node.settings_path_protected` | The path overlaps a protected path. |
 | `node.settings_path_managed` | The path equals or lies inside an Instance checkout. |
 | `node.settings_root_failed` | The path failed the check or the preparation on the Node. |
+| `task_vm.runtime_in_use` | HTTP 409. The request removes `task_vms.containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. |
 
 ## Why it works this way
 

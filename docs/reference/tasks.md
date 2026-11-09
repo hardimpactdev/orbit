@@ -103,7 +103,7 @@ Task provision, prep, build and review leave each host’s [CI/refresh reserve](
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
-A run that provisions its own VM as one step can pin the VM to one task VM host. The [refresh of a host's base snapshot](/reference/compute-drivers#refresh-the-base-snapshot) does: its proof start goes to that host only and copies the base snapshot the host promoted last.
+A run that provisions its own VM as one step can pin the VM to one task VM host. The [refresh of a host's base snapshot](/reference/compute-drivers#refresh-the-base-snapshot) does: its proof start goes to that host only and copies the base snapshot the host promoted last. It takes a VM CI place, and a rebuild from stock withdraws only the host's VM base. Task container places stay out of task and proof placement until the [switch](/reference/compute-drivers#place-task-vms).
 
 Admission pins the commit the workspace starts from, so a group never starts on a red commit. Before its transaction, the Gateway walks the first-parent history of the Project's default branch from its head through the [GitHub App](/reference/github-app). It pins the newest commit whose Project `merge_check` passed on exactly that commit, by the same rule as the [review-and-merge gate](#handoff-ci): every run of that name comes from GitHub Actions and completed with `success`. It examines at most 20 commits, the bound of [automatic deploy source reads](/reference/deployments).
 
@@ -141,7 +141,7 @@ Early in the workspace run, beside the clone credential, a step asks the Gateway
 
 Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
-Each shared task VM host keeps one Large VM place for authenticated CI proofs, shared with its refresh candidate proof. CI-only hosts admit only authenticated CI proofs and their own refresh proofs. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and slot numbers.
+Each shared task VM host keeps one Large VM place for authenticated CI proofs, shared with its refresh candidate proof. CI-only hosts admit only authenticated CI proofs and their own refresh proofs. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
 
 Full capacity, or no usable promoted image, records the `tasks.provision` Operation as `waiting` in the shared task queue. It holds no VM, workspace or identity, and the group stays `todo`. Admission retries every 20 seconds in queue order and fails the Operation with `tasks.capacity_timeout` after two hours. The waiting Operation and the group show the queue position and the groups that hold the places; see [Task places](#task-places). A host without a recorded base snapshot cannot serve a new VM. See [Image fallback](/reference/compute-drivers#image-fallback).
 
@@ -1294,7 +1294,9 @@ A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.age
 
 Cancel is admitted under the group execution lock. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
-An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run releases the task's VM (`task_vm.slot_release`): it deletes the VM, its seed clone and its identity volume, and removes the hub peer. When the run passes, the Gateway deletes the workspace Instance and the Node, and marks the task and its open subtasks `cancelled`. Cancel runs no Project teardown: the workspace lives on the VM's disk and goes with it. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. A task without a VM is marked `cancelled` by the same run.
+An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run releases the task's VM and its place (`task_vm.slot_release`): it deletes the VM, its seed clone and its identity volume, and removes the hub peer. When the run passes, the Gateway deletes the workspace Instance and the Node, and marks the task and its open subtasks `cancelled`. Cancel runs no Project teardown: the workspace lives on the VM's disk and goes with it. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations.
+
+A task that holds no VM and no workspace, such as one in `todo` or one that waits for a place, has nothing to release. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. The same holds for `tasks.maintenance_finish` on a task whose VM publication already released.
 
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
 - **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
@@ -1319,7 +1321,7 @@ Teardown steps run before the workspace and task VM are destroyed, and only whil
 
 Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown while the VM is `ready` and retains recorded agent transcripts, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
 
-Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a slot number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
+Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a place number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
 
 
 ### Direct lifecycle acknowledgement

@@ -83,7 +83,7 @@ Renewal stays a hand procedure. When an alert names a worker token, follow the [
 
 Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
 
-The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationBudgetTable` reads `instance.create`, `instance.destroy` and `instance.deploy` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The deploy admission sets the frozen deploy step timeouts plus 900 seconds. The Gateway does not re-read the Project.
+The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationBudgetTable` reads `instance.create`, `instance.destroy`, `instance.deploy` and `proof.command` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The deploy admission sets the frozen deploy step timeouts plus 900 seconds. The Gateway does not re-read the Project.
 
 An explicit kind budget wins. Long-running kinds have a fixed budget in the same table: the 14-day p95 of successful runs, rounded up to the next five minutes. For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A first success replaces it with a p95. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.
 
@@ -91,7 +91,7 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. The longest run of author turns replaces the row once the history holds them.
 
-`proof.run` has a fixed 11,100 seconds: 7,200 seconds for capacity admission, 3,600 seconds for execution and 300 seconds of margin. Its VM children retain their 3,600-second budgets. Waiting for a CI place consumes the admission allowance; it never skips execution or turns an empty report into a success. Admission expiry fails clearly.
+`proof.run` has a fixed 14,700 seconds: 7,200 seconds for capacity admission, 7,200 seconds for the longest run of a shard and 300 seconds of margin. Waiting for a CI place consumes the admission allowance; it never skips execution or turns an empty report into a success. Admission expiry fails clearly.
 
 `task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The converge of a base from stock builds the nested fleet when the base has none. That takes 5,400 seconds at its bound and about 25 minutes in practice (the standalone fleet build, since removed, took 1,840 seconds as operation 11816). A VM at its pins converges in about a minute. The publication, the boot check and the check VM take a few minutes each. A 14-day p95 replaces it after the first successes.
 
@@ -109,9 +109,11 @@ The other task VM workflows (`task-vm-workspace` and `task-maintenance-path`) li
 
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. Replace it with the 14-day p95 after the first passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
-`proof.command` has a provisional 3,600 seconds, and `proof.run` 3,900. They have no run yet. A run proves one command in its own task VM through the workflow `operation-proof-run`: the task provision, then the cases through `proof-fleet-verify`, then the destruction of the VM.
+A `proof.command` captures its budget at admission from the batches it proves. A run proves its batches in its own task VM through the workflow `operation-proof-run`: the task provision, then each batch through `proof-fleet-verify`, then the destruction of the VM.
 
-Basis of `proof.command`: `firewall:allow` has 16 cases of about 85 seconds each with their restore (the main case waits 65 seconds for Doctor, so it is the longest) and at most 180 seconds, 14 of them in the first batch and a restore for the second batch. That is about 1,800 seconds; the provision takes about 300 and the destruction about 120; with 1.5 times margin and rounded up to five minutes it is 3,600. The `proof.run` that the CLI follows adds five minutes, because it closes when its last run has ended. Replace both with the 14-day p95 after the first success.
+Its budget is 600 seconds for the shard, 180 seconds for each batch and the measured seconds of its cases, times 1.5, rounded up to five minutes, at most 7,200 seconds. The fixed parts come from the shards of proof 14337, which took 996 to 1,909 seconds for 3 to 8 batches. A fixed 3,600 seconds ended a run of 17 batches on one VM half way (proofs 14341 and 14651). A plan that needs a longer shard [waits for another CI place](/reference/compute-drivers#place-task-vms). When the Gateway ends a run at its budget, the run keeps the verdicts of the batches that ended.
+
+A `proof.command` that older code admitted has no captured budget, for example one admitted while a release switches. It keeps the fixed 3,600 seconds it had then (`OperationBudgetTable::UncapturedSeconds`), never the 60-second fallback of a captured kind.
 
 `proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. Replace it with the 14-day p95 after the first success.
 
@@ -161,7 +163,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
-The optional `steps` list uses typed `OperationStep` metadata. Start and list responses can omit it; show and cancel responses include it.
+The optional `steps` list uses typed `OperationStep` metadata. Start responses can omit it; show and cancel responses include it. List rows never carry `steps`, `input` or `result`; [Page the list](#page-the-list) says why.
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. An admission that waits for a place keeps the caller's request as `input.capacity_request`; the summary keeps it as an object with the same filter, so a waiting Operation reads the same request on every read. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
@@ -309,7 +311,7 @@ Four requests read and stop operations.
 | --- | --- |
 | `GET /api/v1/operations/{operation}` | The record with every step |
 | `GET /api/v1/operations/{operation}?after_sequence=N` | The record with only the steps whose `sequence` is greater than `N` |
-| `GET /api/v1/operations` | The 50 newest records, without steps. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id` |
+| `GET /api/v1/operations` | The newest records, 20 to a page, without `input`, `result` or `steps`. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id`, and [page it](#page-the-list) with `limit` and `cursor` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
 The list selects operations and caller Node names in one query. Show uses the bound operation and reads its steps in one query. Neither waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
@@ -330,6 +332,12 @@ The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([
 Each name starts with a lower-case letter and holds only lower-case letters, digits, and `_`.
 
 The Gateway checks the form of `kind` and `target_type`, not whether a kind exists. A well-formed value that no operation has returns an empty list. A value in another form answers `422` with `validation.failed`.
+
+### Page the list
+
+`GET /api/v1/operations` returns at most `limit` records, newest first. `limit` is 1 to 100; the default is 20. `meta.next_cursor` names the next page, or is null on the last page. Send it back as `cursor` with the same filters to read the next page. A cursor is an opaque string; one in another form answers `422` with `validation.failed`. A page is not a snapshot: an Operation created after the first page appears on no later page.
+
+A list row has every field of [the record](#the-record) except `input`, `result` and `steps`. A stored input holds the whole admitted intent and a result can hold up to 256 KiB, so a page of full records can pass what an MCP client accepts in one reply. Read one Operation with `operation:show` to get its input summary, result and steps.
 
 ### Follow an operation by polling
 

@@ -1,0 +1,136 @@
+{
+  "recorded_date": "2026-11-08",
+  "scope": "Historical spike evidence, not live inventory or a product support guarantee",
+  "production": {
+    "source_directory": "/Users/nckrtl/Downloads/orbit-production-container-spike/evidence",
+    "source_host_directory": "app-prod:/home/orbit/spikes/production-container-1108/evidence",
+    "source_sha256": {
+      "proof-result.json": "09bab5e1b5ff5df860a1a8e9df1c7169fe4e74b2e55fb0499c0281c6b5012611",
+      "warm-deployment-measurements.json": "c82653d4386b1e70db39d9f2d7377edd16a76c273ca72266710af5f296fbdd97",
+      "dependency-deployment-result.json": "a17c20bb5edf21e662807fb8239aeb362c5804a511d13276bf639d82972da0b7",
+      "dependency-cache-before.json": "bc00c4165ba121643bcebab0d49ffa76235f514c03f9a72a61c42a7408c58bf1",
+      "deps1-prepare.log": "a66e7a0aab53b20e93e273771a34ab1a1da5e8fc7e1921d1579c1873a85c0714",
+      "dependency-https-check.json": "a96ab59b8c8947e32cca426e2bb431138fc8efd345ae56dbcb3eda2dea2c9959"
+    },
+    "warm_runs": [
+      {
+        "container": "speed1",
+        "ref": "e02731ed52c4182039ee7f277977b4a97aaca0db",
+        "utc": "2026-11-08T11:46:23Z",
+        "prepare_seconds": 5.6335,
+        "release_seconds": 4.2621,
+        "healthy_seconds": 9.8955,
+        "promotion_and_retirement_seconds": 1.5285,
+        "complete_seconds": 11.4241,
+        "errors": 0,
+        "first_new_https_seconds": 10.5247,
+        "sampled_requests": 74
+      },
+      {
+        "container": "speed2",
+        "ref": "e02731ed52c4182039ee7f277977b4a97aaca0db",
+        "utc": "2026-11-08T11:46:35Z",
+        "prepare_seconds": 5.6908,
+        "release_seconds": 4.188,
+        "healthy_seconds": 9.8788,
+        "promotion_and_retirement_seconds": 1.4076,
+        "complete_seconds": 11.2864,
+        "errors": 0,
+        "first_new_https_seconds": 10.3219,
+        "sampled_requests": 73
+      },
+      {
+        "container": "speed3",
+        "ref": "e02731ed52c4182039ee7f277977b4a97aaca0db",
+        "utc": "2026-11-08T11:46:46Z",
+        "prepare_seconds": 5.6772,
+        "release_seconds": 4.1494,
+        "healthy_seconds": 9.8266,
+        "promotion_and_retirement_seconds": 1.6614,
+        "complete_seconds": 11.488,
+        "errors": 0,
+        "first_new_https_seconds": 10.6005,
+        "sampled_requests": 71
+      }
+    ],
+    "dependency_run": {
+      "container": "deps1",
+      "ref": "22113fa1d2021f6c967015531560170400ff5fa5",
+      "utc": "2026-11-08T12:00:51Z",
+      "prepare_seconds": 7.4677,
+      "release_seconds": 4.3794,
+      "healthy_seconds": 11.8471,
+      "promotion_and_retirement_seconds": 1.3928,
+      "complete_seconds": 13.2399,
+      "errors": 0,
+      "first_new_https_seconds": 12.2309,
+      "sampled_requests": 86
+    },
+    "dependency_prepare": {
+      "label": "deps1",
+      "ref": "22113fa1d2021f6c967015531560170400ff5fa5",
+      "git_seconds": 0.146,
+      "sha": "22113fa1d2021f6c967015531560170400ff5fa5",
+      "composer_seconds": 3.55,
+      "bun_install_seconds": 0.404,
+      "build_seconds": 1.286,
+      "stop_prep_seconds": 1.058,
+      "snapshot_seconds": 0.08
+    },
+    "dependency_release": {
+      "snapshot": "deps1",
+      "container": "deps1",
+      "clone_seconds": 0.405,
+      "boot_seconds": 0.405,
+      "migrate_seconds": 1.324,
+      "cache_seconds": 0.893,
+      "server_start_seconds": 0.28,
+      "ready_seconds": 0.699,
+      "ip": "10.209.108.18",
+      "healthy": true
+    },
+    "https_check": {
+      "page": true,
+      "packages": {
+        "data": {
+          "release": "dependencies",
+          "container": "deps1"
+        },
+        "spatie": "4.23.1"
+      },
+      "assets": [
+        {
+          "url": "https://container-spike.prod/build/assets/app-DwXdhIKi.css",
+          "bytes": 37729
+        },
+        {
+          "url": "https://container-spike.prod/build/assets/app-vNT4-pHm.js",
+          "bytes": 332833
+        }
+      ]
+    },
+    "baseline_proof": {
+      "requests": 126,
+      "failed_requests": 0,
+      "long_request_completed_on_previous_release": true,
+      "session_survived_rollback": true,
+      "unhealthy_candidate_rejected": true
+    }
+  },
+  "development": {
+    "source_report": "beast:/home/nckrtl/spikes/orbit-container-1108/README.md",
+    "database_clone_seconds": 1.111,
+    "filesystem_clone_seconds": 0.114,
+    "stop_seconds": 1.274,
+    "wake_to_http_seconds": 3.745,
+    "clone_database_location": "Services; clone not rerun after the later move to Beast",
+    "t3_scope": "Authenticated terminal API verified; no actual provider turn or Conn picker acceptance",
+    "final_database_config": "Beast PostgreSQL, database sessions, persistent PDO disabled, synchronous_commit=on, fsync=on",
+    "wal_observation": {
+      "session_update_ms": 270.721,
+      "wal_sync_observation_span_ms": 263,
+      "host_cpu_idle_percent": 82.64,
+      "source_prefix": "pg-observation-114545"
+    }
+  }
+}

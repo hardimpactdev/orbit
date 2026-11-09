@@ -1,11 +1,11 @@
 ---
 title: "orbit operation:list"
 sidebarTitle: "operation:list"
-description: "List the 50 newest operations on Nodes you can access, newest first."
+description: "List the newest operations on Nodes you can access, newest first, one page at a time."
 ---
 
 ```bash
-orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
+orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--limit=N] [--cursor=CURSOR] [--json]
 ```
 
 | Option | Meaning |
@@ -13,8 +13,10 @@ orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
 | `--status=STATUS` | `queued`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled`. |
 | `--kind=KIND` | An operation kind, such as `instance.deploy`. |
 | `--instance=ID` | Only operations on this Instance. |
+| `--limit=N` | Rows per page, 1 to 100. Default 20. |
+| `--cursor=CURSOR` | Read the page after the one that returned this cursor. |
 
-The table shows ID, Kind, Target, Status, By, and Started. JSON returns the list of parent records.
+The table shows ID, Kind, Target, Status, By, and Started. When there are more rows, a line names the cursor of the next page. JSON returns `operations`, the rows, and `next_cursor`, null on the last page. A row leaves out `input`, `result` and `steps`; [`operation:show`](/cli/operation/show) returns them. [Page the list](/reference/operations#page-the-list) gives the rules.
 
 ```bash
 orbit operation:list --status=running

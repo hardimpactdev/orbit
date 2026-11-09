@@ -18,7 +18,7 @@ sequenceDiagram
   %%> - the daily schedule at 03:20, and an operator
   %%> - a release asks a host again, up to 6 rounds 5 s apart, when Swamp could not take the run yet because it had just reloaded
   %%> Result:
-  %%> - the candidate proof may take the shared CI reserve (slot 1), then any free task slot; task work cannot starve it, and a busy proof may still refuse it until the next trigger
+  %%> - the candidate proof may take the shared CI reserve (place 1), then any free task place; task work cannot starve it, and a busy proof may still refuse it until the next trigger
   %%> - a CI-only host permits its own refresh proof, pinned to that host; Sabre refresh proves on Sabre and never spills onto another host
   %%> - one run per host, all hosts in parallel; the run never holds the release, and a host that refuses is skipped until the next trigger
   %%> - a host with a refresh open keeps it, and the newest commit waits behind it: one pending commit per host, the newest wins, and the run that ends admits it
@@ -56,13 +56,13 @@ sequenceDiagram
   %%> - stops the base VM and snapshots it and its seed volume under the run's name; ZFS snapshots, about 1 s
   SW->>H: Prove the candidate<br/>one task start
   %%> What it does:
-  %%> - steps 2 to 4 of a task start from the new snapshot in a free slot, then its release
+  %%> - steps 2 to 4 of a task start from the new snapshot in a free place, then its release
   SW->>H: Prune old snapshots<br/>keep -previous
   %%> What it does:
   %%> - keeps the new snapshot and the one before it; removes older ones of the VM and the seed
   SW->>H: Remove host leftovers<br/>after the prune
   %%> What it does:
-  %%> - in the task VM project: every image but the stock source image, the volumes of retired image seeds (`orbit-topology-seed-*`) and the slot-pool baseline (`orbit-baseline-*`)
+  %%> - in the task VM project: every image but the stock source image, the volumes of retired image seeds (`orbit-topology-seed-*`) and the place-pool baseline (`orbit-baseline-*`)
   %%> - the retired projects the Gateway names (`orbit-baselines`, `orbit-measure-nr`), with what they hold, and the old images of `orbit-proto`
   %%> - only where the project keeps its own images and volumes; a project that cannot be emptied is reported after the others had their turn
   %%> - a failure here fails no refresh: the next refresh removes what is left, and the Operation's result says `host_clean: failed`
@@ -76,4 +76,5 @@ sequenceDiagram
     SW--xGW: Run failed<br/>failed step
     %%> On failure:
     %%> - the base VM is stopped and rolled back to the recorded snapshot, and a new snapshot is removed; task starts keep the recorded one
+    %%> - the place of the proof is `failed` until the host sweep releases it; the sweep keeps only the place of an open refresh, so a queued refresh that waits for a CI place does not keep the failed places
   end

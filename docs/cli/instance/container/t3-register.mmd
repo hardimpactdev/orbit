@@ -1,0 +1,50 @@
+sequenceDiagram
+  %% Target design, container runtime (ADR 0250 step 6, docs/reference/development-containers.md#t3-registration-and-pairing): how Orbit registers a container's T3 server with the Conn layer. The step runs inside the Instance-create flow and wake, and in a daily renewal run. The container cannot call the Gateway, so the Gateway records the server from the run's result, with the checks of `POST /conn/environments` (docs/reference/conn.md#registration).
+  %% status: draft
+  %% command: none · step of create, wake, renewal
+  %% kind: conn.environment_renew
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane C icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Conn layer
+  participant SW as Swamp<br/>workflow execution
+  participant C as Container<br/>via incus exec
+  Note over GW: Find sessions to renew<br/>daily · under 7 days left
+  %%> When:
+  %%> - create and wake run the same steps inside their own runs; this daily check only covers running containers
+  %%> Skips:
+  %%> - a sleeping Instance: its wake renews the session
+  %%> Result:
+  %%> - one task per T3 server, with the Instance lock; the intent names a fresh vault key for the session
+  GW->>SW: Start run, full intent<br/>operation-conn-renew
+  SW->>C: Issue the Gateway session<br/>t3 auth session issue
+  %%> Command, as `agent`:
+  %%> - `t3 auth session issue --label "Orbit Gateway" --token-only`
+  %%> What it does:
+  %%> - the session goes to the vault key that the intent names, as a sensitive output, never into the run's inputs, outputs or logs
+  %%> Why the label:
+  %%> - after recording, the Gateway's cleanup revokes earlier `Orbit Gateway` sessions on this server
+  SW->>C: Check the session<br/>well-known · auth session
+  %%> What it does, the checks of `POST /conn/environments`, inside the container:
+  %%> - reads the environment id from `/.well-known/t3/environment`; on a renewal it must equal the recorded one, else `conn.environment_mismatch`
+  %%> - T3 must accept the session at `/api/auth/session`, else `conn.session_rejected`
+  %%> - the session must carry `access:read` and `access:write`, else `conn.admin_scope_missing`
+  %%> Why here:
+  %%> - the Gateway records the result and does not check it again
+  alt the checks pass
+    SW-->>GW: Run succeeded<br/>environment id · URL
+    %%> Returns:
+    %%> - the environment id, the URL `http://NODE-WG:PORT`, the session's expiry and its vault key
+    Note over GW: Record the T3 server
+    %%> What it does:
+    %%> - moves the session from the vault into its encrypted record and deletes the vault copy, as the pairing result does with its link
+    %%> Result:
+    %%> - the server's Node is the container's Node; the record names the Instance
+    %%> - cleanup of earlier `Orbit Gateway` sessions starts
+  else a check fails
+    SW--xGW: Run failed<br/>check's error code
+    %%> Result:
+    %%> - a renewal keeps the old record and session, and the next daily check tries again
+    %%> - in a create or wake, the Instance fails with the check's code
+  end

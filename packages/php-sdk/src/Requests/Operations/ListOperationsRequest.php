@@ -10,7 +10,7 @@ use Orbit\Sdk\Responses\Operations\OperationsResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** Lists the 50 newest operations the caller can access, newest first. */
+/** Lists one page of the newest operations the caller can access, newest first. Rows carry no input, result or steps. */
 final class ListOperationsRequest extends GatewayRequest
 {
     #[\Override]
@@ -21,6 +21,8 @@ final class ListOperationsRequest extends GatewayRequest
         private readonly ?string $kind = null,
         private readonly ?string $targetType = null,
         private readonly ?int $targetId = null,
+        private readonly ?int $limit = null,
+        private readonly ?string $cursor = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -38,6 +40,7 @@ final class ListOperationsRequest extends GatewayRequest
                 $this->unwrapDataList($response, rejectMalformed: true),
             ),
             $requestId,
+            is_string($response->json('meta.next_cursor')) ? $response->json('meta.next_cursor') : null,
         );
     }
 
@@ -49,6 +52,8 @@ final class ListOperationsRequest extends GatewayRequest
             'kind' => $this->kind,
             'target_type' => $this->targetType,
             'target_id' => $this->targetId,
+            'limit' => $this->limit,
+            'cursor' => $this->cursor,
         ], static fn (int|string|null $value): bool => $value !== null);
     }
 }

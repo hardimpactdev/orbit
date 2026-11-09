@@ -22,7 +22,7 @@ inputs:
         converge: {type: object}
         # Whether the converge needs the Pi server: only when the base's recipe is older than the release's.
         with_pi: {type: boolean}
-        # The task start that proves the candidate in a free slot, and its release: their intents and vault key names.
+        # The task start that proves the candidate in a free place, and its release: their intents and vault key names.
         prove: {type: object}
       required: [host, converge, with_pi, prove]
       additionalProperties: false
@@ -104,7 +104,7 @@ jobs:
       workflowIdOrName: task-vm-host-phase
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}',
         execution_secrets: '${{ inputs.execution_secrets }}', tags: base-snapshot}
-  # Steps 2 to 4 of a task start from the new snapshot, in a free slot, then its release.
+  # Steps 2 to 4 of a task start from the new snapshot, in a free place, then its release.
   - name: Prove the candidate
     labels: {role: swamp}
     writes: true
