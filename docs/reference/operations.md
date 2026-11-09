@@ -163,7 +163,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 The optional `steps` list uses typed `OperationStep` metadata. Start and list responses can omit it; show and cancel responses include it.
 
-`operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
+`operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. An admission that waits for a place keeps the caller's request as `input.capacity_request`; the summary keeps it as an object with the same filter, so a waiting Operation reads the same request on every read. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
 Every operation has the same fields, whatever its kind.
 
@@ -186,6 +186,7 @@ Every operation has the same fields, whatever its kind.
 | `caller_node_name` | Current name of the caller Node, or null if there is no caller or the Node has been removed |
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
+| `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -339,7 +340,7 @@ A client that has no Reverb connection, such as an MCP agent, polls:
 3. Read it with `after_sequence` set to the last `sequence` you have. Apply the steps it returns.
 4. Repeat until `status` is terminal. Then read `result` according to `kind` and `status`; for failure also read `failed_step` and `error_code`. A failed operation's typed result is evidence, not success.
 
-`poll_after_seconds` is 2 while the operation is queued and in the first 10 seconds of its run. It then grows by one second for each 10 seconds of run time, to at most 15.
+`poll_after_seconds` is 2 while the operation is queued and in the first 10 seconds of its run. It then grows by one second for each 10 seconds of run time, to at most 15. While the operation waits for a place, it is 20, the interval at which admission tries again. The Gateway computes it on every read, from the status and `started_at`.
 
 Every read returns the whole record and the steps that changed. So a client that missed reads, or starts again from 0, still ends with the current state.
 
