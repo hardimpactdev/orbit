@@ -56,6 +56,8 @@ On UpCloud the template's root disk is ext4 on the whole disk, so the ZFS pool n
 
 The first phase of every refresh prepares the host, as for a VM host. [Prepare a container host](/reference/compute-drivers#prepare-a-container-host) owns what it does on a container host. It covers the kernel and Incus side, the bridge, the project, the stock image and the input rules. It also checks that a copy is a clone. The operator upgrades and reboots a host before first use.
 
+A container host caps the ZFS ARC at one eighth of its memory, at least 1 GiB, but never above a cap it already runs: [the ARC cap](/reference/compute-drivers#the-arc-cap-of-a-container-host). A loop pool such as Beast's keeps its 2 GiB.
+
 ### Egress and DNS
 
 A task container has the egress of a task VM:

@@ -104,13 +104,19 @@ function fixture(
   {
     memory = 32 * GiB,
     written = "307200",
-    installed = "1:7.0.1-ubuntu26.04",
+    installed = "ii 1:7.0.1-ubuntu26.04",
     server = "7.0.1",
     subids = 1000000000,
     sctp = "install /bin/false ",
     sctpLoaded = false,
+    arc = "0",
+    native = false,
   }: {
     memory?: number;
+    // The ARC cap the host runs before the phase; 0 is no cap.
+    arc?: string;
+    // An existing native pool on a ZFS dataset, as on Shark, instead of a new loop pool.
+    native?: boolean;
     written?: string;
     installed?: string;
     server?: string;
@@ -124,7 +130,7 @@ function fixture(
     Deno.mkdirSync(`${folder}/${dir}`);
   }
   if (sctpLoaded) Deno.mkdirSync(`${folder}/sys/sctp`);
-  Deno.writeTextFileSync(`${folder}/arc`, "0\n");
+  Deno.writeTextFileSync(`${folder}/arc`, `${arc}\n`);
   Deno.writeTextFileSync(
     `${folder}/meminfo`,
     `MemTotal:       ${memory / 1024} kB\nMemFree:          1000 kB\n`,
@@ -136,7 +142,13 @@ function fixture(
     );
   }
   const state = {
-    "storage-pools": [],
+    "storage-pools": native
+      ? [{
+        name: "orbit-tasks",
+        driver: "zfs",
+        config: { source: "data/orbit-tasks" },
+      }]
+      : [],
     projects: [],
     networks: [],
     "network-acls": [],
@@ -144,7 +156,7 @@ function fixture(
     images: [],
     instances: [],
     server_version: server,
-    zfs_pool_name: "orbit-tasks",
+    zfs_pool_name: native ? "data/orbit-tasks" : "orbit-tasks",
   };
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify(state));
   const scripts: Record<string, string> = {
@@ -153,6 +165,7 @@ function fixture(
     }' "$@"`,
     zfs:
       'case "$*" in *written*) printf "%s\\n" "$WRITTEN" ;; *) printf "%s\\n" "$DATASETS" ;; esac',
+    // As dpkg-query prints `${db:Status-Abbrev}${Version}`: `ii ` is installed, `rc ` removed with its config files left.
     "dpkg-query": '[ -n "$INSTALLED" ] || exit 1; printf "%s" "$INSTALLED"',
     modprobe: 'printf "%s\\n" "$SCTP"',
     "apt-get": `printf "%s\\n" "$*" >> '${folder}/apt-get'`,
@@ -196,7 +209,7 @@ function fixture(
     network: "orbittask0",
     cidr: "10.252.10.0/24",
     pool_size: "640GiB",
-    zfs_dataset: null,
+    zfs_dataset: native ? "data/orbit-tasks" : null,
     image: "ubuntu-26.04-vm",
     containers: {
       project: "orbit-task-containers",
@@ -289,12 +302,12 @@ Deno.test({
       assertEquals(sysctl("kernel.keys.maxkeys").split(" ")[0], "2000");
       assertEquals(sysctl("kernel.keys.maxbytes").split(" ")[0], "2000000");
       assertEquals(sysctl("vm.max_map_count").split(" ")[0], "1048576");
-      // One eighth of 32 GiB replaces the 2 GiB cap of the loop pool, now and after reboot.
-      assertEquals(f.read("arc").trim(), String(4 * GiB));
+      // One eighth of 32 GiB is 4 GiB, but a loop pool keeps at most 2 GiB: the container rule never raises the cap.
+      assertEquals(f.read("arc").trim(), String(2 * GiB));
       assertEquals(
         f.read("arc.conf"),
         `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
-          4 * GiB
+          2 * GiB
         }\n`,
       );
 
@@ -583,6 +596,95 @@ Deno.test({
         "orbit-clone-probe-copy",
       ]);
       assertEquals(f.state().instances, []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture({ native: true });
+    try {
+      let result = f.run();
+      assert(result.ok, result.output);
+      // No cap ran before, so one eighth of 32 GiB applies, on a pool where a VM host changes no ARC.
+      assertEquals(f.read("arc").trim(), String(4 * GiB));
+      const conf =
+        `# Orbit task container host: reserve RAM for host services.\noptions zfs zfs_arc_max=${
+          4 * GiB
+        }\n`;
+      assertEquals(f.read("arc.conf"), conf);
+      assertStringIncludes(
+        f.calls().map((c) => c.join(" ")).join("\n"),
+        "storage get orbit-tasks zfs.pool_name",
+      );
+      result = f.run();
+      assert(result.ok, result.output);
+      assertStringIncludes(result.output, "changed=0");
+
+      const intent = JSON.parse(f.read("intent.json"));
+      delete intent.host.containers;
+      Deno.writeTextFileSync(`${f.folder}/intent.json`, JSON.stringify(intent));
+      result = f.run();
+      assert(result.ok, result.output);
+      assertStringIncludes(result.output, "changed=0");
+      assertEquals(f.read("arc.conf"), conf);
+      assertEquals(f.read("arc").trim(), String(4 * GiB));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the container rule never raises a cap the host already runs",
+  ignore: !hasAnsible,
+  fn() {
+    // Beast: a loop pool with its 2 GiB cap and 128 GiB of memory. A native pool with a 3 GiB cap of the operator's.
+    for (
+      const [label, options, cap] of [
+        [
+          "loop pool with 2 GiB",
+          { memory: 128 * GiB, arc: String(2 * GiB) },
+          2 * GiB,
+        ],
+        [
+          "native pool with 3 GiB",
+          { native: true, arc: String(3 * GiB) },
+          3 * GiB,
+        ],
+      ] as [string, Parameters<typeof fixture>[0], number][]
+    ) {
+      const f = fixture(options);
+      try {
+        const result = f.run();
+        assert(result.ok, `${label}: ${result.output}`);
+        assertEquals(f.read("arc").trim(), String(cap), label);
+        assertStringIncludes(f.read("arc.conf"), `zfs_arc_max=${cap}\n`, label);
+      } finally {
+        f.cleanup();
+      }
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "an Incus package removed with its config files left counts as missing and is installed",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture({ installed: "rc 1:7.0.1-ubuntu26.04" });
+    try {
+      const result = f.run();
+      assert(result.ok, result.output);
+      assertStringIncludes(
+        f.read("apt-get"),
+        "install --yes --no-install-recommends --no-remove --",
+      );
     } finally {
       f.cleanup();
     }

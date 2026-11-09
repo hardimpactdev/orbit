@@ -2,15 +2,16 @@
 # The kernel and Incus side of a task container host (docs/reference/compute-drivers.md#the-host-system). It runs before the VM part,
 # which needs Incus, and only on a host with `host.containers`. It never upgrades a running Incus and never reboots the host: the full
 # upgrade and the reboot before first use are the operator's. The VM part applies the ARC cap that it sizes (`container_arc_max`).
+# `ii ` is installed. A package removed with its config files left (`rc `) still has a version, so it counts as missing.
 - name: Read the installed Incus package
-  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${Version}", incus] }
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Abbrev}${Version}", incus] }
   register: container_incus_package
   changed_when: false
   failed_when: container_incus_package.rc not in [0, 1]
 
 # Only a host without Incus gets it here, from the recipe's pinned packages (the mirror first, then upstream, checked by SHA-256).
 - name: Install Incus from the recipe
-  when: container_incus_package.rc == 1 or container_incus_package.stdout == ''
+  when: not container_incus_package.stdout.startswith('ii ')
   vars:
     container_incus_debs: >-
       {{ host.containers.incus.packages | map(attribute='name') | zip(host.containers.incus.packages | map(attribute='sha256'))
@@ -114,12 +115,23 @@
       {{ (item.content | b64decode).splitlines() | select('match', '^root:[0-9]+:[0-9]+$') | map('split', ':') | map('last') | map('int')
          | list | max | default(0) }}
 
-# One eighth of the host's memory, at least 1 GiB: the ARC took 2.6 GB of an 8 GB host and left the places short.
+# One eighth of the host's memory, at least 1 GiB: the ARC took 2.6 GB of an 8 GB host and left the places short. The rule never
+# raises a cap the host already runs, such as the 2 GiB of a loop pool: a higher cap takes memory from the host's guests and services.
 - name: Read the host memory
   ansible.builtin.slurp: { src: /proc/meminfo }
   register: container_meminfo
 
+# A host that has not loaded ZFS yet runs no cap; 0 is ZFS's own "no cap".
+- name: Read the running ARC cap
+  ansible.builtin.command: { argv: [cat, /sys/module/zfs/parameters/zfs_arc_max] }
+  register: container_arc_now
+  changed_when: false
+  failed_when: false
+
 - name: Size the ZFS ARC cap
   ansible.builtin.set_fact:
     container_arc_max: >-
-      {{ [1073741824, ((container_meminfo.content | b64decode | regex_findall('MemTotal:\s+([0-9]+) kB') | first | int) * 1024 // 8)] | max }}
+      {{ ([[1073741824, ((container_meminfo.content | b64decode | regex_findall('MemTotal:\s+([0-9]+) kB') | first | int) * 1024 // 8)] | max]
+          + ([running] if running > 0 else [])) | min }}
+  vars:
+    running: "{{ (container_arc_now.stdout | trim | int) if container_arc_now.rc == 0 else 0 }}"

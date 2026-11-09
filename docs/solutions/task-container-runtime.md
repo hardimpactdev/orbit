@@ -62,6 +62,7 @@ This PR adds the container branch of the `host-prepare` phase. [Prepare a contai
 - `tasks/task-vm-host-prepare.yml` includes two files on a container host. `tasks/task-container-host-system.yml` runs before the VM part, and `tasks/task-container-host-prepare.yml` after it.
 - The system file installs Incus from the recipe's pinned packages on a host without Incus, and otherwise requires the recipe's Incus line. It never upgrades a running Incus.
 - It writes the kernel modules and the sysctls, sizes the ARC cap, and checks the subordinate ID range and that `sctp` cannot load.
+- The ARC cap is one eighth of memory with a 1 GiB floor. It never rises above the host's current cap. Beast keeps 2 GiB.
 - The SCTP block itself is the [kernel policy](/reference/node-provisioning#kernel-policy) that PR #3269 added to every managed Linux Node. The phase only checks it.
 - The prepare file sets up the bridge and its ACL, the profile, the stock container alias and the input rules.
 - It also sets up the project. Its restrictions include `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`.
@@ -120,6 +121,7 @@ The start, the release and the Gateway get these parts:
 
 - **Start.** `incus copy` of the snapshot, the identity by `incus file push`, the limits, `boot.autostart=true`, and `incus start`.
 - **Device check.** The start refuses a copy with a device beyond its root disk and NIC, or with a `raw.*` key.
+- **`raw.*` before any start.** PR 2 sets `restricted.containers.lowlevel=allow`, which also allows `raw.*` keys. Until this PR only the clone probe runs there. This PR brings the refusal and its test.
 - **Release.** `incus delete --force`. The readiness step reads `slot.tunnel_unit`.
 - **Gateway.** Refresh admission for container hosts, and the start and release intents.
 

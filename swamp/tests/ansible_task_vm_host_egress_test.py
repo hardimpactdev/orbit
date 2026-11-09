@@ -35,6 +35,20 @@ def have_ansible():
     return bool(shutil.which('ansible-playbook') or (Path(sys.executable).parent / 'ansible-playbook').exists())
 
 
+def nft_check():
+    """The argv prefix that runs `nft -c -f` here: as root, or in a user and network namespace of its own; None when neither works."""
+    nft = shutil.which('nft') or ('/usr/sbin/nft' if Path('/usr/sbin/nft').exists() else None)
+    if nft is None:
+        return None
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        return [nft, '-c', '-f']
+    unshare = shutil.which('unshare')
+    if unshare is None:
+        return None
+    probe = subprocess.run([unshare, '-rn', nft, '-c', '-f', '/dev/null'], check=False, capture_output=True, timeout=30)
+    return [unshare, '-rn', nft, '-c', '-f'] if probe.returncode == 0 else None
+
+
 def egress_play():
     return next(play for play in yaml.safe_load(PLAYBOOK.read_text()) if play['name'] == 'Task VM egress log')
 
@@ -547,13 +561,14 @@ class TaskVmHostEgressTest(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
             self.assertRegex(second.stdout, r'changed=0\s')
 
-    @unittest.skipUnless(shutil.which('nft') and hasattr(os, 'geteuid') and os.geteuid() == 0 and have_ansible(), 'needs root, nft and ansible')
+    @unittest.skipUnless(nft_check() is not None and have_ansible(), 'needs nft, as root or in a user namespace, and ansible')
     def test_the_rendered_rules_pass_nft_check_mode(self):
+        # The two-bridge table names its bridges as a set, `iifname { "orbittask0", "orbittaskc0" }`: the kernel's parser checks it.
         for containers in (None, 'orbittaskc0'):
             with self.subTest(containers=containers), tempfile.TemporaryDirectory() as folder:
                 folder = Path(folder)
                 self.assertEqual(render(folder, containers=containers).returncode, 0)
-                result = subprocess.run(['nft', '-c', '-f', str(folder / 'nft_rules')], check=False, capture_output=True, text=True, timeout=30)
+                result = subprocess.run([*nft_check(), str(folder / 'nft_rules')], check=False, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     @unittest.skipUnless(have_ansible(), 'ansible-playbook is not installed')

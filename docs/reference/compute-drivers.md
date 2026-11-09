@@ -942,7 +942,7 @@ The system file sets up the kernel and Incus side of the host.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
 - **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
 - **Subordinate IDs.** Root's range in `/etc/subuid` and in `/etc/subgid` must hold one [isolated range](/reference/task-containers#the-outer-container) per place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. A smaller range fails the phase with both numbers and changes nothing.
-- **ZFS ARC.** The cap is one eighth of the host's memory, at least 1 GiB. The ARC took 2.6 GB of an 8 GB UpCloud host.
+- **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
 A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
 
@@ -959,7 +959,17 @@ The sysctl floors are the Incus production values for nested systemd, Docker and
 | `kernel.keys.maxbytes` | 2000000 |
 | `vm.max_map_count` | 262144 |
 
-The VM part applies the ARC cap now and after reboot, in `/etc/modprobe.d/orbit-task-vm-zfs.conf`. On a container host this size replaces the 2 GiB cap of a loop pool, and it applies to a native pool too. When `containers` is removed, a loop pool gets its 2 GiB cap back. A native pool keeps the last cap until the operator deletes the file.
+#### The ARC cap of a container host
+
+The ARC took 2.6 GB of an 8 GB UpCloud host and left the places short, so a container host caps it. The cap is the lowest of these values:
+
+- one eighth of the host's memory, at least 1 GiB;
+- the cap the host already runs, when it runs one;
+- 2 GiB, on a loop pool.
+
+The rule never raises a cap. A higher cap would take memory from the host's task VMs, databases and services, and ZFS gives memory back only when the kernel asks. Beast's loop pool keeps its 2 GiB. A native pool with no cap, such as Shark's, gets one eighth of its memory.
+
+The VM part applies the cap now and after reboot, in `/etc/modprobe.d/orbit-task-vm-zfs.conf`. This changes a native pool, whose ARC a VM host leaves alone. When `containers` is removed, a loop pool keeps its 2 GiB cap. A native pool keeps the last cap until the operator deletes the file.
 
 #### The container side
 

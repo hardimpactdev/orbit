@@ -77,9 +77,12 @@
       restricted.devices.disk: allow
       restricted.devices.disk.paths: /var/lib/orbit/package-cache
       restricted.snapshots: allow
-    # A loop pool keeps 2 GiB of ARC; a container host sizes its cap from its memory (task-container-host-system.yml); a native pool
-    # without containers keeps its ARC as it is.
-    prepare_arc_max: "{{ container_arc_max if (host.containers | default(none)) is not none else (2147483648 if prepare_loop | bool else none) }}"
+    # A loop pool keeps at most 2 GiB of ARC. A container host, loop or native, sizes its cap from its memory and the cap it already runs
+    # (task-container-host-system.yml), so it never raises a cap. A native pool without containers keeps its ARC as it is.
+    prepare_loop_arc: "{{ [2147483648] if prepare_loop | bool else [] }}"
+    prepare_arc_max: >-
+      {{ ([container_arc_max | int] + prepare_loop_arc) | min if (host.containers | default(none)) is not none
+         else (prepare_loop_arc | first if prepare_loop_arc else none) }}
     prepare_arc_reason: "{{ 'task container host' if (host.containers | default(none)) is not none else 'loop-backed task VM storage' }}"
     # The floors of the kernel limits of a container host (tasks/task-container-host-system.yml), in the order `sysctl -n` reads them.
     container_sysctls:
