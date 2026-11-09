@@ -19,14 +19,15 @@ final class TaskGroupActivity
 {
     /**
      * @param  list<int>  $groups
+     * @param  list<string>  $except  Operation kinds that do not count as activity
      * @return array<int, array{last_activity_at: string|null, active_operation_id: int|null}> group id => activity, for every group asked
      */
-    public static function of(array $groups): array
+    public static function of(array $groups, array $except = []): array
     {
         if ($groups === []) {
             return [];
         }
-        $operations = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->whereIn('target_id', $groups);
+        $operations = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->whereIn('target_id', $groups)->whereNotIn('kind', $except);
         $latest = [];
         foreach ((clone $operations)->groupBy('target_id')
             ->selectRaw('target_id, max(created_at) as created, max(started_at) as started, max(finished_at) as finished')->toBase()->get() as $row) {
@@ -45,9 +46,12 @@ final class TaskGroupActivity
         return $activity;
     }
 
-    /** @return array{last_activity_at: string|null, active_operation_id: int|null} */
-    public static function ofGroup(int $group): array
+    /**
+     * @param  list<string>  $except
+     * @return array{last_activity_at: string|null, active_operation_id: int|null}
+     */
+    public static function ofGroup(int $group, array $except = []): array
     {
-        return self::of([$group])[$group];
+        return self::of([$group], $except)[$group];
     }
 }

@@ -238,9 +238,9 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     /** @return array<string,array{vault:string,key:string}> */
     private function publish(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
-        // A publish holds the token names in its own intent; a prep run, a prep fix and a review round hold them in the intent of their publish step.
+        // A publish and an idle save hold the token names in their own intent; a prep run, a prep fix and a review round hold them in the intent of their publish step.
         [$name, $references, $members] = match ($operation->kind) {
-            'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
+            'tasks.publish', TaskIdleSave::Kind => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
             'tasks.prep', 'tasks.prep_fix', 'tasks.review_round' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
             default => throw $this->forbidden(),
         };

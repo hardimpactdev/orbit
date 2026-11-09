@@ -153,7 +153,7 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
             ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
         ->and(json_encode($copies))->not->toContain('push-token-value');
-})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round']]);
+})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round'], 'an idle save' => ['tasks.idle_save']]);
 
 it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
     $socket = tokenWorld();

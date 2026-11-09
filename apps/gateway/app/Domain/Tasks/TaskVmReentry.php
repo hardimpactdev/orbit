@@ -13,7 +13,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 
-/** A published task holds no workspace; later work starts from the base and its published branch. */
+/** A published or idle-released task holds no workspace; later work starts from the base and its published branch, or its idle save. */
 final readonly class TaskVmReentry
 {
     /** @return array<string,mixed>|null */
@@ -27,7 +27,8 @@ final readonly class TaskVmReentry
             return null;
         }
 
-        return app(TaskProvisionIntent::class)->capture($group, $commit);
+        // A group whose idle VM saved its workspace starts from that save while it holds the task branch head.
+        return app(TaskProvisionIntent::class)->capture($group, app(TaskIdleSave::class)->restore($group, $commit));
     }
 
     /** @param array<string,mixed> $native */
