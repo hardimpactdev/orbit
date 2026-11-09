@@ -23,6 +23,7 @@ sequenceDiagram
   %%> - a task place is available, or admission waits, and no build was admitted for it before
   %%> - the PR is open and a draft, and its head is the approved head
   %%> - no other task runs on the group; the Gateway holds one lock per group
+  %%> - after an idle release (docs/reference/tasks.md#release-an-idle-task-vm), the group's idle save holds no work beyond the head this run acts on, else `tasks.idle_save_pending` (409): run a turn and publish first; a save that moved apart from that head answers `tasks.idle_save_diverged` (409), a deleted save branch whose commit the head lacks `tasks.idle_save_missing` (409), and an unreadable comparison `tasks.idle_save_unreadable` (503)
   %%> What it does:
   %%> - records the approval (the head, the mode and the reviewer) in the intent
   %%> - appends the implementation subtask: a fixed brief that names the approved chart, page and cases and the head; the runner plan of the cases file is a command deliverable; handoff runs the configured Project check once, before the deliverables; when the Project has no check command, the subtask also has a review deliverable for the Project check

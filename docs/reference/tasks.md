@@ -185,11 +185,15 @@ The save runs only when the next claim can use it:
 - An open Operation on the VM itself, such as a resume, keeps the VM.
 - A `parked` VM gets its resume admitted. A later pass saves it once it runs.
 
-The save is one Ansible phase on the VM. It commits the workspace changes that Git tracks or would track as `Save the idle workspace`, by Orbit, checks that the workspace is clean, and bundles the head. Node 209 pushes that commit to the save branch `task-<id>-idle`, which holds only the latest save. A failed read, commit or bundle fails the whole save, so nothing is pushed. The push token is minted when the push runs and never reaches the VM. CI and the repository rulesets do not run on that branch.
+The save is one Ansible phase on the VM. It commits the workspace changes that Git tracks or would track as `Save the idle workspace`, by Orbit, checks that the workspace is clean, and bundles the head. Node 209 pushes that commit to the save branch `task-<id>-idle`, which holds only the latest save. A failed read, commit or bundle fails the whole save, so nothing is pushed.
 
-The save holds what the next claim restores: the committed workspace. It does not hold files that `.gitignore` excludes, stashes, other local branches, or the Pi session of the VM.
+The push token is minted when the push runs and never reaches the VM. It has `contents: write` only. GitHub runs the `push` workflows that a pushed commit defines, so a save that adds or changes a file under `.github/workflows/` is refused with `tasks.workflows_permission` rather than pushed with a broader token. The workflows on `main` and the repository rulesets do not cover the save branch.
 
-The Gateway records the saved commit on the group, then admits the [release](/reference/compute-drivers#release-a-task-vm) of the VM, as publication does. A failed save keeps the VM. It is no activity of the group, so the next pass saves again. After three failed saves in a row the idle release stops for that group. The group then asks for `failure` assistance, and the VM keeps its place. The driver's next Operation starts the count again.
+The save holds what the next claim restores: the committed workspace. It does not hold files that `.gitignore` excludes, the content of a nested Git repository (a clean one is saved as a gitlink, a dirty one fails the save), stashes, other local branches, or the Pi session of the VM. The save commit stays in the workspace, also when the push or the release does not follow, and the next turn continues on top of it.
+
+The Gateway records the saved commit on the group, then admits the [release](/reference/compute-drivers#release-a-task-vm) of the VM, as publication does. A failed save keeps the VM. It is no activity of the group, so the next pass saves again. After three saves in a row that fail, are cancelled or are interrupted, the idle release stops for that group.
+
+A save refused for changing a workflow stops the idle release at once, because a retry changes nothing; a turn and a publish carry that work. The group then asks for `failure` assistance, and the VM keeps its place. The driver's next Operation starts the count again.
 
 The next claim compares the save with the head it would start from: the task branch head for a turn or a prep fix, the named head for a review round or a build.
 
@@ -199,10 +203,12 @@ The next claim compares the save with the head it would start from: the task bra
 | Is in the head, or is the head | Starts from the head | Starts from the head |
 | Has moved apart from the head | Refuses with `tasks.idle_save_diverged` (409) | Refuses with `tasks.idle_save_diverged` (409) |
 | Cannot be compared | Refuses with `tasks.idle_save_unreadable` (503) | Refuses with `tasks.idle_save_unreadable` (503) |
+| Its branch is gone and the head holds it | Starts from the head | Starts from the head |
+| Its branch is gone and the head lacks it | Refuses with `tasks.idle_save_missing` (409) | Refuses with `tasks.idle_save_missing` (409) |
 
-A turn that starts from the save continues where the group stopped. A pending save asks for a turn and a publish before the review round. A diverged save stays on `task-<id>-idle`, and the next save cannot overwrite it. Merge that branch into the task branch, with `-s ours` to drop the save, then try again. An unreadable comparison starts nothing; try again.
+A turn that starts from the save continues where the group stopped. A pending save asks for a turn and a publish before the review round. A diverged save stays on `task-<id>-idle`, and the next save cannot overwrite it. Merge that branch into the task branch, with `-s ours` to drop the save, then try again. An unreadable comparison starts nothing; try again. For a missing save, push the commit that `details.saved_commit` names to `task-<id>-idle` again, or merge it into the task branch, and try again. When that commit is lost, cancel the group. Delete a save branch only after its group ended.
 
-A check or a publish needs the fresh workspace first and returns `tasks.no_workspace` until a turn claims it. The save branch stays on origin after the group ends. A person deletes it.
+A check or a publish needs the fresh workspace first and returns `tasks.no_workspace` until a turn claims it. The save branch stays on origin after the group ends, and a person deletes it then.
 
 #### Keep command output out of run history
 

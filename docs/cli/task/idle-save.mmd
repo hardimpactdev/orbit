@@ -35,9 +35,11 @@ sequenceDiagram
   %%> - imports the bundle into a bare repository in the run folder and reads the saved commit
   SW->>GH: Push the save branch<br/>task-<id>-idle
   %%> What it does:
-  %%> - mints a scoped push token through `task-github-mint` (purpose `publish`) when the step runs; no credential reaches the VM
+  %%> - mints a push token with `contents: write` only through `task-github-mint` (purpose `publish`) when the step runs; no credential reaches the VM
   %%> - pushes the saved commit to `refs/heads/task-<id>-idle` with force: the branch belongs to this group and holds only its latest save
-  %%> - the CI and the rulesets of the repository run on `main` and `task-*-handoff` only, so the push starts nothing
+  %%> - GitHub runs the push workflows a pushed commit defines; without `workflows: write` it refuses a save that adds or changes one, which `Read push result` names `tasks.workflows_permission`
+  %%> - the workflows on `main` push only for `main` and `task-*-handoff`, and the rulesets cover only `main`
+  SW->>SW: Read push result<br/>name a refusal
   SW->>SW: Clean up<br/>revoke · scratch
   alt the save passed
     SW-->>GW: Native terminal result<br/>saved commit
@@ -47,11 +49,12 @@ sequenceDiagram
     %%> - admits the release of the VM (`docs/cli/task/vm-release.mmd`) when the VM is still the group's and no Operation, such as a resume, is open on it
     %%> Later:
     %%> - a turn or a prep fix claims a fresh place at the saved commit when that holds the task branch head; a review round or a build refuses with `tasks.idle_save_pending` while the save holds work beyond its head
-    %%> - a task branch that holds the save restores the branch; one that moved away refuses with `tasks.idle_save_diverged`, so the next save cannot overwrite it; an unreadable comparison refuses with `tasks.idle_save_unreadable`
+    %%> - a task branch that holds the save restores the branch; one that moved away refuses with `tasks.idle_save_diverged`, so the next save cannot overwrite it; an unreadable comparison refuses with `tasks.idle_save_unreadable`; a deleted save branch is no save once the task branch holds its commit, and otherwise refuses with `tasks.idle_save_missing`, whose message names the commit to push back
   else a step failed
     SW--xGW: Native failed result<br/>tasks.idle_save_failed
     %%> Result:
     %%> - the VM stays and holds its place; nothing is released
     %%> - the failed save is no activity of the group, so the next pass saves again
-    %%> - after three failed saves in a row the idle release stops for the group, which asks for `failure` assistance; the driver's next Operation starts the count again
+    %%> - after three saves in a row that fail, are cancelled or are interrupted the idle release stops for the group, which asks for `failure` assistance; a `tasks.workflows_permission` refusal stops it at once; the driver's next Operation starts the count again
+    %%> - a run that reports success without a saved commit is a failed save
   end

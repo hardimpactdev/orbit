@@ -22,6 +22,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is a prep group: a succeeded `tasks.prep` run, its published task branch, an open pull request, and no running operation
+  %%> - after an idle release (docs/reference/tasks.md#release-an-idle-task-vm), the group's idle save can be restored: a save that moved apart from the task branch answers `tasks.idle_save_diverged` (409), a deleted save branch whose commit the task branch lacks answers `tasks.idle_save_missing` (409), and an unreadable comparison answers `tasks.idle_save_unreadable` (503)
   %%> What it does:
   %%> - captures, in one transaction, the task VM identity, its resume only when parked, the author turn with the corrections as its prompt, two new review threads, the fix turn, and the push to the branch `task-42`
   %%> - names the vault keys of the Pi token and the push token; the run writes the Pi token when it starts, and the push step mints its GitHub token when it runs
@@ -37,7 +38,7 @@ sequenceDiagram
   opt the previous VM was released
     SW->>VM: Claim a task place<br/>operation-task-provision
     %%> What it does:
-    %%> - waits for a task place, up to two hours, then creates a fresh VM from the base at the published task head
+    %%> - waits for a task place, up to two hours, then creates a fresh VM from the base at the published task head, or at the group's idle save when that holds the head
     %%> - records a fresh identity, workspace and Pi session; no review holds a VM
   end
   opt the VM is parked
