@@ -15,7 +15,7 @@ final class ReleaseIdleTaskVms implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 120;
+    public int $timeout = 60;
 
     public int $uniqueFor = 300;
 

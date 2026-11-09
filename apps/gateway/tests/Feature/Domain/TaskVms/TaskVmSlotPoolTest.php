@@ -1388,69 +1388,108 @@ function idleGroupOperation(Task $group, TaskVm $slot, int $minutesAgo, bool $op
     $at = now()->subMinutes($minutesAgo);
 
     return Operation::query()->forceCreate(['kind' => 'tasks.build', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $slot->host_node_id,
-        'status' => $open ? OperationStatus::Running : OperationStatus::Succeeded, 'input' => [], 'triggered_by' => 'gateway:pr-gate',
+        'status' => $open ? OperationStatus::Running : OperationStatus::Succeeded, 'input' => [], 'triggered_by' => 'test',
         'created_at' => $at, 'updated_at' => $at, 'started_at' => $at, 'finished_at' => $open ? null : $at]);
 }
 
-it('releases the task VM of an open group that ran no Operation for 30 minutes, and keeps the group as it is', function (TaskVmState $state): void {
-    Queue::fake([ReleaseTaskVmSlot::class]);
+/** Origin's task branch as the idle release reads it: its head, or unreadable when null. */
+function idleTaskBranch(?string $head): void
+{
+    app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
+    {
+        public function __construct(private ?string $head) {}
+
+        public function head(Project $project, string $branch): string
+        {
+            return $this->head ?? throw new ResourceOperationException('source.head_unavailable', 'No such branch.', 502);
+        }
+    });
+}
+
+/** @return array{0: Task, 1: TaskVm} an open group whose ready VM ran its last Operation two hours ago, with approved commit A on origin */
+function idleWorld(TaskGroupStatus $status = TaskGroupStatus::Running): array
+{
     $a = str_repeat('a', 40);
     $origin = ['branch' => [$a]];
-    [$group, $slot] = preservationWorld([$a], $origin, status: TaskGroupStatus::Running);
+    [$group, $slot] = preservationWorld([$a], $origin, status: $status);
+    $slot->update(['state' => TaskVmState::Ready]);
+    idleTaskBranch($a);
+
+    return [$group, $slot];
+}
+
+function idleReleases(TaskVm $slot): int
+{
+    return Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('target_id', $slot->id)->count();
+}
+
+it('releases the task VM of an open group that ran no Operation for 30 minutes, and keeps the group as it is', function (TaskVmState $state): void {
+    [$group, $slot] = idleWorld();
     $slot->update(['state' => $state]);
     idleGroupOperation($group, $slot, TaskVmIdleRelease::IdleMinutes + 1);
 
     expect(app(TaskVmIdleRelease::class)->release())->toBe([$slot->id])
-        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and($slot->refresh()->state)->toBe(TaskVmState::Releasing)->and(idleReleases($slot))->toBe(1)
+        ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->sole()->triggered_by)->toBe('task-vm-idle')
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->settled_at)->toBeNull();
-    Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $slot->id && $job->groupId === $group->id);
 
-    // The next pass finds the VM releasing and starts nothing more.
-    expect(app(TaskVmIdleRelease::class)->release())->toBe([]);
-    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
+    // The next pass finds the VM releasing and admits nothing more.
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and(idleReleases($slot))->toBe(1);
 })->with([TaskVmState::Ready, TaskVmState::Parked]);
 
-it('keeps the task VM of a group that worked within 30 minutes, has an open Operation, or ended', function (string $case): void {
-    Queue::fake([ReleaseTaskVmSlot::class]);
-    $a = str_repeat('a', 40);
-    $origin = ['branch' => [$a]];
-    [$group, $slot] = preservationWorld([$a], $origin, status: $case === 'ended' ? TaskGroupStatus::Completed : TaskGroupStatus::Running);
-    $slot->update(['state' => TaskVmState::Ready]);
-    idleGroupOperation($group, $slot, $case === 'recent' ? TaskVmIdleRelease::IdleMinutes - 1 : 120);
+it('keeps the task VM of a group that worked within 30 minutes, has an open Operation, has none at all, or ended', function (string $case): void {
+    [$group, $slot] = idleWorld($case === 'ended' ? TaskGroupStatus::Completed : TaskGroupStatus::Running);
+    if ($case !== 'none') {
+        idleGroupOperation($group, $slot, $case === 'recent' ? TaskVmIdleRelease::IdleMinutes - 1 : 120);
+    }
     if ($case === 'open') {
         idleGroupOperation($group, $slot, 120, open: true);
     }
 
-    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Ready);
-    Queue::assertNotPushed(ReleaseTaskVmSlot::class);
-})->with(['recent', 'open', 'ended']);
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Ready)->and(idleReleases($slot))->toBe(0);
+})->with(['recent', 'open', 'none', 'ended']);
+
+it('keeps an idle task VM while a resume of it is open', function (): void {
+    [$group, $slot] = idleWorld();
+    $slot->update(['state' => TaskVmState::Parked]);
+    idleGroupOperation($group, $slot, 120);
+    Operation::query()->create(['kind' => 'task_vm.resume', 'target_type' => 'task_vm', 'target_id' => $slot->id, 'node_id' => $slot->host_node_id,
+        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'task-vm']);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Parked)->and(idleReleases($slot))->toBe(0);
+});
+
+it('keeps an idle task VM while origin has no task branch to restore', function (): void {
+    [$group, $slot] = idleWorld();
+    idleGroupOperation($group, $slot, 120);
+    idleTaskBranch(null);
+
+    expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Ready)->and(idleReleases($slot))->toBe(0);
+});
 
 it('keeps an idle task VM while origin lacks the group\'s latest approved commit, and releases it once publication put it there', function (): void {
-    Queue::fake([ReleaseTaskVmSlot::class]);
     [$a, $b] = [str_repeat('a', 40), str_repeat('b', 40)];
     $origin = ['branch' => [$a]];
     [$group, $slot] = preservationWorld([$a, $b], $origin, status: TaskGroupStatus::Running);
     $slot->update(['state' => TaskVmState::Ready]);
+    idleTaskBranch($a);
     idleGroupOperation($group, $slot, 120);
 
     expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Ready);
-    Queue::assertNotPushed(ReleaseTaskVmSlot::class);
 
     $origin['branch'] = [$b, $a];
     expect(app(TaskVmIdleRelease::class)->release())->toBe([$slot->id])->and($slot->refresh()->state)->toBe(TaskVmState::Releasing);
 });
 
 it('leaves CI proof VMs to their proof', function (): void {
-    Queue::fake([ReleaseTaskVmSlot::class]);
-    $origin = [];
-    [$group, $slot] = preservationWorld([], $origin, status: TaskGroupStatus::Reserved);
-    $slot->update(['state' => TaskVmState::Ready, 'capacity_pool' => 'ci']);
+    [$group, $slot] = idleWorld(TaskGroupStatus::Reserved);
+    $slot->update(['capacity_pool' => 'ci']);
     idleGroupOperation($group, $slot, 120);
 
     expect(app(TaskVmIdleRelease::class)->release())->toBe([])->and($slot->refresh()->state)->toBe(TaskVmState::Ready);
 });
 
-it('schedules the idle release every five minutes while task VMs are enabled', function (): void {
+it('schedules the idle release every five minutes', function (): void {
     Artisan::call('schedule:list');
 
     expect(Artisan::output())->toMatch('/\*\/5\s+\* \* \* \*\s+'.preg_quote(ReleaseIdleTaskVms::class, '/').'/');
