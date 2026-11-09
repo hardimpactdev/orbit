@@ -88,7 +88,9 @@ The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space mov
 
 The agent sends a fact when it changed, and again every 10 minutes.
 
-`metrics` reads `/proc/stat`, `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/*` and data filesystem sizes with `statvfs`. CPU ratios compare per-core counters between readings; guest time is not counted twice. Used memory is total minus available, and used swap is total minus free. Missing kernel pressure data reads as zero. Disks use the same data filesystem filter as `host`, with `/` first; pseudo filesystems are excluded. An incomplete required reading sends nothing. The agent only reads Node state; it runs no collector program and changes nothing on the Node.
+`metrics` reads `/proc/stat`, `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/*` and data filesystem sizes with `statvfs`. CPU ratios compare per-core counters between readings; guest time is not counted twice. Used memory is total minus available, and used swap is total minus free. Missing kernel pressure data reads as zero. Disks and `host` share one background sampler, with `/` first and pseudo and network filesystems excluded. It streams at most 256 KiB of the mount table and stops at 64 distinct data mounts. An incomplete required reading sends nothing.
+
+Each disk read has a 100 ms deadline. An expired pass keeps only the disks it read. While a timed-out read remains blocked, later passes omit disks and start no further read. At most one filesystem call stays in flight. Other facts keep flowing; they read the latest completed disk pass without waiting for it. The agent only reads Node state; it runs no collector program and changes nothing on the Node.
 
 A report the Gateway does not accept, for example while a Node boots before the Gateway answers, is kept and sent again after 1, 2 and 4 seconds, and then every 4 seconds until the Gateway accepts it. A refusal that sending again cannot change, such as a `422` for a kind an older Gateway does not know, is not sent again before the next regular read.
 
