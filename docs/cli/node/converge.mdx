@@ -40,7 +40,7 @@ Every run applies these phases in order, idempotently and within the selected sc
 3. **Software.** Read the selected software pins from `recipe.json`, install them and hold the packages at those pins.
 4. **Roles.** Repair the selected roles' configuration.
 5. **Tools.** Apply recorded Tools within scope. A failed Tool is marked failed on its own record; other Tools continue, and that Tool failure alone does not fail the Operation.
-6. **Network.** Apply the recorded network on the hub first, then the Node, and wait for the handshake. The hub side prunes only the peer files of Nodes that are gone or being removed; a Node that joins while the run waits keeps its peer ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)). With no recorded network in scope there is nothing to apply. A target hub is applied once; with no peers it needs no handshake.
+6. **Network.** Apply the recorded network on the hub first, then the Node, and wait for the handshake. The hub side prunes only the peer files of Nodes that are gone or being removed; a Node that joins while the run waits keeps its peer ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)). With no recorded network in scope there is nothing to apply. A target hub is applied once; with no peers it needs no handshake. On the hub, the run also applies and checks [its source rule](/reference/wireguard-endpoints#the-hub-answers-from-its-endpoint-address). A Node on the hub's private network first proves that the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) answers; without that proof nothing changes.
 7. **Check.** Check the selected software, units, role configuration and recorded tunnel.
 
 A repeat starts a new Operation and applies all phases again; it is not skipped at admission. With no drift, it reports zero changed tasks on the Node and completes within 120 seconds.
@@ -59,4 +59,6 @@ A failed phase leaves the Operation failed with its failed step and error code. 
 | `node.converge_unsupported` | The Node is not active, managed and Linux. |
 | `validation.failed` | Both scope flags were supplied, or the role selection is empty, unknown or not assigned to the Node. |
 | `operation.target_busy` | Another converge reserves the Node or its hub. |
+| `node.hub_lan_unreachable` | The Node is on the hub's private network by its records, but the hub's LAN address is not directly routed from its `lan_ip` or does not answer. No WireGuard file changed. |
+| `vpn.endpoint_not_local` | The hub does not hold the IPv4 address of its public endpoint, so it cannot send from it. |
 | `operation.native_failed` | A phase could not complete, including when the Node cannot be reached. The Operation identifies the failed step. |

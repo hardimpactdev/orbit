@@ -20,7 +20,9 @@ uncovered:
   "code:node.option_required": "Local refusal before a request; needs no fleet, and the CLI tests cover it."
   "code:node.platform_managed": "Same need as flag:--platform."
   "code:node.provisioning_busy": "Need a fixture that holds the Node's lifecycle name lock while the update arrives."
-  "code:validation.failed": "Name and platform refusals; build work of the record fields."
+  "code:validation.failed": "Name and platform refusals; build work of the record fields. The LAN address refusal has its case."
+  "code:cluster.lan_ip_conflict": "Need two Node fixtures with the same LAN address, in one Cluster or both outside every Cluster."
+  "flag:--lan-ip:skip-reason": "The repeat should print the skip reason node.unchanged; node:update does not report it yet."
   "code:node.settings_platform_unsupported": "Need a non-Linux Node fixture with task VM host settings whose bridge change starts the run."
   "code:task_vm.runtime_in_use": "Same need as path:runtime-in-use."
 
@@ -112,5 +114,44 @@ cases:
           run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0,"containers":{"cidr":"10.251.78.0/24"}}']
           forms: [human, json]
           expect: {exit: 1, code: node.setting_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records]}
+
+  - id: lan-ip-record
+    batch: fresh-fleet
+    covers: [records]
+    summary: Setting, repeating and clearing the LAN address are record changes that start no Operation; the repeat writes nothing.
+    setup:
+      - node_fixture: {kind: managed, as: lan}
+    stages:
+      - act:
+          - cli:
+              run: [node:update, "${lan.id}", --lan-ip=10.0.0.42]
+              forms: [json]
+              expect: {exit: 0, request: none, json: [{path: id, equals: "${lan.id}"}, {path: lan_ip, equals: 10.0.0.42}]}
+      - act:
+          - cli:
+              run: [node:update, "${lan.id}", --lan-ip=10.0.0.42]
+              forms: [json, human]
+              expect: {exit: 0, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records]}
+      - act:
+          - cli:
+              run: [node:update, "${lan.id}", --lan-ip=]
+              forms: [json]
+              expect: {exit: 0, request: none, json: [{path: lan_ip, equals: null}]}
+
+  - id: lan-ip-invalid
+    batch: fresh-fleet
+    covers: []
+    summary: A LAN address that is not IPv4 is refused and nothing changes.
+    setup:
+      - node_fixture: {kind: managed, as: bad}
+    act:
+      - cli:
+          run: [node:update, "${bad.id}", --lan-ip=fd00::1]
+          forms: [json]
+          expect: {exit: 1, request: none, json: [{path: error.code, equals: validation.failed}]}
     expect:
       - unchanged: {since: act, what: [operations, node_records]}

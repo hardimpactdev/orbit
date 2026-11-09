@@ -91,8 +91,10 @@ sequenceDiagram
       %%> What it does:
       %%> - applies the recorded hub side before the peer; matching configuration is unchanged
       %%> - prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs: it keeps every Node of the snapshot and every file above the snapshot's newest Node id, so a task VM that joins while the run waits keeps its peer
+      %%> - on the hub: carries the mark in `wg syncconf`, applies the source rule and checks that a marked packet to a public address leaves from the public endpoint address; an IPv4 endpoint the hub does not hold fails with `vpn.endpoint_not_local`
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:
+      %%> - when the rendered hub endpoint is the hub's LAN address, first proves that the kernel routes it directly from the Node's `lan_ip` and that it answers; a failed proof stops with `node.hub_lan_unreachable` before any WireGuard change, with no fallback to the public endpoint
       %%> - applies the recorded Node side and waits for the tunnel handshake
       %%> - both arrows are one phase; the peer arrow is only for a peer target
       %%> - a target hub is applied once and needs no handshake without peers

@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, one Swamp run, agent-observer-swamp-acts, root-of-trust-gateway-only, Ansible phases for idempotent Node state (rule 22). docs/reference/node-provisioning.md#add-a-node.
-  %% status: reviewed
+  %% status: draft
   %% command: node:add
   %% kind: node.add
   autonumber
@@ -17,7 +17,7 @@ sequenceDiagram
   CLI->>GW: node:add NAME HOST<br/>--host-key-fingerprint=SHA256
   %%> Command:
   %%> - `orbit node:add NAME HOST --host-key-fingerprint=SHA256`
-  %%> - syntax: `<name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=linux|macos] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]… [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--wireguard-endpoint=HOST:PORT] [--dns-server=IP] [--setting=PATH:VALUE] [--json]`
+  %%> - syntax: `<name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=linux|macos] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]… [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--dns-server=IP] [--setting=PATH:VALUE] [--json]`
   %%> Input:
   %%> - the Node name, its public SSH host, and the approved SSH host key fingerprint; a new Node, or an existing Node with no pinned host key, needs all three
   %%> - every other option is recorded in the intent; only `--role` and `--platform=macos` add steps
@@ -78,7 +78,9 @@ sequenceDiagram
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:
   %%> - creates the WireGuard key and requires its public key to be unique, before any tunnel change: two Nodes with the same public key cannot both be peers, and an existing hub must keep its peer-facing key
+  %%> - on the hub's private network (both recorded `lan_ip` in one IPv4 /24), proves before any tunnel change that the kernel routes the hub's LAN address directly from the Node's `lan_ip` and that it answers; a failed proof stops with `node.hub_lan_unreachable` and never falls back to the public endpoint
   %%> - writes the tunnel files, starts the tunnel, sets the tunnel address and trusts the WireGuard members
+  %%> - on the hub itself, applies and checks the source rule: marked WireGuard packets to public peers leave from the public endpoint address
   %%> Secrets:
   %%> - the private key stays in a key file on the Node; only the public key leaves it
   SW->>N: Read WireGuard public key<br/>SSH argv
@@ -87,7 +89,7 @@ sequenceDiagram
   opt Linux peer joins the VPN hub
     SW->>HUB: Add the peer<br/>Ansible phase: hub
     %%> What it does:
-    %%> - writes the peer entry, applies the hub peers and checks that the hub key did not change
+    %%> - writes the peer entry, applies the hub peers with the hub's port and mark, and checks that the hub key did not change
     %%> - the hub loads every peer file it has when it applies, not the peers of the admitted snapshot, so a Node that joined after admission keeps its live peer
     %%> - the hub peer stays after a failure; it is harmless and a rerun reuses it
     %%> Decided by the orchestrator, for Nick's review (2026-11-07): the hub's `orbit.conf` (written here, or by the `tunnel` phase when the Node is the hub) is the file the hub converge writes: no peer inline, and the `PostUp` loader of `orbit-peers.d`. Every peer the hub knows also gets its own file, so a peer that has only its file (the operator of a task VM's nested fleet) survives a restart of the hub

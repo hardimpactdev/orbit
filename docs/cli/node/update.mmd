@@ -16,11 +16,11 @@ sequenceDiagram
   CLI->>GW: node:update NODE<br/>--apps-path=PATH
   %%> Command:
   %%> - `orbit node:update NODE --apps-path=PATH`
-  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]`
+  %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--apps-path=PATH] [--task-vms=JSON] [--json]`
   %%> Input:
   %%> - the Node, and at least one setting to change
   %%> - an apps-folder change or withdrawal of existing task-host input rules needs Node work; other changes are records
-  %%> - an empty value unsets a setting: `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
+  %%> - an empty value unsets a setting: `--lan-ip=` clears the LAN address, `--apps-path=` unsets the folder, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, lock the Node
@@ -30,6 +30,7 @@ sequenceDiagram
   %%> - the optional `task_vms.containers` member has its own `task_places` and `ci_places`, counted apart from the VM places, and its own Incus project, bridge and CIDR
   %%> - lowering either count removes no claim; task work and operator proofs share FIFO task admission, while authenticated CI proofs and base refresh use CI places
   %%> - every value passes the checks that the Node settings reference lists; a failed check changes nothing
+  %%> - a LAN address is IPv4 and no other Node in the Node's Cluster has it (`cluster.lan_ip_conflict`)
   %%> - no other lifecycle change runs for the target; the Gateway holds the Node's name lock, and the new name's lock for a rename
   %%> Decides:
   %%> - whether the apps folder changes and needs Node work, so a run starts
@@ -55,7 +56,7 @@ sequenceDiagram
     %%> - the new apps folder, and the managed user and group that must own it
     %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
     %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds; a new name or platform in the same request is saved at once
+    %%> - the settings stay unchanged until the run succeeds; a new name, platform or LAN address in the same request is saved at once
     %%> Unsetting on a Node with an active `app-dev` role:
     %%> - prepares the default folder, `<managed-user-home>/apps`
     GW-->>CLI: 202 Accepted<br/>task ID
@@ -112,7 +113,8 @@ sequenceDiagram
     %% path: records
     Note over GW: Save the records
     %%> What it does:
-    %%> - saves the name, platform or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
+    %%> - saves the name, platform, LAN address or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
+    %%> - a new LAN address takes effect where Orbit next renders it; a Node on the hub's private network moves to the hub's LAN endpoint at its next `node:converge`
     %%> Skipped:
     %%> - when every value equals the stored one, nothing is written and the result reports `Skipped — already set (node.unchanged)`
     %%> - the skip reason is part of the successful result in human and machine output, not an error
