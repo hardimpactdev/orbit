@@ -69,6 +69,9 @@
       ansible.builtin.command: { argv: "{{ intent.public_ssh_argv }}" }
       register: recovery
       changed_when: recovery.stdout is not search('Skipping')
+    - name: Apply the kernel policy
+      ansible.builtin.import_tasks: tasks/node-kernel-policy.yml
+      vars: { kernel_policy: "{{ intent.kernel }}" }
     - name: Read the firewall state
       ansible.builtin.command: ufw status
       register: firewall

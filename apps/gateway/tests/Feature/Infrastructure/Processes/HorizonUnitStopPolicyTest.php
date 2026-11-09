@@ -33,12 +33,20 @@ it('makes the Horizon unit wait for running jobs when it stops', function (): vo
         ->and($unit)->toContain("KillMode=mixed\nKillSignal=SIGTERM\nSendSIGKILL=no\nTimeoutStopSec=1730\n");
 });
 
+it('lets a system shutdown kill Horizon at once instead of waiting for the drain', function (): void {
+    [$process, $target] = stopPolicyProcess('horizon', ['/usr/bin/php8.5', 'artisan', 'horizon']);
+
+    $unit = (new SystemdProcessRenderer)->render($process, $target);
+
+    expect($unit)->toContain("ExecStop=+/bin/sh -c '[ \"$$(/usr/bin/systemctl is-system-running)\" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n'\n");
+});
+
 it('leaves the stop policy of every other Process alone', function (): void {
     [$process, $target] = stopPolicyProcess('schedule-work', ['/usr/bin/php8.5', 'artisan', 'schedule:work']);
 
     $unit = (new SystemdProcessRenderer)->render($process, $target);
 
-    expect($unit)->not->toContain('KillMode')->not->toContain('SendSIGKILL')->not->toContain('TimeoutStopSec');
+    expect($unit)->not->toContain('KillMode')->not->toContain('SendSIGKILL')->not->toContain('TimeoutStopSec')->not->toContain('ExecStop');
 });
 
 it('leaves the stop policy to the Gateway: an Instance Horizon unit does not get it', function (): void {
