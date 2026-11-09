@@ -759,10 +759,11 @@ it('has the sweep leave a VM alone that a refresh took for its proof after the s
     [$host] = slotPoolHost();
     slotPoolSweepWorld();
     $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
-    // The refresh commits between the sweep's first look at the host and its release: right after the sweep reads its candidates.
+    // The refresh commits between the sweep's selection and its release: at the locked read of the row, the second read.
     $started = false;
-    TaskVm::retrieved(function () use (&$started, $host, $vm): void {
-        if (! $started) {
+    $reads = 0;
+    TaskVm::retrieved(function () use (&$started, &$reads, $host, $vm): void {
+        if (++$reads === 2 && ! $started) {
             $started = true;
             Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
                 'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $vm->id], 'triggered_by' => 'test']);
@@ -1486,3 +1487,11 @@ it('keeps one recorded base per runtime, so a newer container base never replace
     expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
         ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000');
 });
+
+it('counts the CI places a proof can wait for: VM places before the container switch, VM and container places after', function (bool $placement, int $places): void {
+    [$host, $project] = containerPoolHost(placement: $placement, ciPlaces: 2, containerCi: 3);
+    // A taken place still counts: it is a place the proof can wait for.
+    app(TaskVmSlotPool::class)->take(slotPoolGroup($project), proof: true);
+
+    expect(app(TaskVmSlotPool::class)->usableCiPlaces())->toBe($places);
+})->with(['before the switch' => [false, 2], 'after the switch' => [true, 5]]);

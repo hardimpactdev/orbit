@@ -106,6 +106,14 @@ final class OperationBudgetTable
         'tool.update' => 1500,
     ];
 
+    /**
+     * The budget of a run of a captured kind that was admitted before its kind captured one: the fixed budget it had then. A run
+     * that older code admits, also while a release switches, never gets less than it was admitted with.
+     *
+     * @var array<string,int>
+     */
+    public const array UncapturedSeconds = ['proof.command' => 3600];
+
     /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a fixed budget below. */
     public static function longestFixedSeconds(): int
     {

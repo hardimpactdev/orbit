@@ -113,6 +113,8 @@ A `proof.command` captures its budget at admission from the batches it proves. A
 
 Its budget is 600 seconds for the shard, 180 seconds for each batch and the measured seconds of its cases, times 1.5, rounded up to five minutes, at most 7,200 seconds. The fixed parts come from the shards of proof 14337, which took 996 to 1,909 seconds for 3 to 8 batches. A fixed 3,600 seconds ended a run of 17 batches on one VM half way (proofs 14341 and 14651). A plan that needs a longer shard [waits for another CI place](/reference/compute-drivers#place-task-vms). When the Gateway ends a run at its budget, the run keeps the verdicts of the batches that ended.
 
+A `proof.command` that older code admitted has no captured budget, for example one admitted while a release switches. It keeps the fixed 3,600 seconds it had then (`OperationBudgetTable::UncapturedSeconds`), never the 60-second fallback of a captured kind.
+
 `proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command on the task VM that calls, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. Replace it with the 14-day p95 after the first success.
 
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
