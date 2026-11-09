@@ -27,8 +27,11 @@ final readonly class NodeWireGuardHubInput
      * every file in the peer directory on start. A run that adds one peer writes only that peer's file, so concurrent
      * runs never overwrite each other's peers. Only the files of Nodes that are gone or being removed are pruned: every
      * other Node keeps its file, whatever its status and whether or not the Gateway has recorded its key, because its own run may have written it.
+     * The intent is a snapshot and the prune runs minutes later, so it also keeps every file above the newest Node id of the
+     * snapshot: Node ids only grow, and a Node created after the snapshot, such as a task VM that joins meanwhile, has a higher one.
+     * A gone Node above every remaining one keeps its leftover file until a later converge, after a newer Node exists.
      *
-     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
+     * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune:array{directory:string,keep:list<int>,newest:int},peer_keys:list<string>}
      */
     public static function intent(Node $hub): array
     {
@@ -47,21 +50,23 @@ final readonly class NodeWireGuardHubInput
             'config' => self::config($hub),
             'peers' => array_values($peers->map(static fn (Node $peer): array => ['node_id' => $peer->id, 'file' => self::peerFile($peer->id),
                 'content' => self::section($peer->name, (string) $peer->wireguard_public_key, "{$peer->wireguard_ip}/32")])->values()->all()),
-            'prune_argv' => ['find', self::PeerDirectory, '-maxdepth', '1', '-name', '*.conf',
-                ...array_merge(...array_map(static fn (int $id): array => ['!', '-name', "{$id}.conf"], $keep)), '-delete'],
+            'prune' => ['directory' => self::PeerDirectory, 'keep' => $keep, 'newest' => ValidatedData::integer(Node::query()->max('id'))],
             'peer_keys' => ValidatedData::stringList($peers->pluck('wireguard_public_key')->values()->all())];
     }
 
     /**
-     * What a run that removes one Node needs: the shape of a rewrite with nothing to write and only that Node's file to delete. The
-     * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or keep, the peer of a Node that
-     * a removal admitted at the same time takes away. The apply step loads the files that remain.
+     * What a run that removes one Node needs: the hub's target, file and port, nothing to write, and only that Node's file to delete. The
+     * intent is a snapshot from admission, so a removal that listed the other Nodes would write back, or delete, the peer of a Node that
+     * another run adds or takes away meanwhile. The apply step loads the files that remain.
      *
      * @return array{hub_id:int,ssh:array<string,mixed>,port:int,config:string,peers:list<array{node_id:int,file:string,content:string}>,prune_argv:list<string>,peer_keys:list<string>}
      */
     public static function removal(Node $hub, Node $removed): array
     {
-        return [...self::intent($hub), 'peers' => [], 'prune_argv' => ['rm', '-f', '--', self::peerFile($removed->id)], 'peer_keys' => []];
+        $intent = self::intent($hub);
+
+        return ['hub_id' => $intent['hub_id'], 'ssh' => $intent['ssh'], 'port' => $intent['port'], 'config' => $intent['config'],
+            'peers' => [], 'prune_argv' => ['rm', '-f', '--', self::peerFile($removed->id)], 'peer_keys' => []];
     }
 
     /** The hub's wg-quick file. It holds no peer and no key: it reads the key file, and wg-quick loads every peer file. */

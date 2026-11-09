@@ -1,0 +1,14 @@
+---
+# Decided at run time from the snapshot's bounds, never from a keep-list alone: the intent is minutes old when this runs,
+# and a Node created since then, such as a task VM that joins meanwhile, has an id above the snapshot's newest one.
+- name: Find the hub peer files
+  ansible.builtin.find: { paths: "{{ hub_plan.prune.directory }}", patterns: "*.conf", file_type: any }
+  register: hub_peer_files
+- name: Prune only the peers of Nodes that are gone or being removed
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ hub_peer_files.files | sort(attribute='path') }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+  vars: { peer_id: "{{ item.path | basename | regex_replace('\\.conf$', '') }}" }
+  when: >-
+    not (peer_id is match('^[1-9][0-9]*$')
+    and (peer_id | int > hub_plan.prune.newest | int or peer_id | int in hub_plan.prune.keep | map('int')))

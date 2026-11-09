@@ -25,7 +25,7 @@ def intent():
         'bootstrap': {'host': '198.51.100.7', 'port': 2222, 'user': 'ubuntu', 'fingerprint': 'SHA256:x'},
         'identity': {'identity_file': '/swamp/identity', 'public_key': 'ssh-ed25519 control'},
         'known_hosts_path': '/home/orbit/.ssh/known_hosts', 'packages': ['ufw'],
-        'network': {'hubs': [{'ssh': HUB, 'sync_path': '/s', 'private_key_file': '/k', 'public_key': 'hubkey', 'sync_body': '@KEY@'}],
+        'network': {'hubs': [{'ssh': HUB, 'sync_path': '/s', 'private_key_file': '/k', 'public_key': 'hubkey', 'port': 51820}],
                     'hub_files': [{'ssh': HUB, 'path': '/etc/wireguard/orbit.peers', 'content': ''}, {'ssh': {'target': {'host': '203.0.113.1'}}, 'path': '/other', 'content': 'x'}]},
         'private_dns': [{'node_id': 9, 'ssh': {'identity_file': '/swamp/identity', 'target': {
             'host': '198.51.100.7', 'port': 2222, 'user': 'orbit', 'host_keys': ['@ORBIT_ENROLLMENT_SSH_HOST_KEY@']}}, 'backend': '{{ kept }}'}],

@@ -15,23 +15,44 @@ it('prunes the peer files of Nodes that are gone or being removed, and keeps eve
     $node = static fn (string $name, string $ip, LifecycleStatus $status, ?string $key): Node => Node::withoutEvents(static fn (): Node => Node::query()->create([
         'name' => $name, 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => $ip, 'wireguard_public_key' => $key,
         'user' => 'orbit', 'status' => $status, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $gone = $node('gone', '10.44.0.25', LifecycleStatus::Active, base64_encode(str_repeat('c', 32)));
+    $goneId = $gone->id;
+    Node::withoutEvents(static fn () => $gone->delete());
     $keyed = $node('keyed', '10.44.0.20', LifecycleStatus::Active, base64_encode(str_repeat('a', 32)));
     $unkeyed = $node('unkeyed', '10.44.0.21', LifecycleStatus::Active, null);
     $enrolling = $node('enrolling', '10.44.0.22', LifecycleStatus::Provisioning, null);
     $failed = $node('failed', '10.44.0.23', LifecycleStatus::Failed, null);
     $removing = $node('removing', '10.44.0.24', LifecycleStatus::Removing, base64_encode(str_repeat('b', 32)));
-    $gone = $node('gone', '10.44.0.25', LifecycleStatus::Active, base64_encode(str_repeat('c', 32)));
-    $goneId = $gone->id;
-    Node::withoutEvents(static fn () => $gone->delete());
 
     $intent = NodeWireGuardHubInput::intent($hub);
-    $argv = implode(' ', $intent['prune_argv']);
 
-    expect(array_column($intent['peers'], 'node_id'))->toBe([$keyed->id]);
-    foreach ([$keyed, $unkeyed, $enrolling, $failed] as $kept) {
-        expect($argv)->toContain("! -name {$kept->id}.conf");
-    }
-    expect($argv)->not->toContain("! -name {$removing->id}.conf")->not->toContain("! -name {$goneId}.conf");
+    expect(array_column($intent['peers'], 'node_id'))->toBe([$keyed->id])
+        ->and($intent['prune']['directory'])->toBe('/etc/wireguard/orbit-peers.d')
+        ->and($intent['prune']['keep'])->toBe([$keyed->id, $unkeyed->id, $enrolling->id, $failed->id])
+        ->and($intent['prune']['newest'])->toBe($removing->id);
+    // The gone Node's id is at or below the newest one, so the prune deletes its file; the removing Node's too.
+    expect($goneId)->toBeLessThanOrEqual($intent['prune']['newest']);
+});
+
+it('records the newest Node id, below every Node created later, and removes only the removed Node\'s file', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $node = static fn (string $name, string $ip): Node => Node::withoutEvents(static fn (): Node => Node::query()->create([
+        'name' => $name, 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => $ip, 'wireguard_public_key' => null,
+        'user' => 'orbit', 'status' => LifecycleStatus::Provisioning, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $removed = $node('removed', '10.44.0.20');
+    $removed->forceFill(['status' => LifecycleStatus::Removing])->saveQuietly();
+    $newest = $node('newest', '10.44.0.21');
+    // The newest Node is deleted before the intent, so the snapshot's newest id is the removed Node's.
+    Node::withoutEvents(static fn () => $newest->delete());
+
+    $intent = NodeWireGuardHubInput::intent($hub);
+    $removal = NodeWireGuardHubInput::removal($hub, $removed);
+    // A task VM claimed while the run waits: it joins after the snapshot and writes its own peer file.
+    $joined = $node('joined', '10.44.0.22');
+
+    expect($joined->id)->toBeGreaterThan($intent['prune']['newest'])
+        ->and($intent['prune']['keep'])->not->toContain($joined->id)
+        ->and($removal['prune_argv'])->toBe(['rm', '-f', '--', "/etc/wireguard/orbit-peers.d/{$removed->id}.conf"]);
 });
 
 it('removes one Node from the hub by deleting its own file, and writes or keeps no other peer', function (): void {

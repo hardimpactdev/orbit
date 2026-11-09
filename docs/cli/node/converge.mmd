@@ -90,6 +90,7 @@ sequenceDiagram
       SW->>H: Apply hub network<br/>Ansible phase: network
       %%> What it does:
       %%> - applies the recorded hub side before the peer; matching configuration is unchanged
+      %%> - prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs: it keeps every Node of the snapshot and every file above the snapshot's newest Node id, so a task VM that joins while the run waits keeps its peer
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:
       %%> - applies the recorded Node side and waits for the tunnel handshake

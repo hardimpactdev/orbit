@@ -41,7 +41,9 @@ it('writes the hub file the hub converge writes, and keeps the hub\'s peers out 
     expect($network['is_hub'])->toBeTrue()
         ->and($file['content'])->toBe(NodeWireGuardHubInput::config($hub))
         ->and($file['content'])->toContain('wg addconf %i')->not->toContain($peer->wireguard_public_key)
-        ->and($network['sync_body'])->toContain($peer->wireguard_public_key);
+        // The hub loads the peer files it has at apply time: the run writes each recorded peer's file and carries no snapshot to load.
+        ->and(collect($network['files'])->firstWhere('path', NodeWireGuardHubInput::peerFile($peer->id))['content'])->toContain($peer->wireguard_public_key)
+        ->and($network['sync_body'])->toBe('')->and($network['port'])->toBe(NodeWireGuardHubInput::intent($hub)['port']);
 });
 
 it('rewrites the hub file of a joining Node as the hub converge does, and gives every peer its own file', function (): void {
@@ -56,12 +58,15 @@ it('rewrites the hub file of a joining Node as the hub converge does, and gives 
         'ssh_host_fingerprint' => 'SHA256:joining', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'joining-public-key']));
 
     try {
-        $files = collect(enrollmentNetwork($node)['hub_files'])->keyBy('path');
+        $network = enrollmentNetwork($node);
+        $files = collect($network['hub_files'])->keyBy('path');
     } finally {
         File::deleteDirectory($home);
     }
 
-    expect($files['/etc/wireguard/orbit.conf']['content'])->toBe(NodeWireGuardHubInput::config($hub))
+    // The hub loads the peer files it has at apply time, so the run carries the port and no snapshot of the peers.
+    expect($network['hubs'][0])->toHaveKey('port', NodeWireGuardHubInput::intent($hub)['port'])->not->toHaveKey('sync_body')
+        ->and($files['/etc/wireguard/orbit.conf']['content'])->toBe(NodeWireGuardHubInput::config($hub))
         ->and($files[NodeWireGuardHubInput::peerFile($node->id)]['content'])->toContain('10.44.0.30/32')
         ->and($files[NodeWireGuardHubInput::peerFile($peer->id)]['content'])->toContain($peer->wireguard_public_key);
 });
