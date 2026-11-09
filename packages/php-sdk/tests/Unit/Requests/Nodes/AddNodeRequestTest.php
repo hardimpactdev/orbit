@@ -68,7 +68,6 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
         clusterId: 3,
         wireguardIp: '10.44.0.2',
         lanIp: '10.0.0.2',
-        wireguardEndpointOverride: '10.0.0.2:51820',
         dnsServerOverride: '10.0.0.2',
         hostKeyFingerprint: 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         platform: 'linux',
@@ -96,7 +95,6 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
             'cluster_id' => 3,
             'wireguard_ip' => '10.44.0.2',
             'lan_ip' => '10.0.0.2',
-            'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ])

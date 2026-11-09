@@ -49,7 +49,7 @@ describe('node:show recorded read', function (): void {
         $this->node->updateQuietly([
             'cluster_id' => $cluster->id, 'status' => 'failed', 'failed_step' => 'converge:apps',
             'error_code' => 'node.enrollment_failed', 'architecture' => 'x86_64', 'lan_ip' => '192.168.1.2',
-            'wireguard_public_key' => 'recorded-key', 'wireguard_endpoint_override' => '192.168.1.2:51820',
+            'wireguard_public_key' => 'recorded-key',
             'dns_server_override' => '192.168.1.1', 'tld' => 'dev.orbit',
             'settings' => ['apps' => ['path' => '/srv/apps']],
         ]);
@@ -82,7 +82,7 @@ describe('node:show recorded read', function (): void {
                 ->assertJsonPath('data.error_code', 'node.enrollment_failed')
                 ->assertJsonPath('data.lan_ip', '192.168.1.2')
                 ->assertJsonPath('data.wireguard_public_key', 'recorded-key')
-                ->assertJsonPath('data.wireguard_endpoint_override', '192.168.1.2:51820')
+                ->assertJsonMissingPath('data.wireguard_endpoint_override')
                 ->assertJsonPath('data.dns_server_override', '192.168.1.1')
                 ->assertJsonPath('data.settings.apps.path', '/srv/apps')
                 ->assertJsonPath('data.access.can_access.0.name', 'caller')

@@ -122,7 +122,8 @@ final class NodesController extends Controller
     ): JsonResponse {
         $caller = $request->user();
         $update = $action->execute($node, $request->name(), $request->platform(), $request->settings(),
-            $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
+            $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'),
+            $request->hasLanIp(), $request->lanIp());
         $result = $update->result;
         if ($result instanceof Operation) {
             return response()->json([

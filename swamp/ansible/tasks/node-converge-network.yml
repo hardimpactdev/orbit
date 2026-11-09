@@ -6,16 +6,44 @@
 - name: Reconcile the peer after its hub has completed
   when: intent.network.mode == 'peer'
   block:
+    - name: Prove the hub's LAN endpoint before any WireGuard change
+      when: intent.network.apply.peer.hub_lan is not none
+      ansible.builtin.include_tasks: node-hub-lan-proof.yml
+      vars: { hub_lan: "{{ intent.network.apply.peer.hub_lan }}" }
+    - name: Decide whether the hub endpoint changes
+      ansible.builtin.include_tasks: node-converge-hub-switch.yml
+      vars: { hub_switch_dir: /etc/wireguard, hub_switch_endpoint: "{{ intent.network.apply.peer.endpoint }}" }
+    - name: Drop the copies of a cut-off move that no longer moves
+      when: not hub_switch | bool
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: [/etc/wireguard/orbit.conf.previous, /etc/wireguard/orbit.peers.previous, /etc/wireguard/orbit.live.previous]
+    # A move stages the tunnel files beside the live ones; the move job installs them, so the previous ones stay until it ends.
     - name: Reconcile recorded peer files
-      ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
+      ansible.builtin.copy:
+        dest: "{{ item.path ~ ('.next' if hub_switch | bool and item.staged else '') }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0600"
       loop:
-        - { path: /etc/wireguard/orbit.conf, content: "{{ intent.network.apply.config }}" }
-        - { path: /etc/wireguard/orbit.peers, content: "{{ intent.network.apply.peers }}" }
-        - { path: /etc/wireguard/orbit.dns-link, content: "{{ intent.network.apply.dns_marker }}" }
+        - { path: /etc/wireguard/orbit.conf, content: "{{ intent.network.apply.config }}", staged: true }
+        - { path: /etc/wireguard/orbit.peers, content: "{{ intent.network.apply.peers }}", staged: true }
+        - { path: /etc/wireguard/orbit.dns-link, content: "{{ intent.network.apply.dns_marker }}", staged: false }
+      loop_control: { label: "{{ item.path }}" }
       register: peer_files
     - name: Start the peer without restarting a matching tunnel
       ansible.builtin.systemd: { name: wg-quick@orbit.service, enabled: true, state: started }
+    - name: Move the tunnel to the new hub endpoint
+      when: hub_switch | bool
+      ansible.builtin.include_tasks: node-converge-hub-move.yml
+      vars:
+        hub_move:
+          dir: /etc/wireguard
+          key: "{{ intent.network.apply.peer.server_public_key }}"
+          endpoint: "{{ intent.network.apply.peer.endpoint }}"
+          probe_ip: "{{ intent.network.probe_ip }}"
     - name: Reconcile live peer state without copying its private key
+      when: not hub_switch | bool
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |

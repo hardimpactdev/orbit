@@ -29,12 +29,15 @@
       before=$(wg showconf orbit | sha256sum)
       wg syncconf orbit <(
         printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/orbit.key
-        printf '\nListenPort = %s\n' {{ hub_plan.port | quote }}
+        printf '\n%s' {{ hub_plan.interface | quote }}
         for f in /etc/wireguard/orbit-peers.d/*.conf; do [ ! -f "$f" ] || cat "$f"; done
       )
       [ "$before" = "$(wg showconf orbit | sha256sum)" ] || echo changed
   register: hub_sync
   changed_when: hub_sync.stdout is search('changed')
+- name: Apply the hub's source unit and LAN SSH
+  ansible.builtin.include_tasks: node-hub-source.yml
+  vars: { hub_source: "{{ hub_plan.source }}", hub_source_owner: "{{ hub_plan.source_owner }}", hub_lan_ssh_argv: "{{ hub_plan.lan_ssh_argv }}" }
 - name: Read the hub key
   ansible.builtin.command: wg show orbit public-key
   register: hub_key

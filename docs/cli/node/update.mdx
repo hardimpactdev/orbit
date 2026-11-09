@@ -1,11 +1,11 @@
 ---
 title: "orbit node:update"
 sidebarTitle: "node:update"
-description: "Change the name, platform, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
+description: "Change the name, platform, LAN address, apps folder, or task VM host settings of a Node. Only an apps folder change runs on the Node."
 ---
 
 ```bash
-orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--json]
+orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--lan-ip=IP] [--apps-path=PATH] [--task-vms=JSON] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -16,6 +16,7 @@ orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] 
 | --- | --- | --- |
 | `--name=NAME` | unchanged | New unique name. |
 | `--platform=PLATFORM` | unchanged | `linux`, `macos`, or `ipados`. Only an unmanaged Node takes a platform. |
+| `--lan-ip=IP` | unchanged | The Node's LAN IPv4 address. An empty value, `--lan-ip=`, clears it. |
 | `--apps-path=PATH` | unchanged | The [apps folder](/reference/node-settings#set-the-apps-root). An empty value, `--apps-path=`, unsets it. |
 | `--task-vms=JSON` | unchanged | The [task VM host settings](/reference/node-settings#configure-a-task-vm-host) as a JSON object. `--task-vms=null` removes them. |
 | `--json` | off | Print only the Node, or the final Operation of an apps folder run. |
@@ -23,6 +24,7 @@ orbit node:update <node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] 
 ```bash
 orbit node:update 3 --name=vpn
 orbit node:update 5 --platform=ipados
+orbit node:update 1 --lan-ip=10.0.0.2
 orbit node:update 7 --apps-path=/mnt/apps
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"containers":{"cidr":"10.251.78.0/24","task_places":1,"ci_places":1}}'
@@ -36,6 +38,7 @@ Repeating a value that is already stored succeeds with `Skipped — already set 
 
 - **Name.** ASCII letters, digits, dashes, and underscores, at most 63 characters, unique among Nodes. The name is only a label: keys, addresses, SSH identity, and roles stay the same. Orbit holds the [lifecycle lock](/reference/node-provisioning#one-lifecycle-owner-per-node-name) for the current name and for the new name, so a concurrent `node:add` cannot take the new name. The WireGuard hub configuration names each peer in a comment; that comment keeps the old name until Orbit next projects the hub. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
 - **Platform.** Only an unmanaged Node takes a platform: it has no pinned SSH host fingerprint and no role. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. Enrollment observes a managed Node's platform, so a managed Node is refused with `node.platform_managed` and nothing changes. `node:add` does not accept `ipados`, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what is refused or skipped.
+- **LAN address.** An IPv4 address on the Node's private network, or empty to clear it. It must differ from the LAN address of every other Node on the same network. On the hub's private network that is every Node, in a Cluster or not; elsewhere it is the Nodes of the Node's Cluster, or, for a Node outside every Cluster, the other Nodes outside every Cluster. Orbit saves it without contacting the machine and republishes nothing. Live state that uses the old address stays until the Node that holds it is converged. For a Node in a Cluster, run [`cluster:node:add`](/cli/cluster/node-add) for the Cluster's Router again so its [Router LAN rules](/cli/firewall#router-lan-member-rules) follow. Converge the ingress Nodes whose public Process Routes reach the Node over the LAN. Routes and database connections use the new address the next time Orbit publishes them. A Cluster Router reaches the Node there, and a Node on the hub's private network reaches the WireGuard hub at the hub's LAN address after its next [`node:converge`](/cli/node/converge). Set the hub's address and converge the hub before the other Nodes'. [The LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) has the rule, the proof and the order.
 - **Task VM host settings.** The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host). It has no `node_id`, because the selected Node supplies its identity. Keep the host's current values when you change it. Remove the settings only after you destroy the host's task VMs. An `app-dev` role alone never makes a Node a task VM host. The optional [`containers` member](/reference/node-settings#task-container-fields) adds task container places with their own project, bridge and CIDR. Orbit refuses to remove it, or to change its `project`, `network` or `cidr`, while the host has a task container that is not destroyed. Removing it, or changing its `network` or `cidr`, starts a run that withdraws the container bridge's DHCP and DNS input rules first, as a change of the VM bridge does for its own rules.
 
 ## The apps folder
@@ -55,10 +58,11 @@ A skipped repeat prints `Skipped — already set (node.unchanged)`. With `--json
 | Code | Meaning |
 | --- | --- |
 | `node.id_invalid` | The Node is missing or is not a positive integer, and the CLI cannot prompt. |
-| `node.option_required` | None of `--name`, `--platform`, `--apps-path`, or `--task-vms` was given. |
+| `node.option_required` | None of `--name`, `--platform`, `--lan-ip`, `--apps-path`, or `--task-vms` was given. |
 | `node.name_required`, `node.platform_required` | `--name` or `--platform` is empty. |
 | `node.setting_invalid` | `--task-vms` is not a typed JSON host object or `null`. |
-| `validation.failed` | The name is malformed or taken, or the platform is unknown. Nothing changes. |
+| `validation.failed` | The name is malformed or taken, the platform is unknown, or the LAN address is not an IPv4 address. Nothing changes. |
+| `cluster.lan_ip_conflict` | Another Node of the same network has that LAN address: any Node on the hub's private network, one of its Cluster, or, outside every Cluster, another Node outside every Cluster. Nothing changes. |
 | `node.platform_managed` | The Node has a pinned SSH host fingerprint or a role. Nothing changes. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock or the new name's lock. Nothing changes. |
 | `node.settings_*` | The apps folder or the task VM host settings failed a check. [Node settings](/reference/node-settings#failure-codes) lists the codes. |

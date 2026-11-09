@@ -83,7 +83,6 @@ final class ShowNodeCommand extends NodeCommand
             'WireGuard' => $node->wireguardIp,
             'LAN' => $node->lanIp,
             'WireGuard public key' => $node->wireguardPublicKey,
-            'WireGuard endpoint override' => $node->wireguardEndpointOverride,
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),
             'Platform' => $platform,

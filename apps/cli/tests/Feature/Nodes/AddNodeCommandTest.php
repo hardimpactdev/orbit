@@ -49,7 +49,6 @@ it('sends node provisioning to the active gateway', function (): void {
             '--cluster' => '3',
             '--wireguard-ip' => '10.44.0.2',
             '--lan-ip' => '10.0.0.2',
-            '--wireguard-endpoint' => '10.0.0.2:51820',
             '--dns-server' => '10.0.0.2',
             '--host-key-fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
             '--json' => true,
@@ -73,7 +72,6 @@ it('sends node provisioning to the active gateway', function (): void {
             'cluster_id' => 3,
             'wireguard_ip' => '10.44.0.2',
             'lan_ip' => '10.0.0.2',
-            'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ]);

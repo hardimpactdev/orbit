@@ -29,7 +29,6 @@ final class ProvisionNodeCommand extends Command
         {--cluster= : Cluster ID}
         {--wireguard-ip= : Stable WireGuard IP}
         {--lan-ip= : Cluster-local LAN IP}
-        {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
         {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}
         {--diagnostics : Include bounded, redacted failure details}';
@@ -73,7 +72,6 @@ final class ProvisionNodeCommand extends Command
                 user: $user,
                 orbitUser: $this->stringOption('orbit-user'),
                 wireguardIp: $wireguardInput['value'],
-                wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
                 dnsServerOverride: $this->stringOption('dns-server'),
                 expectedSshHostFingerprint: $this->stringOption('host-key-fingerprint'),
                 platform: 'linux',

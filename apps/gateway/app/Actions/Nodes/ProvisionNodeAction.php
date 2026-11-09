@@ -17,6 +17,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -40,7 +41,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
-use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
@@ -125,7 +125,6 @@ final readonly class ProvisionNodeAction
                 message: 'The node Linux user name is invalid.',
             );
         }
-        $this->validateEndpointOverride($data);
 
         if ($data->settingsProvided) {
             $this->storagePaths->validateGrammar($data->settings);
@@ -174,20 +173,8 @@ final readonly class ProvisionNodeAction
             );
         }
 
-        if (
-            $clusterId !== null
-            && $lanIp !== null
-            && Node::query()
-                ->where('cluster_id', $clusterId)
-                ->where('lan_ip', $lanIp)
-                ->when($node->exists, static fn ($query) => $query->whereKeyNot($node->id))
-                ->exists()
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'cluster.lan_ip_conflict',
-                message: "LAN IP [{$lanIp}] is already assigned in the Cluster.",
-                status: 409,
-            );
+        if ($lanIp !== null) {
+            NodeLanAddress::assertFree($lanIp, $clusterId, $node->exists ? $node->id : null);
         }
 
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
@@ -284,7 +271,6 @@ final readonly class ProvisionNodeAction
                 'user' => $node->user,
                 'wireguard_ip' => $node->wireguard_ip,
                 'lan_ip' => $node->getAttribute('lan_ip'),
-                'wireguard_endpoint_override' => $node->wireguard_endpoint_override,
                 'dns_server_override' => $node->dns_server_override,
                 'failed_step' => $failedStep,
                 'error_code' => $errorCode,
@@ -319,7 +305,6 @@ final readonly class ProvisionNodeAction
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
             'wireguard_ip' => $wireguardIp,
             'lan_ip' => $lanIp,
-            'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
             'failed_step' => null,
             'error_code' => null,
@@ -681,7 +666,7 @@ final readonly class ProvisionNodeAction
             return false;
         }
 
-        if ($data->wireguardEndpointOverride !== null || $data->dnsServerOverride !== null) {
+        if ($data->dnsServerOverride !== null) {
             return false;
         }
 
@@ -971,19 +956,6 @@ final readonly class ProvisionNodeAction
             }
 
             throw $exception;
-        }
-    }
-
-    private function validateEndpointOverride(ProvisionNodeData $data): void
-    {
-        if (
-            $data->wireguardEndpointOverride !== null
-            && ! WireGuardEndpoint::isValid($data->wireguardEndpointOverride)
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'vpn.endpoint_override_invalid',
-                message: "WireGuard endpoint override [{$data->wireguardEndpointOverride}] is invalid.",
-            );
         }
     }
 

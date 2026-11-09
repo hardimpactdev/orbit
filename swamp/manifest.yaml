@@ -34,6 +34,10 @@ additionalFiles:
   - ansible/tasks/node-converge-hub.yml
   - ansible/tasks/node-converge-hub-prune.yml
   - ansible/tasks/node-add-hub-peers.yml
+  - ansible/tasks/node-hub-lan-proof.yml
+  - ansible/tasks/node-converge-hub-switch.yml
+  - ansible/tasks/node-converge-hub-move.yml
+  - ansible/tasks/node-hub-source.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml
   - extensions/behaviors/operations/ansible-input/converge_tool.ts

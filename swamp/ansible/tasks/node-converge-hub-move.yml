@@ -1,0 +1,74 @@
+---
+# Move a Node's tunnel to its new hub endpoint in one detached job on the Node (ADR 0251). Swamp reaches the Node through this
+# tunnel, so the move must not depend on the SSH session: Ansible's async job keeps running when the session drops, and later
+# polls reconnect through whichever tunnel the job left. The job installs the staged files, ends the old session, waits for a
+# handshake at or after the move and, without one, puts the previous files back and sets the live configuration it saved.
+# Then it exits 3. Either way it records the outcome in `orbit.move-result`, which the converge reads after it reaches the
+# Node again, so a lost connection still reports node.hub_switch_no_handshake. Previous files that an aborted move left are
+# kept, and the converge decides the next move from them.
+- name: Move the tunnel to the new hub endpoint, or back
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -uo pipefail
+      umask 077
+      d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
+      rm -f "$d/orbit.move-result"
+      # Keep what runs now before anything changes: the previous files, unless an aborted move left them, and the live
+      # configuration, which also covers a Node whose previous files were missing.
+      # After a cut-off move the live tunnel may already run the new files, so its rollback loads the previous files instead.
+      cut_off=no; if [ -f "$d/orbit.peers.previous" ]; then cut_off=yes; fi
+      for f in orbit.conf orbit.peers; do
+        if [ -f "$d/$f" ] && [ ! -f "$d/$f.previous" ]; then cp -p "$d/$f" "$d/$f.previous"; fi
+      done
+      wg showconf orbit > "$d/orbit.live.previous"
+      for f in orbit.conf orbit.peers; do mv "$d/$f.next" "$d/$f"; done
+      load() {
+        wg set orbit peer "$key" remove || true
+        # A file node:add wrote holds its own [Interface] section; only the peers are loaded.
+        wg syncconf orbit <(printf '[Interface]\nPrivateKey = '; cat "$d/orbit.key"; awk '/^\[/ { skip = ($0 == "[Interface]") } !skip' "$d/orbit.peers")
+      }
+      moved=$(date +%s)
+      load
+      for _ in $(seq 1 30); do
+        seen=$(wg show orbit latest-handshakes | awk -v k="$key" '$1 == k { print $2 }')
+        # A handshake the hub started to an old address would also be new; only one through the new endpoint counts. A
+        # hostname endpoint shows resolved, so it is compared only when the endpoint is an address.
+        live=$(wg show orbit endpoints | awk -v k="$key" '$1 == k { print $2 }')
+        case {{ hub_move.endpoint | quote }} in *[!0-9.:]*) live={{ hub_move.endpoint | quote }} ;; esac
+        if [ "${seen:-0}" -ge "$moved" ] && [ "$live" = {{ hub_move.endpoint | quote }} ]; then
+          rm -f "$d/orbit.conf.previous" "$d/orbit.peers.previous" "$d/orbit.live.previous"; echo moved > "$d/orbit.move-result"; exit 0
+        fi
+        ping -c 1 -W 1 {{ hub_move.probe_ip | quote }} > /dev/null 2>&1 || true
+        sleep {{ hub_move.interval | default(2) }}
+      done
+      # A file without a previous copy goes too, so the next converge sees no endpoint and decides a move again.
+      for f in orbit.conf orbit.peers; do
+        if [ -f "$d/$f.previous" ]; then mv "$d/$f.previous" "$d/$f"; else rm -f "$d/$f"; fi
+      done
+      if [ "$cut_off" = yes ]; then load; else wg set orbit peer "$key" remove || true; wg setconf orbit "$d/orbit.live.previous"; fi
+      rm -f "$d/orbit.live.previous"
+      echo restored > "$d/orbit.move-result"
+      exit 3
+  async: 180
+  poll: 5
+  register: hub_move_result
+  changed_when: true
+  failed_when: false
+  # A poll that runs while the old tunnel is down comes back unreachable; the job goes on, and its outcome is on the Node.
+  ignore_unreachable: true
+- name: Reach the Node again through the tunnel the move left
+  ansible.builtin.wait_for_connection: { timeout: 240 }
+- name: Wait for the move to record its outcome
+  ansible.builtin.wait_for: { path: "{{ hub_move.dir }}/orbit.move-result", timeout: 240 }
+- name: Read the outcome of the move
+  ansible.builtin.command: { argv: [cat, "{{ hub_move.dir }}/orbit.move-result"] }
+  register: hub_move_outcome
+  changed_when: false
+- name: Remove the recorded outcome
+  ansible.builtin.file: { path: "{{ hub_move.dir }}/orbit.move-result", state: absent }
+- name: Require a handshake through the new hub endpoint
+  ansible.builtin.assert:
+    that: hub_move_outcome.stdout | trim == 'moved'
+    fail_msg: node.hub_switch_no_handshake
+    quiet: true

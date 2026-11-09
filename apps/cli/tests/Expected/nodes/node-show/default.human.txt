@@ -9,36 +9,34 @@ Loading Node...
 
 ┌  Node: app-dev
 │
-├  ID                            2
+├  ID                     2
 │
-├  Status                        active
+├  Status                 active
 │
-├  Agent                         online
+├  Agent                  online
 │
-├  Roles                         app-dev
+├  Roles                  app-dev
 │
-├  SSH                           orbit@94.237.40.75:22
+├  SSH                    orbit@94.237.40.75:22
 │
-├  Cluster                       development
+├  Cluster                development
 │
-├  WireGuard                     10.44.0.3
+├  WireGuard              10.44.0.3
 │
-├  LAN                           10.0.0.3
+├  LAN                    10.0.0.3
 │
-├  WireGuard public key          app-dev-public-key
+├  WireGuard public key   app-dev-public-key
 │
-├  WireGuard endpoint override   10.0.0.2:51820
+├  DNS server override    10.0.0.2
 │
-├  DNS server override           10.0.0.2
+├  TLD                    .app-dev.test
 │
-├  TLD                           .app-dev.test
+├  Platform               linux (x86_64)
 │
-├  Platform                      linux (x86_64)
+├  Apps folder            —
 │
-├  Apps folder                   —
+├  Access to              —
 │
-├  Access to                     —
-│
-└  Accessible by                 —
+└  Accessible by          —
 
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

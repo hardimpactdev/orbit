@@ -200,7 +200,6 @@ final readonly class EnrollMacOsNodeAction
 
         if (
             $data->settingsProvided
-            || $this->overrideChanges($data->wireguardEndpointOverride, $node->exists ? $node->wireguard_endpoint_override : null)
             || $this->overrideChanges($data->dnsServerOverride, $node->exists ? $node->dns_server_override : null)
             || ($data->tldProvided && $data->tld !== ($node->exists ? $this->stringOrNull($node->tld) : null))
             || ($data->clusterProvided && $data->clusterId !== ($node->exists ? $node->cluster_id : null))

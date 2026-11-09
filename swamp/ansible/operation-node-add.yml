@@ -108,6 +108,18 @@
           - net.required_public_key is none or tunnel_public_key.stdout | trim == net.required_public_key
         fail_msg: The tunnel key must belong to this Node, and an existing hub must retain its peer-facing key.
         quiet: true
+    - name: Prove the hub's LAN endpoint before any tunnel change
+      when: net.hub_lan is not none
+      ansible.builtin.include_tasks: tasks/node-hub-lan-proof.yml
+      vars: { hub_lan: "{{ net.hub_lan }}" }
+    # node:add has no rollback for a live tunnel; node:converge moves one and goes back without a handshake (ADR 0251).
+    - name: Decide whether the hub endpoint changes
+      when: not net.is_hub
+      ansible.builtin.include_tasks: tasks/node-converge-hub-switch.yml
+      vars: { hub_switch_dir: /etc/wireguard, hub_switch_endpoint: "{{ net.hub_endpoint }}" }
+    - name: Leave the move of a live tunnel to node:converge
+      when: not net.is_hub
+      ansible.builtin.assert: { that: not (hub_switch_present | bool and hub_switch | bool), fail_msg: node.hub_switch_by_converge, quiet: true }
     - name: Write the tunnel files
       ansible.builtin.copy:
         dest: "{{ item.path }}"
@@ -165,6 +177,10 @@
         stdin_add_newline: false
       register: tunnel_peers
       changed_when: tunnel_peers.stdout is search('changed')
+    - name: Apply the hub's source unit and LAN SSH
+      when: net.is_hub
+      ansible.builtin.include_tasks: tasks/node-hub-source.yml
+      vars: { hub_source: "{{ net.source }}", hub_source_owner: "{{ net.source_owner }}", hub_lan_ssh_argv: "{{ net.lan_ssh_argv }}" }
     - name: Trust WireGuard members
       ansible.builtin.command: { argv: "{{ net.trust_argv }}" }
       register: trust

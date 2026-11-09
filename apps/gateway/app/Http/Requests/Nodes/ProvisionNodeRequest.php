@@ -12,7 +12,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
-use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
 use App\Rules\ValidNodeTld;
 use Closure;
@@ -113,16 +112,6 @@ final class ProvisionNodeRequest extends FormRequest
             // The allocator owns format, family, subnet, and uniqueness errors.
             'wireguard_ip' => ['nullable'],
             'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
-            'wireguard_endpoint_override' => [
-                'nullable',
-                'string',
-                'max:255',
-                static function (string $attribute, mixed $value, Closure $fail): void {
-                    if (! is_string($value) || ! WireGuardEndpoint::isValid($value)) {
-                        $fail("The {$attribute} field must be a valid WireGuard endpoint.");
-                    }
-                },
-            ],
             'dns_server_override' => ['bail', 'nullable', 'ip', function (string $attribute, mixed $value, Closure $fail): void {
                 if ($this->input('platform') === 'macos') {
                     return;
@@ -170,9 +159,6 @@ final class ProvisionNodeRequest extends FormRequest
             user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
             orbitUser: is_string($validated['orbit_user'] ?? null) ? $validated['orbit_user'] : null,
             wireguardIp: $this->wireguardIp($validated),
-            wireguardEndpointOverride: is_string($validated['wireguard_endpoint_override'] ?? null)
-                ? $validated['wireguard_endpoint_override']
-                : null,
             dnsServerOverride: is_string($validated['dns_server_override'] ?? null)
                 ? $validated['dns_server_override']
                 : null,
