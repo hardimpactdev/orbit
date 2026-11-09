@@ -130,7 +130,7 @@ it('marks the hub\'s WireGuard packets, and leaves the source rule to its own un
         ->and($intent['source']['unit'])->toContain("Before=wg-quick@orbit.service\n")->toContain("ExecStart=/bin/sh /etc/orbit/wireguard/hub-source\n")
         ->toContain("WantedBy=wg-quick@orbit.service multi-user.target\n")->not->toContain('Requires=')->not->toContain('BindsTo=')
         // The networkd drop-in keeps the rules; a restart of networkd must not rerun the script before DHCP set a default route.
-        ->not->toContain('PartOf=')
+        ->not->toContain('PartOf=')->toContain("Restart=on-failure\nRestartSec=30\n")
         ->and($intent['source']['networkd'])->toBe("[Network]\nManageForeignRoutingPolicyRules=no\nManageForeignRoutes=no\n")
         ->and($intent['source']['priorities'])->toBe([31820, 31821])
         ->and($intent['lan_ssh_argv'])->toBe([['ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.0.0.0/24', 'to', '10.0.0.2', 'port', '22', 'comment', 'orbit:vpn-lan-ssh']]);

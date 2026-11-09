@@ -293,6 +293,14 @@ class WireGuardHubLanTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn(f'Endpoint = {self.PUBLIC}', self.left['wg/orbit.peers'])
 
+    def test_a_failed_move_after_a_cut_off_one_loads_the_previous_files_not_the_live_state(self):
+        # A reboot during the cut-off move may have brought the tunnel up on the new files; the live state is not the old one.
+        code, _, calls = self.move(1, **{'wg/orbit.peers': self.PEERS.format(self.LAN), 'wg/orbit.peers.previous': self.PEERS.format(self.PUBLIC),
+                                         'wg/orbit.conf.previous': 'old conf\n'})
+        self.assertNotEqual(code, 0)
+        self.assertNotIn('setconf', calls)
+        self.assertTrue(self.left['loaded.log'].rstrip().endswith(f'Endpoint = {self.PUBLIC}\nAllowedIPs = 10.44.0.0/24\nPersistentKeepalive = 25\n---'))
+
     def test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote(self):
         code, output, _ = self.move(9_999_999_999, **{'wg/orbit.peers.next': '[Interface]\nPrivateKey = OLD\n' + self.PEERS.format(self.LAN)})
         self.assertEqual(code, 0, output)
@@ -312,6 +320,17 @@ class NetworkPhaseWiringTest(unittest.TestCase):
         self.assertEqual(block[names.index('Reconcile live peer state without copying its private key')]['when'], 'not hub_switch | bool')
         move = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())[0]
         self.assertEqual((move['async'] > 60, move['poll'] > 0), (True, True))
+
+    def test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves(self):
+        block = yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())[1]['block']
+        names = [task['name'] for task in block]
+        drop = block[names.index('Drop the copies of a cut-off move that no longer moves')]
+        self.assertEqual(drop['when'], 'not hub_switch | bool')
+        self.assertEqual(sorted(drop['loop']), ['/etc/wireguard/orbit.conf.previous', '/etc/wireguard/orbit.live.previous',
+                                                '/etc/wireguard/orbit.peers.previous'])
+        self.assertEqual(drop['ansible.builtin.file']['state'], 'absent')
+        self.assertLess(names.index('Decide whether the hub endpoint changes'), names.index('Drop the copies of a cut-off move that no longer moves'))
+        self.assertLess(names.index('Drop the copies of a cut-off move that no longer moves'), names.index('Reconcile recorded peer files'))
 
     def test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint(self):
         play = next(play for play in yaml.safe_load((ANSIBLE / 'operation-node-add.yml').read_text()) if play['name'] == 'Set up the tunnel')

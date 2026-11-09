@@ -13,6 +13,8 @@
       d={{ hub_move.dir | quote }}; key={{ hub_move.key | quote }}
       # Keep what runs now before anything changes: the previous files, unless an aborted move left them, and the live
       # configuration, which also covers a Node whose previous files were missing.
+      # After a cut-off move the live tunnel may already run the new files, so its rollback loads the previous files instead.
+      cut_off=no; if [ -f "$d/orbit.peers.previous" ]; then cut_off=yes; fi
       for f in orbit.conf orbit.peers; do
         if [ -f "$d/$f" ] && [ ! -f "$d/$f.previous" ]; then cp -p "$d/$f" "$d/$f.previous"; fi
       done
@@ -37,8 +39,7 @@
       for f in orbit.conf orbit.peers; do
         if [ -f "$d/$f.previous" ]; then mv "$d/$f.previous" "$d/$f"; else rm -f "$d/$f"; fi
       done
-      wg set orbit peer "$key" remove || true
-      wg setconf orbit "$d/orbit.live.previous"
+      if [ "$cut_off" = yes ]; then load; else wg set orbit peer "$key" remove || true; wg setconf orbit "$d/orbit.live.previous"; fi
       rm -f "$d/orbit.live.previous"
       echo restored
       exit 3

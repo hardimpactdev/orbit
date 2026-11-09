@@ -163,6 +163,8 @@ final readonly class NodeWireGuardHubInput
             ])."\n",
             'unit' => "[Unit]\nDescription=Orbit hub WireGuard source address\nWants=network-online.target\n"
                 ."After=network-online.target\nBefore=wg-quick@orbit.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/bin/sh ".self::SourceScript
+                // A boot without a default route within the script's minute tries again, without holding the tunnel back.
+                ."\nRestart=on-failure\nRestartSec=30"
                 ."\n\n[Install]\nWantedBy=wg-quick@orbit.service multi-user.target\n"];
     }
 
