@@ -434,7 +434,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` and `task:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `task:cancel` runs the release as the last step of its own run.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` and `task:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `task:cancel` runs the release as the last step of its own run. Publication and the [idle release](/reference/tasks#release-an-idle-task-vm) of an open group admit it too; the group stays open and later work claims a fresh place.
 
 Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
 
@@ -460,7 +460,9 @@ CI proofs join one first-come-first-served queue. The front proof takes every fr
 
 Every task VM copies the base, which carries only the proof Project's checkout. When a group of any other Project needs a new VM, admission refuses it with `task_vm.project_unsupported` before it checks the queue or a pool, so the refusal never becomes a wait.
 
-When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. `task:status` shows each host's places and their holders, and a waiting task shows its position in the queue ([Task places](/reference/tasks#task-places)). The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room. A task publishes its PR and releases its VM, workspace, keys and peer. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. `task:status` shows each host's places and their holders, and a waiting task shows its position in the queue ([Task places](/reference/tasks#task-places)). The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room.
+
+A task publishes its PR and releases its VM, workspace, keys and peer. A group that runs no Operation for 30 minutes releases its VM too ([Release an idle task VM](/reference/tasks#release-an-idle-task-vm)). Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -594,7 +596,7 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled.
+The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled. It also queues `ReleaseIdleTaskVms` every five minutes, the [idle release](/reference/tasks#release-an-idle-task-vm).
 
 For each active configured Incus host, the job releases the task VMs that a failed start or a failed release left, old-pool VMs included: a row with no group whose release failed, or whose Operation ended without its projection. Before each release it locks the row and checks again; a refresh of the host that opened after the selection leaves the row alone, because its group-less VM is still starting. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-release.mmd)). A task start or a refresh proof that still uses the VM keeps it.
 

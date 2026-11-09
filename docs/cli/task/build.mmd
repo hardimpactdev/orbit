@@ -62,7 +62,8 @@ sequenceDiagram
     Note over GW: Record the result<br/>VM · thread · head
     %%> Result:
     %%> - the task VM is recorded as ready, the metrics of the thread are recorded, and the result is the branch and the approved head
-    %%> - the group stays `running` for its driver, which goes on with the check and the publish
+    %%> - the group stays `running` for its driver, which goes on with the check and the publish; the VM stays for that next step
+    %%> - a driver that starts no Operation on the group for 30 minutes loses the VM: the idle release deletes it once origin has the latest approved commit, and the next turn claims a fresh place from the published branch
   else a step failed
     SW--xGW: Native failed result<br/>failed step · error code
     %%> Result:

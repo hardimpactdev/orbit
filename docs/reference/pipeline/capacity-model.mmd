@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% status: reviewed
+  %% status: draft
   %% kind: pipeline.capacity
   autonumber
   participant T as Task<br/>prep · build
@@ -10,6 +10,9 @@ sequenceDiagram
   participant VM as Proof VMs
   T->>TP: Claim a task place<br/>wait when full
   TP-->>T: Fresh task VM<br/>from the base
+  opt no Operation on the group for 30 minutes
+    T->>TP: Delete the idle task VM<br/>approved work on origin
+  end
   T->>PR: Publish the PR
   T->>TP: Delete the task VM
   Note over T,TP: Later work claims again<br/>base + task branch

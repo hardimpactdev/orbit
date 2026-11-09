@@ -31,4 +31,4 @@ The image executor retains its existing boot, cleanup and progress behavior. Thi
 
 A task start (`tasks.provision`) copies the base snapshot of the host and writes the identity of the slot; the release (`task_vm.slot_release`) deletes the VM, its seed clone and its identity volume. Both run as Ansible phases of `swamp/ansible/task-vm-host.yml`. Power changes of a parked VM run in `task-vm-provider-power`. There is no provision, enrollment or destroy workflow.
 
-Publication releases the task VM. Later build, fix and review work claims a fresh task place from the base at the task head; full pools wait for up to two hours.
+Publication releases the task VM, and so does a group that runs no Operation for 30 minutes (the Gateway's idle release). Later build, fix and review work claims a fresh task place from the base at the task head; full pools wait for up to two hours.

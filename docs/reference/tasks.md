@@ -89,7 +89,7 @@ Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-
 
 #### Release a task VM for review
 
-Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. A VM that no Operation used for 30 minutes goes too ([Release an idle task VM](#release-an-idle-task-vm)). A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
 #### Provision an external group
 
@@ -168,7 +168,13 @@ Task work waits for a task place in one first-come, first-served queue: the `tas
 
 A holder is one live task VM: `vm`, `pool` (`task` or `ci`), and the group it serves as `group_id`, `title`, `status`, `last_activity_at` and `active_operation_id`. The group fields are null for a VM that serves no group, such as a CI proof VM. Each live VM holds its place until its deletion is confirmed, so a failed or parked VM counts.
 
-A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with an old `last_activity_at` and no active Operation is idle: it keeps its place until it publishes, ends or is cancelled.
+A group's `last_activity_at` is the newest time any Operation on the group was created, started or ended, or null when it has none. `active_operation_id` is the Operation on the group that has not ended, or null. A holder with no active Operation is idle.
+
+#### Release an idle task VM
+
+A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task VM is `ready` or `parked` and that has no active Operation, and whose `last_activity_at` is more than 30 minutes old, loses its VM. Every five minutes the Gateway finds such a group and releases its VM through the [release](/reference/compute-drivers#release-a-task-vm), as publication does. The group keeps its status, subtasks and threads.
+
+The release keeps approved work under the same rule as [cancel](#cancel-a-stuck-task): it runs only when origin's task branch reaches the group's latest approved commit. A group whose approved work is not on origin keeps its VM until `task:publish` puts it there. Work that no review approved, such as the changes of a turn that no check followed, goes with the VM. The next turn, build, fix or review round claims a fresh place and restores the published task branch on a copy of the base. A check or a publish needs that workspace first.
 
 A waiting Operation on a group, and `task:show` of its group, return `capacity_wait`: `operation_id`, `position`, and `holders`, the holders of the task pool on every host. `capacity_wait` is null when the group or Operation is not waiting for a task place.
 
@@ -436,7 +442,7 @@ The native `operation-task-build` workflow is one parent run, with existing work
 - `Sync the refs` runs `operation-task-sync`, so the workspace holds the approved head in `refs/remotes/origin`.
 - `Run the first turn` runs `operation-task-turn`. Its prompt is the title, brief and deliverables of the subtask, then the instruction to build the command.
 
-The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver. A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
+The Gateway projects the terminal event once: the task VM as ready, the metrics of the thread and `{ branch, head }`. The group stays `running` for its driver, and the VM stays for the driver's next step until the [idle release](#release-an-idle-task-vm). A failed run records the failed step with `task_vm.resume_failed`, `tasks.sync_failed` or `tasks.turn_failed`, and the group stays `running` for the orchestrator.
 
 ### Task lifecycle
 
