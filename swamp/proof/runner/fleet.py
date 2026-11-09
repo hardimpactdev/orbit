@@ -185,14 +185,8 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
-def prepare_observers(release):
-    if not release:
-        raise FleetError('proof has no observer release admitted by the trusted Gateway')
-    # Refuse a checkout whose bytes differ from the release the Gateway admitted. Never use its URLs as input.
-    pinned = (CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes()
-    if pinned != release.encode():
-        raise FleetError('candidate observer pin differs from the Gateway-admitted release; push the pin and use proof:run')
-    admitted = json.loads(release)
+def prepare_observers():
+    pinned = json.loads((CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes())
     # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
     # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
     # whose grant files already match the checkout.
@@ -211,21 +205,22 @@ def prepare_observers(release):
     Fleet.must(['env', 'ANSIBLE_CONFIG=' + str(CHECKOUT / 'swamp/ansible/ansible.cfg'),
                 'ANSIBLE_COLLECTIONS_PATH=' + str(collections),
                 str(controller / 'ansible-playbook'), '-i', ','.join(GUEST_PREFIX + role for role in ROLES) + ',',
-                '-e', json.dumps({'proof_observer_release': admitted}),
+                '-e', json.dumps({'proof_observer_release': pinned}),
                 str(CHECKOUT / 'swamp/ansible/proof-observers.yml')],
                'cannot prepare the candidate observers on the proof fleet', timeout=280)
     return discover()
 
 
-def prepare(release):
+def prepare():
     # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
-    done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve()), release or ''],
+    done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve())],
                       'cannot prepare the proof fleet', timeout=340)
     return Fleet(json.loads(done.stdout))
 
 
 def from_environment():
-    return discover()
+    # Case and batch entry points must prepare too: older released workflows can skip setup entirely.
+    return prepare()
 
 
 def evidence_root(env=os.environ):
@@ -234,7 +229,7 @@ def evidence_root(env=os.environ):
 
 if __name__ == '__main__':
     try:
-        print(json.dumps(prepare_observers(sys.argv[1]).nodes))
+        print(json.dumps(prepare_observers().nodes))
     except Exception as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

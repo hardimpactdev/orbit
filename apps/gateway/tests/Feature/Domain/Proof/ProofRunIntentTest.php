@@ -15,7 +15,6 @@ use App\Domain\Proof\ProofChangedFiles;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
-use App\Domain\Proof\ProofObserverRelease;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunSettlement;
@@ -44,21 +43,6 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
-
-beforeEach(function (): void {
-    app()->instance(ProofObserverRelease::class, new readonly class implements ProofObserverRelease
-    {
-        public function forCommit(string $commit): string
-        {
-            return 'admitted-observer-'.$commit;
-        }
-
-        public function forGateway(): string
-        {
-            return 'admitted-gateway-observer';
-        }
-    });
-});
 
 const PROOF_SHA = 'b3f1c0de00000000000000000000000000000001';
 
@@ -573,7 +557,7 @@ function proofRunInput(array $proofInput): array
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
         'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
-    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $guest->id, 'node_id' => $guest->id, 'status' => OperationStatus::Running, 'input' => [...$proofInput, 'observer_release' => 'admitted-head', 'base_observer_release' => 'admitted-base']]);
+    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $guest->id, 'node_id' => $guest->id, 'status' => OperationStatus::Running, 'input' => $proofInput]);
     $method = new ReflectionMethod(ProofRunIntent::class, 'runInput');
 
     return $method->invoke(app(ProofRunIntent::class), $proof, PROOF_SHA, str_repeat('c', 40), ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml'],
@@ -615,7 +599,7 @@ describe('the intent of a run', function (): void {
         $input = proofRunInput([]);
 
         expect($input['verify'])->toMatchArray(['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'head' => PROOF_SHA, 'merge_base' => str_repeat('c', 40),
-            'checkout_path' => '/home/orbit/apps/orbit/workspace', 'observer_release' => 'admitted-head', 'base_observer_release' => 'admitted-base']);
+            'checkout_path' => '/home/orbit/apps/orbit/workspace']);
     });
 
     it('carries keep_failed only for a proof that was started with it', function (array $proofInput, bool $carried): void {
@@ -719,20 +703,4 @@ it('selects every case when the runner selection is unavailable', function (): v
     expect($proof->input['cases'][0])->not->toHaveKey('only')
         ->and($proof->input['cases'][0]['reasons'])->toBe(['*' => 'selection uncertain'])
         ->and($proof->error_code)->toBe('proof.execution_disabled');
-});
-
-it('refuses an unverified observer release before allocating any proof group or VM', function (): void {
-    proofWorldWithoutCapacity();
-    $release = Mockery::mock(ProofObserverRelease::class);
-    $release->shouldReceive('forCommit')->once()->with(PROOF_SHA)
-        ->andThrow(new ResourceOperationException('gateway.release_provenance_invalid', 'Unverified observer.', 422));
-    app()->instance(ProofObserverRelease::class, $release);
-
-    $proof = proofAdmitted();
-
-    expect($proof->status)->toBe(OperationStatus::Failed)
-        ->and($proof->error_code)->toBe('gateway.release_provenance_invalid')
-        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0)
-        ->and(Task::query()->count())->toBe(0)
-        ->and(TaskVm::query()->count())->toBe(0);
 });

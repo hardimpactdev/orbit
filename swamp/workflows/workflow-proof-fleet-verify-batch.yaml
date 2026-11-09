@@ -17,8 +17,6 @@ inputs:
       type: string
     batch:
       type: string
-    observer_release:
-      type: string
     setup:
       type: boolean
     restore:
@@ -29,7 +27,6 @@ inputs:
         type: string
       minItems: 1
   required:
-  - observer_release
   - ssh_execution
   - checkout_path
   - group_id
@@ -86,8 +83,6 @@ jobs:
         - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
         - setup
         - ${{ inputs.batch }}
-        - --observer-release
-        - ${{ inputs.observer_release }}
         - --file
         - ${{ inputs.checkout_path + "/" + inputs.file }}
         - --evidence

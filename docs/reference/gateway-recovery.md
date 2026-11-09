@@ -188,7 +188,7 @@ A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has on
 
 ### Build and seal a release
 
-Admission reads the target commit's pin from `apps/gateway/resources/agent/frozen-manifest.json`, on GitHub from `raw.githubusercontent.com`. It verifies the published manifest, checksums and [provenance](#release-provenance) in PHP. The manifest must match the pin. Changing agent source does not change the delivered observer until a commit moves the pin. CI proof admission reuses this exact verifier in the trusted Gateway before allocating a VM, for both the candidate and merge-base pins. It passes only the admitted published manifest to proof preparation; a candidate-controlled URL and matching checksum are not release evidence. An unavailable delivery returns `gateway.release_agent_delivery_unavailable`; a bad proof returns `gateway.release_provenance_invalid`.
+Admission reads the target commit's pin from `apps/gateway/resources/agent/frozen-manifest.json`, on GitHub from `raw.githubusercontent.com`. It verifies the published manifest, checksums and [provenance](#release-provenance) in PHP. The manifest must match the pin. Changing agent source does not change the delivered observer until a commit moves the pin. An unavailable delivery returns `gateway.release_agent_delivery_unavailable`; a bad proof returns `gateway.release_provenance_invalid`.
 
 The Swamp build step fetches the full commit through the run's GitHub token. It checks ancestry and refuses a downgrade with `gateway.release_downgrade`, unless the run has `force=true`. It then:
 
@@ -204,7 +204,7 @@ A sealed release of the same commit is reused. Its configuration is cached again
 
 #### Release provenance
 
-CI signs each release with the workflow's own identity ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). The Gateway checks that proof for release admission, desired fleet state and CI proof admission. Release admission checks it before it starts the Swamp run. The [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) checks it before it names a CLI digest. All use the same verifier. It downloads `provenance.sigstore.json` from the release without authentication. It then verifies the bundle offline, with PHP's OpenSSL extension and no call to GitHub or Sigstore.
+CI signs each release with the workflow's own identity ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). The Gateway checks that proof in two places. Release admission checks it before it starts the Swamp run. The [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) checks it before it names a CLI digest. Both use one step. It downloads `provenance.sigstore.json` from the release without authentication. It then verifies the bundle offline, with PHP's OpenSSL extension and no call to GitHub or Sigstore.
 
 ##### What the Gateway checks
 

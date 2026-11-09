@@ -10,7 +10,7 @@
     agent: >-
       {{ proof_observer_release.artifacts['linux-x86_64'] }}
   tasks:
-    - name: Require the admitted observer digest
+    - name: Require the candidate observer digest
       ansible.builtin.assert:
         that: agent.sha256 is match('^[0-9a-f]{64}$')
         quiet: true

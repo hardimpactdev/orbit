@@ -119,9 +119,6 @@ final readonly class ProofRunIntent
             if (! $this->settings->executionEnabled()) {
                 throw new ResourceOperationException('proof.execution_disabled', 'Proof execution is switched off: the commit is trusted and the cases are selected, but nothing runs.', 409);
             }
-            $intent['observer_release'] = app(ProofObserverRelease::class)->forCommit($commit);
-            $intent['base_observer_release'] = app(ProofObserverRelease::class)->forCommit($selection->mergeBase);
-            $proof->input = $intent;
             // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
             $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
             $fresh = $this->freshHosts($selection->mergeBase);
@@ -267,8 +264,7 @@ final readonly class ProofRunIntent
             'verify' => ['group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'command' => $case['command'],
                 'file' => $case['file'], 'ssh_execution' => $ssh, 'checkout_path' => $instance->checkout_path,
                 // The proof of a new case switches the checkout to the merge base, with the new cases file of the head.
-                'head' => $commit, 'merge_base' => $base,
-                'observer_release' => $proof->input['observer_release'], 'base_observer_release' => $proof->input['base_observer_release']],
+                'head' => $commit, 'merge_base' => $base],
             'cancel' => app(TaskCancelIntent::class)->captureForProof($group),
             ...(($proof->input['ci_pool'] ?? false) !== true && (ValidatedData::object($proof->input)['keep_failed'] ?? false) === true) ? ['keep_failed' => true] : [],
         ];
