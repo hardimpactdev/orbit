@@ -173,6 +173,8 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 Task VMs run only on Incus. Provider API credentials are not part of Gateway configuration. Task publication deletes the VM; no environment setting delays release for review. The operator sets the separate task and CI pool sizes on each host Node.
 
+`ORBIT_TASK_VMS_CONTAINER_PLACEMENT` lets normal placement take the task container places of hosts. It is `false` by default; turn it on only when a host [switches](/reference/task-containers#switch-a-host). See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
+
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 A Gateway release runs no smoke step. Remove the former `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` variables from the shared env file with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read them.

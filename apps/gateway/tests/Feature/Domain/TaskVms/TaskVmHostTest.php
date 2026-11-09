@@ -87,7 +87,7 @@ it('reads the native withdrawal result before saving removal or a bridge change,
 
     // Keep the after-commit Swamp dispatch outside this admission/projection test.
     DB::beginTransaction();
-    $operation = app(UpdateNodeAction::class)->execute($node, null, null, $patch);
+    $operation = app(UpdateNodeAction::class)->execute($node, null, null, $patch)->result;
 
     expect($operation)->toBeInstanceOf(Operation::class);
     expect($operation->input['task_host_input_comments'])->toBe(['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp']);

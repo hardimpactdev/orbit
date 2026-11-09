@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\CancelProofGroup;
@@ -301,7 +302,7 @@ describe('the keep of a failed run', function (): void {
         TaskVm::query()->create(['group_id' => $other->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-854', 'wireguard_ip' => '10.44.0.152',
             'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
         $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB', ciPlaces: 6);
-        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true)[$node->id];
+        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true, runtime: TaskVmRuntime::Vm)[$node->id];
 
         expect(TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)->pluck('name')->all())->toBe(['tvm-853', 'tvm-854'])->and($free())->toBe(4);
     });
@@ -314,7 +315,7 @@ describe('the keep of a failed run', function (): void {
         $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
             'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
         $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB', ciPlaces: 6);
-        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true)[$node->id];
+        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true, runtime: TaskVmRuntime::Vm)[$node->id];
         expect($free())->toBe(5);
 
         // Expiry asks for release; the completed deletion frees the CI place.
