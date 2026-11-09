@@ -13,6 +13,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
@@ -25,7 +26,6 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\UpdateNodeResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmRuntime;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -184,36 +184,22 @@ final readonly class UpdateNodeAction
         return ['settings' => $this->normalizer->stored($normalized), 'storage' => $storage];
     }
 
-    /** No bridge of the host, its VM bridge or its container bridge, may overlap a bridge of another host. */
+    /**
+     * No bridge of the host, its VM bridge or its container bridge, may overlap a task bridge of another host or the
+     * Instance bridge of any Node, its own included.
+     */
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
     {
         $host = $settings?->task_vms;
         if ($host === null) {
             return;
         }
-        $bridges = self::bridges($host->toArray());
-        foreach (Node::query()->where('id', '!=', $node->id)->get() as $other) {
-            $stored = $other->settings;
-            $otherHost = is_array($stored) && is_array($stored['task_vms'] ?? null) ? $stored['task_vms'] : [];
-            foreach (self::bridges($otherHost) as $cidr) {
-                if (array_any($bridges, static fn (string $bridge): bool => TaskVmHost::overlap($bridge, $cidr))) {
-                    throw new ResourceOperationException('node.settings_invalid', 'A task_vms bridge overlaps a bridge of another host.');
-                }
+        $recorded = NodeBridges::recorded(replacing: $node->id);
+        foreach (NodeBridges::taskBridges($host->toArray()) as $bridge) {
+            if (NodeBridges::overlapsAny($bridge, $recorded)) {
+                throw new ResourceOperationException('node.settings_invalid', 'A task_vms bridge overlaps a bridge of another host or an Instance bridge.');
             }
         }
-    }
-
-    /**
-     * The bridge networks of stored task VM host settings: `cidr` and `containers.cidr`.
-     *
-     * @param  array<array-key, mixed>  $host
-     * @return list<string>
-     */
-    private static function bridges(array $host): array
-    {
-        $containers = is_array($host['containers'] ?? null) ? $host['containers'] : [];
-
-        return array_values(array_filter([$host['cidr'] ?? null, $containers['cidr'] ?? null], is_string(...)));
     }
 
     /**

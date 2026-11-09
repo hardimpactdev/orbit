@@ -84,10 +84,14 @@ final readonly class RegisterConnEnvironmentAction
 
     /**
      * A server stays with the Node that registered it. Only that Node registers it again; a server whose Node
-     * was removed needs Gateway access, so no other Node can take a known environment id.
+     * was removed needs Gateway access, so no other Node can take a known environment id. The server of a container
+     * Instance is registered by its Instance's flow, so no Node registers it itself.
      */
     private function assertMayRegister(Node $node, ?ConnEnvironment $prior): void
     {
+        if ($prior?->instance_id !== null) {
+            throw new ResourceOperationException('conn.environment_owned', "Environment {$prior->environment_id} is the T3 server of Instance {$prior->instance_id}; its Instance's flow registers it.", 409);
+        }
         if ($prior === null || $prior->node_id === $node->id
             || ($prior->node_id === null && $this->access->hasGatewayAuthority($node))) {
             return;
