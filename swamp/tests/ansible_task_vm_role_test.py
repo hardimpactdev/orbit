@@ -213,6 +213,14 @@ class TaskVmRoleTest(unittest.TestCase):
         self.assertEqual(wait['ansible.builtin.command']['argv'][:2], ['timeout', '900'])
         self.assertEqual(wait['failed_when'], 'ready_cloud_init.rc not in [0, 2]')
 
+    def test_every_new_vm_gets_the_full_ssh_readiness_budget(self):
+        phase = yaml.safe_load((ANSIBLE / 'tasks/task-vm-ready.yml').read_text())
+        steps = phase[0]['block']
+        # One literal budget covers both a task start (direct over WireGuard) and a base refresh.
+        # A direct transport must not shorten the wait while a copied VM is still in firmware.
+        self.assertEqual(steps[0]['ansible.builtin.wait_for_connection'], {'timeout': 300, 'sleep': 1})
+        self.assertEqual(steps[1]['name'], 'Wait for cloud-init')
+
 
 if __name__ == '__main__':
     unittest.main()

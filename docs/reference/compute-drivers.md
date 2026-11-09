@@ -1041,7 +1041,7 @@ The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/
 
 A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
 
-The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. It waits for the nested Gateway only while it builds the fleet.
+The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. Both callers use the same 300-second SSH readiness budget in `task-vm-ready.yml`, polling every second and continuing as soon as the connection succeeds. A task start waits for SSH over WireGuard, including the guest's early boot and identity setup. A direct connection does not imply the guest has finished booting. The converge waits for the nested Gateway only while it builds the fleet.
 
 The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
