@@ -340,7 +340,7 @@ The check is the Ansible module `orbit_static_php`. The [runtime folder](/refere
 
 #### The static PHP workflow
 
-The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition, then builds only the versions whose release does not exist yet.
+The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition, then builds only the versions whose release does not exist yet. The Actions cache keeps each archive under its build id, so a change to the proof alone does not build again.
 
 A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
 

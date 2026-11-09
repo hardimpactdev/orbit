@@ -76,10 +76,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # The build id names every input of the build, so an archive of the same id is the same build.
+      - name: Restore a build of this definition
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: static-php-${{ matrix.build.build }}
+          path: |
+            ${{ runner.temp }}/static-php/${{ matrix.build.asset }}
+            ${{ runner.temp }}/static-php/SHA256SUMS
+
       # static-php-cli runs on PHP; the build itself compiles every library and PHP from source.
       - uses: ./.github/actions/php
+        if: steps.cache.outputs.cache-hit != 'true'
 
       - name: Build php and frankenphp
+        if: steps.cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 bin/static-php-build build --version "${{ matrix.build.version }}" --output "$RUNNER_TEMP/static-php"
@@ -120,8 +132,9 @@ jobs:
           sha256sum --check --strict SHA256SUMS
           tar -xzf "${{ matrix.build.asset }}"
           file bin/php bin/frankenphp
+          # A static-pie binary has no program interpreter: it needs no loader and no shared library.
           for binary in bin/php bin/frankenphp; do
-            if ldd "$binary"; then echo "::error::${binary} is not fully static."; exit 1; fi
+            if readelf --program-headers "$binary" | grep -q INTERP; then echo "::error::${binary} is not fully static."; exit 1; fi
           done
           echo "STATIC=$PWD/bin" >> "$GITHUB_ENV"
 
@@ -137,14 +150,19 @@ jobs:
           "$STATIC/php" -d memory_limit=1G -r 'echo ini_get("memory_limit"), "\n";' | grep -x 1G
           "$STATIC/php" -r 'exit(function_exists("opcache_get_status") && extension_loaded("pdo_pgsql") ? 0 : 1);'
           "$STATIC/frankenphp" version
-          "$STATIC/frankenphp" build-info | head -n 20
+          "$STATIC/frankenphp" build-info
 
       # The Gateway is an Orbit Laravel app with Pest: Composer runs its scripts, Artisan boots it, and Pest runs tests.
+      # The static PHP is first on PATH, so the scripts' own `php` calls use it too.
       - name: Install the Gateway with the static PHP
         working-directory: apps/gateway
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
         run: |
           set -euo pipefail
-          eval "$(python3 -c 'import runpy; b = runpy.run_path("../../bin/php-build"); print(f"version={b[\"COMPOSER_VERSION\"]} digest={b[\"COMPOSER_SHA256\"]}")')"
+          export PATH="$STATIC:$PATH"
+          [ "$(command -v php)" = "$STATIC/php" ]
+          eval "$(python3 -c 'import runpy; b = runpy.run_path("../../bin/php-build"); print("version=" + b["COMPOSER_VERSION"], "digest=" + b["COMPOSER_SHA256"])')"
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/composer.phar" "https://getcomposer.org/download/${version}/composer.phar"
           echo "${digest}  $RUNNER_TEMP/composer.phar" | sha256sum --check
           "$STATIC/php" "$RUNNER_TEMP/composer.phar" check-platform-reqs --lock
