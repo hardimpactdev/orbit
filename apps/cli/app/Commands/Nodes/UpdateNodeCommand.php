@@ -21,7 +21,7 @@ final class UpdateNodeCommand extends NodeCommand
 
     #[\Override]
     protected $signature = 'node:update
-        {node? : Node ID or name}
+        {node? : Positive numeric Node ID}
         {--name= : New unique registry name}
         {--platform= : Platform of an unmanaged Node: linux, macos, or ipados}
         {--apps-path= : Apps folder; an empty value restores the default}
@@ -37,7 +37,11 @@ final class UpdateNodeCommand extends NodeCommand
         $reference = $this->argument('node');
 
         if ((! is_string($reference) || $reference === '') && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('node.reference_required', 'Node ID or name is required.');
+            return $this->renderGatewayFailure('node.reference_required', 'Node ID is required.');
+        }
+
+        if (is_string($reference) && $reference !== '' && $this->positiveId('node', 'Node', 'node.id_invalid') === null) {
+            return self::FAILURE;
         }
 
         $name = $this->option('name');
@@ -86,7 +90,8 @@ final class UpdateNodeCommand extends NodeCommand
             $reference = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name'], $rows);
         }
 
-        $nodeId = $this->resolveNodeId($connector, $reference);
+        $this->input->setArgument('node', (string) $reference);
+        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
 
         if ($nodeId === null) {
             return self::FAILURE;
@@ -123,12 +128,14 @@ final class UpdateNodeCommand extends NodeCommand
         }
 
         if ($this->option('json') === true) {
-            $this->writeJson($node->toArray());
+            $this->writeJson([...$node->toArray(), ...($response->skipped === null ? [] : ['skipped' => $response->skipped])]);
 
             return self::SUCCESS;
         }
 
-        $this->writeHumanMessage("Node #{$node->id} [{$node->name}] updated.");
+        $this->writeHumanMessage($response->skipped === null
+            ? "Node #{$node->id} [{$node->name}] updated."
+            : "Skipped — already set ({$response->skipped}).");
         $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;

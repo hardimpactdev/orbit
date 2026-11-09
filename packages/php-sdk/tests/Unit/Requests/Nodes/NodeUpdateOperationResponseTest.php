@@ -28,3 +28,16 @@ it('returns the admitted Operation and preserves the idempotency key', function 
     $mock->assertSent(fn ($pending): bool => $pending->headers()->get('Idempotency-Key') === 'settings-proof'
         && $pending->body()->all() === ['apps' => ['path' => '/srv/apps']]);
 });
+
+it('preserves the unchanged reason beside the Node detail', function (): void {
+    $request = new UpdateNodeRequest(2, name: 'tablet');
+    $connector = new GatewayConnector('https://gateway.example.test');
+    $connector->withMockClient(new MockClient([UpdateNodeRequest::class => MockResponse::make([
+        'data' => ['id' => 2, 'name' => 'tablet', 'status' => 'active', 'skipped' => 'node.unchanged'],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]));
+    $response = $connector->send($request)->dto();
+    expect($response)->toBeInstanceOf(NodeUpdateResponse::class)
+        ->and($response->skipped)->toBe('node.unchanged')
+        ->and($response->result->id)->toBe(2);
+});

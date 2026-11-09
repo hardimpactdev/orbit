@@ -73,6 +73,9 @@ sequenceDiagram
       %%> Result:
       %%> - one Operation follows one Swamp run
       %%> - clients use the shared [Operation polling contract](/reference/operations#follow-an-operation-by-polling)
+      Note over SW: Write the intent
+      %%> What it does:
+      %%> - writes admitted input to the shared run folder for the Ansible phases; host keys stay pinned
       opt --task-vms removes host or changes bridge / CIDR
         %% path: withdraw-input
         SW->>N: Withdraw task host input<br/>Ansible phase

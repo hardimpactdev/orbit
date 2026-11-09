@@ -17,6 +17,8 @@ additionalFiles:
   - ansible/transport-exit-codes.json
   - ansible/operation-node-role-add.yml
   - ansible/operation-node-converge.yml
+  - ansible/operation-node-update.yml
+  - ansible/tasks/node-update-apps.yml
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-base.yml
   - ansible/tasks/node-kernel-policy.yml

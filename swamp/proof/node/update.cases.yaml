@@ -117,7 +117,6 @@ cases:
     covers: [main, admitted, record-save, already-set]
     summary: A repeated record edit succeeds with node.unchanged and makes no second write or Operation.
     fails_on_base: true
-    fails_today: UpdateNodeAction avoids saving an unchanged record through its isDirty guard, but returns Node detail without the node.unchanged skip result.
     setup:
       - node_fixture: {kind: unmanaged, as: repeated}
     stages:
@@ -140,7 +139,6 @@ cases:
     covers: []
     summary: Local missing, invalid or empty inputs refuse before an Operation or record change.
     fails_on_base: true
-    fails_today: The CLI accepts a registered name instead of enforcing the shared positive numeric selector contract.
     setup:
       - node_fixture: {kind: unmanaged, as: invalid}
     act:

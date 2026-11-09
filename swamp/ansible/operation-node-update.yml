@@ -1,0 +1,38 @@
+---
+- name: Pin and address the selected Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: update_target
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Withdraw task host input
+  hosts: update_target
+  become: true
+  gather_facts: false
+  tags: [withdraw]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    owned_input_comments: "{{ intent.task_host_input_comments | map('regex_escape') | join('|') }}"
+  tasks:
+    - name: Withdraw only the catalog-owned input rules and check their absence
+      ansible.builtin.import_tasks: tasks/task-host-firewall-remove.yml
+
+- name: Prepare the apps folder
+  hosts: update_target
+  become: true
+  gather_facts: false
+  tags: [apps]
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Prepare and check the apps folder
+      ansible.builtin.import_tasks: tasks/node-update-apps.yml

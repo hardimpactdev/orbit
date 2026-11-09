@@ -1,72 +1,128 @@
-id: "b100f60c-b164-4036-8881-17e603ba3901"
-name: "operation-node-update"
-description: "Withdraw retired task-host input rules and prepare a changed apps folder before saving Node settings."
-vaults: []
+id: b100f60c-b164-4036-8881-17e603ba3901
+name: operation-node-update
+description: Withdraw retired task-host input rules and prepare a changed apps folder before saving Node settings.
+vaults:
+- orbit-control-inputs
 queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [node.update]}
-    intent: {type: object}
-    execution_secrets: {type: object, additionalProperties: false}
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - node.update
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: settings
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: Withdraw task host input
-    labels: {role: swamp}
-    guard: '${{ size(inputs.intent.task_host_input_comments) == 0 }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-host-firewall-remove
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: '${{ {"ssh":inputs.intent.ssh,"comments":inputs.intent.task_host_input_comments} }}'
-        execution_secrets: {}
-    # Missing parts are created; the folder gets the managed user and group, mode 0755.
-  - name: 'Create the apps folder'
-    guard: '${{ inputs.intent.storage.root == null }}'
-    dependsOn: [{step: Withdraw task host input, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    labels: {role: swamp}
+  - name: Write the intent
+    labels:
+      role: swamp
     writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "node-update-folder-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs: {path: '${{ inputs.intent.storage.root }}', ensure: present, owner: '${{ inputs.intent.storage.user }}', group: '${{ inputs.intent.storage.group }}',
-        mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
-        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
-      inputs: {}
-    # The folder's type, owner, group and mode in one stat.
-  - name: 'Check owner and mode'
-    guard: '${{ inputs.intent.storage.root == null }}'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Create the apps folder', condition: {type: succeeded}}]
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs:
+        intent: ${{ inputs.intent }}
+        path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
+  - name: Withdraw task host input
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ size(inputs.intent.task_host_input_comments) == 0 }}
+    dependsOn:
+    - step: Write the intent
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-update-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "node-update-ssh-" + string(inputs.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh.target.user }}
-          port: ${{ inputs.intent.ssh.target.port }}
-          identityFile: ${{ inputs.intent.ssh.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      behaviorType: command/shell
+      behaviorName: node-update-withdraw
+      methodName: execute
       inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '20', /usr/bin/stat, -c, '%F %U:%G %a', '${{ inputs.intent.storage.root }}']
-        timeoutSec: 30
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags withdraw "$ORBIT_ANSIBLE/operation-node-update.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-"
+            + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
+  - name: Prepare the apps folder
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ inputs.intent.storage.root == null }}
+    dependsOn:
+    - step: Withdraw task host input
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: node-update-apps
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e "@$ORBIT_RUN/intent.json" --tags apps "$ORBIT_ANSIBLE/operation-node-update.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}
+          ANSIBLE_CONFIG: ${{ steps["Write the intent"].outputs.assets + "/ansible.cfg" }}
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-"
+            + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: 'true'
+          ANSIBLE_STDOUT_CALLBACK: community.general.timestamp
+- name: cleanup
+  labels:
+    role: swamp
+  dependsOn:
+  - job: settings
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  steps:
+  - name: Cleanup
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: node-update-cleanup
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}

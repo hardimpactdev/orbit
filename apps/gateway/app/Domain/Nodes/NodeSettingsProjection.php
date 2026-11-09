@@ -27,32 +27,30 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        // A refusal or failure on Node 12 is the documented settings code; its stderr carries the reason.
+        // Ansible owns the filesystem check; the native phase carries its failure detail.
         $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-        if ($status === OperationStatus::Failed && in_array($failure['failed_step'] ?? null, ['Create the apps folder', 'Check owner and mode'], true)) {
+        $failed = in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true);
+        if ($failed && ($failure['failed_step'] ?? null) === 'Prepare the apps folder') {
             $code = $data['error_code'] = 'node.settings_root_failed';
         }
         $result = ValidatedData::object($data['result'] ?? []);
         $storage = ($operation->input['root'] ?? null) !== null;
         $firewall = ($operation->input['task_host_input_comments'] ?? []) !== [];
-        if ($status === OperationStatus::Succeeded && (($storage && NativeRunResult::stepStatus($result, 'Check owner and mode') !== 'succeeded')
-            || ($firewall && NativeRunResult::stepStatus($result, 'Withdraw task host input') !== 'succeeded') || $code !== null)) {
+        if ($status === OperationStatus::Succeeded && (($storage && NativeRunResult::stepStatus($result, 'Prepare the apps folder') !== 'succeeded')
+            || ($firewall && NativeRunResult::stepStatus($result, 'Withdraw task host input') !== 'succeeded')
+            || NativeRunResult::stepStatus($result, 'Cleanup') !== 'succeeded' || $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The settings action has no successful result.', 422);
         }
-        // The end check is the folder's stat in Swamp's run data: the managed user's real folder, mode 0755.
-        if ($status === OperationStatus::Succeeded && $storage && ! $this->owned($operation, $result)) {
-            $status = OperationStatus::Failed;
-            $code = $data['error_code'] = 'node.settings_root_failed';
-            $data['status'] = $status->value;
-        }
-        if (($status === OperationStatus::Failed && $code === null) || ($status !== OperationStatus::Failed && $code !== null)) {
+        if (($failed && $code === null) || (! $failed && $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The settings action needs its refusal code.', 422);
         }
+        $cleanupComplete = NativeRunResult::stepStatus($result, 'Cleanup') === 'succeeded';
         $result = match ($status) {
             OperationStatus::Succeeded => ['prepared' => true],
-            OperationStatus::Failed => ['error_code' => $code],
+            OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };
+        $result['cleanup_complete'] = $cleanupComplete;
 
         return DB::transaction(function () use ($operation, $data, $status, $result): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
@@ -64,15 +62,5 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
 
             return $projected;
         });
-    }
-
-    /** @param array<string,mixed> $result */
-    private function owned(Operation $operation, array $result): bool
-    {
-        $steps = is_array($result['steps'] ?? null) ? $result['steps'] : [];
-        $check = is_array($steps['Check owner and mode'] ?? null) ? $steps['Check owner and mode'] : [];
-        $stdout = is_string($check['stdout'] ?? null) ? trim($check['stdout']) : null;
-
-        return $stdout === 'directory '.ValidatedData::string($operation->input['user']).':'.ValidatedData::string($operation->input['group']).' 755';
     }
 }

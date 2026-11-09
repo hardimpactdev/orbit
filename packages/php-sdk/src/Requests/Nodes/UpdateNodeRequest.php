@@ -15,7 +15,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/** Changes a Node's name, platform, apps folder, or task VM host settings; only an apps folder change starts a run. */
+/** Changes a Node's name, platform, apps folder, or task VM host settings; Node work returns an Operation. */
 final class UpdateNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -46,7 +46,8 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
 
         return new NodeUpdateResponse($response->status() === 202
             ? OperationResponse::fromGatewayData($data, $requestId)
-            : NodeResponse::fromGatewayData($data, $requestId));
+            : NodeResponse::fromGatewayData($data, $requestId),
+            is_string($data['skipped'] ?? null) ? $data['skipped'] : null);
     }
 
     /** @return array<string, string> */

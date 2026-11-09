@@ -73,7 +73,7 @@ it('validates separate place counts and rejects retired capacity fields', functi
     }
 });
 
-it('reads the native withdrawal result before saving removal or a bridge change, and retains settings after failure', function (?array $replacement, string $terminal, bool $apps = false): void {
+it('reads the native withdrawal result before saving removal or a bridge change, and retains settings after failure', function (?array $replacement, string $terminal, bool $apps = false, ?string $failedPhase = null): void {
     Http::preventStrayRequests();
     SwampNodeFixture::ensure();
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
@@ -87,12 +87,13 @@ it('reads the native withdrawal result before saving removal or a bridge change,
 
     // Keep the after-commit Swamp dispatch outside this admission/projection test.
     DB::beginTransaction();
-    $operation = app(UpdateNodeAction::class)->execute($node, null, null, $patch);
+    $operation = app(UpdateNodeAction::class)->execute($node, 'changed-host', null, $patch);
 
     expect($operation)->toBeInstanceOf(Operation::class);
     expect($operation->input['task_host_input_comments'])->toBe(['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp']);
     expect($operation->input['root'])->toBe($apps ? '/home/orbit/task-apps' : null);
-    expect($node->refresh()->settings)->toBe($previous);
+    expect($node->refresh()->settings)->toBe($previous)
+        ->and($node->name)->toBe('changed-host');
     $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => 'fixture-task-host-withdrawal']]);
     $definition = app(DirectOperation::class)->definition('node.update');
     $history = [
@@ -100,10 +101,12 @@ it('reads the native withdrawal result before saving removal or a bridge change,
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $node->id, 'kind' => 'node.update'],
         'jobs' => [['name' => 'settings', 'steps' => [
-            ['name' => 'Withdraw task host input', 'status' => $terminal],
-            ['name' => 'Create the apps folder', 'status' => $apps ? 'succeeded' : 'skipped'],
-            ['name' => 'Check owner and mode', 'status' => $apps ? 'succeeded' : 'skipped',
-                'outputs' => $apps ? ['stdout' => 'directory orbit:orbit 755'] : []],
+            ['name' => 'Withdraw task host input', 'status' => $failedPhase === 'Withdraw task host input' || ($terminal === 'failed' && $failedPhase === null) ? 'failed' : 'succeeded',
+                ...($failedPhase === 'Withdraw task host input' ? ['error' => 'withdrawal failure'] : [])],
+            ['name' => 'Prepare the apps folder', 'status' => $failedPhase === 'Prepare the apps folder' ? 'failed' : ($apps ? 'succeeded' : 'skipped'),
+                ...($failedPhase === 'Prepare the apps folder' ? ['error' => 'folder failure'] : [])],
+            ['name' => 'Cleanup', 'status' => $failedPhase === 'Cleanup' ? 'failed' : ($terminal === 'interrupted' ? 'skipped' : 'succeeded'),
+                ...($failedPhase === 'Cleanup' ? ['error' => 'cleanup failure'] : [])],
         ]]],
     ];
     app(SwampConnection::class)->release();
@@ -124,8 +127,16 @@ it('reads the native withdrawal result before saving removal or a bridge change,
 
     expect($operation->refresh()->status)->toBe(OperationStatus::from($terminal));
 
-    if ($terminal === 'failed') {
+    expect($node->refresh()->name)->toBe('changed-host');
+    if ($terminal !== 'succeeded') {
         expect($node->refresh()->settings)->toBe($previous);
+        if ($failedPhase !== null) {
+            expect($operation->failed_step)->toBe($failedPhase);
+        }
+        expect($operation->result['cleanup_complete'])->toBe($failedPhase !== 'Cleanup' && $terminal !== 'interrupted');
+        if ($failedPhase === 'Prepare the apps folder') {
+            expect($operation->error_code)->toBe('node.settings_root_failed');
+        }
     } else {
         expect($node->refresh()->settings['task_vms'] ?? null)->toBe($operation->input['settings']['task_vms'] ?? null);
         $names = array_column(app(NodeFirewallDesiredRules::class)->forNode($node), 'name');
@@ -143,4 +154,7 @@ it('reads the native withdrawal result before saving removal or a bridge change,
     'withdrawal failed' => [null, 'failed'],
     'bridge changed' => [['cidr' => '10.252.42.0/24', 'network' => 'proofbr0', 'task_places' => 6, 'ci_places' => 2], 'succeeded'],
     'with apps preparation' => [null, 'succeeded', true],
+    'folder failure retains the name and old settings' => [null, 'failed', true, 'Prepare the apps folder'],
+    'cleanup failure retains deferred settings' => [null, 'failed', true, 'Cleanup'],
+    'interrupted run reports incomplete cleanup' => [null, 'interrupted', true],
 ]);

@@ -66,7 +66,7 @@ it('sends the apps folder, including a colon in the path', function (): void {
 
     $this
         ->artisan('node:update', [
-            'node' => 'app-dev',
+            'node' => '2',
             '--apps-path' => '/srv/orbit:data/apps',
             '--json' => true,
         ])
@@ -131,6 +131,9 @@ it('refuses missing and malformed input before making a request', function (arra
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'missing node' => [['--name' => 'vpn'], 'node.reference_required'],
+    'zero ID' => [['node' => '0', '--name' => 'vpn'], 'node.id_invalid'],
+    'registered name' => [['node' => 'app-dev', '--name' => 'vpn'], 'node.id_invalid'],
+    'fractional ID' => [['node' => '2.5', '--name' => 'vpn'], 'node.id_invalid'],
     'no option' => [['node' => '2'], 'node.option_required'],
     'empty name' => [['node' => '2', '--name' => ''], 'node.name_required'],
     'empty platform' => [['node' => '2', '--platform' => ''], 'node.platform_required'],
@@ -177,3 +180,16 @@ it('follows an apps folder Operation and prints its final receipt in JSON', func
         && $pending->headers()->get('Idempotency-Key') === 'update-proof');
     $mock->assertSent(ShowOperationRequest::class);
 });
+it('renders an unchanged update without following an Operation', function (bool $json): void {
+    node_update_profile();
+    $mock = MockClient::global([
+        UpdateNodeRequest::class => MockResponse::make([
+            'data' => ['id' => 2, 'name' => 'tablet', 'status' => 'active', 'skipped' => 'node.unchanged'],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+    ]);
+    $this->artisan('node:update', ['node' => '2', '--name' => 'tablet', '--json' => $json])
+        ->expectsOutputToContain($json ? '"skipped":"node.unchanged"' : 'Skipped — already set (node.unchanged).')
+        ->assertExitCode(0);
+    $mock->assertSentCount(1);
+})->with([true, false]);

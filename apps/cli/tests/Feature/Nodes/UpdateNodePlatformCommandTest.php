@@ -35,13 +35,13 @@ describe('node:update --platform', function (): void {
         new Filesystem()->deleteDirectory($this->orbitHome);
     });
 
-    it('resolves an exact name and sends only the platform', function (): void {
+    it('uses a numeric ID and sends only the platform', function (): void {
         $mock = MockClient::global([
             ListNodesRequest::class => MockResponse::make(['data' => [$this->payload], 'meta' => ['request_id' => $this->requestId]]),
             UpdateNodeRequest::class => MockResponse::make(['data' => $this->payload, 'meta' => ['request_id' => $this->requestId]]),
         ]);
 
-        $this->artisan('node:update', ['node' => 'ipad', '--platform' => 'ipados'])
+        $this->artisan('node:update', ['node' => '2', '--platform' => 'ipados'])
             ->expectsOutput('Node #2 [ipad] updated.')
             ->expectsOutput('Request ID: '.$this->requestId)->assertExitCode(0);
 

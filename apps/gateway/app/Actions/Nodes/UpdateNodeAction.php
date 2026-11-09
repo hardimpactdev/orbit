@@ -13,6 +13,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\NodeUpdateUnchanged;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -44,12 +45,12 @@ final readonly class UpdateNodeAction
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
      * are stored when the run succeeds, while a new name or platform in the same request is already saved.
      */
-    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): Node|Operation|NodeUpdateUnchanged
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): Node|Operation|NodeUpdateUnchanged {
                 $node->refresh();
-                $update = fn (): Node|Operation => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+                $update = fn (): Node|Operation|NodeUpdateUnchanged => $this->update($node, $name, $platform, $settings, $caller, $requestId);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -58,42 +59,46 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): Node|Operation|NodeUpdateUnchanged
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation {
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation|NodeUpdateUnchanged {
             $node->refresh();
-            $written = $this->record($node, $name, $platform);
-            if ($settings->isEmpty()) {
-                return $node;
+            $previous = $this->normalizer->fromStored($node->settings);
+            $normalized = $this->normalizer->normalize($settings->merge($previous));
+            if ($settings->hasTaskVms) {
+                $this->validateHostBridge($node, $normalized);
             }
-            $merged = $settings->merge($this->normalizer->fromStored($node->settings));
-            $normalized = $this->normalizer->normalize($merged);
-            $this->validateHostBridge($node, $normalized);
-            $create = $this->hasActiveAppDevRole($node);
-            $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
+            $this->validateRecord($node, $name, $platform);
+            $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
+            $appsChanged = $settings->hasApps && $previous?->appsPath() !== $normalized?->appsPath();
+            $previousHost = $previous?->task_vms;
             $retireHostInput = $settings->hasTaskVms && $previousHost !== null
                 && ($normalized?->task_vms === null || $previousHost->network !== $normalized->task_vms->network
                     || $previousHost->cidr !== $normalized->task_vms->cidr);
-            $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
+            $prepareStorage = $appsChanged && ($this->hasActiveAppDevRole($node) || $normalized?->appsPath() !== null);
+            $root = $settings->hasApps ? $this->validator->validateEffective($normalized, $node, $account) : null;
+            if (($prepareStorage || $retireHostInput) && ($platform ?? $node->platform) !== 'linux') {
+                throw new ResourceOperationException('node.settings_platform_unsupported', 'Settings actions require a Linux Node.');
+            }
+            $written = $this->record($node, $name, $platform);
+            $settingsChanged = $this->normalizer->stored($previous) != $this->normalizer->stored($normalized);
+            if (! $written && ! $settingsChanged) {
+                return new NodeUpdateUnchanged($node->load('roles'));
+            }
             if (! $prepareStorage && ! $retireHostInput) {
-                $this->persist($node, $normalized);
-                $written = true;
+                if ($settingsChanged) {
+                    $this->persist($node, $normalized);
+                    $written = true;
+                }
 
                 return $node;
             }
-
-            if ($node->platform !== 'linux') {
-                throw new ResourceOperationException('node.settings_platform_unsupported', 'Settings actions require a Linux Node.');
-            }
-            // Orbit creates each managed account with its own group and home, so the root is checked here, not on the Node.
-            $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
-            $root = $prepareStorage ? $this->validator->validateEffective($normalized, $node, $account) : null;
 
             return $this->operations->execute('node.update', 'node', $node->id, $node->id, [
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-                'root' => $root?->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
+                'root' => $prepareStorage ? $root?->value : null, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
                 'task_host_input_comments' => $retireHostInput ? NodeFirewallRuleCatalog::TaskHostInputComments : [],
                 'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms],
             ], 'operator', $requestId, expectedWriter: 'direct');
@@ -112,13 +117,6 @@ final readonly class UpdateNodeAction
     /** Saves the name and platform, the registry facts that need no run, and reports whether either changed. */
     private function record(Node $node, ?string $name, ?string $platform): bool
     {
-        // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
-        if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
-            throw new ResourceOperationException('node.platform_managed', 'Only an unmanaged Node, with no pinned SSH host key and no role, takes a platform from this command.', 409);
-        }
-        if ($name !== null && $name !== $node->name && Node::query()->where('name', $name)->whereKeyNot($node->id)->exists()) {
-            throw new ResourceOperationException('validation.failed', "The name [{$name}] is already registered.", details: ['field' => 'name']);
-        }
         if ($name !== null) {
             $node->name = $name;
         }
@@ -131,6 +129,17 @@ final readonly class UpdateNodeAction
         $node->save();
 
         return true;
+    }
+
+    private function validateRecord(Node $node, ?string $name, ?string $platform): void
+    {
+        // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
+        if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
+            throw new ResourceOperationException('node.platform_managed', 'Only an unmanaged Node, with no pinned SSH host key and no role, takes a platform from this command.', 409);
+        }
+        if ($name !== null && $name !== $node->name && Node::query()->where('name', $name)->whereKeyNot($node->id)->exists()) {
+            throw new ResourceOperationException('validation.failed', "The name [{$name}] is already registered.", details: ['field' => 'name']);
+        }
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void

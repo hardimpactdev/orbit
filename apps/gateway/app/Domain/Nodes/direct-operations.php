@@ -48,7 +48,7 @@ return ['node.add' => [
     'workflow' => 'operation-node-update',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode', 'alternatives' => ['Withdraw task host input'], 'native' => true],
+    'terminal_result' => ['job' => 'settings', 'step' => 'Prepare the apps folder', 'alternatives' => ['Withdraw task host input'], 'native' => true],
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge',
     'projection' => NodeConvergeProjection::class,

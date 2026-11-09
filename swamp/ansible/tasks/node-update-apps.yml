@@ -1,0 +1,35 @@
+---
+- name: Read the apps folder without following a link
+  ansible.builtin.stat: { path: "{{ intent.storage.root }}", follow: false }
+  register: apps_before
+
+- name: Require a real directory or a missing folder
+  ansible.builtin.assert:
+    that: not apps_before.stat.exists or (apps_before.stat.isdir and not apps_before.stat.islnk)
+    fail_msg: node.settings_root_failed
+    quiet: true
+
+- name: Create missing parents and converge only the apps folder
+  ansible.builtin.file:
+    path: "{{ intent.storage.root }}"
+    state: directory
+    owner: "{{ intent.storage.user }}"
+    group: "{{ intent.storage.group }}"
+    mode: "0755"
+    follow: false
+    recurse: false
+
+- name: Read the prepared apps folder
+  ansible.builtin.stat: { path: "{{ intent.storage.root }}", follow: false }
+  register: apps_after
+
+- name: Prove the real folder has its managed owner and mode
+  ansible.builtin.assert:
+    that:
+      - apps_after.stat.isdir
+      - not apps_after.stat.islnk
+      - apps_after.stat.pw_name == intent.storage.user
+      - apps_after.stat.gr_name == intent.storage.group
+      - apps_after.stat.mode == '0755'
+    fail_msg: node.settings_root_failed
+    quiet: true

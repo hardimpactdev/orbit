@@ -16,23 +16,19 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or [`node:update`](/cli/node/update). The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that touches the apps root records a `node.update` Operation and returns HTTP 202. Adding task-host settings or changing capacity is stored at once. Removing an existing task host or changing its bridge or CIDR records an Operation that withdraws its owned DHCP/DNS input rules before saving the settings. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
+A changed apps root that needs folder preparation records a `node.update` Operation and returns HTTP 202. Adding task-host settings or changing capacity is stored at once. Removing an existing task host or changing its bridge or CIDR records an Operation that withdraws its owned DHCP/DNS input rules before saving the settings. Clearing `apps.path` on a Node without an active `app-dev` role starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/update.mmd) shows both paths.
 
 The Gateway starts `operation-node-update` on the `swamp` role's workers. Its inputs are the SSH target, any resolved apps folder with the managed user and group, and the catalog comments of any task-host input rules to withdraw. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 
 The steps are:
 
-`Withdraw task host input` runs when a task host is removed or its bridge changes. The shared Ansible phase deletes rows with the admitted catalog comments and checks that none remain. Reachable Node removal uses the same phase.
+`Withdraw task host input` runs when a task host is removed or its bridge or CIDR changes. The shared Ansible phase deletes rows with the admitted catalog comments and checks that none remain. Reachable Node removal uses the same phase.
 
 When no apps folder needs preparation, the withdrawal step is the terminal check. Its successful result lets Orbit save the settings even though the folder check is skipped.
 
-The apps-folder steps run only when the patch needs folder preparation:
-- `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
-- `Check owner and mode` reads the folder with one `stat`. It is the end check.
-- The Gateway reads its output from Swamp's run data.
-- The folder must be a real folder of the managed user and group, with mode 0755.
-- Any other output fails the task with `node.settings_root_failed`.
-- The Gateway stores the settings only after that check passed.
+`Prepare the apps folder` runs only when the changed path needs preparation. One Ansible phase reads the folder, creates missing parents, converges the folder itself to the managed user and group with mode `0755`, and checks that it is a real directory. It does not change the folder's contents or move existing checkouts. Failure reports `node.settings_root_failed`.
+
+`Cleanup` removes the run-owned input after the phases stop, on success and failure. Settings commit only when the required phases and cleanup succeed.
 
 The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. An apps-folder failure reports `node.settings_root_failed`; the failure detail holds the reason. A firewall withdrawal failure keeps the old settings, so its owned rules remain visible for retry.
 
@@ -48,7 +44,7 @@ State-only patches, such as task-host capacity changes, stay synchronous in the 
 
 ```bash
 orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
-orbit node:update app-dev --apps-path=/mnt/apps
+orbit node:update 7 --apps-path=/mnt/apps
 ```
 
 `node:add` splits each option at its first colon, so a value can contain more colons. An empty value unsets the path: `--setting=apps.path:` and `--apps-path=` send null. The CLI does not trim a value.
@@ -76,7 +72,7 @@ Task VM placement uses Incus hosts only. Task places run on Beast and Shark. CI 
 The common converge brings a task VM on such a host to the pins of the release, on every base refresh and every task start. It reads no host setting. See [Converge a running task VM](/reference/compute-drivers#converge-a-running-task-vm).
 
 ```bash
-orbit node:update beast --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:update 9 --task-vms='{"cidr":"10.251.77.0/24","task_places":2,"ci_places":2,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 This is an example, not the live configuration of beast. Preserve a host's current values when changing its configuration. The API patch takes the object directly:
@@ -148,9 +144,9 @@ The Gateway checks path grammar and recorded exclusions before admission. Swamp 
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 
-Swamp then prepares the path on the Node with `@swamp/cfgmgmt/directory`. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
+For a changed `node:update` apps path, Swamp prepares the folder in one Ansible phase. Unsetting the path prepares the default only when the Node has an active `app-dev` role. `node:add` prepares missing folders for `app-dev`; otherwise its explicit folder must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
 
-An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
+The apps folder must be a real directory, not a symlink. `node:update` converges its owner, group and mode to the managed user and group and `0755`, without changing its contents. When preparation or its check fails, the stored setting stays unchanged. Folders already created can remain.
 
 ## Failure codes
 
@@ -192,4 +188,4 @@ Moving source on a settings change would be a hidden, risky migration. So each c
 
 ### An existing folder converges
 
-An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and `@swamp/cfgmgmt/directory` changes only the folder itself, never its contents.
+An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and the Ansible phase changes only the folder itself, never its contents.
