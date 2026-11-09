@@ -89,7 +89,8 @@ final readonly class TaskVmSlotPool
     }
 
     /**
-     * The places with room, most free first; equal room keeps the host order, then the runtime order.
+     * The places with room, most free first. Equal room keeps the runtime order, then the host order, so every VM place
+     * comes before a container place.
      *
      * @param  list<TaskVmRuntime>  $runtimes
      * @return non-empty-list<array{int, TaskVmRuntime, int}> host id, runtime, free places
@@ -101,7 +102,7 @@ final readonly class TaskVmSlotPool
         foreach ($runtimes as $runtime) {
             // A group needs a host with a base snapshot of the runtime; a refresh proves the snapshot it just took, before the Gateway records it.
             $hosts = array_values(array_filter($this->capacity->activeHosts(), fn (array $pair): bool => ($host === null || $pair[1]->id === $host)
-                && (! $needsImage || $this->hasBase($pair[1], $pair[0], $runtime))));
+                && (! $needsImage || $this->images->recorded($pair[1], $pair[0], $runtime) !== null)));
             foreach ($this->capacity->freeSlots($hosts, $ci, $runtime) as $id => $places) {
                 // A proof takes only a host whose base includes every change of what the base carries up to its merge base.
                 if ($places > 0 && $needsImage && ! app(TaskVmSeedFloor::class)->allows($id)) {
@@ -119,12 +120,6 @@ final readonly class TaskVmSlotPool
         }
 
         return $room;
-    }
-
-    /** The host has a recorded base of `$runtime` that a start can copy. */
-    private function hasBase(Node $host, TaskVmHost $location, TaskVmRuntime $runtime): bool
-    {
-        return $runtime === TaskVmRuntime::Vm ? $this->currentImage($host, $location) !== null : $this->images->recorded($host, $location, $runtime) !== null;
     }
 
     /** @param array<int,string> $skipped host Node id => name */

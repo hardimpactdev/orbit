@@ -551,10 +551,10 @@ it('withdraws the recorded base for a rebuild, and refuses a rebuild while a ref
     [$host, $project] = slotPoolHost();
     $images = app(TaskVmPromotedImage::class);
 
-    expect($images->latest($host))->not->toBeNull();
-    $images->withdraw($host);
+    expect($images->latest($host, TaskVmRuntime::Vm))->not->toBeNull();
+    $images->withdraw($host, TaskVmRuntime::Vm);
     // No start copies a withdrawn base; the pool skips a host without one.
-    expect($images->latest($host))->toBeNull()
+    expect($images->latest($host, TaskVmRuntime::Vm))->toBeNull()
         ->and(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class);
 
     Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -1432,7 +1432,12 @@ it('keeps one recorded base per runtime, so a newer container base never replace
     $location = app(TaskVmSettings::class)->host($host->id);
     $images = app(TaskVmPromotedImage::class);
 
-    expect($images->recorded($host, $location)['snapshot'] ?? null)->toBe('r20261107120000')
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm)['snapshot'] ?? null)->toBe('r20261107120000')
         ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000')
         ->and(app(TaskVmSlotPool::class)->currentImage($host, $location)['snapshot'] ?? null)->toBe('r20261107120000');
+
+    // A rebuild of one runtime's base from stock withdraws only that base.
+    $images->withdraw($host, TaskVmRuntime::Vm);
+    expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
+        ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000');
 });

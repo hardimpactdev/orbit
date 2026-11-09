@@ -86,7 +86,7 @@ final readonly class TaskVmImageRefreshIntent
                 // The run deletes the base before it builds the new one, so the recorded base is withdrawn at once: starts on the host are
                 // refused until the run promotes the new base, and after a failure the next refresh builds the base as on a new host.
                 if ($fromStock) {
-                    $this->images->withdraw($host);
+                    $this->images->withdraw($host, TaskVmRuntime::Vm);
                 }
 
                 return $this->operations->execute(self::Kind, 'task_vm_host', $host->id, $host->id, $this->input($host, $commit, $fromStock), $caller, $request,
@@ -131,7 +131,7 @@ final readonly class TaskVmImageRefreshIntent
     {
         $location = $this->assertCanRefresh($host);
         // A rebuild from stock has no base to roll back to or to keep: the run deletes it before it builds the new one.
-        $base = $fromStock ? null : $this->images->recorded($host, $location);
+        $base = $fromStock ? null : $this->images->recorded($host, $location, TaskVmRuntime::Vm);
         $commit ??= $this->converge->releaseCommit();
         $club = config('swamp.proof_club_api_key');
         if (! is_string($club) || trim($club) === '') {

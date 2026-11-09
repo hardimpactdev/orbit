@@ -142,6 +142,7 @@ final readonly class UpdateNodeAction
     {
         $normalized = $this->normalizer->normalize($settings);
         $this->validateHostBridge($node, $normalized);
+        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->apply($node, $normalized);
     }
 
@@ -150,6 +151,7 @@ final readonly class UpdateNodeAction
     {
         $normalized = $this->normalizer->normalize($settings);
         $this->validateHostBridge($node, $normalized);
+        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
         $create = $this->hasActiveAppDevRole($node);
         $storage = null;

@@ -1,6 +1,6 @@
 ---
 title: "Task containers"
-description: "Not built. The task container runtime of ADR 0250: a task group runs in one unprivileged Incus container with its nested fleet inside, on hosts that add it with a Node setting, beside task VMs."
+description: "Partly built. The task container runtime of ADR 0250: a task group runs in one unprivileged Incus container with its nested fleet inside, on hosts that add it with a Node setting, beside task VMs."
 ---
 
 # Task containers

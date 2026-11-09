@@ -16,6 +16,7 @@ use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageRefreshIntent;
 use App\Domain\TaskVms\TaskVmPromotedImage;
+use App\Domain\TaskVms\TaskVmRuntime;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -94,7 +95,7 @@ final readonly class TaskVmAdmission
                     $request = ValidatedData::object($operation->input['capacity_request']);
                     $host = Node::query()->findOrFail($operation->target_id);
                     if (($request['from_stock'] ?? false) === true) {
-                        app(TaskVmPromotedImage::class)->withdraw($host);
+                        app(TaskVmPromotedImage::class)->withdraw($host, TaskVmRuntime::Vm);
                     }
                     $input = app(TaskVmImageRefreshIntent::class)->input($host, ValidatedData::nullableString($request['commit'] ?? null), ($request['from_stock'] ?? false) === true);
                     $this->store->change($operation, ['input' => $input, 'status' => OperationStatus::Queued, 'started_at' => now(), 'current_step' => null]);

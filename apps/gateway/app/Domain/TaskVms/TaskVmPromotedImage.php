@@ -32,7 +32,7 @@ final readonly class TaskVmPromotedImage
      *
      * @return array{recipe_identity:string,snapshot:string}|null
      */
-    public function recorded(Node $host, TaskVmHost $location, TaskVmRuntime $runtime = TaskVmRuntime::Vm): ?array
+    public function recorded(Node $host, TaskVmHost $location, TaskVmRuntime $runtime): ?array
     {
         $build = $this->latest($host, $runtime);
         $base = $build?->images['base'] ?? null;
@@ -45,13 +45,13 @@ final readonly class TaskVmPromotedImage
     }
 
     /**
-     * The base a task start needs: the recorded snapshot, which only a refresh makes.
+     * The base a task VM start needs: the recorded VM snapshot, which only a refresh makes.
      *
      * @return array{recipe_identity:string,snapshot:string}
      */
     public function forHost(Node $host, TaskVmHost $location): array
     {
-        return $this->recorded($host, $location)
+        return $this->recorded($host, $location, TaskVmRuntime::Vm)
             ?? throw new ResourceOperationException('task_vm.image_unavailable', 'The host has no base snapshot; only a refresh makes one.', 409);
     }
 
@@ -67,14 +67,14 @@ final readonly class TaskVmPromotedImage
         return ['vm' => self::baseVm($host), 'seed' => self::baseSeed($host), 'snapshot' => $base['snapshot'], 'recipe_identity' => $base['recipe_identity']];
     }
 
-    /** Withdraws the host's recorded base: no start copies it, and the next refresh builds the base as on a new host. */
-    public function withdraw(Node $host): void
+    /** Withdraws the host's recorded base of `$runtime`: no start copies it, and the next refresh of that runtime builds it as on a new host. */
+    public function withdraw(Node $host, TaskVmRuntime $runtime): void
     {
-        TaskVmImageBuild::query()->where('host_node_id', $host->id)->whereNotNull('promoted_at')->update(['promoted_at' => null]);
+        TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('runtime', $runtime)->whereNotNull('promoted_at')->update(['promoted_at' => null]);
     }
 
     /** The host's latest promoted refresh of `$runtime`. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */
-    public function latest(Node $host, TaskVmRuntime $runtime = TaskVmRuntime::Vm): ?TaskVmImageBuild
+    public function latest(Node $host, TaskVmRuntime $runtime): ?TaskVmImageBuild
     {
         return TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('runtime', $runtime)->where('state', TaskVmImageBuildState::Succeeded)
             ->where('images->base->type', 'snapshot')->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();

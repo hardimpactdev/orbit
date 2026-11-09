@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\UpdateNodeAction;
+use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -102,6 +105,14 @@ it('refuses a bridge of either runtime that overlaps a bridge of another host', 
     'both container bridges' => [ContainerHost, ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/25', 'task_places' => 1, 'ci_places' => 0]]],
 ]);
 
+it('reads the container placement switch from the Gateway config, off by default', function (bool $on): void {
+    containerSettingsNode(settings: ['task_vms' => ContainerHost]);
+    expect(TaskVmSettings::fromConfig()->containerPlacement)->toBeFalse();
+
+    config(['task_vms.container_placement' => $on]);
+    expect(TaskVmSettings::fromConfig()->containerPlacement)->toBe($on);
+})->with([true, false]);
+
 it('fails the task VM settings when stored container bridges of two hosts overlap', function (): void {
     containerSettingsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 0, 'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 0]]]);
     containerSettingsNode(settings: ['task_vms' => ContainerHost]);
@@ -127,6 +138,17 @@ it('keeps the container project, bridge and network of a host while it has a liv
     'another bridge name' => [[...ContainerHost, 'containers' => [...ContainerHost['containers'], 'network' => 'orbittaskc1']]],
     'another bridge network' => [[...ContainerHost, 'containers' => [...ContainerHost['containers'], 'cidr' => '10.252.12.0/24']]],
 ]);
+
+it('keeps the container side when node:add enrolls an existing host again', function (): void {
+    $node = containerSettingsNode(settings: ['task_vms' => NodeTaskVmsData::validated(ContainerHost, Ipv4Subnet::from('10.44.0.0/24'))->toArray()]);
+    liveContainer($node);
+    $without = new NodeSettingsData(task_vms: NodeTaskVmsData::validated(array_diff_key(ContainerHost, ['containers' => true]), Ipv4Subnet::from('10.44.0.0/24')));
+    $action = app(UpdateNodeAction::class);
+
+    foreach ([fn () => $action->enrollmentIntent($node, $without), fn () => $action->persistDuringProvisioning($node, $without)] as $call) {
+        expect($call)->toThrow(fn (ResourceOperationException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['task_vm.runtime_in_use', 409]));
+    }
+});
 
 it('lets the container places change while task containers live, and a live task VM never holds the container side', function (): void {
     $node = containerSettingsNode(settings: ['task_vms' => NodeTaskVmsData::validated(ContainerHost, Ipv4Subnet::from('10.44.0.0/24'))->toArray()]);
