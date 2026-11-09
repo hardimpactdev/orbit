@@ -123,9 +123,11 @@ sequenceDiagram
     %%> - for swamp, repair ownership and mode 0644 of an existing `/tmp/deno-compile-swamp.cache`
     opt new Analytics assignment
       %% path: analytics
-      SW->>M: Initialize Analytics<br/>Ansible phase: analytics
+      SW->>M: Open Analytics storage<br/>Ansible phase: storage-firewall
+      SW->>M: Apply Analytics runtime<br/>Ansible phase: analytics
       %%> What it does:
-      %%> - admit local storage access, initialize the database, apply the runtime and wait for readiness before publication
+      %%> - initialize the database and apply the runtime
+      SW->>M: Wait for Analytics<br/>Ansible phase: readiness
       %%> Result:
       %%> - a completed runtime is retained and recorded even if a later publication fails
     end

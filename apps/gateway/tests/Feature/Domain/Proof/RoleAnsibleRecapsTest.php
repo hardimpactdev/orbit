@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -96,3 +97,33 @@ it('reports a safe nonzero error instead of Laravel console output for a failed 
         ->and($process->getErrorOutput())->toContain('JsonException at ansible-recaps.php:')
         ->not->toContain('secret-input');
 });
+
+it('reads a declared shell report or PR receipt from its recorded result artifact', function (string $kind, string $capture): void {
+    $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];
+    $source = $selector['captures'][$capture];
+    $dataId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $stdout = str_repeat('complete public result ', 400);
+    $jobs = [];
+    $jobs[$selector['job']][$selector['step']] = ['name' => $selector['step'], 'status' => 'succeeded'];
+    $jobs[$source['job']][$source['step']] = ['name' => $source['step'], 'status' => 'succeeded', 'dataArtifacts' => [
+        ['name' => 'result', 'dataId' => $dataId, 'version' => 7],
+        ['name' => 'log', 'dataId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a845', 'version' => 7],
+    ]];
+    $run = ['status' => 'succeeded', 'jobs' => []];
+    foreach ($jobs as $name => $steps) {
+        $run['jobs'][] = ['name' => $name, 'steps' => array_values($steps)];
+    }
+    $this->artifact = ['id' => $dataId, 'name' => 'result', 'version' => 7,
+        'content' => ['exitCode' => 0, 'stdout' => $stdout, 'stderr' => '']];
+
+    $result = (new ReflectionMethod(SwampCommandStep::class, 'terminalOutput'))
+        ->invoke(app(SwampCommandStep::class), $run, $selector);
+
+    expect($result[$capture])->toBe($stdout);
+    expect(array_column($this->requests, 'type'))->toBe(['data.query']);
+    expect($this->requests[0]['payload']['predicate'])->toBe('id == "'.$dataId.'" && version == 7');
+})->with([
+    'proof report' => ['proof.command', 'report'],
+    'ready receipt' => ['tasks.pr_ready', 'pr_receipt'],
+    'merge receipt' => ['tasks.pr_merge', 'pr_receipt'],
+]);

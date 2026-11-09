@@ -1077,6 +1077,8 @@ The agent driver reports input, output and cached token usage on each thread. Gr
 
 **Partly built.** Stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci) ends with two steps on the published pull request of an external group. Each is a keyed, native Swamp operation with a chart. The Gateway admits and names the vault key; each step mints its own token; Swamp calls GitHub. Neither step has an `orbit` command yet. Call the API or the MCP tools `task-pr-ready` and `task-pr-merge`. Both need Gateway access, as the other task operations do.
 
+The Gateway reads both steps' public receipts from the native `command/shell` `result` artifact by its recorded data ID and version when the output is not inline.
+
 Both steps hold the group execution lock and refuse a second task on the group with `operation.target_busy`. A step that fails records an error code and changes no group state. A repeat with a new key starts a new task with a new token. The charts [`tasks/pr-ready`](/cli/task/pr-ready) and [`tasks/pr-merge`](/cli/task/pr-merge) show the steps.
 
 ### Ready step
