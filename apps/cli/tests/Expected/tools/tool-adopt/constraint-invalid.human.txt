@@ -2,4 +2,3 @@ Node #2: agent unknown
 The Tool request cannot be admitted.
 step: adopt
 outcome: constraint_invalid
-Code: tool.constraint_invalid

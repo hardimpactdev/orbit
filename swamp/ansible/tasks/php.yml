@@ -28,9 +28,11 @@
 - { name: Test PHP-FPM, ansible.builtin.command: "/usr/sbin/php-fpm{{ php.version }} -t", changed_when: false }
 - name: Enable PHP-FPM
   ansible.builtin.systemd: { name: "php{{ php.version }}-fpm.service", enabled: true }
-# systemd's module accepts one name; this reload also covers active dedicated FPM masters.
+# A Node converge never restarts an Instance's dedicated PHP master.
 - name: Reload PHP-FPM # noqa command-instead-of-module no-handler
   when: runtime_ini is changed or runtime_link is changed or stop_timeout is changed
-  ansible.builtin.command: >-
-    systemctl try-reload-or-restart php{{ php.version }}-fpm.service orbit-*-php{{ php.version }}-fpm.service
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemctl', 'try-reload-or-restart', 'php' ~ php.version ~ '-fpm.service']
+      + ([] if kind | default('') == 'node.converge' else ['orbit-*-php' ~ php.version ~ '-fpm.service']) }}
   changed_when: true

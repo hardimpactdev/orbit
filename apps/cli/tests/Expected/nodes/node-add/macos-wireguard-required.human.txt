@@ -8,4 +8,3 @@ Adding Node...
 
 macOS enrollment requires a WireGuard address that is already on the machine.
 step: identity
-Code: node.wireguard_required

@@ -60,9 +60,11 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 ## Pitfalls from the trial
 
 - A new task file must be listed in `swamp/manifest.yaml` `additionalFiles`. Otherwise the playbook fails on the worker in about a second, before any task runs, and the step records no stderr. `swamp/bin/source_test.ts` checks every file under `swamp/ansible/`.
+- Disambiguate a task import when a top-level playbook shares its basename. Nested runtime includes can resolve the playbook first; use the `tasks/` path and keep the colliding playbook in the include regression fixture.
 - `incus query` takes the Project in the URL (`?project=...`), not `--project`.
 - A file bind-mounted into a container keeps its old inode when `copy` replaces the host file atomically. Recreate the container on change, or validate the new public config, compare its checksum, write it in place through stdin and reload. `unsafe_writes` permits a fallback; it does not force an in-place write.
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
+- Round-trip generated vars through Ansible's loader. Tag only Jinja-bearing strings (`{{`, `{%`, `{#`): `!unsafe "!"` fails YAML construction, and ordinary scalar-looking strings need their quoted string types preserved.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.
 - `include_tasks` in a loop runs the hosts one at a time. To give each host its own item, set the item as a play variable and use `import_tasks`.
 - A `completed` dependency excludes a skipped job on the pinned runtime. Cleanup that waits for optional or downstream jobs uses `or: [completed, skipped]`, so an earlier failure cannot skip private-file removal.
@@ -81,6 +83,7 @@ A decision that is more than a `when` becomes a Jinja template, read with `looku
 
 - `community.general.ufw` runs `ufw status verbose`, a read of the user rules and `ufw --version` around every call, and detects `changed` from the rules, so an insert of an existing rule reports no change. `insert` takes the absolute row number of `ufw status numbered` (`insert_relative_to: zero`). A delete names the tuple and carries no comment.
 - The pinned `ansible-core` rejects a variable named `none`. Keep test fixtures in plain names.
+- Local Ansible fixtures use the built-in stdout callback and write registered results to temporary fixture files. Test core-only fixtures with an empty `ANSIBLE_COLLECTIONS_PATH`: a developer's installed callback must not hide a collection dependency from the gate.
 - Name a host differently from every group. Ansible warns when both share a name (`node` as host and as group), and a play then reads ambiguous.
 - `wg syncconf` leaves a random `ListenPort` on a peer that sets none. To report a change only when the peers differ, hash `wg showconf` without its `ListenPort` line before and after.
 - The Gateway holds a placeholder for the host key of a Node it is enrolling. Pin the key the run observed for that Node, never the placeholder in the intent.
@@ -112,3 +115,11 @@ An Incus bridge needs DHCP and DNS input allowances in UFW before a guest's firs
 An unpromoted base is a failed build artifact, not a reusable base. Recreate it and its seed from stock on the next refresh. Cloud-init can report completion on a later boot even though a one-shot package module failed earlier and never installed SSH; compare proxy and firewall evidence before changing network policy.
 
 Record a Tool Manager pin and lock only after setup and its checks succeed. Gate both runtime copies and manager commands on that successful configuration; a failed setup must retry, and an unchanged repeat must report zero changes.
+
+Keep outer command inputs under distinct names in `-e @vars.yml`. Extra vars outrank include and block vars, so shared role tasks cannot replace an outer `intent`, `secrets` or `plans`. Test the generated vars through the real phase invocation.
+
+An extraction `creates` guard proves only that a path exists. Once a live version check selects repair, unpack the verified archive again so a stale extracted binary cannot be published back.
+
+A restored proof Gateway keeps the base image's installed collections and generated grants. Prepare both from the candidate checkout before cases; a new callback or vault key pattern must not depend on rebuilding the image.
+
+`command` expands `~user` even with `argv`. Set `expand_argument_vars: false` for literal arguments such as DNS routing domain `~orbit`; otherwise it becomes the account's home path and drifts on every run. Test with a domain that names an existing account and read back the arguments before checking a zero-change repeat.

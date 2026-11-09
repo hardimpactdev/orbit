@@ -192,6 +192,37 @@ class StepTest(unittest.TestCase):
         self.assertEqual(steps.cli(self.run, {'run': ['node:list'], 'expect': {'exit': 0}}), [])
         self.assertEqual(steps.cli(self.run, {'run': ['node:list'], 'expect': {'code': 'x.y'}}), ['cli node:list: code None, expected x.y'])
 
+    def test_failed_json_operation_names_the_failed_step_even_for_exit_only_setup(self):
+        document = {'id': 17, 'status': 'failed', 'failed_step': 'Converge input', 'error_code': 'operation.native_failed',
+                    'error': {'detail': 'private-error-sentinel'}}
+        result = {'rc': 1, 'json': document}
+        for expect in ({'exit': 0}, {'status': 'succeeded'}):
+            with self.subTest(expect=expect):
+                found = steps.check_result(self.run, 'cli node:converge', 'json', ['json'], result, expect)
+                self.assertEqual(len(found), 1)
+                self.assertIn("failed_step='Converge input', error_code='operation.native_failed'", found[0])
+                self.assertNotIn('private-error-sentinel', found[0])
+        self.assertEqual(self.fleet.cli_calls, [])
+
+    def test_missing_step_uses_the_operation_show_diagnostics_in_every_failure(self):
+        document = {'id': 17, 'status': 'failed'}
+        operation = {**document, 'failed_step': 'Converge input', 'error_code': 'operation.native_failed', 'steps': []}
+        with patch.object(self.run, 'cli', return_value={'rc': 0, 'json': operation}) as called:
+            found = steps.check_result(self.run, 'cli node:converge', 'json', ['json'], {'rc': 1, 'json': document},
+                                       {'exit': 0, 'status': 'succeeded', 'steps': {'name': 'Check the Node', 'count': 1}})
+        self.assertEqual(len(found), 3)
+        self.assertTrue(all("failed_step='Converge input', error_code='operation.native_failed'" in item for item in found))
+        called.assert_called_once_with(['operation:show', '17'])
+
+    def test_human_failure_fetches_operation_diagnostics_with_or_without_a_status_expectation(self):
+        operation = {'id': 17, 'status': 'failed', 'failed_step': 'Converge input', 'error_code': 'operation.native_failed'}
+        result = {'rc': 1, 'stdout': 'Operation: 17\n', 'stderr': ''}
+        for expect in ({'exit': 0}, {'status': 'succeeded'}):
+            with self.subTest(expect=expect), patch.object(self.run, 'cli', return_value={'rc': 0, 'json': operation}) as called:
+                found = steps.check_result(self.run, 'cli node:converge', 'human', ['human'], result, expect)
+                self.assertIn("failed_step='Converge input', error_code='operation.native_failed'", found[0])
+                called.assert_called_once_with(['operation:show', '17'])
+
     def test_node_list_cases_reject_wrong_json_envelopes_and_recorded_rows(self):
         loaded = spec.load(Path(__file__).resolve().parents[2] / 'node' / 'list.cases.yaml',
                            Path(__file__).resolve().parents[2] / 'batches.yaml')

@@ -7,4 +7,3 @@ Creating comment...
 └  Operation failed.
 
 This task group has ended.
-Code: tasks.group_closed

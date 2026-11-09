@@ -49,6 +49,10 @@ State the commit, the cases selected and run, the verdicts, the functional asser
 
 The runner owns case expansion and comparison. CI publishes its exact base/head result for Gateway admission. Never add a YAML comparator in another language; missing or invalid selection results run whole files.
 
+Keep the tested Operation's public failed step and error code in failed CLI checks, including setup failures. CI deletes full receipts with the VM, so a step-count mismatch alone loses the cause. Rerun with failed-VM retention when the existing verdict lacks it; never infer the failed phase from a skipped end check.
+
+A disposable Gateway needs a revision and an installable CLI release even though a PR has no published release. Prepare its tested revision and the existing test-only static catalog before cases. Keep the CLI under test on candidate source, and pin the separate installation fixture to a real published binary and checksum.
+
 Runner, selection code and selection-list changes disable narrowing for commands selected by the same diff. Tooling changes alone still select nothing. Keep this guard in the shared runner result.
 
 Exercise a case's JSON selectors against the shared runner before running the fleet. A rejected selector does not prove a missing record. Test native-output readers against complete recorded artifacts, and report safe exception types and locations when a guest helper fails; never print raw output or exception arguments.

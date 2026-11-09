@@ -2,4 +2,3 @@ Node #2: agent unknown
 The Tool request cannot be admitted.
 step: adopt
 outcome: manager_failed
-Code: tool.manager_unsupported

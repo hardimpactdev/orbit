@@ -1,24 +1,7 @@
 ---
 # Node, pnpm, Bun and Vite+ at the pins of the recipe, in the account's Vite+ home, behind launchers in /usr/local/bin.
-- name: Read the JavaScript tool versions
-  ansible.builtin.command: { argv: ["{{ item }}", --version] }
-  loop: [/usr/local/bin/node, /usr/local/bin/pnpm, /usr/local/bin/bun, /usr/local/bin/vp]
-  register: js_versions
-  changed_when: false
-  failed_when: false
-- name: Read the Vite+ runtime
-  ansible.builtin.stat: { path: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}/node_modules/vite-plus/package.json" }
-  register: vp_runtime
-- name: Find the JavaScript tools that miss their pin
-  vars:
-    out: "{{ js_versions.results | map(attribute='stdout') | list }}"
-  ansible.builtin.set_fact:
-    js_current: >-
-      {{ out[0] | trim == 'v' ~ recipe.tools.node.version
-      and out[1] | trim == recipe.tools.pnpm.version
-      and out[2] | trim == recipe.tools.bun.version
-      and recipe.tools['vp-cli'].version in out[3]
-      and vp_runtime.stat.exists }}
+- name: Inspect the pinned JavaScript runtime
+  ansible.builtin.import_tasks: javascript-version.yml
 - name: Install the JavaScript tools
   when: not js_current
   vars:
@@ -68,14 +51,13 @@
         dest: "{{ item.dest }}"
         remote_src: true
         extra_opts: "{{ item.opts }}"
-        creates: "{{ item.creates }}"
         owner: "{{ orbit_user }}"
         group: "{{ orbit_user }}"
       loop:
-        - { tool: "{{ recipe.tools.node }}", dest: "{{ node_home }}", opts: [--strip-components=1], creates: "{{ node_home }}/bin/node" }
-        - { tool: "{{ recipe.tools['vp-cli'] }}", dest: "{{ scope }}/recipe/vp-cli", opts: [], creates: "{{ scope }}/recipe/vp-cli/vp" }
-        - { tool: "{{ recipe.tools.pnpm }}", dest: "{{ scope }}/recipe/pnpm", opts: [], creates: "{{ scope }}/recipe/pnpm/package/pnpm" }
-        - { tool: "{{ recipe.tools.bun }}", dest: "{{ scope }}/recipe/bun", opts: [], creates: "{{ scope }}/recipe/bun/bun-linux-x64/bun" }
+        - { tool: "{{ recipe.tools.node }}", dest: "{{ node_home }}", opts: [--strip-components=1] }
+        - { tool: "{{ recipe.tools['vp-cli'] }}", dest: "{{ scope }}/recipe/vp-cli", opts: [] }
+        - { tool: "{{ recipe.tools.pnpm }}", dest: "{{ scope }}/recipe/pnpm", opts: [] }
+        - { tool: "{{ recipe.tools.bun }}", dest: "{{ scope }}/recipe/bun", opts: [] }
       loop_control: { label: "{{ item.tool.artifacts.amd64.url | basename }}" }
     - name: Publish the executables
       ansible.builtin.copy:

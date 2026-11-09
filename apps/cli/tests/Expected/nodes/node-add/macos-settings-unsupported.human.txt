@@ -7,4 +7,3 @@ Adding Node...
 └  Operation failed.
 
 macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.
-Code: node.platform_unsupported

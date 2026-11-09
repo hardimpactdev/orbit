@@ -100,7 +100,7 @@ The gate requires `passed`, `wouldStart` and the full grant-file count; a refusa
 
 Swamp check selection follows their inputs. Shape policy changes select the shape gate; baseline and analyser inputs also select the Operation tests that read them. Ansible changes also select Operation tests that read the playbooks. Workflows, grants, extension sources and shared runtime pins select shape, native validation and Operation tests. Swamp prose and skills select Docs only; shared CI or unclassified tooling changes keep the broad check set. New application, package or top-level source roots fail planning until their checks are declared.
 
-Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Baseline and ratchet checks stay serial, and every failure remains in the final result.
+Inside the shape job, pinned tool and collection setup runs first. Independent Ansible lint, Python fixtures and Deno checker tests then share at most four command slots, with one Deno worker per command and separate temporary files. Ansible lint and the Deno fixtures receive the same pinned collection path, so a role include does not depend on collections installed in the worker's home. Baseline and ratchet checks stay serial, and every failure remains in the final result.
 
 
 Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool.

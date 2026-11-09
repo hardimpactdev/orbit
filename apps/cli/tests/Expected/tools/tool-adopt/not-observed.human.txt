@@ -2,4 +2,3 @@ Node #2: agent online
 The Node agent has not reported the apt packages on this Node yet.
 step: adopt
 outcome: manager_failed
-Code: tool.not_observed

@@ -8,6 +8,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
+use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
@@ -34,6 +35,15 @@ class AddNodeRoleCommand extends NodeCommand
 
     #[\Override]
     protected $description = 'Add one role assignment to a node.';
+
+    /** @param array<string, mixed> $details */
+    #[\Override]
+    protected function renderGatewayFailure(string $code, string $message, ?string $requestId = null, ?string $humanMessage = null, array $details = []): int
+    {
+        GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage, $details, includeCode: true);
+
+        return self::FAILURE;
+    }
 
     public function handle(
         GatewayConfigRepository $repository,

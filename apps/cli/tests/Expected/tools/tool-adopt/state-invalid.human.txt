@@ -3,4 +3,3 @@ The Tool request cannot be admitted.
 id: 1
 step: adopt
 outcome: manager_failed
-Code: tool.state_invalid

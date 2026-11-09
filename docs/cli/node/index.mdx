@@ -1,7 +1,7 @@
 ---
 title: "node"
 sidebarTitle: "Overview"
-description: "Add machines to the fleet, update a Node's name, platform and settings, set unmanaged WireGuard keys, assign and move roles, grant access, read metrics, and remove Nodes."
+description: "Add and repair managed machines, update a Node's settings, assign and move roles, grant access, read metrics, and remove Nodes."
 covers:
   - apps/cli/app/Commands/Nodes/**
   - apps/cli/app/Support/NodeSettingOptions.php
@@ -38,7 +38,7 @@ Removing task-host settings or changing the bridge or CIDR withdraws the owned D
 | Command | Result |
 | --- | --- |
 | [`node:add`](/cli/node/add) | Add a machine, or converge an existing Node. |
-| [`node:converge`](/cli/node/converge) | Re-apply the Gateway-rendered Orbit footprint of a Node. |
+| [`node:converge`](/cli/node/converge) | Repair a Node's base, selected role configuration, recorded Tools and network without changing Instances or assignments. |
 | [`node:list`](/cli/node/list) | List the Nodes and their agent state. |
 | [`node:show`](/cli/node/show) | Show one Node, with agent liveness. |
 | [`node:metrics`](/cli/node/metrics) | Show one metrics snapshot of a Node. |
@@ -59,6 +59,12 @@ Lists use tables. Below the minimum table width, each row becomes a labeled reco
 Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
 Set `task_vms.task_places` and `task_vms.ci_places` through `node:update --task-vms`. Each live VM holds one place in its pool until deletion. See [Task VM fields](/reference/node-settings#task-vm-fields).
+
+## Repair managed state
+
+[`node:converge`](/cli/node/converge) repairs an active, managed Linux Node, including one that owns Instances. With no scope flag it applies Orbit's base and every recorded role. `--base` selects only the agent, CLI and Orbit-owned files and units; `--roles=a,b` selects the base plus those existing assignments. The flags are mutually exclusive, and neither adds or removes a role. There is no `--force` or `--full` option.
+
+An ordinary repeat starts a new Operation and checks every phase again; matching state is not an admission skip. A retry with the same idempotency key reuses its Operation under the [keyed-start contract](/reference/operations#retry-a-start-with-a-key). [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint) owns the phase order and failure behavior.
 
 ## Recorded role assignments
 

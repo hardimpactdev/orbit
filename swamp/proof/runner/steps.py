@@ -3,6 +3,7 @@
 A step that cannot run raises `Infra`. A failure of a `setup` step makes the case `unrun`; in `act` and `expect` it fails the case.
 """
 import json
+import math
 import random
 import re
 import shlex
@@ -289,6 +290,7 @@ def check_result(run, label, form, forms, result, expect):
         failures.append(f"{label}: exit {result['rc']}, expected {expect['exit']}")
     if form == 'json':
         document = result['json'] if isinstance(result['json'], dict) else {}
+        operation = {}
         if 'status' in expect and document.get('status') != expect['status']:
             failures.append(f"{label}: status {document.get('status')}, expected {expect['status']}" + ('' if document else ' (no JSON)'))
         if 'code' in expect:
@@ -298,23 +300,33 @@ def check_result(run, label, form, forms, result, expect):
         if 'skipped' in expect and expect['skipped'] not in skip_reasons(document):
             failures.append(f"{label}: not skipped with {expect['skipped']}")
         if 'steps' in expect:
-            failures.extend(check_operation_steps(run, label, document, expect['steps']))
+            step_failures, operation = check_operation_steps(run, label, document, expect['steps'])
+            failures.extend(step_failures)
         failures.extend(check_json(document, expect.get('json') or []))
-        return failures
+        return operation_failures(failures, {**document, **operation})
     # The human form has no JSON: the code and the status are read from the JSON form when the call has one.
     text = terminal.plain(result['stdout'] + result['stderr'])
     for wanted in [expect['human']] if isinstance(expect.get('human'), str) else expect.get('human') or []:
         if wanted not in text:
             failures.append(f'{label}: the output lacks {wanted!r}')
-    if 'json' not in forms:
-        if 'code' in expect and expect['code'] not in text:
-            failures.append(f"{label}: the output lacks the code {expect['code']}")
-        if 'status' in expect:
-            found = re.search(r'Operation:\s*(\d+)', text)
-            status = (run.cli(['operation:show', found[1]])['json'] or {}).get('status') if found else None
-            if status != expect['status']:
-                failures.append(f"{label}: status {status}, expected {expect['status']}" + ('' if found else ' (no Operation in the output)'))
-    return failures
+    if 'json' not in forms and 'code' in expect and expect['code'] not in text:
+        failures.append(f"{label}: the output lacks the code {expect['code']}")
+    found = re.search(r'Operation:\s*(\d+)', text)
+    document = {}
+    if found and (failures or ('json' not in forms and 'status' in expect)):
+        document = run.cli(['operation:show', found[1]])['json'] or {}
+    if 'json' not in forms and 'status' in expect:
+        status = document.get('status')
+        if status != expect['status']:
+            failures.append(f"{label}: status {status}, expected {expect['status']}" + ('' if found else ' (no Operation in the output)'))
+    return operation_failures(failures, document)
+
+
+def operation_failures(failures, document):
+    """Keep public Operation diagnostics in verdicts too; private error details stay in the VM receipt."""
+    fields = ', '.join(f'{key}={document[key]!r}' for key in ('failed_step', 'error_code')
+                       if isinstance(document.get(key), str) and document[key])
+    return [f'{message} ({fields})' for message in failures] if fields else failures
 
 
 def json_value(document, path):
@@ -343,9 +355,10 @@ def json_value(document, path):
 
 def check_json(document, assertions):
     if not isinstance(assertions, list) or any(not isinstance(item, dict) or not isinstance(item.get('path'), str)
-                                               or set(item) not in ({'path', 'equals'}, {'path', 'absent'})
-                                               or ('absent' in item and item['absent'] is not True) for item in assertions):
-        raise Infra('JSON assertions need path and equals, or path and absent: true')
+                                               or set(item) not in ({'path', 'equals'}, {'path', 'absent'}, {'path', 'at_most'})
+                                               or ('absent' in item and item['absent'] is not True)
+                                               or ('at_most' in item and not finite_number(item['at_most'])) for item in assertions):
+        raise Infra('JSON assertions need path and equals, absent: true, or a finite numeric at_most')
     failures = []
     for assertion in assertions:
         try:
@@ -356,26 +369,34 @@ def check_json(document, assertions):
             continue
         if assertion.get('absent'):
             failures.append(f"JSON path {assertion['path']}: expected absent")
+        elif 'at_most' in assertion:
+            if not finite_number(actual) or actual > assertion['at_most']:
+                failures.append(f"JSON path {assertion['path']}: {actual!r}, expected a number at most {assertion['at_most']!r}")
         elif actual != assertion['equals']:
             failures.append(f"JSON path {assertion['path']}: {actual!r}, expected {assertion['equals']!r}")
     return failures
 
 
+def finite_number(value):
+    return type(value) is int or (type(value) is float and math.isfinite(value))
+
+
 def check_operation_steps(run, label, document, wanted):
     operation_id = document.get('id')
     if not operation_id:
-        return [f'{label}: no Operation ID for steps']
+        return [f'{label}: no Operation ID for steps'], {}
     result = run.cli(['operation:show', str(operation_id)])
     if result['rc'] != 0:
-        return [f'{label}: could not read Operation steps']
-    rows = (result['json'] or {}).get('steps')
+        return [f'{label}: could not read Operation steps'], {}
+    operation = result['json'] or {}
+    rows = operation.get('steps')
     if not isinstance(rows, list) or any(not isinstance(row, dict) or not isinstance(row.get('name'), str) or not isinstance(row.get('status'), str) for row in rows):
-        return [f'{label}: Operation step data is missing or invalid']
+        return [f'{label}: Operation step data is missing or invalid'], operation
     pattern = re.compile(re.escape(wanted['name']) + r'(?:-([0-9]+)-\1)?')
     count = sum(bool(pattern.fullmatch(row['name'])) and row['status'] in ('running', 'succeeded', 'failed') for row in rows)
     if count != wanted['count']:
-        return [f"{label}: ran {count} steps named {wanted['name']}, expected {wanted['count']}"]
-    return []
+        return [f"{label}: ran {count} steps named {wanted['name']}, expected {wanted['count']}"], operation
+    return [], operation
 
 
 def matches(row, wanted):

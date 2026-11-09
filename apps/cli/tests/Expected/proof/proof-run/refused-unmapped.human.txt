@@ -1,3 +1,2 @@
 A changed path matches no line of the selection list.
 path: apps/cli/app/Commands/Proof/NewKind.php
-Code: proof.path_unmapped

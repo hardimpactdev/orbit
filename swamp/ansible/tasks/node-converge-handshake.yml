@@ -1,0 +1,10 @@
+---
+- name: Wait for the recorded peer's recent handshake
+  ansible.builtin.command: wg show orbit latest-handshakes
+  changed_when: false
+  register: handshake
+  until: >-
+    (dict(handshake.stdout_lines | map('split', '\t')).get(peer_key, '0') | int)
+    > (lookup('pipe', 'date +%s') | int - 180)
+  retries: 30
+  delay: 2

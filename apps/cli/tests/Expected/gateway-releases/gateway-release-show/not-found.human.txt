@@ -7,4 +7,3 @@ Loading Gateway release...
 └  Operation failed.
 
 No release record exists for [99].
-Code: gateway.release_not_found

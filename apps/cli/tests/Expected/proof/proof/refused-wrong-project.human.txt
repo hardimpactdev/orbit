@@ -1,2 +1,1 @@
 Proof cases exist only for the Orbit repository.
-Code: proof.wrong_project

@@ -130,12 +130,11 @@ it('prints each validation field message on its own line after the error message
         'slug: The slug field must only contain letters, numbers, dashes, and underscores.',
         'slug: The slug has already been taken.',
         'repository_url: The repository url field must be a valid URL.',
-        'Code: validation.failed',
         'Request ID: '.gateway_error_request_id(),
     ]));
 });
 
-it('keeps the JSON validation envelope and identifies the human refusal without details', function (?array $details): void {
+it('renders a validation failure without details as before in both modes', function (?array $details): void {
     $expectedPayload = [
         'error' => [
             'code' => 'validation.failed',
@@ -158,7 +157,7 @@ it('keeps the JSON validation envelope and identifies the human refusal without 
         ->not->toContain('details');
     expect(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
     expect($humanExitCode)->toBe(SymfonyCommand::FAILURE);
-    expect(gateway_failed_create_diagnostic($humanOutput))->toBe("The request data is invalid.\nCode: validation.failed\nRequest ID: ".gateway_error_request_id());
+    expect(gateway_failed_create_diagnostic($humanOutput))->toBe("The request data is invalid.\nRequest ID: ".gateway_error_request_id());
 })->with([
     'empty details' => [[]],
     'no details key' => [null],
@@ -184,7 +183,7 @@ it('keeps non-validation failure details out of human output', function (): void
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
     expect(gateway_failed_create_diagnostic($output))
-        ->toBe("Gateway is unavailable.\nCode: gateway.unavailable\nRequest ID: ".gateway_error_request_id())
+        ->toBe("Gateway is unavailable.\nRequest ID: ".gateway_error_request_id())
         ->not->toContain('fixture-secret');
 });
 
@@ -225,7 +224,6 @@ it('never prints secret-looking validation details in either mode', function ():
             'The request data is invalid.',
             'password: [REDACTED]',
             'repository_url: Use token=[REDACTED] to access the repository.',
-            'Code: validation.failed',
             'Request ID: '.gateway_error_request_id(),
         ]))
         ->not->toContain('hunter2-secret')
@@ -282,12 +280,11 @@ it('caps validation details at fifty field messages', function (): void {
     $lines = explode("\n", gateway_failed_create_diagnostic($output));
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
-    expect($lines)->toHaveCount(53);
+    expect($lines)->toHaveCount(52);
     expect($lines[0])->toBe('The request data is invalid.');
     expect($lines[1])->toBe('field_1: Message 1');
     expect($lines[50])->toBe('field_50: Message 50');
-    expect($lines[51])->toBe('Code: validation.failed');
-    expect($lines[52])->toBe('Request ID: '.gateway_error_request_id());
+    expect($lines[51])->toBe('Request ID: '.gateway_error_request_id());
     expect($output)->not->toContain('field_51');
 });
 

@@ -9,4 +9,3 @@ Scanning installed packages...
 Tools can be scanned only on an active node.
 step: scan
 outcome: manager_failed
-Code: tool.node_inactive
