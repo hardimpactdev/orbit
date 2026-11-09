@@ -19,6 +19,7 @@ additionalFiles:
   - ansible/operation-node-converge.yml
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-base.yml
+  - ansible/tasks/node-kernel-policy.yml
   - ansible/tasks/node-converge-replace.yml
   - ansible/tasks/node-converge-software.yml
   - ansible/tasks/node-converge-software-plan.yml

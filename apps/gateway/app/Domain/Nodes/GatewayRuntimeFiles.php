@@ -26,13 +26,21 @@ final readonly class GatewayRuntimeFiles
     public const array RetiredSettings = ['ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE', 'ORBIT_TASK_VMS_UPCLOUD_MAX_VMS', 'ORBIT_TASK_VMS_UPCLOUD_PLAN',
         'ORBIT_TASK_VMS_UPCLOUD_DISK_GB'];
 
+    /**
+     * The tmpfiles rule that creates `/run/orbit` at every boot, owned by `orbit`. The Documents cleanup state lives under it and never
+     * creates a missing parent, and the scheduler and Horizon may run as Processes or as the units below, so the folder has this one owner.
+     */
+    public const string RuntimeTmpfiles = '/etc/tmpfiles.d/orbit-gateway.conf';
+
+    public const string RuntimeTmpfilesRule = "# Managed by Orbit. The Gateway's runtime folder, for the Documents cleanup state.\nd /run/orbit 0755 orbit orbit -\n";
+
     /** The release unit's files; its timer is stopped before they go. */
     public const array ReleaseUnits = ['orbit-gateway-release.timer', 'orbit-gateway-release.service', 'orbit-gateway-release-run@.service'];
 
     /**
      * The scheduler and Horizon run as the Gateway Node's Processes `schedule-work` and `horizon` where an operator made them. A
      * Gateway without those Processes gets the units here, so its role is all it needs to record finished runs. Horizon runs
-     * only when a queue is configured. Both units own `/run/orbit`, which the Documents cleanup state needs under the `orbit` user.
+     * only when a queue is configured. Both find `/run/orbit` through the tmpfiles rule {@see self::RuntimeTmpfiles}.
      *
      * @return array{directories: list<array<string, string>>, files: list<array<string, string>>, units: list<array{name: string, unit: string}>}
      */
@@ -50,6 +58,7 @@ final readonly class GatewayRuntimeFiles
             'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d')],
             'files' => [
                 $file(self::Pool, $this->pool($application, $home)),
+                $file(self::RuntimeTmpfiles, self::RuntimeTmpfilesRule),
                 $file('/etc/systemd/system/orbit-runtime-hibernator.service', $this->service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator')),
                 $file('/etc/systemd/journald.conf.d/orbit-retention.conf', "# Managed by Orbit.\n[Journal]\nSystemMaxUse=".Config::integer('retention.journal_max_mb')
                     ."M\nSystemKeepFree=".Config::integer('retention.journal_keep_free_mb')."M\nRuntimeMaxUse=".Config::integer('retention.journal_runtime_max_mb')
@@ -85,7 +94,7 @@ final readonly class GatewayRuntimeFiles
             ? Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->pluck('name')->all()
             : [];
         $longRunning = fn (string $name, string $description, string $artisan, string $stop = '', string ...$after): array => ['name' => "orbit-gateway-{$name}.service",
-            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}RuntimeDirectory=orbit\nRuntimeDirectoryPreserve=yes\n\n[Install]\nWantedBy=multi-user.target\n", ...$after)];
+            'unit' => $this->service($description, 'simple', $artisan, "Restart=always\nRestartSec=2\n{$stop}\n[Install]\nWantedBy=multi-user.target\n", ...$after)];
 
         return [
             ...in_array('schedule-work', $owned, true) ? [] : [$longRunning('schedule', 'Orbit Gateway scheduler', 'schedule:work')],

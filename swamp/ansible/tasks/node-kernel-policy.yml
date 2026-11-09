@@ -1,0 +1,11 @@
+---
+# The kernel policy the Gateway renders for every managed Linux Node (docs/reference/node-provisioning.md#kernel-policy).
+# node.add and node.converge apply it from the same input, so a new Node and an existing one end alike.
+- name: Write the kernel module policy
+  ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
+  loop: "{{ kernel_policy.files }}"
+  loop_control: { label: "{{ item.path }}" }
+- name: Set the kernel parameters now and at boot
+  ansible.posix.sysctl: { name: "{{ item.name }}", value: "{{ item.value }}", sysctl_file: "{{ item.file }}", sysctl_set: true, reload: false, state: present }
+  loop: "{{ kernel_policy.sysctl }}"
+  loop_control: { label: "{{ item.name }}" }

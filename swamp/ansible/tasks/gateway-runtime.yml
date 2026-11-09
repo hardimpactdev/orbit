@@ -7,6 +7,11 @@
 - name: Restart Caddy for its new group # noqa no-handler
   when: caddy_group is changed
   ansible.builtin.systemd: { name: caddy.service, state: restarted }
+# The tmpfiles rule creates /run/orbit at every boot; applying it now creates the folder before the role starts the scheduler and Horizon.
+# It changes only a missing or wrong folder, so it reports no change.
+- name: Create the Gateway runtime folder
+  ansible.builtin.command: { argv: [systemd-tmpfiles, --create, "{{ rt.gateway.tmpfiles }}"] }
+  changed_when: false
 # Write runtime files validated the pool before it replaced the live one. A reload replaces the workers after their
 # requests end; it runs only when the pool changed.
 - name: Reload PHP-FPM # noqa no-handler
