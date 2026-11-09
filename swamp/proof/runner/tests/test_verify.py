@@ -60,6 +60,9 @@ class SetupTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
+        prep = patch.object(fleet_module, 'prepare', return_value=FakeFleet())
+        prep.start()
+        self.addCleanup(prep.stop)
         patcher = patch.object(fleet_module, 'from_environment', lambda: FakeFleet())
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -89,13 +92,33 @@ class SetupTest(unittest.TestCase):
         code, _ = self.setup_batch('nope')
         self.assertEqual(code, 3)
 
+    def test_preparation_does_not_consume_the_batch_setup_budget(self):
+        clock = [1000]
+        def prepare(_):
+            clock[0] += 121
+            return FakeFleet()
+        with patch.object(fleet_module, 'prepare', side_effect=prepare), \
+                patch.object(runner.time, 'time', side_effect=lambda: clock[0]), \
+                patch.object(runner, 'run_steps') as run_steps:
+            code, lines = self.setup_batch('dual-stack')
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(run_steps.call_args.args[-1], 1241)
+
+    def test_failed_preparation_never_discovers_or_runs_setup(self):
+        with patch.object(fleet_module, 'prepare', side_effect=fleet_module.FleetError('preparation expired')), \
+                patch.object(fleet_module, 'from_environment') as discover:
+            code, lines = self.setup_batch('dual-stack')
+        self.assertEqual(code, 1)
+        self.assertIn('preparation expired', lines[0])
+        discover.assert_not_called()
+
 
 class FleetPreparationTest(unittest.TestCase):
     def test_candidate_collections_and_grants_are_prepared_before_the_discovery_cli(self):
         calls = []
         with patch.object(fleet_module.Fleet, 'must', side_effect=lambda argv, why, **kwargs: calls.append(argv)), \
                 patch.object(fleet_module, 'discover', side_effect=lambda: calls.append('discover') or 'fleet'):
-            self.assertEqual(fleet_module.from_environment(), 'fleet')
+            fleet_module.prepare_observers((fleet_module.CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_text())
 
         self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
                                    'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
@@ -106,18 +129,34 @@ class FleetPreparationTest(unittest.TestCase):
         self.assertTrue(calls[2][-1].endswith('/swamp/ansible/proof-observers.yml'))
         self.assertEqual(calls[3], 'discover')
 
+    def test_preparation_has_one_hard_budget_including_discovery(self):
+        done = type('Done', (), {'stdout': '{"app-dev": {"node_id": 1}}'})()
+        with patch.object(fleet_module.Fleet, 'must', return_value=done) as must:
+            fleet = fleet_module.prepare('admitted manifest')
+        self.assertEqual(fleet.nodes, {'app-dev': {'node_id': 1}})
+        self.assertEqual(must.call_args.args[0][:2], ['timeout', '330'])
+        self.assertEqual(must.call_args.args[0][-1], 'admitted manifest')
+        self.assertEqual(must.call_args.kwargs['timeout'], 340)
+
+    def test_unadmitted_or_different_pin_fails_before_running_any_candidate_code(self):
+        for release in (None, '{}'):
+            with self.subTest(release=release), patch.object(fleet_module.Fleet, 'must') as must:
+                with self.assertRaises(fleet_module.FleetError):
+                    fleet_module.prepare_observers(release)
+                must.assert_not_called()
+
     def test_failed_observer_preparation_stops_before_any_discovery_or_case(self):
         with patch.object(fleet_module.Fleet, 'must', side_effect=[None, None, fleet_module.FleetError('observer checksum refused')]), \
                 patch.object(fleet_module, 'discover') as discover:
             with self.assertRaisesRegex(fleet_module.FleetError, 'observer checksum refused'):
-                fleet_module.from_environment()
+                fleet_module.prepare_observers((fleet_module.CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_text())
             discover.assert_not_called()
 
     def test_failed_grant_preparation_stops_before_any_discovery_or_case(self):
         with patch.object(fleet_module.Fleet, 'must', side_effect=fleet_module.FleetError('grant reload refused')), \
                 patch.object(fleet_module, 'discover') as discover:
             with self.assertRaisesRegex(fleet_module.FleetError, 'grant reload refused'):
-                fleet_module.from_environment()
+                fleet_module.prepare_observers((fleet_module.CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_text())
             discover.assert_not_called()
 
 

@@ -106,6 +106,7 @@ class Fleet:
             raise FleetError(f'{what}: timed out after {timeout} seconds') from error
         if done.returncode != 0:
             raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
+        return done
 
     def cli_background(self, args):
         """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""
@@ -184,7 +185,14 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
-def from_environment():
+def prepare_observers(release):
+    if not release:
+        raise FleetError('proof has no observer release admitted by the trusted Gateway')
+    # Refuse a checkout whose bytes differ from the release the Gateway admitted. Never use its URLs as input.
+    pinned = (CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes()
+    if pinned != release.encode():
+        raise FleetError('candidate observer pin differs from the Gateway-admitted release; push the pin and use proof:run')
+    admitted = json.loads(release)
     # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
     # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
     # whose grant files already match the checkout.
@@ -203,10 +211,30 @@ def from_environment():
     Fleet.must(['env', 'ANSIBLE_CONFIG=' + str(CHECKOUT / 'swamp/ansible/ansible.cfg'),
                 'ANSIBLE_COLLECTIONS_PATH=' + str(collections),
                 str(controller / 'ansible-playbook'), '-i', ','.join(GUEST_PREFIX + role for role in ROLES) + ',',
+                '-e', json.dumps({'proof_observer_release': admitted}),
                 str(CHECKOUT / 'swamp/ansible/proof-observers.yml')],
-               'cannot prepare the candidate observers on the proof fleet', timeout=180)
+               'cannot prepare the candidate observers on the proof fleet', timeout=280)
+    return discover()
+
+
+def prepare(release):
+    # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
+    done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve()), release or ''],
+                      'cannot prepare the proof fleet', timeout=340)
+    return Fleet(json.loads(done.stdout))
+
+
+def from_environment():
     return discover()
 
 
 def evidence_root(env=os.environ):
     return Path(env.get('PROOF_EVIDENCE') or Path.cwd() / 'proof-evidence')
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps(prepare_observers(sys.argv[1]).nodes))
+    except Exception as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

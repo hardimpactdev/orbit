@@ -9,6 +9,7 @@ behaviors:
 additionalFiles:
   - ansible/proof-gateway.yml
   - ansible/proof-observers.yml
+  - ansible/proof-observer-facts.php
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_artifact.py

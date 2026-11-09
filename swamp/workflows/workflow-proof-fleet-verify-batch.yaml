@@ -17,6 +17,8 @@ inputs:
       type: string
     batch:
       type: string
+    observer_release:
+      type: string
     setup:
       type: boolean
     restore:
@@ -27,6 +29,7 @@ inputs:
         type: string
       minItems: 1
   required:
+  - observer_release
   - ssh_execution
   - checkout_path
   - group_id
@@ -52,7 +55,6 @@ jobs:
         ssh_execution: ${{ inputs.ssh_execution }}
   - name: setup
     labels: {role: swamp}
-    guard: '${{ !inputs.setup }}'
     allowFailure: true
     dependsOn:
     - step: restore
@@ -84,6 +86,8 @@ jobs:
         - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
         - setup
         - ${{ inputs.batch }}
+        - --observer-release
+        - ${{ inputs.observer_release }}
         - --file
         - ${{ inputs.checkout_path + "/" + inputs.file }}
         - --evidence
@@ -99,7 +103,7 @@ jobs:
   # A case that did not pass triggers no restore: cases use their own resources, and the next batch restores anyway.
   - name: batch
     labels: {role: swamp}
-    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || !steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"ok\"") }}'
     allowFailure: true
     writes: true
     task:

@@ -12,6 +12,8 @@ sequenceDiagram
   participant SW as Swamp<br/>verify workflow
   participant VM as Task VM<br/>runner · over ssh
   participant NT as Nested fleet<br/>Gateway · 2 Nodes
+  GW->>GW: Admit the observer release
+  %%> Reuses GatewayReleaseAgentDelivery: fixed repository release URL, byte-equal published manifest, SHA256SUMS and verified provenance. CI admits both head and merge-base pins before allocating a VM. Candidate code does not validate its own release.
   GW->>SW: Start the verify run<br/>cases · commit
   %%> Inputs:
   %%> - the commit and the one command whose cases run; in CI, `proof:run` proves each affected command separately
@@ -31,18 +33,15 @@ sequenceDiagram
     %%> - restores the task's plain snapshot `base` of the three nested containers (a reboot); skipped when the fleet is still at `base`, as for the first batch
     %%> - a restore that fails or is not healthy within 45 s stops the run; the cases that did not run become `unrun` with cause `infrastructure`
     %%> - built, not yet passed live: the step is the workflow `proof-fleet-restore` (restore, start, boot wait, readiness, apply the checkout), which `proof-fleet-verify-batch` calls; 0 of 2 runs succeeded by 2026-11-06; the old `runner restore` was removed
-    VM->>VM: Read the candidate<br/>observer pin
-    %%> Reads linux-x86_64 from the candidate's frozen-manifest.json, never the seed's installed version.
-    VM->>NT: Install the pinned<br/>observers
-    %%> Ansible uses the normal Node convergence's SHA-256-verified atomic replacement task on all three nested Nodes. Matching binaries stay in place.
-    VM->>NT: Start the observers
-    %%> Restarts a changed binary; starts an inactive observer. Existing Node identity and configuration stay in place.
-    VM->>NT: Verify the installed<br/>digests
-    %%> A download, checksum, service or digest failure stops discovery and cases as infrastructure. Repeat after every restore; never save a new base snapshot.
+    SW->>VM: Prepare and set up<br/>runner setup BATCH
+    %%> Always runs, including batches with no setup steps. Swamp passes the exact published manifest admitted by the trusted Gateway.
+    VM->>NT: Apply Gateway<br/>prerequisites
+    VM->>NT: Prepare the observers<br/>one Ansible run
+    %%> Installs only the admitted artifact, using Node convergence's SHA-256-verified atomic replacement task. Stops all observers, discards old host receipts, starts the observers and waits for the Gateway to record each expected version plus a new host fact. No new base snapshot.
+    %%> The whole preparation has its own 330-second bound, inside the setup transport's 480-second limit. A failed preparation stops cases as infrastructure.
     opt the batch declares a start state
-      SW->>VM: Set up the batch<br/>batch setup steps
-      %%> What it does:
-      %%> - runs the setup steps of the batch, such as extra addresses on the Nodes
+      VM->>NT: Set up the batch<br/>batch setup steps
+      %%> The batch's separate 120-second setup budget starts after preparation and discovery.
     end
     SW->>VM: Run the batch<br/>runner batch BATCH
     %%> What it does:

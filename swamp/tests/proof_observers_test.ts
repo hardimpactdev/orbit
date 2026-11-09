@@ -15,6 +15,12 @@ type Task = {
   "ansible.builtin.systemd"?: Record<string, string>;
   "ansible.builtin.stat"?: Record<string, string>;
   "ansible.builtin.debug"?: Record<string, string>;
+  "ansible.builtin.command"?: { argv: string[] };
+  register?: string;
+  changed_when?: boolean;
+  until?: string;
+  retries?: number;
+  delay?: number;
   vars?: { converge_replacement: Record<string, string> };
 };
 type Play = { connection: string; tasks: Task[] };
@@ -23,7 +29,7 @@ async function fixture() {
   const folder = Deno.makeTempDirSync();
   const playDir = `${folder}/swamp/ansible`;
   Deno.mkdirSync(playDir, { recursive: true });
-  const [play] = parse(
+  const plays = parse(
     Deno.readTextFileSync(new URL("proof-observers.yml", source)),
   ) as Play[];
   Deno.mkdirSync(`${playDir}/tasks`);
@@ -50,24 +56,57 @@ async function fixture() {
       return value;
     }),
   );
-  play.connection = "local";
-  play.tasks = play.tasks.flatMap((task: Task) => {
-    if (task["ansible.builtin.import_tasks"]) {
-      assert(task.vars);
-      task.vars.converge_replacement.path = "{{ proof_binary }}";
-    }
-    if (task["ansible.builtin.systemd"]) {
-      return [{
-        name: task.name,
-        "ansible.builtin.debug": { msg: task["ansible.builtin.systemd"].state },
-      }];
-    }
-    if (task["ansible.builtin.stat"]) {
-      task["ansible.builtin.stat"].path = "{{ proof_binary }}";
-    }
-    return [task];
-  });
-  Deno.writeTextFileSync(`${playDir}/play.yml`, JSON.stringify([play]));
+  const report = `${folder}/report-check`;
+  Deno.writeTextFileSync(
+    report,
+    '#!/bin/sh\nif test "$1" = never; then exit 1; fi\nif test -f "$2"; then exit 0; fi\n: > "$2"\nexit 1\n',
+  );
+  Deno.chmodSync(report, 0o755);
+  for (const play of plays) {
+    play.connection = "local";
+    play.tasks = play.tasks.flatMap((task: Task) => {
+      if (
+        task.name ===
+          "Wait for the Gateway to record the pinned observers and their new host facts"
+      ) {
+        return [{
+          ...task,
+          "ansible.builtin.command": {
+            argv: [report, "{{ proof_report_mode }}", `${folder}/reported`],
+          },
+          retries: 2,
+          delay: 0,
+        }];
+      }
+      if (
+        task.name === "Copy the host receipt check" ||
+        task.name ===
+          "Discard old host receipts while all observers are stopped"
+      ) {
+        return [{
+          name: task.name,
+          "ansible.builtin.debug": { msg: "Gateway receipt boundary" },
+        }];
+      }
+      if (task["ansible.builtin.import_tasks"]) {
+        assert(task.vars);
+        task.vars.converge_replacement.path = "{{ proof_binary }}";
+      }
+      if (task["ansible.builtin.systemd"]) {
+        return [{
+          name: task.name,
+          "ansible.builtin.debug": {
+            msg: task["ansible.builtin.systemd"].state,
+          },
+        }];
+      }
+      if (task["ansible.builtin.stat"]) {
+        task["ansible.builtin.stat"].path = "{{ proof_binary }}";
+      }
+      return [task];
+    });
+  }
+  Deno.writeTextFileSync(`${playDir}/play.yml`, JSON.stringify(plays));
   const hosts = Object.fromEntries(
     roles.map((
       role,
@@ -80,8 +119,7 @@ async function fixture() {
   for (const role of roles) {
     Deno.writeTextFileSync(`${folder}/${role}.agent`, "old observer");
   }
-  const manifest =
-    `${folder}/apps/gateway/resources/agent/frozen-manifest.json`;
+  const manifest = `${folder}/admitted-release.json`;
   Deno.mkdirSync(`${folder}/apps/gateway/resources/agent`, { recursive: true });
   async function pin(content: string, badHash = false) {
     const artifact = `${folder}/published-agent`;
@@ -98,18 +136,29 @@ async function fixture() {
     Deno.writeTextFileSync(
       manifest,
       JSON.stringify({
-        artifacts: {
-          "linux-x86_64": {
-            url: `file://${artifact}`,
-            sha256: badHash ? "0".repeat(64) : digest,
+        proof_observer_release: {
+          version: "0.14.0",
+          artifacts: {
+            "linux-x86_64": {
+              url: `file://${artifact}`,
+              sha256: badHash ? "0".repeat(64) : digest,
+            },
           },
         },
       }),
     );
   }
-  function run() {
+  function run(reportMode = "late") {
     const done = new Deno.Command("ansible-playbook", {
-      args: ["-i", `${folder}/inventory.json`, `${playDir}/play.yml`],
+      args: [
+        "-i",
+        `${folder}/inventory.json`,
+        "-e",
+        `@${manifest}`,
+        "-e",
+        `proof_report_mode=${reportMode}`,
+        `${playDir}/play.yml`,
+      ],
       env: {
         ANSIBLE_HOME: `${folder}/home`,
         ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
@@ -133,7 +182,7 @@ async function fixture() {
 
 Deno.test({
   name:
-    "proof preparation replaces every seed observer with the candidate pin and repeats without changes",
+    "proof preparation installs the Gateway-admitted artifact on every seed observer and repeats safely",
   ignore: !hasAnsible,
   async fn() {
     const f = await fixture();
@@ -141,8 +190,9 @@ Deno.test({
       await f.pin("released observer 0.14.0");
       const first = f.run();
       assert(first.ok, first.output);
+      assertStringIncludes(first.output, "RETRYING");
       assertEquals(f.contents(), roles.map(() => "released observer 0.14.0"));
-      assertStringIncludes(first.output, '"msg": "restarted"');
+      assertStringIncludes(first.output, '"msg": "started"');
       const repeat = f.run();
       assert(repeat.ok, repeat.output);
       assertEquals(
@@ -192,6 +242,23 @@ Deno.test({
         !done.output.includes("TASK [Start the candidate observer]"),
         done.output,
       );
+    } finally {
+      Deno.removeSync(f.folder, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name: "installed digests cannot pass preparation when no new report arrives",
+  ignore: !hasAnsible,
+  async fn() {
+    const f = await fixture();
+    try {
+      await f.pin("released observer 0.14.0");
+      const done = f.run("never");
+      assertEquals(done.ok, false, done.output);
+      assertEquals(f.contents(), roles.map(() => "released observer 0.14.0"));
+      assertStringIncludes(done.output, "Wait for the Gateway to record");
     } finally {
       Deno.removeSync(f.folder, { recursive: true });
     }
