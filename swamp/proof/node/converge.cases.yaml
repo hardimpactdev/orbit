@@ -9,7 +9,6 @@ parallel: 1
 
 uncovered:
   "phases:ordered-desired-state": "Need ordered Operation-phase and Ansible-result assertions to prove input, agent, software, roles, tools, network, check on every run, with recipe.json pins held and no digest gating. Current code uses a digest-selected artifact plan and lacks this phase pipeline, the CLI installation and general role/software/Tool application."
-  "case:no-op-bounded": "Need per-Node Ansible changed-task totals and elapsed-time assertions to prove a default converge on matching state reports zero changed tasks on the Node and finishes within 120 seconds. A succeeded Operation or zero executed steps is not that proof; the current workflow unconditionally restarts the agent."
   "case:drift-repair": "Need a managed-artifact damage fixture plus content, permissions and Instance/role snapshot assertions to prove default converge repairs a damaged Orbit-owned file while Instance files, Instance records and role assignments remain unchanged. This must also exercise a matching previously recorded digest, which must not bypass repair."
   "scope:base": "Need a multi-role Node fixture and before/after artifact, package and Tool snapshots to prove --base changes only the agent, CLI, Orbit-owned files and units, leaving role-owned state and Instances untouched. The base-scope case checks flag admission and the end phase; current code has no scope flag."
   "scope:selected-roles": "Need a multi-role Node fixture and scoped state snapshots to prove --roles=a,b repairs only the base and those recorded roles, never another role, an Instance or an assignment. The selected-roles case checks flag admission and the end phase; current code has no role selection."
@@ -55,14 +54,21 @@ cases:
   - id: repeat
     batch: fresh-fleet
     covers: [main, admitted, succeeded]
-    summary: An intentional repeat applies the phases again rather than skipping admission.
-    fails_today: Repeats use the artifact workflow instead of the required phases; zero changed tasks and the time bound need the uncovered assertions above.
+    summary: An intentional repeat applies the phases again with zero target changes within 120 seconds.
     stages:
       - act:
           - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
         expect: []
       - act:
-          - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
+          - cli:
+              run: [node:converge, "${app-dev.id}"]
+              expect:
+                exit: 0
+                status: succeeded
+                steps: {name: Check the Node, count: 1}
+                json:
+                  - {path: result.changed, equals: 0}
+                  - {path: result.elapsed_seconds, at_most: 120}
         expect: []
 
   - id: keyed-retry

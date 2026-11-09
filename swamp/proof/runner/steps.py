@@ -3,6 +3,7 @@
 A step that cannot run raises `Infra`. A failure of a `setup` step makes the case `unrun`; in `act` and `expect` it fails the case.
 """
 import json
+import math
 import random
 import re
 import shlex
@@ -348,9 +349,10 @@ def json_value(document, path):
 
 def check_json(document, assertions):
     if not isinstance(assertions, list) or any(not isinstance(item, dict) or not isinstance(item.get('path'), str)
-                                               or set(item) not in ({'path', 'equals'}, {'path', 'absent'})
-                                               or ('absent' in item and item['absent'] is not True) for item in assertions):
-        raise Infra('JSON assertions need path and equals, or path and absent: true')
+                                               or set(item) not in ({'path', 'equals'}, {'path', 'absent'}, {'path', 'at_most'})
+                                               or ('absent' in item and item['absent'] is not True)
+                                               or ('at_most' in item and not finite_number(item['at_most'])) for item in assertions):
+        raise Infra('JSON assertions need path and equals, absent: true, or a finite numeric at_most')
     failures = []
     for assertion in assertions:
         try:
@@ -361,9 +363,16 @@ def check_json(document, assertions):
             continue
         if assertion.get('absent'):
             failures.append(f"JSON path {assertion['path']}: expected absent")
+        elif 'at_most' in assertion:
+            if not finite_number(actual) or actual > assertion['at_most']:
+                failures.append(f"JSON path {assertion['path']}: {actual!r}, expected a number at most {assertion['at_most']!r}")
         elif actual != assertion['equals']:
             failures.append(f"JSON path {assertion['path']}: {actual!r}, expected {assertion['equals']!r}")
     return failures
+
+
+def finite_number(value):
+    return type(value) is int or (type(value) is float and math.isfinite(value))
 
 
 def check_operation_steps(run, label, document, wanted):
