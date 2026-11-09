@@ -1,0 +1,62 @@
+sequenceDiagram
+  %% Target design: docs/cli/node/access-add.mdx and docs/cli/node/index.mdx#authority; record-only directed grant.
+  %% status: draft
+  %% command: node:access:add
+  %% kind: node.access_add
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  %% path: main
+  CLI->>GW: node:access:add<br/>CONSUMER SERVING
+  %%> Command:
+  %%> - `orbit node:access:add CONSUMER SERVING`
+  %%> - syntax: `<consumer> <serving> [--json]`
+  Note over GW: Check Gateway authority
+  %%> Requirements:
+  %%> - grant administration follows the Gateway authority rule at /cli/node#authority
+  alt caller lacks Gateway authority
+    %% path: refused-caller
+    GW--xCLI: node_access.required
+    %%> Result:
+    %%> - no grant or other relevant record changes; no Operation starts
+  else caller has Gateway authority
+    %% path: gateway-authority
+    Note over GW: Resolve active Nodes
+    %%> What it does:
+    %%> - reads the consumer and serving Nodes from recorded Gateway state
+    alt either Node unknown or inactive
+      %% path: entity-not-found
+      GW--xCLI: http.404
+      %%> Result:
+      %%> - no records change and no Operation starts
+    else both Nodes active
+      %% path: active-nodes
+      alt consumer is a task VM
+        %% path: task-vm-consumer
+        GW--xCLI: task_vm.access_refused
+        %%> Result:
+        %%> - no records change and no Operation starts
+      else consumer is not a task VM
+        %% path: eligible-consumer
+        Note over GW: Record directed grant
+        %%> What it does:
+        %%> - records only the consumer_node_id and serving_node_id pair in node_access
+        %%> - preserves unrelated grants; contacts neither Node and starts no Operation
+        alt grant already exists
+          %% path: grant-exists
+          GW-->>CLI: Already granted<br/>node_access.exists
+          %%> Result:
+          %%> - succeeds without writing or duplicating the access row
+        else grant is new
+          %% path: grant-created
+          GW-->>CLI: Grant recorded<br/>consumer → serving
+          %%> Result:
+          %%> - exactly one directed access row exists for this pair
+          %%> - returns the consumer and serving names and IDs with already_exists false
+        end
+      end
+    end
+  end
+  %% Verification cases: swamp/proof/node/access-add.cases.yaml

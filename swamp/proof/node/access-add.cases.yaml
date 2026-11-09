@@ -1,0 +1,123 @@
+# Format: docs/reference/verification-cases.
+# Shared selection, cancellation and machine output follow /reference/cli-ux, not a per-command matrix.
+# Seven logical outcomes: created; repeat; invalid consumer; invalid serving; unknown/inactive;
+# task-VM consumer; caller without Gateway authority. No variants or output-form expansion.
+command: node:access:add
+chart: node/access-add
+target: app-dev
+sources: [gateway, app-prod]
+baseline: [operations, node_records, ufw]
+parallel: 1
+
+fixtures:
+  restored-grant:
+    summary: In the restored node-down batch, app-prod has target-only access and both endpoints are unreachable.
+    steps:
+      - node_access_remove: {consumer: app-prod, serving: gateway}
+      - node_access_remove: {consumer: app-prod, serving: app-dev}
+      - cli:
+          run: [node:access:add, "${app-prod.id}", "${app-dev.id}"]
+          expect:
+            exit: 0
+            request: none
+            json:
+              - {path: consumer_node, equals: {id: "${app-prod.id}", name: app-prod}}
+              - {path: serving_node, equals: {id: "${app-dev.id}", name: app-dev}}
+              - {path: already_exists, equals: false}
+      - node_down: {node: app-prod}
+      - node_down: {node: app-dev}
+
+uncovered:
+  "path:grant-created": "Need a grant-table delta assertion that allows exactly one consumer/serving row and preserves every unrelated grant, plus an outbound-contact guard for grant writes. These enable the new-grant outcome, including direction, exact stored contents, no Operation and unreachable endpoints; apply the guard to the existing repeat case too."
+  "path:task-vm-consumer": "Need an active task-VM consumer fixture in a restored grant batch to assert task_vm.access_refused with unchanged node_records and Operations. The existing node_fixture kinds do not create a TaskVm record."
+
+cases:
+  - id: invalid-consumer
+    batch: fresh-fleet
+    covers: []
+    summary: An invalid consumer ID is refused locally without changing records or creating an Operation.
+    act:
+      - cli:
+          run: [node:access:add, "0", "${app-dev.id}"]
+          expect: {exit: 1, code: node_access.consumer_id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: invalid-serving
+    batch: fresh-fleet
+    covers: []
+    summary: A serving name instead of a numeric ID is refused locally without changing records or creating an Operation.
+    act:
+      - cli:
+          run: [node:access:add, "${app-prod.id}", app-dev]
+          expect: {exit: 1, code: node_access.serving_id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: unknown-or-inactive-entity
+    batch: no-grant
+    exclusive: true
+    covers: [main, gateway-authority, entity-not-found]
+    summary: Unknown or inactive Nodes at either endpoint are refused without changing records or creating an Operation.
+    setup:
+      # This fixture also creates access edges, so it gets a separate restored batch from restored-grant.
+      - node_fixture: {kind: retained, as: inactive, consumer: app-prod, serving: app-dev}
+    stages:
+      - act:
+          - cli:
+              run: [node:access:add, "2147483647", "${app-dev.id}"]
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "${app-prod.id}", "2147483647"]
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "${inactive.id}", "${app-dev.id}"]
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "${app-prod.id}", "${inactive.id}"]
+              expect: {exit: 1, code: http.404, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+
+  - id: repeat-and-refused-caller
+    batch: node-down
+    exclusive: true
+    covers: [main, gateway-authority, active-nodes, eligible-consumer, grant-exists, refused-caller]
+    summary: An offline grant repeats without writes, but target-only authority cannot administer grants.
+    fails_today: Repeat output exposes already_exists but omits the node_access.exists skip reason and the documented human skip explanation.
+    fails_on_base: true
+    setup:
+      - use: restored-grant
+    stages:
+      - act:
+          - cli:
+              run: [node:access:add, "${app-prod.id}", "${app-dev.id}"]
+              forms: [json, human]
+              expect:
+                exit: 0
+                skipped: node_access.exists
+                human: "Skipped — already granted (node_access.exists)"
+                request: none
+                json:
+                  - {path: consumer_node, equals: {id: "${app-prod.id}", name: app-prod}}
+                  - {path: serving_node, equals: {id: "${app-dev.id}", name: app-dev}}
+                  - {path: already_exists, equals: true}
+        expect:
+          # Full table comparison also proves that the repeat adds no duplicate access row.
+          - unchanged: {since: act, what: [operations, node_records, ufw]}
+      - act:
+          - cli:
+              run: [node:access:add, "${gateway.id}", "${app-dev.id}"]
+              as: app-prod
+              expect: {exit: 1, code: node_access.required, request: none}
+        expect:
+          - unchanged: {since: act, what: [operations, node_records, ufw]}

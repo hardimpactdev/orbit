@@ -1,8 +1,12 @@
 ---
 title: "orbit node:access:add"
 sidebarTitle: "node:access:add"
-description: "Grant one Node access to act on another Node through the Gateway. An access grant authorizes Gateway commands. It does not change network reachability, which WireGuard membership already gives."
+description: "Record one directed access grant for Gateway commands."
 ---
+
+**Does:** record one directed consumer → serving grant in the Gateway. **Does not:** change WireGuard, firewall or reachability, contact Nodes, start an Operation, manage credentials, or add bulk/wildcard grants.
+
+## Usage
 
 ```bash
 orbit node:access:add <consumer> <serving> [--json]
@@ -10,30 +14,39 @@ orbit node:access:add <consumer> <serving> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `consumer` | yes | Numeric ID of the Node that sends commands. |
-| `serving` | yes | Numeric ID of the Node that the commands act on. |
+| `consumer` | yes | Positive numeric ID of the Node that sends commands. If omitted, select this Node first using the [shared finite searchable selector](/reference/cli-ux#prompt-selection). |
+| `serving` | yes | Positive numeric ID of the Node that the commands act on. If omitted, select it after the consumer using the same selector. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--json` | off | Print the grant as JSON. |
+| `--json` | off | Machine-readable output under the [shared CLI standard](/reference/cli-ux). |
 
 ```bash
 orbit node:access:add 4 7
 ```
 
-In a terminal, an omitted Node is chosen from an interactive list: the consumer first, then the serving Node. A noninteractive or `--json` call that omits one is refused with `node_access.consumer_id_invalid` or `node_access.serving_id_invalid`, and so is an ID that is not a positive integer. A refused call sends no request.
+## How it works
 
-The command only records the grant. It contacts no Node, so it works while a Node is unreachable. Both Nodes must be active; an inactive or unknown Node is refused as not found. A [task VM](/reference/compute-drivers#placement-invariant) Node never consumes a grant: the command fails with `task_vm.access_refused`. The caller must be the Gateway Node, the machine that the Gateway bootstrap recorded as its serving host, or hold a grant to the Gateway Node.
+<div className="flow-at" data-chart="node/access-add"></div>
 
-Repeating a grant that exists succeeds with `Skipped — already granted (node_access.exists)` and writes nothing.
+Grant administration requires [Gateway authority](/cli/node#authority); a grant only to the target does not authorize grant creation.
 
-A grant to the active `gateway` Node lets the consumer act on every Node. The `gateway` Node itself, and the machine that the Gateway bootstrap recorded as its serving host, act on every Node without a grant.
+Both Nodes must be active. A [task VM](/reference/compute-drivers#placement-invariant) cannot be the consumer. Orbit reads these conditions from recorded Gateway state, so the command works even when either Node is unreachable.
+
+A new grant creates exactly one `node_access` row with `consumer_node_id` and `serving_node_id` for the selected pair and preserves unrelated grants. It authorizes Gateway commands from the consumer to the serving Node, not the reverse direction or a network path. The result includes both Nodes' names and IDs as `consumer_node` and `serving_node`, with `already_exists: false`.
+
+Repeating an existing grant succeeds with `Skipped — already granted (node_access.exists)` and `already_exists: true`. It writes nothing and creates no duplicate access row.
 
 ## Errors
 
 | Code | Meaning |
 | --- | --- |
-| `node_access.consumer_id_invalid`, `node_access.serving_id_invalid` | A Node is missing or is not a positive integer, and the CLI cannot prompt. |
+| `node_access.consumer_id_invalid` | The consumer ID is not a positive integer. |
+| `node_access.serving_id_invalid` | The serving ID is not a positive integer. |
+| `http.404` | Either Node is unknown or inactive. |
 | `task_vm.access_refused` | The consumer is a task VM Node. |
-| `http.404` | A Node is unknown or not active. |
-| `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |
+| `node_access.required` | The caller lacks Gateway authority under the rule above, even if it has a grant to the target. |
+
+Every refusal leaves relevant records unchanged. Invalid supplied IDs are refused locally before a grant request.
+
+[Verification cases](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/node/access-add.cases.yaml) cover repeats and refusals and name the missing proof capabilities.
