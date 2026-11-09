@@ -23,6 +23,12 @@ final readonly class AgentReportedVersions
         $this->cache->forever(self::KEY.$nodeId, ['version' => $version, 'at' => microtime(true)]);
     }
 
+    /** Disposable proof fleets discard the previous process's report before a controlled restart. */
+    public function forget(int $nodeId): void
+    {
+        $this->cache->forget(self::KEY.$nodeId);
+    }
+
     /** @return array{version: string, at: float}|null */
     public function get(int $nodeId): ?array
     {

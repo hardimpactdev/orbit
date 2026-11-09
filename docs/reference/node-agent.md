@@ -40,6 +40,8 @@ A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment rea
 
 Task VM host preparation runs through the shared Ansible phase of a [base refresh](/reference/compute-drivers#prepare-an-incus-host). The agent observes Incus state; host preparation uses the pool and network intent of the refresh.
 
+In disposable proof fleets, each batch installs the tested checkout's frozen pin with checksum verification before cases start. After installation, it stops all three observers, clears their old presence versions and host receipts, starts them, and waits for each expected version with its binary digest and a new host fact. An installed checksum alone does not prove that a reporter reached the Gateway. See [proof preparation](/reference/verification-cases).
+
 ## What it observes
 
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.

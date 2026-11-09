@@ -60,6 +60,8 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. Required checks requires its success, including the outside proof for a fork; see [the proof run job](#the-proof-run-job) |
 | Required checks | Require every selected build, static check and PR proof to succeed; only an explicitly untouched job may skip |
 
+The Swamp gate production-lints the observer preparation play. Its fixture tests install the candidate pin on all three nested Nodes and reject checksum and download failures. Gateway tests require new presence versions and host facts after a controlled restart. Runner tests require preparation before every batch and direct case, including old workflow calls without setup, and give preparation and batch setup separate bounded budgets.
+
 The Swamp gate rejects a new behavior name that carries a run id. A task workflow names its local and data steps by the address of the task VM, as [Behavior names](/reference/tasks#behavior-names) says.
 
 The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.

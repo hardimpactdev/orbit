@@ -52,7 +52,6 @@ jobs:
         ssh_execution: ${{ inputs.ssh_execution }}
   - name: setup
     labels: {role: swamp}
-    guard: '${{ !inputs.setup }}'
     allowFailure: true
     dependsOn:
     - step: restore
@@ -78,7 +77,7 @@ jobs:
       inputs:
         hosts: name:target
         okExitCodes: any
-        timeoutSec: 180
+        timeoutSec: 480
         argv:
         - python3
         - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
@@ -99,7 +98,7 @@ jobs:
   # A case that did not pass triggers no restore: cases use their own resources, and the next batch restores anyway.
   - name: batch
     labels: {role: swamp}
-    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"failed\"") }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || !steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"ok\"") }}'
     allowFailure: true
     writes: true
     task:

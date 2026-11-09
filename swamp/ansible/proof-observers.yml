@@ -1,0 +1,93 @@
+---
+# Runs on the task VM through its installed Ansible controller. The Incus connection reaches only these disposable guests.
+- name: Prepare the candidate observers on the proof fleet
+  hosts: nested-gateway:nested-app-dev:nested-app-prod
+  connection: community.general.incus
+  remote_user: root
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    agent: >-
+      {{ proof_observer_release.artifacts['linux-x86_64'] }}
+  tasks:
+    - name: Require the candidate observer digest
+      ansible.builtin.assert:
+        that: agent.sha256 is match('^[0-9a-f]{64}$')
+        quiet: true
+    - name: Install the candidate observer
+      ansible.builtin.import_tasks: tasks/node-converge-replace.yml
+      vars:
+        converge_replacement:
+          path: /usr/local/bin/orbit-agent
+          url: "{{ agent.url }}"
+          sha256: "{{ agent.sha256 }}"
+    - name: Stop the candidate observer before requiring a new report
+      ansible.builtin.systemd:
+        name: orbit-agent.service
+        state: stopped
+
+- name: Discard host receipts from the previous observer processes
+  hosts: nested-gateway
+  connection: community.general.incus
+  remote_user: root
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Copy the host receipt check
+      ansible.builtin.copy:
+        src: proof-observer-facts.php
+        dest: /tmp/orbit-proof-observer-facts.php
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Discard old host receipts while all observers are stopped
+      ansible.builtin.command:
+        argv: [php, /tmp/orbit-proof-observer-facts.php, reset]
+      changed_when: true
+
+- name: Start and verify the candidate observers
+  hosts: nested-gateway:nested-app-dev:nested-app-prod
+  connection: community.general.incus
+  remote_user: root
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    agent: "{{ proof_observer_release.artifacts['linux-x86_64'] }}"
+  tasks:
+    - name: Start the candidate observer
+      ansible.builtin.systemd:
+        name: orbit-agent.service
+        enabled: true
+        state: started
+    - name: Read the installed observer digest
+      ansible.builtin.stat:
+        path: /usr/local/bin/orbit-agent
+        checksum_algorithm: sha256
+      register: proof_observer
+    - name: Verify the candidate observer
+      ansible.builtin.assert:
+        that: proof_observer.stat.checksum == agent.sha256
+        fail_msg: The proof observer does not match the candidate pin
+        quiet: true
+
+- name: Wait for reports from every pinned observer
+  hosts: nested-gateway
+  connection: community.general.incus
+  remote_user: root
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Wait for the Gateway to record the pinned observers and their new host facts
+      ansible.builtin.command:
+        argv:
+          - timeout
+          - "10"
+          - php
+          - /tmp/orbit-proof-observer-facts.php
+          - ready
+          - "{{ proof_observer_release.version }}+{{ proof_observer_release.artifacts['linux-x86_64'].sha256[:16] }}"
+      register: proof_observer_reports
+      changed_when: false
+      until: proof_observer_reports.rc == 0
+      retries: 18
+      delay: 5

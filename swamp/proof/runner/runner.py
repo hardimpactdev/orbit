@@ -313,8 +313,8 @@ def command_setup(args):
     root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
-        run = Run(fleet_module.from_environment(), spec, root / ('batch-' + args.batch))
-        run_steps(run, items, 'setup', failures, started + 120)
+        run = Run(fleet_module.prepare(), spec, root / ('batch-' + args.batch))
+        run_steps(run, items, 'setup', failures, time.time() + 120)
     except steps.Unrun as error:
         failures.append(str(error))
     except Exception as error:

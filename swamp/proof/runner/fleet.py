@@ -1,6 +1,7 @@
 """The nested fleet as the runner sees it: shell on a Node and the real `orbit` CLI. Tests replace this class."""
 import json
 import os
+import runpy
 import select
 import subprocess
 import sys
@@ -98,13 +99,14 @@ class Fleet:
             raise FleetError(f'{node}: the tested CLI cannot add the profile {PROFILE}: exit {added.returncode}, {(added.stderr or added.stdout).strip()[-200:]}')
 
     @staticmethod
-    def must(argv, what):
+    def must(argv, what, timeout=120):
         try:
-            done = subprocess.run(argv, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired as error:
-            raise FleetError(f'{what}: timed out after 120 seconds') from error
+            raise FleetError(f'{what}: timed out after {timeout} seconds') from error
         if done.returncode != 0:
             raise FleetError(f'{what}: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-200:]}')
+        return done
 
     def cli_background(self, args):
         """Start the CLI in its own session and return a handle. The Gateway keeps the Operation when the handle stops the CLI."""
@@ -183,7 +185,8 @@ def listed_node_ids():
     return {node['name']: node['id'] for node in listed['json']['nodes']}
 
 
-def from_environment():
+def prepare_observers():
+    pinned = json.loads((CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes())
     # The guest's prerequisites are restored from base, but the checkout owns the callbacks, vault key patterns and proof release. Prepare through that
     # checkout's Ansible play before even the discovery CLI runs. A failed reload must stop the proof, including on a later retry
     # whose grant files already match the checkout.
@@ -192,8 +195,41 @@ def from_environment():
                 '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
                 NODE_CHECKOUT + '/swamp/ansible/proof-gateway.yml'],
                'cannot prepare the nested Gateway prerequisites from the tested checkout')
+    # Reuse the task image's pinned Ansible controller and collections paths, as the shape gate does. No observer is built here.
+    shape = runpy.run_path(str(CHECKOUT / 'bin/swamp-shape-gate'))
+    tools = shape['default_tools']()
+    controller = shape['tool_path'](tools)
+    collections = shape['collections_path'](tools)
+    Fleet.must([str(controller / 'ansible-galaxy'), 'collection', 'install', '-r', str(CHECKOUT / 'swamp/ansible/requirements.yml'),
+                '-p', str(collections)], 'cannot prepare the proof controller collections')
+    Fleet.must(['env', 'ANSIBLE_CONFIG=' + str(CHECKOUT / 'swamp/ansible/ansible.cfg'),
+                'ANSIBLE_COLLECTIONS_PATH=' + str(collections),
+                str(controller / 'ansible-playbook'), '-i', ','.join(GUEST_PREFIX + role for role in ROLES) + ',',
+                '-e', json.dumps({'proof_observer_release': pinned}),
+                str(CHECKOUT / 'swamp/ansible/proof-observers.yml')],
+               'cannot prepare the candidate observers on the proof fleet', timeout=280)
     return discover()
+
+
+def prepare():
+    # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
+    done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve())],
+                      'cannot prepare the proof fleet', timeout=340)
+    return Fleet(json.loads(done.stdout))
+
+
+def from_environment():
+    # Case and batch entry points must prepare too: older released workflows can skip setup entirely.
+    return prepare()
 
 
 def evidence_root(env=os.environ):
     return Path(env.get('PROOF_EVIDENCE') or Path.cwd() / 'proof-evidence')
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps(prepare_observers().nodes))
+    except Exception as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

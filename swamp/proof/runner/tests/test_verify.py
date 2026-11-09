@@ -60,6 +60,9 @@ class SetupTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
+        prep = patch.object(fleet_module, 'prepare', return_value=FakeFleet())
+        prep.start()
+        self.addCleanup(prep.stop)
         patcher = patch.object(fleet_module, 'from_environment', lambda: FakeFleet())
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -89,25 +92,134 @@ class SetupTest(unittest.TestCase):
         code, _ = self.setup_batch('nope')
         self.assertEqual(code, 3)
 
+    def test_preparation_does_not_consume_the_batch_setup_budget(self):
+        clock = [1000]
+        def prepare():
+            clock[0] += 121
+            return FakeFleet()
+        with patch.object(fleet_module, 'prepare', side_effect=prepare), \
+                patch.object(runner.time, 'time', side_effect=lambda: clock[0]), \
+                patch.object(runner, 'run_steps') as run_steps:
+            code, lines = self.setup_batch('dual-stack')
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(run_steps.call_args.args[-1], 1241)
+
+    def test_failed_preparation_never_discovers_or_runs_setup(self):
+        with patch.object(fleet_module, 'prepare', side_effect=fleet_module.FleetError('preparation expired')), \
+                patch.object(fleet_module, 'from_environment') as discover:
+            code, lines = self.setup_batch('dual-stack')
+        self.assertEqual(code, 1)
+        self.assertIn('preparation expired', lines[0])
+        discover.assert_not_called()
+
+
+class MandatoryPreparationTest(unittest.TestCase):
+    def test_old_workflow_batch_call_prepares_with_or_without_setup_steps(self):
+        # These are the released workflow's existing argv: no setup call and no new input are required.
+        for batch in ('fresh-fleet', 'dual-stack'):
+            events = []
+            def prepare():
+                events.append('prepare')
+                return FakeFleet()
+            def run_case(case, *args):
+                events.append(case.id)
+                return {'id': case.id, 'verdict': 'passed', 'cause': None, 'secs': 0, 'failed': []}
+            with self.subTest(batch=batch), patch.object(fleet_module, 'prepare', side_effect=prepare), \
+                    patch.object(runner, 'run_case', side_effect=run_case):
+                code, lines = call('batch', batch, '--file', str(CASES), '--batches', str(BATCHES))
+            self.assertEqual(code, 0, lines)
+            self.assertEqual(events[0], 'prepare')
+            self.assertEqual(events.count('prepare'), 1)
+            self.assertGreater(len(events), 1)
+
+    def test_setup_success_does_not_let_the_batch_bypass_preparation(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(fleet_module, 'prepare', return_value=FakeFleet()) as prepare, \
+                patch.object(runner, 'run_case') as run_case:
+            code, _ = call('setup', 'fresh-fleet', '--file', str(CASES), '--evidence', directory)
+            self.assertEqual(code, 0)
+            prepare.side_effect = fleet_module.FleetError('observer download failed')
+            code, lines = call('batch', 'fresh-fleet', '--file', str(CASES), '--evidence', directory)
+        self.assertEqual(prepare.call_count, 2)
+        self.assertEqual(code, 1)
+        self.assertIn('observer download failed', lines[0])
+        run_case.assert_not_called()
+
+    def test_failed_preparation_blocks_every_selected_case_in_every_batch(self):
+        for batch in ('fresh-fleet', 'dual-stack'):
+            for error in ('observer download failed', 'observer checksum refused', 'new report missing'):
+                with self.subTest(batch=batch, error=error), \
+                        patch.object(fleet_module, 'prepare', side_effect=fleet_module.FleetError(error)), \
+                        patch.object(runner, 'run_case') as run_case:
+                    code, lines = call('batch', batch, '--file', str(CASES), '--batches', str(BATCHES))
+                results = [json.loads(line) for line in lines]
+                expected = {case.id for case in spec.load(CASES, BATCHES).cases if case.batch == batch}
+                self.assertEqual(code, 1)
+                self.assertEqual({line['id'] for line in results}, expected)
+                self.assertEqual({(line['verdict'], line['cause']) for line in results}, {('failed', 'infrastructure')})
+                self.assertTrue(all(error in line['failed'] for line in results))
+                run_case.assert_not_called()
+
+    def test_direct_case_cannot_skip_preparation(self):
+        with patch.object(fleet_module, 'prepare', side_effect=fleet_module.FleetError('new report missing')) as prepare, \
+                patch.object(runner, 'run_case') as run_case:
+            code, lines = call('case', 'new-restricted-allow', '--file', str(CASES), '--batches', str(BATCHES))
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(lines[0])['cause'], 'infrastructure')
+        prepare.assert_called_once_with()
+        run_case.assert_not_called()
+
 
 class FleetPreparationTest(unittest.TestCase):
     def test_candidate_collections_and_grants_are_prepared_before_the_discovery_cli(self):
         calls = []
-        with patch.object(fleet_module.Fleet, 'must', side_effect=lambda argv, why: calls.append(argv)), \
+        with patch.object(fleet_module.Fleet, 'must', side_effect=lambda argv, why, **kwargs: calls.append(argv)), \
                 patch.object(fleet_module, 'discover', side_effect=lambda: calls.append('discover') or 'fleet'):
-            self.assertEqual(fleet_module.from_environment(), 'fleet')
+            fleet_module.prepare_observers()
 
         self.assertEqual(calls[0], ['incus', 'exec', 'nested-gateway', '--', 'timeout', '110', 'env',
                                    'ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg',
                                    '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml',
                                    '/home/orbit/orbit/swamp/ansible/proof-gateway.yml'])
-        self.assertEqual(calls[1], 'discover')
+        self.assertTrue(calls[1][0].endswith('/ansible-galaxy'))
+        self.assertIn('nested-gateway,nested-app-dev,nested-app-prod,', calls[2])
+        self.assertTrue(calls[2][-1].endswith('/swamp/ansible/proof-observers.yml'))
+        self.assertEqual(json.loads(calls[2][calls[2].index('-e') + 1])['proof_observer_release'],
+                         json.loads((fleet_module.CHECKOUT / 'apps/gateway/resources/agent/frozen-manifest.json').read_bytes()))
+        self.assertEqual(calls[3], 'discover')
+
+    def test_preparation_has_one_hard_budget_including_discovery(self):
+        done = type('Done', (), {'stdout': '{"app-dev": {"node_id": 1}}'})()
+        with patch.object(fleet_module.Fleet, 'must', return_value=done) as must:
+            fleet = fleet_module.prepare()
+        self.assertEqual(fleet.nodes, {'app-dev': {'node_id': 1}})
+        self.assertEqual(must.call_args.args[0][:2], ['timeout', '330'])
+        self.assertEqual(must.call_args.kwargs['timeout'], 340)
+
+    def test_missing_or_invalid_candidate_pin_fails_before_preparation(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(fleet_module, 'CHECKOUT', Path(directory)):
+            pin = Path(directory) / 'apps/gateway/resources/agent/frozen-manifest.json'
+            pin.parent.mkdir(parents=True)
+            for content in (None, 'invalid json'):
+                with self.subTest(content=content), patch.object(fleet_module.Fleet, 'must') as must:
+                    if content is not None:
+                        pin.write_text(content)
+                    with self.assertRaises((OSError, ValueError)):
+                        fleet_module.prepare_observers()
+                    must.assert_not_called()
+
+    def test_failed_observer_preparation_stops_before_any_discovery_or_case(self):
+        with patch.object(fleet_module.Fleet, 'must', side_effect=[None, None, fleet_module.FleetError('observer checksum refused')]), \
+                patch.object(fleet_module, 'discover') as discover:
+            with self.assertRaisesRegex(fleet_module.FleetError, 'observer checksum refused'):
+                fleet_module.prepare_observers()
+            discover.assert_not_called()
 
     def test_failed_grant_preparation_stops_before_any_discovery_or_case(self):
         with patch.object(fleet_module.Fleet, 'must', side_effect=fleet_module.FleetError('grant reload refused')), \
                 patch.object(fleet_module, 'discover') as discover:
             with self.assertRaisesRegex(fleet_module.FleetError, 'grant reload refused'):
-                fleet_module.from_environment()
+                fleet_module.prepare_observers()
             discover.assert_not_called()
 
 

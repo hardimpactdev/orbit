@@ -12,6 +12,14 @@ covers:
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
+the proof VM is the trust boundary; candidate code, including the agent install, runs inside it.
+
+Preparation reads the tested checkout's `apps/gateway/resources/agent/frozen-manifest.json`. It installs that pin with checksum verification and fails on any download error or mismatch. PR review is the gate for candidate code; proof preparation runs inside the disposable, credential-free, egress-restricted VM.
+
+Every `runner batch` and direct `runner case` prepares the fleet before any case starts. This also applies to batches with no setup steps and older released workflows that skip `runner setup`. A setup command prepares independently before applying its declared start state. No preparation success is cached between commands.
+
+One Ansible run applies Gateway prerequisites. Another uses Node convergence's atomic checksum-verified installer on all three nested Nodes, stops the observers, discards their old host receipts, starts them, then waits for the nested Gateway to record every expected version with its binary digest and a new host fact. The wait checks every 5 seconds, up to 18 retries; each preparation is bounded at 330 seconds. Setup gets a separate 120-second budget within its 480-second transport limit. A preparation failure stops cases as infrastructure. Every base restore repeats preparation without saving a new base snapshot. Case deadlines are unchanged.
+
 The design has four aims:
 
 - Writing a case is quick. An agent turns the command page and chart into cases, and another agent reviews them. Different commands are written in parallel.
