@@ -57,23 +57,48 @@ The first plan also put the refresh per runtime, `runtime` and `slot.tunnel_unit
 
 ### PR 2: prepare a container host
 
-This PR adds the container branch of the `host-prepare` phase.
+This PR adds the container branch of the `host-prepare` phase. [Prepare a container host](/reference/compute-drivers#prepare-a-container-host) now owns what it builds.
 
-- `tasks/task-vm-host-prepare.yml` includes `tasks/task-container-host-prepare.yml` on a container host.
-- The new file sets up the project, its restrictions with `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`, the stock container alias, the kernel modules and the sysctls.
-- It caps `zfs_arc_max` to the host's size and installs Incus from the channel that the recipe pins.
-- It checks the host's subordinate ID range, that the pool is ZFS, and that `sctp` cannot load.
-- It copies a small isolated test container and requires `zfs get written` under a few MB. Otherwise every copy would shift its files and stop being a clone.
-- The recipe pins one Incus channel for the host and the inner Incus. Beast runs 7.0.1, and a fresh host would get 7.6.
+- `tasks/task-vm-host-prepare.yml` includes two files on a container host. `tasks/task-container-host-system.yml` runs before the VM part, and `tasks/task-container-host-prepare.yml` after it.
+- The system file installs Incus from the recipe's pinned packages on a host without Incus, and otherwise requires the recipe's Incus line. It never upgrades a running Incus.
+- It writes the kernel modules and the sysctls, sizes the ARC cap, and checks the subordinate ID range and that `sctp` cannot load.
+- The SCTP block itself is the [kernel policy](/reference/node-provisioning#kernel-policy) that PR #3269 added to every managed Linux Node. The phase only checks it.
+- The prepare file sets up the bridge and its ACL, the profile, the stock container alias and the input rules.
+- It also sets up the project. Its restrictions include `restricted.containers.lowlevel=allow` and `limits.virtual-machines=0`.
+
+The host side also has these parts:
+
+- The prepare file copies a small isolated test container and requires `zfs get written` under 8 MiB. Otherwise every copy would shift its files and stop being a clone.
+- The full upgrade and the reboot before first use are an operator step. A reboot stops the host's task VMs, so the phase never does it.
+- The pool is the host's ZFS pool. On UpCloud, the operator creates a zpool on a separate block device and names a new dataset in it as `zfs_dataset`.
 
 The Gateway and the egress log get these parts:
 
-- The egress log part runs on the container bridge unchanged. Only its input names the bridge.
-- The Gateway's refresh intent names the container project, bridge and alias.
-- `AgentWatchListAction::egress()` names the container bridge too, and the agent's egress fact covers both bridges. The watch list names one bridge today. This changes its contract with the agent.
-- A change of the container bridge withdraws its DHCP and DNS input rules, as a change of the VM bridge does.
+- The refresh intent carries `host.containers`. It names the project, bridge, CIDR, alias and place count.
+- It also carries the recipe's Incus packages for the host's architecture. It is null on a host without containers.
+- The egress log part covers both bridges with one table, one rsyslog rule and one rotation file.
+- It cannot run once per bridge. Those three are host-wide, so a second run would replace the first bridge's rules.
 
-Tests: Molecule `unit` cases for the modules and sysctl templates, `ansible-lint`, and Pest for the refresh intent. Live: the container phase twice on Beast, the second time with no change. Beast's VM project, bridge and rules stay unchanged.
+The agent contract changes like this:
+
+- The watch list's `egress` gets a `container_network` member, and the agent runs one observer per bridge. The Gateway accepts an `egress` fact for either bridge.
+- The pinned agent ignores the new member and keeps observing the VM bridge.
+- A reviewed commit moves the pin to an agent from 0.15.0. Then the container bridge is observed. No task container exists before that, so no row is lost.
+
+The input rules of the container bridge work like this:
+
+- They have their own catalog names: `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`.
+- The withdrawal deletes rules by comment. A shared name would also withdraw the VM bridge's rules.
+- Removing `containers`, or changing its `network` or `cidr`, withdraws those three rules, as a change of the VM bridge withdraws its own.
+
+Tests:
+
+- The Deno fixture of the host phase runs the container side and its rerun.
+- The Python test of the egress part covers two bridges and an unchanged render for a host without containers.
+- Pest covers the refresh intent, the watch list, the fact check and the input rules.
+- Rust tests cover the agent's two observers.
+
+The Molecule spike that the first plan named was deleted in #3230. Live: the container phase twice on Beast, the second time with no change. Beast's VM project, bridge and rules stay unchanged.
 
 ### PR 3: the base container, the start and the release
 
@@ -114,7 +139,7 @@ If the heartbeat is not exact enough for power, the PR stops and asks for a deci
 
 Where a shared unit renderer with `LoadCredential` fails in the nested fleet, the PR changes that renderer to pass a file that only the unit's user reads, for every Node. Renderers that work stay as they are. If `wg-quick` does not run two levels down with the `bootcmd` and the AppArmor device, the PR stops and asks for a decision.
 
-Tests: Pest for the intents, their VM snapshots, the refresh per runtime and the stray report, Molecule `unit` cases for the two WireGuard units and the identity files, `swamp workflow validate`, the shape gate and the behavior-name lint.
+Tests: Pest for the intents, their VM snapshots, the refresh per runtime and the stray report, Ansible fixture tests for the two WireGuard units and the identity files, `swamp workflow validate`, the shape gate and the behavior-name lint.
 
 Live, on Beast's container side:
 

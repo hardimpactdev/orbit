@@ -922,6 +922,78 @@ The restrictions forbid privileged and nested containers, host devices, backups,
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
+### Prepare a container host
+
+A host whose [`settings.task_vms`](/reference/node-settings#task-container-fields) has a `containers` member also runs [task containers](/reference/task-containers). The same `host-prepare` phase prepares that side, in two task files that run only on such a host:
+
+- `tasks/task-container-host-system.yml` runs before the VM part, because the VM part needs Incus.
+- `tasks/task-container-host-prepare.yml` runs after it, because it needs the pool.
+
+A host without the member runs neither file, and its VM part is unchanged. A run admitted before the release has no `host.containers` and counts as such a host.
+
+Before first use, the operator upgrades the host and reboots it into the current kernel with `apt-get full-upgrade` and `reboot`. The phase never does this, because a reboot stops the host's task VMs. The UpCloud template ships an older kernel than the archive.
+
+#### The host system
+
+The system file sets up the kernel and Incus side of the host.
+
+- **Incus.** The host runs the recipe's Incus line, as described below.
+- **SCTP.** The `sctp` module cannot load, as described below.
+- **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
+- **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the Incus production values for nested systemd, Docker and file watchers, applied now.
+- **Subordinate IDs.** Root's range in `/etc/subuid` and in `/etc/subgid` must hold one [isolated range](/reference/task-containers#the-outer-container) per place and one for the base: `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs. A smaller range fails the phase with both numbers and changes nothing.
+- **ZFS ARC.** The cap is one eighth of the host's memory, at least 1 GiB. The ARC took 2.6 GB of an 8 GB UpCloud host.
+
+A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
+
+The `install sctp /bin/false` rule comes from the [kernel policy](/reference/node-provisioning#kernel-policy) that `node:add` and `node:converge` write. This phase only checks it: `modprobe --dry-run` must show the rule, and the module must not be loaded. A loaded module needs a reboot.
+
+| Sysctl | Value |
+| --- | --- |
+| `fs.inotify.max_queued_events` | 1048576 |
+| `fs.inotify.max_user_instances` | 1048576 |
+| `fs.inotify.max_user_watches` | 1048576 |
+| `kernel.keys.maxkeys` | 2000 |
+| `kernel.keys.maxbytes` | 2000000 |
+| `vm.max_map_count` | 262144 |
+
+The VM part applies the ARC cap now and after reboot, in `/etc/modprobe.d/orbit-task-vm-zfs.conf`. On a container host this size replaces the 2 GiB cap of a loop pool, and it applies to a native pool too. The cap stays when `containers` is removed, until the operator deletes the file.
+
+#### The container side
+
+The prepare file sets up the rest. The pool is the host's ZFS pool, which the VM part prepares and requires to be ZFS. On a directory pool a base copy took 55 s. On UpCloud the root disk is ext4 on the whole disk. There the operator creates a zpool on a separate block device and sets `zfs_dataset` to a new dataset in it.
+
+| Part | On a container host |
+| --- | --- |
+| Bridge | `containers.network`, such as `orbittaskc0`, at the first address of `containers.cidr`, with IPv4 NAT and no IPv6 |
+| ACL | `<bridge>-egress`, with the rules of the VM bridge's ACL |
+| Project | `containers.project`, such as `orbit-task-containers`, with `features.networks=false` |
+| Profile | The root disk on the host's pool, and `eth0` on the bridge with `security.port_isolation=true` |
+| Stock image | The alias `ubuntu-26.04-ct` from `images:ubuntu/26.04/cloud`, the container variant |
+| Input rules | `orbit:task-containers-dhcp` for DHCP, and `orbit:task-containers-dns-tcp` and `-udp` for DNS to the bridge address |
+| Forwarding | The existing rule `route allow in on orbittask+`, which covers the bridge |
+
+The project gets these restrictions:
+
+- `restricted=true` and `restricted.networks.access=<bridge>`.
+- `restricted.containers.nesting=allow`, `restricted.containers.interception=allow` and `restricted.containers.privilege=isolated`.
+- `restricted.containers.lowlevel=allow`, because `security.idmap.size` is a low-level key. That also allows `raw.*` keys, so the start refuses a copy that has one.
+- `restricted.snapshots=allow` and `limits.virtual-machines=0`.
+
+Host-path disks and privileged containers stay forbidden.
+
+The phase then proves that a copy is a clone:
+
+1. It deletes a leftover `orbit-clone-probe` and its copy from a failed run.
+2. It starts and stops `orbit-clone-probe` from the stock image with an isolated ID map.
+3. It copies the container, and starts and stops the copy.
+4. `zfs get written` on the copy's dataset must stay under 8 MiB.
+5. It deletes both containers.
+
+Without idmapped mounts, Incus would shift the owner of every file of a copy at its first start. Each task start would then rewrite the whole root disk. Incus 7 reports empty `kernel_features`, so `incus info` cannot answer this.
+
+Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modules through a pipe that it closes, so `incus` never reads a stray standard input as YAML.
+
 ### The base VM and its snapshot
 
 Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/start.mmd)). There is no Incus image and no publish.
@@ -948,16 +1020,18 @@ The snapshot of the seed is taken with the snapshot of the VM, and a task start 
 
 #### Log task VM egress
 
-Orbit records which outside hosts task VMs connect to. The log only records. It blocks nothing, and the [egress ACL](#prepare-an-incus-host) of the bridge stays as it is. Each task VM host sets it up on its own bridge, and the [base snapshot refresh](#refresh-the-base-snapshot) runs the setup as its first step, `Log egress`.
+Orbit records which outside hosts task VMs and task containers connect to. The log only records. It blocks nothing, and the [egress ACL](#prepare-an-incus-host) of each bridge stays as it is. Each task VM host sets it up on its VM bridge and, on a [container host](#prepare-a-container-host), on its container bridge too. The [base snapshot refresh](#refresh-the-base-snapshot) runs the setup as its first step, `Log egress`.
 
-The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge name from `host.network` of the refresh intent. It sets up four things:
+The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge names from `host.network` and `host.containers.network` of the refresh intent. The table, the unit, the rsyslog rule and the rotation file are host-wide, so one run covers both bridges. It sets up four things:
 
 - The nftables table `inet orbit_egress` in `/etc/orbit/egress-log.nft`. The oneshot unit `orbit-egress-log.service` loads it at boot. A changed file reloads the rules.
 - The rsyslog rule `/etc/rsyslog.d/19-orbit-egress.conf`. It writes the kernel lines of the table to `/var/log/orbit/task-egress.log` and keeps them out of syslog and `kern.log`.
-- The `raw.dnsmasq` setting of the bridge, which makes its dnsmasq write the DNS queries to `/var/log/orbit/dnsmasq-<bridge>.log`.
-- The rotation file `/etc/logrotate.d/orbit-egress` for both logs: daily, seven files, and at most 200 MB.
+- The `raw.dnsmasq` setting of each bridge, which makes its dnsmasq write the DNS queries to `/var/log/orbit/dnsmasq-<bridge>.log`.
+- The rotation file `/etc/logrotate.d/orbit-egress` for the connection log and each DNS log: daily, seven files, and at most 200 MB.
 
-The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its three rules match a new connection from the bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
+With one bridge the rules name it, as `iifname "orbittask0"`. With two they name a set, as `iifname { "orbittask0", "orbittaskc0" }`. A host without containers keeps the same file, so its refresh reloads nothing.
+
+The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its three rules match a new connection from a bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
 
 The second rule returns for a source address above 50 new connections a second, with a burst of 200. The limit is per source address, in the set `flood`. A VM that scans cannot flood the kernel log, rsyslog and the disk, and it loses only its own log lines. The `counter` of the rule counts them. The rule never loses traffic, because `return` ends the chain and the policy accepts. The third rule logs the connection with `log prefix "orbit-egress " flags ether` and then adds it to the set.
 
@@ -996,12 +1070,12 @@ AppArmor confines `rsyslogd` to `/etc/rsyslog.conf` and `/etc/rsyslog.d/**`, eve
 | Check | Result |
 |---|---|
 | The rules load (`nft -c` before the file is replaced) | Fails the part |
-| The bridge still has `ipv6.address=none` (`egress.bridge_dual_stack`) | Fails the part |
-| The bridge keeps its ACL, and its first rule drops the private ranges (`egress.acl_changed`) | Fails the part |
+| Each bridge still has `ipv6.address=none` (`egress.bridge_dual_stack`) | Fails the part |
+| Each bridge keeps its ACL, and its first rule drops the private ranges (`egress.acl_changed`) | Fails the part |
 | The table, its set, the dedupe return and the accepting base chain exist, with no verdict that drops or rewrites (`egress.rules_missing`) | Warns |
-| The `raw.dnsmasq` value holds both lines (`egress.dnsmasq_unset`, also for a foreign log file) | Warns |
+| The `raw.dnsmasq` value of each bridge holds both lines (`egress.dnsmasq_unset`, also for a foreign log file) | Warns |
 | rsyslog and `orbit-egress-log.service` are active (`egress.service_inactive`) | Warns |
-| Others can read both logs and enter the folder, and the DNS log has mode 0664 (`egress.log_unreadable`) | Warns |
+| Others can read every log and enter the folder, and each DNS log has mode 0664 (`egress.log_unreadable`) | Warns |
 | An action of the log setup failed (`egress.setup_failed`) | Warns |
 | The rsyslog rule or the log rotation file is missing (`egress.config_missing`) | Warns |
 
@@ -1126,9 +1200,11 @@ A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
 2. Run `task-vms:refresh-image {node} --from-stock`. Its host phase prepares the host, then the refresh builds the base and proves one start from its snapshot.
 
-Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. The input rules use the catalog names `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`, visible with `firewall:list --managed`. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
+Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. The input rules use the catalog names `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`, visible with `firewall:list --managed`. A [container host](#prepare-a-container-host) has the same three rules for its container bridge, as `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
 
-To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. The settings operation withdraws the three owned input rules and proves their absence before saving the removal. Changing the bridge or CIDR withdraws the old rules too; the next base refresh prepares the new bridge. A reachable Node removal also withdraws these rules, including duplicate or residual rows. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
+To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. The settings operation withdraws the owned input rules and proves their absence before saving the removal. Changing the bridge or CIDR withdraws the old rules too; the next base refresh prepares the new bridge.
+
+Removing `containers`, or changing its `network` or `cidr`, withdraws only the three container rules. Each bridge has its own names, because the withdrawal deletes rules by comment. A reachable Node removal also withdraws these rules, including duplicate or residual rows. Its Incus project, images, topology seeds, bridge, ACL, and pool remain for manual removal.
 
 ### Limit fleet traffic on the hub
 

@@ -83,7 +83,7 @@ A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<
 
 ## The agent fact
 
-The Gateway's watch list names the bridge, such as `{"egress": {"network": "orbittask0"}}`, for each task VM host. Without that member the agent reads nothing.
+The Gateway's watch list names the bridge, such as `{"egress": {"network": "orbittask0", "container_network": null}}`, for each task VM host. On a [container host](/reference/compute-drivers#prepare-a-container-host), `container_network` names the container bridge, and the agent reads it with a second observer. Without `egress` the agent reads nothing.
 
 Every 5 seconds the agent reads the new lines of both logs and the bridge's leases. It names a VM by its MAC address. The nft line carries the source MAC. Incus's own hosts file gives MAC to the VM name. The agent trusts nothing that the VM says about itself.
 
@@ -114,7 +114,7 @@ A connection to an address that the same VM resolved takes that name. A connecti
 
 A fact stays under 1 MiB, because the Gateway refuses a larger one and the agent does not send it again. The cap of 1,500 rows with at most 8 addresses each keeps the worst case near 600 KB. The agent also bounds its join maps, because its unit allows 128 MB.
 
-The fact holds no counters, so a quiet VM changes nothing. The agent never reads packet payload or URLs. The Gateway keeps one fact row for each VM name, so a reused name overwrites the old row. It accepts the fact only from a task VM host, for that host's bridge.
+The fact holds no counters, so a quiet VM changes nothing. The agent never reads packet payload or URLs. The Gateway keeps one fact row for each VM name, so a reused name overwrites the old row. It accepts the fact only from a task VM host, for one of that host's bridges.
 
 ## Attribution to a group
 

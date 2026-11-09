@@ -1,6 +1,6 @@
 # Stage 1 spec. Format and step vocabulary: docs/reference/verification-cases.
-# These cases cover the task VM host settings and their `containers` member. Every change they make is a record:
-# app-dev has no task VM host settings in the base, so no case starts a run.
+# These cases cover the task VM host settings and their `containers` member. Most changes are records: app-dev has no
+# task VM host settings in the base. Removing the `containers` member starts the run that withdraws its bridge's input rules.
 command: node:update
 chart: node/update
 target: app-dev
@@ -9,7 +9,6 @@ baseline: [operations, node_records]
 
 uncovered:
   "path:main": "Need apps-folder fixtures and folder owner and mode assertions to prove that an apps folder change runs on the Node and saves the setting only after the end check."
-  "path:node-work": "Same need as path:main: an apps-folder change or a task-host bridge change that starts the node.update run."
   "path:folder-ready": "Same need as path:main: the folder check passes and the Gateway saves the settings from the run."
   "path:run-failed": "Need a fixture that makes the apps folder check fail, such as a file in the way, and an assertion that the stored settings stay unchanged."
   "path:withdraw-input": "Need a task VM host fixture with its DHCP and DNS input rules on the target, then a bridge change that withdraws them, checked with ufw rows."
@@ -28,8 +27,8 @@ uncovered:
 cases:
   - id: containers-set
     batch: fresh-fleet
-    covers: [records]
-    summary: Add task VM host settings with a containers member, change the container places, then remove the member. Each change is a record and starts no run.
+    covers: [records, node-work]
+    summary: Add task VM host settings with a containers member and change the container places, which are records. Removing the member then runs the withdrawal of the container bridge's input rules and saves the settings after it.
     stages:
       - act:
           - cli:
@@ -55,6 +54,12 @@ cases:
                   - {path: settings.task_vms.containers.ci_places, equals: 0}
           - cli:
               run: [node:update, "${app-dev.id}", '--task-vms={"cidr":"10.251.77.0/24","task_places":0,"ci_places":0}']
+              expect:
+                exit: 0
+                status: succeeded
+                steps: {name: Withdraw task host input, count: 1}
+          - cli:
+              run: [node:show, "${app-dev.id}"]
               expect:
                 exit: 0
                 request: none

@@ -48,7 +48,7 @@ sequenceDiagram
     %%> - the request removes `containers`, or changes its `project`, `network` or `cidr`, while the host has a task container that is not destroyed
     %%> Result:
     %%> - nothing changes; change the container side after its containers are released
-  else apps folder changes or task host is removed or its bridge changes
+  else apps folder changes or a task host bridge goes or moves
     %% path: node-work
     GW->>SW: Start run, full intent<br/>operation-node-update
     %%> Inputs:
@@ -63,11 +63,12 @@ sequenceDiagram
     %%> - the task ID, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt existing task host removed or bridge / CIDR changed
+    opt a task host bridge goes, or its name or CIDR changes
       %% path: withdraw-input
       SW->>N: Withdraw task host input<br/>shared Ansible phase
       %%> What it does:
-      %%> - removes only rules with the three catalog-owned task-host input comments, including duplicates and IPv6 rows
+      %%> - removes only rules with the three catalog-owned input comments of each bridge that goes or moves, including duplicates and IPv6 rows
+      %%> - the VM bridge's are `orbit:task-vms-*`; the container bridge's, when `containers` goes or its `network` or `cidr` changes, are `orbit:task-containers-*`
       %%> - reads the firewall again and asserts none remain; failure keeps the stored settings
     end
     SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply

@@ -155,7 +155,7 @@ After the checkouts, the agent sends the `checkouts` index. The Gateway deletes 
 
 ### Task VM egress
 
-On a task VM host, the [watch list](#watch-list) names the Incus bridge of the task VMs in `egress`. The agent then records which outside hosts each VM connects to and sends one `egress` fact per VM, named by the VM in `subject`. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
+On a task VM host, the [watch list](#watch-list) names the Incus bridge of the task VMs in `egress`, and on a container host also the bridge of the task containers. The agent then records which outside hosts each VM or container connects to and sends one `egress` fact per guest, named by the guest in `subject`. It runs one observer per bridge, with its own files, offsets and state. The record is a log only: nothing is blocked. The agent reads three kinds of files, starts no program and opens no port.
 
 | Source | Path | What the agent takes |
 | --- | --- | --- |
@@ -226,7 +226,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
     "applications": { "operator": "server/web" },
     "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
     "environments": ["/home/orbit/apps/operator/default/server/web/.env", "/home/orbit-app-16/.env"],
-    "egress": { "network": "orbittask0" },
+    "egress": { "network": "orbittask0", "container_network": "orbittaskc0" },
     "workspaces": [
       {
         "instance_id": 31,
@@ -246,7 +246,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 
 `environments` names the `.env` of each Instance on the Node: the application directory of a development checkout, or the home of a production account; the agent reports their [key names](#environment-key-names). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
-`egress` is absent or null on every Node except a task VM host. On a host it names the Incus bridge of the task VMs, such as `orbittask0`. The agent accepts only a name that is `orbittask` followed by 1 to 6 lower-case letters or digits, and ignores any other value. Without `egress` the agent reads none of the [egress](#task-vm-egress) files and holds no egress state.
+`egress` is absent or null on every Node except a task VM host. On a host, `network` names the Incus bridge of the task VMs, such as `orbittask0`. `container_network` names the bridge of the [task containers](/reference/task-containers), such as `orbittaskc0`, and is null on a host without containers. The agent accepts only a name that is `orbittask` followed by 1 to 6 lower-case letters or digits, and ignores any other value. Agents before 0.15.0 read only `network`, so they observe only the VM bridge. Without `egress` the agent reads none of the [egress](#task-vm-egress) files and holds no egress state.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
