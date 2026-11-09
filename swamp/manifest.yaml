@@ -48,6 +48,7 @@ additionalFiles:
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
   - ansible/ai-router-task-guard.yml
+  - ansible/ai-router-model-forwarder.yml
   - ansible/tasks/address-node.yml
   - ansible/tasks/incus-project-clean.yml
   - ansible/tasks/route-access.yml

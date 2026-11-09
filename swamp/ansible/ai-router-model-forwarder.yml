@@ -1,0 +1,345 @@
+---
+# The container model forwarder on an agent Node (docs/cli/ai-router/model-forwarder.mmd, /reference/ai-router#container-model-forwarder):
+# its own Caddy on the container bridge address at port 8319, which passes every request to the guard, its UFW rule on the bridge,
+# and its nftables table: forwarded packets to the guard are dropped, and only the forwarder's user may connect to the guard from the
+# Node. It holds no key. The guard phase of the same run has already admitted the Node's WireGuard address, or dropped it.
+# Tag `apply` puts the forwarder and its table in place before the guard phase admits the Node, so a run that fails after it leaves no
+# Node admitted without its table. Tag `check` then proves the container path from a namespace on the bridge, after the guard phase.
+# Tag `remove` takes everything off, after the guard phase dropped the Node.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ (lookup('ansible.builtin.file', run ~ '/intent.json') | from_json).forwarder }}"
+    address_target: "{{ intent.ssh.target }}"
+    address_identity: "{{ intent.ssh.identity_file }}"
+    address_group: forwarder_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Apply the forwarder
+  hosts: forwarder_node
+  become: true
+  gather_facts: false
+  tags: [apply]
+  vars:
+    intent: "{{ (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json).forwarder }}"
+  tasks:
+    # Containers call the bridge address, so it must be the bridge's own: a wrong address would bind the forwarder elsewhere.
+    - name: Read the addresses of the bridge
+      ansible.builtin.command: { argv: [ip, -4, -o, addr, show, dev, "{{ intent.bridge }}"] }
+      register: bridge_addresses
+      changed_when: false
+    - name: Check that the address belongs to the bridge
+      ansible.builtin.assert:
+        that: bridge_addresses.stdout is search(' inet ' ~ (intent.address | regex_escape) ~ '/')
+        fail_msg: "{{ intent.address }} is not an address of {{ intent.bridge }}"
+    # A fixed system user, not a dynamic one: the output rule names it, and no other process on the Node runs as it.
+    - name: Make the forwarder's user
+      ansible.builtin.user: { name: "{{ intent.user }}", system: true, shell: /usr/sbin/nologin, create_home: false }
+    - name: Make the folder of the forwarder
+      ansible.builtin.file: { path: "{{ intent.directory }}", state: directory, owner: root, group: root, mode: "0755" }
+    - name: Write the nftables table
+      ansible.builtin.copy:
+        dest: "{{ intent.directory }}/forwarder.nft"
+        content: "{{ intent.ruleset }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: nft --check --file %s
+      register: ruleset
+    # The table loads early at boot, before WireGuard, Docker and Incus bring anything up, so no container or service reaches the guard
+    # before it is in place, and after `nftables.service`, whose `/etc/nftables.conf` may start with `flush ruleset`. Stopping the unit
+    # deletes the table.
+    - name: Write the unit of the table
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ intent.table_unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit ai-router container model forwarder: its nftables table
+          DefaultDependencies=no
+          After=local-fs.target nftables.service
+          Before=network-pre.target wg-quick@orbit.service docker.service incus.service {{ intent.unit }}
+          Wants=network-pre.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/usr/sbin/nft --file {{ intent.directory }}/forwarder.nft
+          ExecReload=/usr/sbin/nft --file {{ intent.directory }}/forwarder.nft
+          ExecStop=/usr/sbin/nft delete table inet {{ intent.table }}
+
+          [Install]
+          WantedBy=sysinit.target
+      register: table_unit
+    # Never a restart: its stop deletes the table, and the guard may already admit the Node. The file replaces the table atomically.
+    - name: Load the table
+      ansible.builtin.systemd_service:
+        name: "{{ intent.table_unit }}"
+        daemon_reload: "{{ table_unit.changed }}"
+        enabled: true
+        state: started
+      register: table_started
+    - name: Load a changed table in place
+      ansible.builtin.command: { argv: [nft, --file, "{{ intent.directory }}/forwarder.nft"] }
+      when: ruleset.changed and not table_started.changed
+      changed_when: true
+    - name: Write the Caddyfile
+      ansible.builtin.copy:
+        dest: "{{ intent.directory }}/Caddyfile"
+        content: "{{ intent.caddyfile }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate: caddy validate --adapter caddyfile --config %s
+      register: caddyfile
+    # Its own Caddy, apart from the Node's Orbit-rendered one: its own user, no admin endpoint, no saved config, no credential, and no
+    # privilege: port 8319 needs none. It runs only while the table's unit is up and stops when it stops (`BindsTo`), and each start
+    # refuses when the table is missing, deleted by hand included. Incus brings the bridge up; until then the bind fails and systemd
+    # restarts the unit.
+    - name: Write the unit
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ intent.unit }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Orbit ai-router container model forwarder
+          After=network-online.target wg-quick@orbit.service incus.service {{ intent.table_unit }}
+          Wants=network-online.target
+          BindsTo={{ intent.table_unit }}
+
+          [Service]
+          User={{ intent.user }}
+          Group={{ intent.user }}
+          ExecStartPre=+/usr/sbin/nft list table inet {{ intent.table }}
+          ExecStart=/usr/bin/caddy run --adapter caddyfile --config {{ intent.directory }}/Caddyfile
+          Restart=always
+          RestartSec=2
+          StateDirectory=orbit-ai-router-forwarder
+          Environment=XDG_DATA_HOME=/var/lib/orbit-ai-router-forwarder XDG_CONFIG_HOME=/var/lib/orbit-ai-router-forwarder
+          CapabilityBoundingSet=
+          AmbientCapabilities=
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          PrivateDevices=true
+          ProtectKernelTunables=true
+          ProtectKernelModules=true
+          ProtectKernelLogs=true
+          ProtectControlGroups=true
+          ProtectClock=true
+          ProtectHostname=true
+          RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+          RestrictNamespaces=true
+          RestrictRealtime=true
+          LockPersonality=true
+          SystemCallArchitectures=native
+
+          [Install]
+          WantedBy=multi-user.target
+      register: unit
+    - name: Run the forwarder
+      ansible.builtin.systemd_service:
+        name: "{{ intent.unit }}"
+        daemon_reload: "{{ unit.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if (unit.changed or caddyfile.changed) else 'started' }}"
+    - name: Wait for the forwarder
+      ansible.builtin.wait_for: { host: "{{ intent.address }}", port: "{{ intent.origin | urlsplit('port') }}", timeout: 15 }
+    - name: Place the UFW rules
+      ansible.builtin.import_tasks: tasks/firewall.yml
+      vars:
+        firewall_commands: "{{ intent.firewall.desired + intent.firewall.remove }}"
+
+- name: Check the forwarder
+  hosts: forwarder_node
+  become: true
+  gather_facts: false
+  tags: [check]
+  vars:
+    intent: "{{ (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json).forwarder }}"
+  tasks:
+    # The checks act as a container would: from a network namespace whose veth is a port of the bridge, with an address outside the
+    # bridge's range so it cannot clash with a container's lease. The namespace, the veth and the return route go again in any case.
+    - name: Check the container path from the bridge
+      vars:
+        guard: "{{ intent.guard_origin | urlsplit('hostname') }}"
+        guard_port: "{{ intent.guard_origin | urlsplit('port') }}"
+        check_netns: orbit-forwarder-check
+        probe: 169.254.254.2
+        drops: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' counter packets (\\d+) .*drop' }}"
+        resets: "{{ '(?m)ip daddr ' ~ (guard | regex_escape) ~ ' tcp dport ' ~ guard_port ~ ' .*counter packets (\\d+) .*reject' }}"
+        relays: >-
+          {{ '(?m)ip daddr ' ~ (intent.address | regex_escape) ~ ' tcp dport ' ~ (intent.origin | urlsplit('port'))
+          ~ ' .*counter packets (\\d+) .*reject' }}
+      block:
+        # A run killed during these checks skips `always`; its leftovers go first.
+        - name: Remove leftovers of an earlier check
+          ansible.builtin.command: { argv: "{{ item }}" }
+          loop:
+            - [ip, route, del, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
+            - [ip, link, del, ofchk0]
+            - [ip, netns, del, "{{ check_netns }}"]
+          changed_when: false
+          failed_when: false
+        - name: Read the IP forwarding switch
+          ansible.builtin.command: { argv: [sysctl, -n, net.ipv4.ip_forward] }
+          register: ip_forward
+          changed_when: false
+        - name: Check that the Node forwards, as a container Node does
+          ansible.builtin.assert:
+            that: ip_forward.stdout == '1'
+            fail_msg: The Node does not forward IPv4, so it runs no containers that reach WireGuard
+        - name: Make the namespace and its veth on the bridge
+          ansible.builtin.command: { argv: "{{ item }}" }
+          loop:
+            - [ip, netns, add, "{{ check_netns }}"]
+            - [ip, link, add, ofchk0, type, veth, peer, name, ofchk1, netns, "{{ check_netns }}"]
+            - [ip, link, set, ofchk0, master, "{{ intent.bridge }}", up]
+            - [ip, -n, "{{ check_netns }}", link, set, lo, up]
+            - [ip, -n, "{{ check_netns }}", addr, add, "{{ probe }}/32", dev, ofchk1]
+            - [ip, -n, "{{ check_netns }}", link, set, ofchk1, up]
+            - [ip, -n, "{{ check_netns }}", route, add, "{{ intent.address }}", dev, ofchk1]
+            - [ip, -n, "{{ check_netns }}", route, add, default, via, "{{ intent.address }}", dev, ofchk1, onlink]
+            - [ip, route, add, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
+          changed_when: true
+        # The bridge rule, the forwarder, the output rule for its user and the guard's admission, in one request: the guard answers
+        # 401 only to a source it admits, so a no-key request through the forwarder proves it admits the Node and demands the key. A
+        # source it refuses gets 403, and without its UFW allow the forwarder answers 502.
+        - name: Check that the guard answers a container through the forwarder
+          ansible.builtin.command:
+            argv: [ip, netns, exec, "{{ check_netns }}", curl, -s, -o, /dev/null, -w, "%{http_code}", --max-time, "10", -X, POST,
+                   "{{ intent.origin }}/v1/responses"]
+          register: through
+          changed_when: false
+          failed_when: through.stdout != '401'
+        - name: Read the drop counter before
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", forward] }
+          register: before
+          changed_when: false
+        # A container's packet straight to the guard: the forward chain drops it before Docker's and UFW's chains see it.
+        - name: Check that a container cannot reach the guard directly
+          ansible.builtin.command:
+            argv: [ip, netns, exec, "{{ check_netns }}", curl, -s, --max-time, "4", "http://{{ guard }}:{{ guard_port }}/"]
+          register: direct
+          changed_when: false
+          failed_when: direct.rc == 0
+        - name: Read the drop counter after
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", forward] }
+          register: after
+          changed_when: false
+        - name: Check that the forwarder's table dropped it
+          ansible.builtin.assert:
+            that: (after.stdout | regex_search(drops, '\\1') | first | int) > (before.stdout | regex_search(drops, '\\1') | first | int)
+            fail_msg: The direct packet to the guard was not dropped by the forwarder's table
+        # From the Node itself as root, not the forwarder's user: the output rule resets it, while SSH to the router's Node answers.
+        - name: Check that the router's Node answers on SSH
+          ansible.builtin.wait_for: { host: "{{ guard }}", port: 22, timeout: 5 }
+        - name: Read the reset counter before
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", output] }
+          register: output_before
+          changed_when: false
+        - name: Check that the Node's own processes cannot reach the guard
+          ansible.builtin.command: { argv: [curl, -s, --max-time, "4", "http://{{ guard }}:{{ guard_port }}/"] }
+          register: own
+          changed_when: false
+          failed_when: own.rc == 0
+        - name: Read the reset counter after
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", output] }
+          register: output_after
+          changed_when: false
+        - name: Check that the output rule reset it
+          ansible.builtin.assert:
+            that: >-
+              (output_after.stdout | regex_search(resets, '\\1') | first | int)
+              > (output_before.stdout | regex_search(resets, '\\1') | first | int)
+            fail_msg: The Node's own connection to the guard was not reset by the forwarder's table
+        # From the Node itself as root, to the forwarder on the bridge address: the connection comes in on `lo`, not on the bridge, so the
+        # input rule resets it. Without it, the forwarder would relay any process on the Node to the guard as its own user.
+        - name: Read the forwarder reset counter before
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", input] }
+          register: input_before
+          changed_when: false
+        - name: Check that the Node's own processes cannot use the forwarder
+          ansible.builtin.command: { argv: [curl, -s, --max-time, "4", -X, POST, "{{ intent.origin }}/v1/responses"] }
+          register: relayed
+          changed_when: false
+          failed_when: relayed.rc == 0
+        - name: Read the forwarder reset counter after
+          ansible.builtin.command: { argv: [nft, list, chain, inet, "{{ intent.table }}", input] }
+          register: input_after
+          changed_when: false
+        - name: Check that the input rule reset it
+          ansible.builtin.assert:
+            that: >-
+              (input_after.stdout | regex_search(relays, '\\1') | first | int)
+              > (input_before.stdout | regex_search(relays, '\\1') | first | int)
+            fail_msg: The Node's own connection to the forwarder was not reset by the forwarder's table
+      always:
+        - name: Remove the namespace, its veth and the return route
+          ansible.builtin.command: { argv: "{{ item }}" }
+          loop:
+            - [ip, route, del, "{{ probe }}/32", dev, "{{ intent.bridge }}"]
+            - [ip, link, del, ofchk0]
+            - [ip, netns, del, "{{ check_netns }}"]
+          changed_when: true
+          failed_when: false
+
+- name: Remove the forwarder
+  hosts: forwarder_node
+  become: true
+  gather_facts: false
+  tags: [remove]
+  vars:
+    intent: "{{ (lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json).forwarder }}"
+  tasks:
+    - name: Remove the UFW rules
+      ansible.builtin.import_tasks: tasks/firewall.yml
+      vars:
+        firewall_commands: "{{ intent.firewall.desired + intent.firewall.remove }}"
+    - name: Stop the forwarder
+      ansible.builtin.systemd_service: { name: "{{ intent.unit }}", enabled: false, state: stopped }
+      failed_when: false
+    - name: Stop the unit of the table, which deletes the table
+      ansible.builtin.systemd_service: { name: "{{ intent.table_unit }}", enabled: false, state: stopped }
+      failed_when: false
+    - name: Read the nftables tables
+      ansible.builtin.command: { argv: [nft, list, tables] }
+      register: tables
+      changed_when: false
+    - name: Remove a table that is left
+      ansible.builtin.command: { argv: [nft, delete, table, inet, "{{ intent.table }}"] }
+      when: ('table inet ' ~ intent.table) in tables.stdout_lines
+      changed_when: true
+    - name: Remove the units, the folder and the state of the forwarder
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop:
+        - "/etc/systemd/system/{{ intent.unit }}"
+        - "/etc/systemd/system/{{ intent.table_unit }}"
+        - "{{ intent.directory }}"
+        - /var/lib/orbit-ai-router-forwarder
+    - name: Reload systemd
+      ansible.builtin.systemd_service: { daemon_reload: true }
+    - name: Remove the forwarder's user
+      ansible.builtin.user: { name: "{{ intent.user }}", state: absent }
+    # The guard phase dropped the Node's address, so the guard's UFW deny drops it, or the guard is off. SSH to the router's Node answers first, so a silent
+    # guard port means the deny, not a broken tunnel.
+    - name: Check that the router's Node answers on SSH
+      ansible.builtin.wait_for: { host: "{{ intent.guard_origin | urlsplit('hostname') }}", port: 22, timeout: 5 }
+    - name: Check that the guard port does not answer the Node
+      ansible.builtin.wait_for:
+        host: "{{ intent.guard_origin | urlsplit('hostname') }}"
+        port: "{{ intent.guard_origin | urlsplit('port') }}"
+        state: stopped
+        timeout: 5

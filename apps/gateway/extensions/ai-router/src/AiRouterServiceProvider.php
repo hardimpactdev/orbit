@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Firewall\ContributedNodeFirewallRules;
 use App\Providers\ExtensionServiceProvider;
 use Orbit\Extensions\AiRouter\Actions\ReconvergeAiRouterConnectionAction;
+use Orbit\Extensions\AiRouter\Console\AiRouterModelForwarderCommand;
 use Orbit\Extensions\AiRouter\Console\AiRouterTaskGuardCommand;
 use Orbit\Extensions\AiRouter\Console\ConvergeAiRouterCommand;
 use Orbit\Extensions\AiRouter\Domain\AiRouterAccountControlClient;
@@ -94,7 +95,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
     {
         // No scheduled converge: its Caddy publication used the agent's caddy.publish, which #1901 removed, so the
         // tick failed every minute. The collector converges again once its publication runs in Swamp.
-        $this->commands([ConvergeAiRouterCommand::class, AiRouterTaskGuardCommand::class]);
+        $this->commands([ConvergeAiRouterCommand::class, AiRouterTaskGuardCommand::class, AiRouterModelForwarderCommand::class]);
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
     }
 }

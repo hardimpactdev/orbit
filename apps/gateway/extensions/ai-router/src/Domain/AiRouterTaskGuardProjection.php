@@ -10,7 +10,10 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** A succeeded run records the origin the guard serves; its end checks proved it refuses a source outside the task VM range. */
+/**
+ * A succeeded guard run records the origin the guard serves; its end checks proved it refuses a source outside its sources. A succeeded
+ * forwarder run records the forwarder's origin instead, which containers on its Node call.
+ */
 final readonly class AiRouterTaskGuardProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
@@ -22,11 +25,17 @@ final readonly class AiRouterTaskGuardProjection implements DirectOperationProje
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = match ($status) {
-            OperationStatus::Succeeded => ['origin' => ValidatedData::string(ValidatedData::object($operation->input['intent'])['origin'])],
+            OperationStatus::Succeeded => ['origin' => $this->origin(ValidatedData::object($operation->input['intent']))],
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => ValidatedData::nullableString($data['error_code'] ?? null)],
             default => [],
         };
 
         return app(DirectOperation::class)->project($operation, $data, $result);
+    }
+
+    /** @param array<string, mixed> $intent */
+    private function origin(array $intent): string
+    {
+        return ValidatedData::string(isset($intent['forwarder']) ? ValidatedData::object($intent['forwarder'])['origin'] : $intent['origin']);
     }
 }

@@ -117,7 +117,7 @@ When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/h
 
 ## Model access
 
-A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder on the bridge's gateway address. The forwarder passes them to the [model router guard](/reference/ai-router), which accepts the placeholder from agent Nodes and swaps in the real key. The real key stays off the Node. A separate PR builds the forwarder and the guard change, including the `?beta=true` query that Claude Code sends.
+A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder on the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends.
 
 ## Network
 

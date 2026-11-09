@@ -73,10 +73,14 @@ it('records the guard intent without a key: the Caddyfile, the UFW pair and vaul
         ->toContain("bind 10.44.0.3\n")
         ->toContain("remote_ip 10.44.0.128/25\n")
         ->toContain("method POST\n")
-        ->toContain('expression {http.request.orig_uri.path} in ["/v1/responses", "/v1/chat/completions", "/v1/messages"] && {http.request.orig_uri.query} == ""')
+        ->toContain('expression {http.request.orig_uri.path} in ["/v1/responses", "/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens"]'
+            .' && ({http.request.orig_uri.query} == "" || ({http.request.orig_uri.query} == "beta=true"'
+            .' && {http.request.orig_uri.path} in ["/v1/messages", "/v1/messages/count_tokens"]))')
         ->toContain('header Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/task.key}"')
         ->toContain("reverse_proxy 127.0.0.1:8317 {\n")
         ->toContain('header_up Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/anchor.key}"')
+        ->toContain("@source remote_ip 10.44.0.128/25\n")
+        ->toContain("respond 401\n")
         ->toContain("respond 403\n")
         // The trust first, then the deny and its allow, each at the top: the allow ends above the deny, both above the trust.
         ->and($intent['firewall'])->toBe(['desired' => [
@@ -98,7 +102,7 @@ it('lists the UFW pair in the desired firewall of the router Node only, once a r
     $services = guardRouter();
     $other = guardNode('beast', '10.44.0.7');
     $names = static fn (Node $node): array => array_column(app(ListManagedFirewallRulesAction::class)->execute($node), 'name');
-    $succeeded = static fn (Operation $operation): bool => $operation->forceFill(['status' => OperationStatus::Succeeded])->save();
+    $succeeded = static fn (Operation $operation): bool => $operation->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null])->save();
 
     expect($names($services))->not->toContain('orbit:ai-router-task-guard');
     $succeeded(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'));
@@ -119,4 +123,14 @@ it('lists the UFW pair in the desired firewall of the router Node only, once a r
 
 it('refuses the guard while the ai-router is off', function (): void {
     expect(fn () => app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'))->toThrow(ResourceOperationException::class, 'disabled');
+});
+
+it('refuses a second guard run while one holds the guard', function (): void {
+    $services = guardRouter();
+
+    $first = app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test');
+
+    expect($first->lock_key)->toBe('ai_router_guard:'.$services->id)
+        ->and(fn () => app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'))
+        ->toThrow(ResourceOperationException::class, 'Another Operation owns this target.');
 });
