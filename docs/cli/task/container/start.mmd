@@ -7,7 +7,7 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane HUB icon=server pill=target tone=purple
-  %% lane TC icon=server pill=task container tone=purple
+  %% lane TC icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve · Swamp Node
   participant HUB as VPN hub<br/>over ssh
@@ -27,7 +27,8 @@ sequenceDiagram
   %%> - one `ansible-playbook` run, two parts, as for a task VM
   %%> - host part on the container host: `incus copy` of the base container's recorded snapshot to `HOST-tvm-N` (a ZFS clone, about 0.5 s); the copy carries the inner Incus with the nested fleet and its `base` snapshots in the inner directory pool, so there is no seed volume to clone
   %%> - it pushes the identity and the claim into the stopped copy with `incus file push` from stdin: the WireGuard key and config, the SSH host key, the agent secret and config, the Pi unit, token and models file; no identity volume and no boot unit that applies one
-  %%> - it sets `limits.cpu`, `limits.memory` and the root disk size of the place, then `incus start`; the outer container boots in about a second, and the nested containers start by themselves
+  %%> - the base enables the tunnel, the agent and the Pi unit with `ConditionPathExists=` on their identity files, so they start at the copy's first boot; Incus sets the hostname from the container's name
+  %%> - it refuses a copy with any device beyond its root disk and NIC, sets `limits.cpu`, `limits.memory`, the root disk size of the place and `boot.autostart=true`, then `incus start`; the outer container boots in about a second, and the nested containers start by themselves
   %%> - converge part over WireGuard: the converge of the release refresh, a no-op on a current base, then the new task branch on the warm checkout; it waits up to 300 s for SSH, polling every second
   %%> Pi:
   %%> - the Pi server binary is in the base; the start only writes the claim's token and models file, and starts the Pi unit on the container's WireGuard address
@@ -35,12 +36,14 @@ sequenceDiagram
   %%> Runs beside the step before it: Swamp starts both at once.
   %%> What it does:
   %%> - the container's public key and address on the WireGuard hub; the container's own tunnel goes out through the host bridge as UDP to the hub's public endpoint
-  SW->>TC: Reach it by WireGuard<br/>ssh from Swamp · pinned key
+  SW->>TC: Reach the VM by WireGuard<br/>ssh from Swamp · pinned key
   %%> What it does:
-  %%> - the path every later step takes (workspace, sync, check, turn, script, proof): ssh from a Swamp worker to the container's WireGuard address with its pinned host key; nothing reaches it through the host's Incus
+  %%> - the path every later step takes (sync, check, turn, script, proof): ssh from a Swamp worker to the container's WireGuard address with its pinned host key; the step keeps its VM name, because the workflow is shared
+  %%> Workspace:
+  %%> - the workspace has no steps of its own here: the warm checkout comes with the base, the task branch with the converge, and the Project setup with the baseline check, all over this path
   SW->>TC: Check ready<br/>one exec
   %%> What it does:
-  %%> - one `incus exec` through the host: the agent, the tunnel unit `orbit-wireguard.service`, the Pi unit, a WireGuard handshake with the hub, and the three nested containers `RUNNING`; Swamp's `assert` decides
+  %%> - one `incus exec` through the host: the agent, the tunnel unit `orbit-wireguard.service`, the Pi unit, a handshake on the interface `orbit` (`wg show orbit`), and the three nested containers `RUNNING`; Swamp's `assert` decides
   %%> - the tunnel unit comes from the intent (`slot.tunnel_unit`), so the step is the same for both runtimes
   alt the run passes
     SW-->>GW: Run succeeded<br/>ready

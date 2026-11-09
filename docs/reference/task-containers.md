@@ -9,18 +9,19 @@ description: "Not built. The task container runtime of ADR 0250: a task group ru
 
 A task container is an unprivileged Incus system container on a container host. It takes the place of a task VM for one task group. It is a copy of the host's base container snapshot. The base holds the same software as the base VM: the agent, the Pi server, the tools, Swamp and a warm checkout of main. It also holds the nested fleet of three containers (Gateway, app-dev, app-prod) under an Incus inside the container. A host runs either task VMs or task containers. Task VM hosts do not change.
 
-The container runtime keeps the task VM's records, kinds, workflows and step names. The Gateway puts `runtime: container` in each intent, and the Ansible phases branch on it. So the charts of the container runtime are the task VM charts with other machine work in their steps:
+The container runtime keeps the task VM's records, kinds, workflows and step names. The Gateway puts `runtime: container` in each intent, and the Ansible phases branch on it. An intent without `runtime` counts as `vm`, so a run admitted before the change keeps working. The charts of the container runtime are the task VM charts with other machine work in their steps:
 
 | Flow | Chart |
 | --- | --- |
-| Task start | [container/start.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/start.mmd) |
-| Workspace | [container/workspace.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/workspace.mmd) |
+| Task start, with the workspace and Pi | [container/start.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/start.mmd) |
 | Base refresh, with the Pi server and the fleet build | [container/image-refresh.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/image-refresh.mmd) |
 | Proof, with the fleet restore | [container/proof.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/proof.mmd) |
 | Start after a stop | [container/resume.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/resume.mmd) |
 | Release | [container/release.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/release.mmd) |
 
-When the runtime switches (ADR 0250 step 5), these charts replace the task VM charts of the same kinds.
+`bin/check-flows` reads only `docs/cli/<family>/<name>.mmd`, and each kind keeps its task VM chart there. So these charts sit one folder lower and follow the [chart rules](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) without the script. When step 7 removes the task VM runtime, they replace the task VM charts of the same kinds.
+
+The workspace has no chart of its own. Its parts reach a task container over WireGuard as they reach a task VM: the warm checkout comes with the base, the task branch with the converge, and the Project setup with the baseline check.
 
 ## Select the runtime
 
@@ -30,16 +31,24 @@ The host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-
 | --- | --- | --- | --- |
 | `runtime` | No | `vm` | `vm` for task VMs, `container` for task containers. Every place of the host, task and CI, uses it |
 
-A container host has its own defaults for two fields, so its resources never share a name with a VM host's:
-
-| Field | Default on a container host |
-| --- | --- |
-| `project` | `orbit-task-containers` |
-| `network` | `orbittaskc0` |
+A container host needs its own `project`, `network` and `cidr`, so its resources never share a name or a subnet with the VM resources of any host. A new container setting gets the defaults `orbit-task-containers` and `orbittaskc0`. `config/task_vms.php`, the settings data and the agent's egress watch list all take these defaults from the runtime.
 
 The other fields mean the same for both runtimes. `cpus`, `memory` and `disk` size the container's `limits.cpu`, `limits.memory` and root disk. `image_alias` stays unused, because a container host has no base image, only a base snapshot.
 
-Orbit refuses a change of `runtime` while the host has a task VM or task container that is not `destroyed`: HTTP 409 `task_vm.runtime_in_use`. To switch a host, set its places to zero, wait until its task VMs are destroyed, change `runtime`, and run `task-vms:refresh-image <host>`. The change withdraws the host's recorded base, because a base of the other runtime cannot serve a start. The old project and bridge stay until [step 7](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order) removes the task VM runtime.
+### Placement before the switch
+
+Normal placement skips container hosts until the switch. The Gateway setting `task_vms.container_placement` (`ORBIT_TASK_VMS_CONTAINER_PLACEMENT`, default `false`) turns it on. While it is off, only two requests reach a container host: the candidate proof of its own refresh, and an operator `proof:run --host` that names it. So no task group and no CI proof lands on an unproven runtime.
+
+### Switch a host
+
+Orbit refuses a change of `runtime` while the host has a task VM or task container that is not `destroyed`: HTTP 409 `task_vm.runtime_in_use`. A change that keeps the old `project`, `network` or `cidr` fails with `task_vm.invalid_config`, because the old bridge stays on the host.
+
+To switch a host:
+
+1. Set `task_places` and `ci_places` to zero, and wait until its task VMs are destroyed.
+2. In one update, set `runtime`, the new `project`, `network` and `cidr`, and the places again. The update withdraws the recorded base, so no start reaches the host yet.
+3. Add `<old project>/*` to `operator_owned`, so the stray report skips the old base VM and seed until step 7 removes them.
+4. Run `task-vms:refresh-image <host>`. Its candidate proof takes a free CI place.
 
 The Gateway records the runtime on each `task_vms` row and each base build row. A row keeps the runtime it started with, so its release, its sweep and Doctor take the right path after a host switches.
 
@@ -52,10 +61,11 @@ The first phase of every refresh prepares the host, as for a [VM host](/referenc
 | Pool | The ZFS pool, as for a VM host. Task containers and the base share it |
 | Bridge | `orbittaskc0` with IPv4 NAT, no IPv6 and the egress ACL |
 | NIC | `security.port_isolation=true` on the profile's NIC |
-| Forwarding and log | The existing forwarding rule and the [egress log](/reference/compute-drivers#log-task-vm-egress). Both cover every bridge whose name starts with `orbittask` |
+| Forwarding | The existing UFW rule `route allow in on orbittask+`, which covers every bridge whose name starts with `orbittask` |
+| Egress log | The [egress log](/reference/compute-drivers#log-task-vm-egress) part, run on the bridge that `host.network` names |
 | Input rules | DHCP and DNS to the bridge address, under the existing catalog names |
 | Project | `orbit-task-containers` with `features.networks=false` |
-| Restrictions | `restricted=true`, `restricted.networks.access=orbittaskc0`, `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated` and `restricted.snapshots=allow`. Host-path disks, privileged containers and VMs stay forbidden |
+| Restrictions | `restricted=true`, `restricted.networks.access=orbittaskc0`, `restricted.containers.nesting=allow`, `restricted.containers.interception=allow`, `restricted.containers.privilege=isolated`, `restricted.snapshots=allow` and `limits.virtual-machines=0`. Host-path disks and privileged containers stay forbidden |
 | Stock image | The alias `ubuntu-26.04-ct` from `images:ubuntu/26.04/cloud`, the container variant |
 | Kernel modules | The modules that containers cannot load themselves, such as `wireguard` and `overlay`, in `/etc/modules-load.d/orbit-task-containers.conf`. The build PR fixes the list |
 | Sysctls | The limits that nested systemd, Docker and file watchers need, such as `fs.inotify.max_user_instances`, in `/etc/sysctl.d/60-orbit-task-containers.conf` |
@@ -64,7 +74,7 @@ The phase checks root's subordinate ID range in `/etc/subuid` and `/etc/subgid` 
 
 The phase also checks that `incus info` reports the kernel feature `idmapped_mounts`. Without it, Incus shifts the owner of every file when it copies an isolated container, so a start would rewrite the whole root disk instead of making a clone.
 
-The phase requires the host hardening of ADR 0250 step 2 and checks that `sctp` cannot load.
+The phase requires the host hardening of ADR 0250 step 2. It checks that `sctp` cannot load.
 
 ### Egress and DNS
 
@@ -72,7 +82,7 @@ A task container has the egress of a task VM:
 
 - Public addresses on every port. The egress ACL drops private, link-local, CGNAT and multicast ranges.
 - No traffic to other containers or VMs on the bridge: port isolation.
-- Forwarding through the existing UFW rule `route allow in on orbittask+`.
+- Forwarding through the UFW rule `route allow in on orbittask+`.
 - No rule per address: the UFW rule matches the interface. This holds on Beast too, which denies forwarding by default.
 - Public DNS from the bridge's dnsmasq on the host. The input rules admit it.
 - `.orbit` names from the VPN DNS address, over the container's own WireGuard tunnel, as on a task VM.
@@ -100,15 +110,15 @@ The container branches of the converge:
 | --- | --- |
 | `software` | The same packages and tools at their pins, and the Incus of the recipe for the inner fleet |
 | `tools` | The shape-gate linters, the inner Incus setup below, and the nested network `oe-nested` |
-| `boot` | WireGuard as `orbit-wireguard.service`, with `ip` and `wg`. No QEMU config, no `orbit-identity` unit and no network file that matches a VM uplink |
+| `boot` | The tunnel unit and the identity conditions [below](#identity). No QEMU config, no `orbit-identity` unit and no network file that matches a VM uplink |
 | `fleet` | The [nested fleet](#the-nested-fleet), built once, as on a base VM |
-| `check` | The same end check, plus the inner Incus, the directory pool and the absence of `LoadCredential` in the fleet's units |
+| `check` | The same end check, plus the inner Incus, the directory pool and the [credential rule](#the-nested-fleet) |
 
 ### Ready copies
 
-The ready copies are the three nested containers in the base, stopped, each with its own `.env`, storage and database, and a `base` snapshot each for proofs. They live in the inner directory pool `topology-seed`, which is a folder of the base's root disk. So one ZFS snapshot of the base holds the whole fleet, and `incus copy` of that snapshot gives each task container its own fleet in under a second. This replaces the seed volume and its clone of a task VM.
+The ready copies are the three nested containers in the base, each with its own `.env`, storage and database, and a `base` snapshot each for proofs. They live in the inner directory pool `topology-seed`, which is a folder of the base's root disk. So one ZFS snapshot of the base holds the whole fleet, and `incus copy` of that snapshot gives each task container its own fleet in under a second. This replaces the seed volume and its clone of a task VM.
 
-The base snapshot is taken with the nested containers stopped, so it holds no half-written database pages. A copy of a running container on a directory pool would not be consistent.
+The base snapshot is taken with the nested containers stopped, so it holds no half-written database pages.
 
 ### Refresh
 
@@ -125,7 +135,7 @@ A task container, and the base it copies, has these settings:
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
 | `security.idmap.isolated` | `true` | Each task container gets its own host ID range, so two groups share no IDs |
 | `security.idmap.size` | `101000000` | The inner range below must fit inside |
-| `boot.autostart` | `true` | A host reboot for a kernel patch starts the containers again |
+| `boot.autostart` | `false` on the base, `true` on a task container | A host reboot for a kernel patch starts the task containers again, and never the base |
 | `limits.cpu`, `limits.memory` | From the host's `cpus` and `memory`, by size | As for a task VM |
 
 Its root disk is a ZFS clone on the host pool, with the size of the place. It has one NIC on the bridge, from the profile, and no other device. The start refuses a copy with any other device, so no host path, and never the host's Incus socket, reaches a task container.
@@ -134,11 +144,13 @@ The agent runs as `orbit` with passwordless sudo, as on a task VM. It is root of
 
 ### Identity
 
-A task container keeps the Node identity of a task VM: the Node `HOST-tvm-N` with its `app-dev` role, a WireGuard address in the reserved range, an SSH host key, the agent and the Pi server. So the hub filter, the Caddy guard, the model router guard, the workspace, Git transfers and every Swamp step reach it as they reach a task VM. [Open question 1](/solutions/task-container-runtime#open-questions) asks whether this holds until step 6 of ADR 0250, which says that containers are never Nodes.
+A task container keeps the Node identity of a task VM: the Node `HOST-tvm-N` with its `app-dev` role, a WireGuard address in the reserved range, an SSH host key, the agent and the Pi server. So the hub filter, the Caddy guard, the model router guard, the workspace, Git transfers and every Swamp step reach it as they reach a task VM. [Open question 1](/solutions/task-container-runtime#1-identity-of-a-task-container-in-steps-3-to-5) asks whether this holds until step 6 of ADR 0250, which says that containers are never Nodes.
 
-The start writes the identity into the stopped copy with `incus file push` from standard input, with owner and mode. Incus shifts the owners into the container's range. No secret touches the host's disk. The container needs no boot unit to apply it.
+The start writes the identity into the stopped copy with `incus file push` from standard input, with owner and mode. Incus shifts the owners into the container's range. The secrets go only into the container's own root disk. Incus sets the hostname from the container's name.
 
-WireGuard runs as `orbit-wireguard.service`: `ip link add`, `wg setconf`, the address, the routes and `ip link set up`. Ubuntu 26.04's AppArmor profile for `wg-quick` crashes it in a container, so the outer container does not use `wg-quick`. The readiness check reads the unit name from the intent, `slot.tunnel_unit`.
+The base enables the identity's units: `orbit-wireguard.service`, `orbit-agent.service` and the Pi unit. Each has a `ConditionPathExists=` on its identity file, so it does not start in the base, and starts at the first boot of a copy.
+
+`orbit-wireguard.service` brings up the interface `orbit` with `ip link add`, `wg setconf`, the address, the routes and `ip link set up`. Ubuntu 26.04's AppArmor profile for `wg-quick` crashes `wg-quick` in a container, so the outer container does not use it. The readiness check reads the unit name from the intent, `slot.tunnel_unit`, and the handshake from `wg show orbit` as before.
 
 ### Pi
 
@@ -154,14 +166,16 @@ The nested fleet runs under an Incus inside the task container:
 - Each nested container has `security.nesting=true`, a memory limit and `boot.autostart=true`.
 - Each nested container has a read-only disk device. It shows the file `/etc/orbit/apparmor-off`, which holds `N`, at `/sys/module/apparmor/parameters/enabled`.
 - Docker then skips its own AppArmor profile, which cannot load two levels below the host. The host's profile for the outer container stays in force.
-- WireGuard of the nested Nodes comes from the nested Gateway's own Node converge. [Open question 3](/solutions/task-container-runtime#open-questions) decides how it avoids `wg-quick`'s profile.
-- No unit of the fleet uses `LoadCredential`, which fails without an error in nested containers. Units that need secrets use `SetCredential` or a file. The fleet check fails on a unit that breaks this rule.
+- WireGuard of the nested Nodes comes from the nested Gateway's own Node converge. [Open question 3](/solutions/task-container-runtime#3-wireguard-of-the-nested-nodes) decides how it avoids `wg-quick`'s profile.
+
+`LoadCredential` fails without an error in nested containers. So a unit that the nested fleet runs reads its secret from `SetCredential` or a file, not from `LoadCredential`. The fleet check fails on a unit that breaks this rule. Some shared unit renderers use `LoadCredential` today; [open question 6](/solutions/task-container-runtime#6-loadcredential-in-shared-units) decides how they change.
 
 ### How the agent reaches its fleet
 
-As on a task VM:
+The agent reaches its fleet as on a task VM, with one difference in the operator tunnel:
 
-- The task container joins the nested fleet as the `operator` Node with its own WireGuard key, as `10.45.0.10` on `wg-nested`.
+- The task container joins the nested fleet as the `operator` Node with its own WireGuard key, as `10.45.0.10`.
+- Its tunnel `wg-nested` runs as `orbit-wg-nested.service`, with `ip` and `wg`, not as `wg-quick@wg-nested`.
 - The candidate CLI in the checkout uses the `nested` profile and the nested root CA, and talks to the nested Gateway at `https://10.45.0.1`.
 - The agent runs `incus` inside the task container for `exec`, logs and snapshots of its nested containers.
 - The Gateway and app-dev get the checkout as the disk device `checkout`, a path inside the task container, so an edit reaches them at once.
@@ -170,11 +184,11 @@ As on a task VM:
 
 A proof restores each nested container to its `base` snapshot, as on a task VM ([proof chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/proof.mmd)). On a directory pool a restore copies back the files that changed since `base`, so its time grows with the change. The 45-second limit stays; the build PR measures the restore against it.
 
-Taking `base` stops the three nested containers first, then snapshots them and starts them again. The readiness check follows. This applies where `base` is taken: the fleet build in the refresh, and the token renewal before a proof.
+Two places take `base`: the task "Take the base snapshots" of the role playbook, in the refresh, and the step "Take base again" of a proof, after a token renewal. On a container, both stop the three nested containers first, then snapshot them and start them again. A snapshot of a running container on a directory pool is a file copy, not a consistent state. The readiness check follows.
 
 ## Places and capacity
 
-A place holds one task container, as it holds one task VM. `task_places`, `ci_places`, the two pools, the queue, the two-hour wait and the sizes are those of [Place task VMs](/reference/compute-drivers#place-task-vms). A container place needs no reserved guest memory, so a host may fit more places than as a VM host. The places stay as they are until the parity gate has measured them ([open question 4](/solutions/task-container-runtime#open-questions)).
+A place holds one task container, as it holds one task VM. `task_places`, `ci_places`, the two pools, the queue, the two-hour wait and the sizes are those of [Place task VMs](/reference/compute-drivers#place-task-vms). A container place needs no reserved guest memory, so a host may fit more places than as a VM host. The places stay as they are until the parity gate has measured them ([open question 4](/solutions/task-container-runtime#4-places-on-a-container-host)).
 
 The isolated ID ranges set a second limit: one range per place, plus the base. Host preparation checks it.
 
@@ -189,18 +203,18 @@ The lifecycle of a task container follows the task VM's, with these differences.
 | Stopped while `ready` | Started again by the resume run in mode `converge` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/resume.mmd)) |
 | Release | `incus delete --force` and the hub peer ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/container/release.mmd)) |
 | Sweep and Doctor | As for task VMs; a container row has no seed clone and no identity volume to report |
-| Power | Presence from the host's `incus.instances`, running from the container's own agent heartbeat. The agent's `incus.vm-state` reads only VMs |
+| Power | Presence from the host's `incus.instances`, running from the container's own agent heartbeat. The agent's `incus.vm-state` reads only VMs, and the agent gets no new command |
 
 `vm_power` reports a container as it reports a VM: `running` while `ready`, `destroyed` once `destroyed`.
 
 ## Errors
 
-The container runtime adds one error code and widens one.
+The container runtime adds one error code and one cause of an existing code.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `task_vm.runtime_in_use` | 409 | `runtime` changes while the host has a task VM or task container that is not `destroyed` |
-| `task_vm.invalid_config` | 500 | `runtime` is not `vm` or `container`, or a container host's `network` or `cidr` collides with another host's |
+| `task_vm.invalid_config` | 500 | `runtime` is not `vm` or `container`, or a `runtime` change keeps the old `project`, `network` or `cidr` |
 
 A failed host preparation, base build or start fails its run with the failed step, as for a VM host.
 

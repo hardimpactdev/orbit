@@ -24,7 +24,7 @@ sequenceDiagram
   SW->>H: Wait for the guest agent<br/>ssh exec · incus exec
   %%> How, for a container:
   %%> - a container has no Incus agent, so the step runs `incus exec … systemctl is-system-running --wait` under `timeout 70`; `degraded` passes, the next steps decide
-  SW->>TC: Converge SSH access<br/>ssh exec · forEach of 3
+  SW->>TC: Converge 209 SSH access<br/>ssh exec · forEach of 3
   %%> What it does:
   %%> - the Swamp Node's authorized key, its TCP 22 rule and `sshd`, as for a `ready` VM
   SW->>TC: Read the guest state<br/>ssh exec · forEach of 2

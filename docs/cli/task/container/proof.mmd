@@ -12,12 +12,17 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve · Swamp Node
   participant TC as Task container<br/>with its fleet
-  CLI->>GW: Prove the command<br/>proof COMMAND --group GROUP
+  CLI->>GW: Prove the command<br/>proof COMMAND
   %%> Command:
-  %%> - `orbit proof COMMAND --group GROUP`
+  %%> - `orbit proof COMMAND`
   %%> - syntax: `orbit proof <command> [--group=<group>]`
   %%> Requirements:
-  %%> - as for a task VM: a Node with Gateway access names the group; the group has its workspace and no other operation running
+  %%> - as for a task VM: the group has its workspace and no other operation running
+  opt --group
+    Note over GW: Take the named group<br/>caller with Gateway access
+    %%> Why:
+    %%> - a task container holds no Gateway access, as a task VM holds none, so a Node with Gateway access names the group
+  end
   Note over GW: Admit the proof<br/>container · group · inputs
   %%> What it records:
   %%> - the pinned SSH target of the container, the cases file, and the flags `restore_first` and `final_restore`
@@ -31,7 +36,7 @@ sequenceDiagram
   opt the tokens in base are older than 20 days
     SW->>TC: Re-mint the Swamp tokens<br/>then take base again
     %%> What it does, for a container:
-    %%> - takes `base` with the nested containers stopped: stop, snapshot, start, then the readiness check; a copy of a running container on a directory pool is not consistent
+    %%> - the step "Take base again" stops the nested containers, snapshots them and starts them, then the readiness check runs; a snapshot of a running container on a directory pool is not consistent
   end
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>TC: Run the batch<br/>restore · setup · cases

@@ -7,7 +7,7 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
-  %% lane BC icon=server pill=base tone=purple
+  %% lane BC icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve · Swamp Node
   participant H as Container host<br/>Incus over ssh
@@ -30,13 +30,14 @@ sequenceDiagram
   SW->>H: Start the base VM<br/>incus start
   %%> What it does, for a container host:
   %%> - starts the stopped base container; its nested containers start with it
-  %%> - a host without a recorded container base runs `incus init` from `ubuntu-26.04-ct` with nesting, intercepted `mknod` and `setxattr`, an isolated ID map of 101,000,000 IDs and the profile of the project, then starts it
+  %%> - a host without a recorded container base runs `incus init` from `ubuntu-26.04-ct` with nesting, intercepted `mknod` and `setxattr`, an isolated ID map of 101,000,000 IDs, `boot.autostart=false` and the profile of the project, then starts it
   %%> - the step keeps its VM name, because the workflow is shared
   SW->>BC: Converge<br/>the same converge as a task start
   %%> What it does, for a container:
   %%> - software and tools as on a VM, with the Pi server; the tools phase also installs the inner Incus, writes `/etc/subuid` and `/etc/subgid` as `root:1000000:100000000`, and makes the inner directory pool `topology-seed` and the network `oe-nested`
-  %%> - the boot phase sets up WireGuard with `ip` and `wg` in `orbit-wireguard.service`, not `wg-quick`; no QEMU config and no identity unit
-  %%> - the fleet phase builds a missing fleet once: three nested containers with nesting and a read-only device that shows `N` at `/sys/module/apparmor/parameters/enabled`, then the nested Gateway, app-dev, app-prod and the operator join, as on a VM
+  %%> - the boot phase sets up WireGuard with `ip` and `wg` in `orbit-wireguard.service`, not `wg-quick`, and gives the identity's units `ConditionPathExists=` on their files; no QEMU config and no identity unit
+  %%> - the fleet phase builds a missing fleet once: three nested containers with nesting and a read-only device that shows `N` at `/sys/module/apparmor/parameters/enabled`, then the nested Gateway, app-dev, app-prod and the operator join, as on a VM; the operator tunnel `wg-nested` runs as `orbit-wg-nested.service`, with `ip` and `wg`
+  %%> - the task "Take the base snapshots" stops the nested containers before it snapshots them, then starts them; on a directory pool a snapshot of a running container is not consistent
   %%> - the fleet check fails on any unit in the fleet that uses `LoadCredential`
   SW->>H: Stop and snapshot<br/>nested first, then base
   %%> What it does, for a container:

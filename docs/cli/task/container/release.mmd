@@ -18,8 +18,8 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>operation-task-vm-slot-release
   SW->>H: Delete the VM<br/>incus delete --force
   %%> What it does, for a container:
-  %%> - `incus delete --force` in the container project: it stops the container with its nested fleet and removes its root disk, which holds the inner pool; there is no seed clone and no identity volume, and an absent one counts as removed
-  %%> - an absent container counts as deleted
+  %%> - `incus delete --force` in the container project: it stops the container with its nested fleet and removes its root disk, which holds the inner pool; there is no seed clone and no identity volume
+  %%> - an absent container, clone or volume counts as removed
   SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
   %%> Runs beside the step before it: Swamp starts both at once.
   alt the run passes
