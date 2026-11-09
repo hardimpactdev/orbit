@@ -7,6 +7,7 @@ namespace App\Infrastructure\WireGuard;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\HubEndpoint;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
@@ -60,11 +61,7 @@ final readonly class VpnConfigurationRepository
 
         $serverPrivateKey = $this->key('private');
         $serverPublicKey = $this->key('public');
-        $endpoint =
-            $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? WireGuardEndpoint::format(
-                $server->public_ssh_host,
-                $port,
-            );
+        $endpoint = HubEndpoint::for($peer, $server, $this->settings)->endpoint;
         $domain = $this->settings->domain();
 
         if (! WireGuardEndpoint::isValid($endpoint)) {

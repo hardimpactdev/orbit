@@ -6,6 +6,10 @@
 - name: Reconcile the peer after its hub has completed
   when: intent.network.mode == 'peer'
   block:
+    - name: Prove the hub's LAN endpoint before any WireGuard change
+      when: intent.network.apply.peer.hub_lan is not none
+      ansible.builtin.include_tasks: node-hub-lan-proof.yml
+      vars: { hub_lan: "{{ intent.network.apply.peer.hub_lan }}" }
     - name: Reconcile recorded peer files
       ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
       loop:

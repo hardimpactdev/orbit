@@ -9,12 +9,13 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/app/Domain/WireGuard/{HubEndpoint,LanAddress}.php
   - apps/gateway/app/Domain/Nodes/NodeWireGuardHubInput.php
+  - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
   - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source}.yml
 ---
 
 # WireGuard endpoints
 
-This page tells an operator which WireGuard endpoint forms the Gateway accepts during bootstrap, which hub endpoint each Node gets, when that endpoint is the hub's LAN address, which address the hub sends from, and how to recover from an invalid stored value. [ADR 0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) records the decision.
+This page tells an operator which WireGuard endpoint forms the Gateway accepts during bootstrap and which hub endpoint each Node gets. It also covers the hub's LAN endpoint, the address the hub sends from, and recovery from an invalid stored value. [ADR 0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) records the decision.
 
 ## Accepted endpoint forms
 
@@ -38,7 +39,7 @@ When `orbit:bootstrap` gets no `--wireguard-endpoint`, the Gateway combines the 
 
 A peer configuration takes the first endpoint that applies:
 
-1. The hub's LAN address with the WireGuard port, when the Node is on the hub's private network. See [The LAN endpoint](#the-lan-endpoint).
+1. For a Node on the hub's private network: the hub's LAN address with the WireGuard port. See [The LAN endpoint](#the-lan-endpoint).
 2. The stored Gateway endpoint.
 3. The public SSH host of the `vpn` Node with the configured WireGuard port, with the same bracket rule.
 
@@ -52,10 +53,10 @@ A Node is on the hub's private network when the hub and the Node both record an 
 
 The record is a claim. Before Orbit writes a WireGuard file that names the LAN endpoint, in [`node:add`](/cli/node/add) and in the network phase of [`node:converge`](/cli/node/converge), the Node proves it:
 
-1. The kernel routes the hub's LAN address directly: `ip route get` shows no gateway, a source equal to the Node's recorded `lan_ip`, and an interface other than the `orbit` tunnel.
+1. The kernel routes the hub's LAN address directly. `ip route get` shows no gateway, the Node's recorded `lan_ip` as source, and an interface other than the `orbit` tunnel.
 2. The hub's LAN address answers ICMP from the Node's `lan_ip`.
 
-A failed check stops the run with `node.hub_lan_unreachable` before any WireGuard file or peer changes. Orbit does not fall back to the public endpoint. Fix the network, or clear the wrong `lan_ip` with [`node:update --lan-ip=`](/cli/node/update), and run the command again. The handshake check after the change proves that the address is the hub.
+A failed check stops the run before any WireGuard file or peer changes. The phase fails; the failed assertion in its log reads `node.hub_lan_unreachable`. Orbit does not fall back to the public endpoint. Fix the network, or clear the wrong `lan_ip` with [`node:update --lan-ip=`](/cli/node/update), and run the command again. The handshake check after the change proves that the address is the hub.
 
 Set the addresses in this order:
 
@@ -72,7 +73,9 @@ The hub therefore marks its WireGuard packets with `FwMark`, set to the WireGuar
 1. Priority 31820: the main table without its default route. Packets to the private network and to the WireGuard subnet keep their normal route and source.
 2. Priority 31821: table number equal to the WireGuard port. Its default route copies the main default route and sets the source to the public endpoint address.
 
-The hub's `orbit.conf` holds the mark and adds the rules and the route in `PostUp`, so they return after a restart. The hub converge applies the same commands to the running hub and checks that a marked packet to a public address leaves from the endpoint address. A hub whose public endpoint is a hostname or an IPv6 address gets no source rule. An IPv4 endpoint address that the hub does not hold fails the hub converge with `vpn.endpoint_not_local`.
+The hub's `orbit.conf` holds the mark and adds the rules and the route in `PostUp`, so they return after a restart. A failed route never stops the tunnel from starting.
+
+The hub converge applies the same commands to the running hub and checks that a marked packet to a public address leaves from the endpoint address; a failed check fails the converge. A hub whose public endpoint is a hostname or an IPv6 address gets no source rule. An IPv4 endpoint address that the hub does not hold fails the hub's network phase; the failed assertion reads `vpn.endpoint_not_local`. A source that is still wrong after the commands reads `vpn.source_route_failed`.
 
 Every `wg syncconf` on the hub carries the mark. `syncconf` resets an interface setting that its input leaves out, as it does with the private key.
 
@@ -119,8 +122,10 @@ A removal does not rewrite the list. It deletes the file of the removed Node, wh
 
 The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
 
-- `orbit.conf` is the wg-quick file: `Address`, `ListenPort`, `FwMark`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key`, a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`, and, for an IPv4 public endpoint, the `PostUp` lines of [the source rule](#the-hub-answers-from-its-endpoint-address). It holds no peer.
+- `orbit.conf` is the wg-quick file. It holds no peer.
 - `orbit-peers.d/<node id>.conf` holds one `[Peer]` section.
+
+`orbit.conf` holds `Address`, `ListenPort`, `FwMark`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key` and a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`. For an IPv4 public endpoint, it also holds the `PostUp` lines of [the source rule](#the-hub-answers-from-its-endpoint-address).
 
 One file per peer lets a run that adds one Node, such as task VM enrollment, write only its own file. Runs that overlap then never drop each other's peers.
 

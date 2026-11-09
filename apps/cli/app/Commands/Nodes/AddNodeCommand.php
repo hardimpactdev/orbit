@@ -31,8 +31,7 @@ final class AddNodeCommand extends NodeCommand
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--cluster= : Optional numeric Cluster ID}
         {--wireguard-ip= : Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it}
-        {--lan-ip= : Optional Cluster-local LAN IPv4 address}
-        {--wireguard-endpoint= : Per-node WireGuard endpoint override}
+        {--lan-ip= : Optional LAN IPv4 address; on the hub\'s private network it also selects the hub\'s LAN endpoint}
         {--dns-server= : Per-node DNS server override}
         {--setting=* : Repeatable node setting as setting-path:value}
         {--json : Return machine-readable JSON}';
@@ -154,7 +153,6 @@ final class AddNodeCommand extends NodeCommand
                 clusterId: $clusterId,
                 wireguardIp: is_string($wireguardIp) ? $wireguardIp : null,
                 lanIp: is_string($lanIp) ? $lanIp : null,
-                wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
                 dnsServerOverride: $this->stringOption('dns-server'),
                 hostKeyFingerprint: $hostKeyFingerprint,
                 platform: $platform,

@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\LanAddress;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -82,11 +83,8 @@ final readonly class CustomProxyProcessListener
 
     public function publicAddress(Node $node, Node $ingress): ?string
     {
-        if (is_string($node->lan_ip) && is_string($ingress->lan_ip)
-            && filter_var($node->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            && filter_var($ingress->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            && (ip2long($node->lan_ip) & 0xFFFFFF00) === (ip2long($ingress->lan_ip) & 0xFFFFFF00)) {
-            return $node->lan_ip;
+        if (LanAddress::sameNetwork($node->lan_ip, $ingress->lan_ip)) {
+            return (string) $node->lan_ip;
         }
 
         return $node->wireguard_ip;

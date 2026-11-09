@@ -59,6 +59,4 @@ A failed phase leaves the Operation failed with its failed step and error code. 
 | `node.converge_unsupported` | The Node is not active, managed and Linux. |
 | `validation.failed` | Both scope flags were supplied, or the role selection is empty, unknown or not assigned to the Node. |
 | `operation.target_busy` | Another converge reserves the Node or its hub. |
-| `node.hub_lan_unreachable` | The Node is on the hub's private network by its records, but the hub's LAN address is not directly routed from its `lan_ip` or does not answer. No WireGuard file changed. |
-| `vpn.endpoint_not_local` | The hub does not hold the IPv4 address of its public endpoint, so it cannot send from it. |
-| `operation.native_failed` | A phase could not complete, including when the Node cannot be reached. The Operation identifies the failed step. |
+| `operation.native_failed` | A phase could not complete, including when the Node cannot be reached. The Operation identifies the failed step. In the `network` phase, the failed assertion names the cause: `node.hub_lan_unreachable` when the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer (no WireGuard file changed), `vpn.endpoint_not_local` when the hub does not hold its public endpoint address. |

@@ -6,7 +6,7 @@ description: "In progress. A Node on the hub's private network reaches the hub a
 
 # ADR 0251: Reach the WireGuard hub over the recorded LAN
 
-A Node on the hub's private network reaches the WireGuard hub at the hub's LAN address. The recorded `lan_ip` of both Nodes is the signal. The per-Node WireGuard endpoint override goes away. The hub sends every WireGuard packet from the address its peers use.
+A Node on the hub's private network reaches the WireGuard hub at the hub's LAN address. The recorded `lan_ip` of both Nodes is the signal. Each Node's WireGuard endpoint override goes away. The hub sends every WireGuard packet from the address its peers use.
 
 ## Status
 
@@ -25,11 +25,11 @@ The Nodes in the hub's data centre share a private network with it. Only `app-pr
 ## Decision
 
 - **The signal.** A Node reaches the hub at `<hub lan_ip>:<WireGuard port>` when the hub and the Node both record an IPv4 `lan_ip` and both addresses are in the same IPv4 /24. This is the recorded-LAN rule that [public Process Routes](/cli/route/create) already use; one helper owns it. Otherwise the Node uses the public endpoint: the stored Gateway endpoint, or the hub's public SSH host with the WireGuard port.
-- **The proof.** The record is a claim; the Node proves it before Orbit writes a WireGuard file that uses it. On the Node, the kernel must route the hub's LAN address directly, without a gateway, from the Node's recorded `lan_ip`, on an interface other than the tunnel. The hub's LAN address must then answer ICMP from that address. A failed proof stops the run with `node.hub_lan_unreachable` before any WireGuard change. There is no fallback to the public endpoint: the operator fixes the network or the record.
+- **The proof.** The record is a claim; the Node proves it before Orbit writes a WireGuard file that uses it. On the Node, the kernel must route the hub's LAN address directly, without a gateway, from the Node's recorded `lan_ip`, on an interface other than the tunnel. The hub's LAN address must then answer ICMP from that address. A failed proof stops the run before any WireGuard change; its failed assertion reads `node.hub_lan_unreachable`. There is no fallback to the public endpoint: the operator fixes the network or the record.
 - **The override goes.** `wireguard_endpoint_override` is dropped from the database, the API, the CLI, the SDK and the docs. `app-prod` gets the same endpoint from the rule.
 - **Setting `lan_ip`.** `node:update --lan-ip` sets or clears the address on an existing Node as a record. Set the hub's address first, then each Node's, then converge each Node.
 - **The hub's source address.** The hub marks its WireGuard packets and routes them through its own table. That table sends to the private network as the main table does and sends everything else from the hub's public endpoint address. A hub-started handshake to a public peer therefore always leaves from the address the peer uses. Orbit pins the source only when the public endpoint is an IPv4 address.
-- **Doctor.** A Doctor check for a Node whose live hub endpoint differs from the rendered one follows in a later change. The agent cannot read WireGuard state today.
+- **Doctor.** A Doctor check for a Node whose live hub endpoint differs from the rendered one is not part of this decision. The agent cannot read WireGuard state, and Nick chose a separate change for it.
 
 ## Rejected alternatives
 
@@ -43,4 +43,11 @@ The Nodes in the hub's data centre share a private network with it. Only `app-pr
 
 - A converge of a Node on the hub's private network moves its tunnel to the LAN. Its traffic to the hub stays inside the data centre.
 - The hub keeps answering public peers from the floating address after any route change.
-- A Node that records a `lan_ip` in the hub's /24 on a different network fails its converge with `node.hub_lan_unreachable`, or with a missing handshake when a foreign machine answers at the hub's LAN address. Record a `lan_ip` only for the network the Node is really on.
+- A Node that records a `lan_ip` in the hub's /24 on a different network fails its converge at the proof (`node.hub_lan_unreachable`), or at the handshake check when a foreign machine answers at the hub's LAN address. Record a `lan_ip` only for the network the Node is really on.
+
+## Affects
+
+- Components: apps/gateway, apps/cli, packages/php-sdk
+- ADRs: uses the recorded-LAN rule of 0233, [public Process Routes](/reference/routes#public-process-routes-select-an-edge-separately-from-the-workload)
+- Detail: the `swamp/` Ansible phases of `node:add` and `node:converge`, [WireGuard endpoints](/reference/wireguard-endpoints), [`node:add`](/cli/node/add), [`node:update`](/cli/node/update), [`node:converge`](/cli/node/converge) and their charts
+- Verify: Gateway tests of the rendered hub and peer configuration; on the live fleet, converge the hub, then each Node on its private network, and read `wg show orbit endpoints`

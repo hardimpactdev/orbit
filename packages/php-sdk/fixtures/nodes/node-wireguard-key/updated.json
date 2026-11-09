@@ -18,7 +18,6 @@
             "wireguard_ip": "10.44.0.2",
             "lan_ip": null,
             "wireguard_public_key": "bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4=",
-            "wireguard_endpoint_override": null,
             "dns_server_override": null,
             "ssh_host_fingerprint": null,
             "failed_step": null,

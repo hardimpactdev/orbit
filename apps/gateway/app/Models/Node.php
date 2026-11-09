@@ -29,7 +29,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $wireguard_ip
  * @property string|null $lan_ip
  * @property string|null $wireguard_public_key
- * @property string|null $wireguard_endpoint_override
  * @property string|null $dns_server_override
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
@@ -79,7 +78,6 @@ final class Node extends Model
         'wireguard_ip',
         'lan_ip',
         'wireguard_public_key',
-        'wireguard_endpoint_override',
         'dns_server_override',
         'ssh_host_key_type',
         'ssh_host_key',

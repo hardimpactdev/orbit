@@ -70,3 +70,47 @@ it('rewrites the hub file of a joining Node as the hub converge does, and gives 
         ->and($files[NodeWireGuardHubInput::peerFile($node->id)]['content'])->toContain('10.44.0.30/32')
         ->and($files[NodeWireGuardHubInput::peerFile($peer->id)]['content'])->toContain($peer->wireguard_public_key);
 });
+
+/** The enrollment network of a Node joining the hub with this LAN address, against a hub on 10.0.0.2. */
+function joiningOnLan(?string $lan): array
+{
+    [$hub] = hubWithPeer();
+    $hub->forceFill(['public_ssh_host' => '94.237.124.160', 'lan_ip' => '10.0.0.2'])->saveQuietly();
+    $home = sys_get_temp_dir().'/orbit-hub-lan-'.bin2hex(random_bytes(4));
+    File::ensureDirectoryExists($home.'/wireguard');
+    file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32))."\n");
+    config(['orbit.home' => $home]);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create([
+        'name' => 'joining', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.30', 'lan_ip' => $lan, 'user' => 'orbit',
+        'status' => LifecycleStatus::Provisioning, 'platform' => 'linux', 'architecture' => 'x86_64',
+        'ssh_host_fingerprint' => 'SHA256:joining', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'joining-public-key']));
+
+    try {
+        return enrollmentNetwork($node);
+    } finally {
+        File::deleteDirectory($home);
+    }
+}
+
+it('gives a Node on the hub\'s private network the hub\'s LAN endpoint and the addresses it must prove first', function (): void {
+    $network = joiningOnLan('10.0.0.4');
+
+    expect(collect($network['files'])->firstWhere('path', '/etc/wireguard/orbit.conf')['content'])->toContain("Endpoint = 10.0.0.2:51820\n")
+        ->and($network['sync_body'])->toContain("Endpoint = 10.0.0.2:51820\n")
+        ->and($network['hub_lan'])->toBe(['address' => '10.0.0.2', 'source' => '10.0.0.4']);
+});
+
+it('keeps the public hub endpoint for a Node whose LAN is another private network', function (?string $lan): void {
+    $network = joiningOnLan($lan);
+
+    expect($network['sync_body'])->toContain("Endpoint = 94.237.124.160:51820\n")
+        ->and($network['hub_lan'])->toBeNull();
+})->with(['home LAN' => '192.168.6.20', 'no LAN' => null]);
+
+it('carries the hub\'s mark in every syncconf on the hub, so a joining peer never clears it', function (): void {
+    $joining = joiningOnLan('10.0.0.4');
+    $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
+
+    expect(enrollmentNetwork($hub)['sync_body'])->toStartWith("ListenPort = 51820\nFwMark = 51820\n\n")
+        ->and($joining['hubs'][0]['sync_body'])->toStartWith("ListenPort = 51820\nFwMark = 51820\n\n");
+});

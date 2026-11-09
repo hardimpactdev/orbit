@@ -130,12 +130,12 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      # The Node composes the full syncconf input at apply time: its own key file, the port, then every peer file.
-      # syncconf drops the interface key when its input has none, and the key never leaves the Node.
+      # The Node composes the full syncconf input at apply time: its own key file, the port and the mark, then every peer file.
+      # syncconf resets the key and the mark when its input has none, and the key never leaves the Node. The mark is the port (ADR 0251).
       inputs:
         hosts: 'name:hub'
         sudo: true
-        argv: [timeout, '30', bash, -c, 'wg syncconf orbit <(printf "[Interface]\nPrivateKey = %s\nListenPort = %s\n\n" "$(cat "$1")" "$2"; cat /etc/wireguard/orbit-peers.d/*.conf)', bash, /etc/wireguard/orbit.key, '${{ string(inputs.intent.port) }}']
+        argv: [timeout, '30', bash, -c, 'wg syncconf orbit <(printf "[Interface]\nPrivateKey = %s\nListenPort = %s\nFwMark = %s\n\n" "$(cat "$1")" "$2" "$2"; cat /etc/wireguard/orbit-peers.d/*.conf)', bash, /etc/wireguard/orbit.key, '${{ string(inputs.intent.port) }}']
 - name: check
   dependsOn: [{job: apply, condition: {type: succeeded}}]
   steps:

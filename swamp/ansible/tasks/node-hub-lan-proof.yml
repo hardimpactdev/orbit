@@ -1,0 +1,28 @@
+---
+# Prove the recorded LAN before any WireGuard file names the hub's LAN endpoint (ADR 0251). `hub_lan.address` is the hub's
+# lan_ip and `hub_lan.source` this Node's. No fallback: a failed proof stops the phase before a change.
+- name: Read the route to the hub's LAN address
+  ansible.builtin.command: { argv: [ip, -4, -j, route, get, "{{ hub_lan.address }}"] }
+  register: hub_lan_route
+  changed_when: false
+  failed_when: false
+  check_mode: false
+- name: Require a direct route from the recorded LAN address
+  vars:
+    route: "{{ (hub_lan_route.stdout | from_json | first) if hub_lan_route.rc == 0 else {} }}"
+  ansible.builtin.assert:
+    that:
+      - hub_lan_route.rc == 0
+      - "'gateway' not in route"
+      - route.prefsrc | default('') == hub_lan.source
+      - route.dev | default('orbit') != 'orbit'
+    fail_msg: node.hub_lan_unreachable
+    quiet: true
+- name: Reach the hub's LAN address from the recorded LAN address
+  ansible.builtin.command: { argv: [ping, -c, "3", -W, "2", -I, "{{ hub_lan.source }}", "{{ hub_lan.address }}"] }
+  register: hub_lan_ping
+  changed_when: false
+  failed_when: false
+  check_mode: false
+- name: Require an answer from the hub's LAN address
+  ansible.builtin.assert: { that: hub_lan_ping.rc == 0, fail_msg: node.hub_lan_unreachable, quiet: true }

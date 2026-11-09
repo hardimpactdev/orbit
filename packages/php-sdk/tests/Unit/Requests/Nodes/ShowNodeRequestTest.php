@@ -29,7 +29,6 @@ describe(ShowNodeRequest::class, function (): void {
                     'wireguard_ip' => '10.44.0.2',
                     'lan_ip' => '10.0.0.2',
                     'wireguard_public_key' => 'operator-public-key',
-                    'wireguard_endpoint_override' => null,
                     'dns_server_override' => '10.0.0.2',
                     'ssh_host_fingerprint' => 'SHA256:operator',
                     'failed_step' => null,

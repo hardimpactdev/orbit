@@ -78,7 +78,7 @@ sequenceDiagram
   SW->>N: Set up the tunnel<br/>Ansible phase: tunnel
   %%> What it does:
   %%> - creates the WireGuard key and requires its public key to be unique, before any tunnel change: two Nodes with the same public key cannot both be peers, and an existing hub must keep its peer-facing key
-  %%> - on the hub's private network (both recorded `lan_ip` in one IPv4 /24), proves before any tunnel change that the kernel routes the hub's LAN address directly from the Node's `lan_ip` and that it answers; a failed proof stops with `node.hub_lan_unreachable` and never falls back to the public endpoint
+  %%> - on the hub's private network (both recorded `lan_ip` in one IPv4 /24), proves before any tunnel change that the kernel routes the hub's LAN address directly from the Node's `lan_ip` and that it answers; a failed proof fails the phase, its assertion reads `node.hub_lan_unreachable`, and Orbit never falls back to the public endpoint
   %%> - writes the tunnel files, starts the tunnel, sets the tunnel address and trusts the WireGuard members
   %%> - on the hub itself, applies and checks the source rule: marked WireGuard packets to public peers leave from the public endpoint address
   %%> Secrets:

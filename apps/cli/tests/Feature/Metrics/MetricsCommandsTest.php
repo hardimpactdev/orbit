@@ -620,7 +620,6 @@ function metrics_cli_node_payload(int $id, string $name, string $status, array $
         'ssh_user' => 'orbit',
         'wireguard_ip' => "10.44.0.{$id}",
         'wireguard_public_key' => "{$name}-public-key",
-        'wireguard_endpoint_override' => null,
         'dns_server_override' => null,
         'ssh_host_fingerprint' => null,
         'failed_step' => null,

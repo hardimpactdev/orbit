@@ -108,6 +108,10 @@
           - net.required_public_key is none or tunnel_public_key.stdout | trim == net.required_public_key
         fail_msg: The tunnel key must belong to this Node, and an existing hub must retain its peer-facing key.
         quiet: true
+    - name: Prove the hub's LAN endpoint before any tunnel change
+      when: net.hub_lan is not none
+      ansible.builtin.include_tasks: tasks/node-hub-lan-proof.yml
+      vars: { hub_lan: "{{ net.hub_lan }}" }
     - name: Write the tunnel files
       ansible.builtin.copy:
         dest: "{{ item.path }}"
@@ -165,6 +169,10 @@
         stdin_add_newline: false
       register: tunnel_peers
       changed_when: tunnel_peers.stdout is search('changed')
+    - name: Send the hub's public WireGuard packets from the endpoint address
+      when: net.source is not none
+      ansible.builtin.include_tasks: tasks/node-hub-source.yml
+      vars: { hub_source: "{{ net.source }}" }
     - name: Trust WireGuard members
       ansible.builtin.command: { argv: "{{ net.trust_argv }}" }
       register: trust

@@ -19,7 +19,6 @@ final readonly class NodeEnrollmentCandidate
         public ?int $clusterId,
         public ?string $tld,
         public ?string $lanIp,
-        public ?string $wireguardEndpointOverride,
         public ?string $dnsServerOverride,
     ) {}
 }

@@ -36,7 +36,6 @@ final class NodeData extends Data
         public ?string $wireguardIp,
         public ?string $lanIp,
         public ?string $wireguardPublicKey,
-        public ?string $wireguardEndpointOverride,
         public ?string $dnsServerOverride,
         public ?string $sshHostFingerprint,
         public ?string $failedStep,
@@ -63,7 +62,6 @@ final class NodeData extends Data
         $wireguardIp = $node->getAttribute('wireguard_ip');
         $lanIp = $node->getAttribute('lan_ip');
         $wireguardPublicKey = $node->getAttribute('wireguard_public_key');
-        $wireguardEndpointOverride = $node->getAttribute('wireguard_endpoint_override');
         $dnsServerOverride = $node->getAttribute('dns_server_override');
         $sshHostFingerprint = $node->getAttribute('ssh_host_fingerprint');
         $failedStep = $node->getAttribute('failed_step');
@@ -87,7 +85,6 @@ final class NodeData extends Data
             wireguardIp: ValidatedData::nullableString($wireguardIp),
             lanIp: ValidatedData::nullableString($lanIp),
             wireguardPublicKey: ValidatedData::nullableString($wireguardPublicKey),
-            wireguardEndpointOverride: ValidatedData::nullableString($wireguardEndpointOverride),
             dnsServerOverride: ValidatedData::nullableString($dnsServerOverride),
             sshHostFingerprint: ValidatedData::nullableString($sshHostFingerprint),
             failedStep: ValidatedData::nullableString($failedStep),

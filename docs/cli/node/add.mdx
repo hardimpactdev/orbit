@@ -64,14 +64,13 @@ A failed run retains the work it finished and does not roll back. A new Node sta
 | `node.ssh_host_key_mismatch` | The machine's host key, or for an existing Node the given fingerprint, differs from the approved or recorded one. Nothing changes. |
 | `node.ssh_host_key_changed` | The machine presents a different host key than the one recorded for this Node. |
 | `node.architecture_unsupported` | The architecture is not `x86_64` on a Linux Node. |
-| `node.hub_lan_unreachable` | The Node records a `lan_ip` on the hub's private network, but the hub's LAN address is not directly routed from it or does not answer. No tunnel file changed. See [The LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint). |
 | `node.platform_unsupported` | A macOS Node was given a role, or a TLD, Cluster, DNS, tunnel or storage setting. Refused before SSH. |
 | `node.macos_account_required`, `node.macos_account_mismatch`, `node.wireguard_required` | A macOS Node needs `--user` and `--orbit-user` naming the same existing account, and an existing WireGuard address. |
 | `node.tld_required`, `node.tld_invalid`, `node.tld_taken`, `node.tld_conflict` | `app-dev` has no TLD, or the TLD is malformed, reserved, in use, or conflicts with another name Orbit serves. |
 | `node.role_conflict` | A requested role cannot be assigned during enrollment or conflicts with the Node's roles. |
 | `cluster.not_found`, `cluster.membership_conflict`, `cluster.lan_ip_conflict` | The Cluster does not exist, the Node cannot join it, or the LAN address is already used in it. |
 | `node.invalid_linux_user`, `node.user_change_unsupported` | The managed user is not a valid Linux account name, or an existing Node's managed user cannot change. |
-| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. |
+| `node.ssh_host_key_scan_failed`, `node.bootstrap_account_unavailable`, `node.enrollment_failed` | The run could not read the host key, log in to the bootstrap account, or finish enrollment. When the hub's [LAN endpoint](/reference/wireguard-endpoints#the-lan-endpoint) is not directly routed from the Node's `lan_ip` or does not answer, the `tunnel` step fails before any tunnel change and its failed assertion reads `node.hub_lan_unreachable`. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node's name lock. Nothing changes. |
 
 ## How it works

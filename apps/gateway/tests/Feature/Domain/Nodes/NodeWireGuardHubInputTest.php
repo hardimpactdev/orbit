@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeWireGuardHubInput;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -71,4 +72,45 @@ it('removes one Node from the hub by deleting its own file, and writes or keeps 
         ->and($intent['config'])->toBe(NodeWireGuardHubInput::config($hub));
     // A rewrite lists the other Node, which is the snapshot a concurrent removal must not carry.
     expect(array_column(NodeWireGuardHubInput::intent($hub)['peers'], 'node_id'))->toBe([$other->id]);
+});
+
+it('marks the hub\'s WireGuard packets and sends them to public peers from the public endpoint address', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    $hub->forceFill(['public_ssh_host' => '94.237.124.160', 'lan_ip' => '10.0.0.2'])->saveQuietly();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820);
+
+    $intent = NodeWireGuardHubInput::intent($hub);
+
+    // The 2026-11-09 incident: the hub started handshakes from its DHCP primary address and peers roamed to it. The rules
+    // send every marked packet through the main table without its default route, then through the hub's own table, whose
+    // default route leaves from the floating endpoint address; private networks keep their route and source.
+    expect($intent['config'])->toBe(<<<'CONF'
+        [Interface]
+        Address = 10.44.0.209/24
+        ListenPort = 51820
+        FwMark = 51820
+        PostUp = wg set %i private-key /etc/wireguard/orbit.key
+        PostUp = for f in /etc/wireguard/orbit-peers.d/*.conf; do [ -e "$f" ] && wg addconf %i "$f"; done; true
+        PostUp = ip -4 rule del priority 31820 2>/dev/null; ip -4 rule add priority 31820 fwmark 51820 lookup main suppress_prefixlength 0
+        PostUp = ip -4 rule del priority 31821 2>/dev/null; ip -4 rule add priority 31821 fwmark 51820 lookup 51820
+        PostUp = r=$(ip -4 route show default | awk '{for (i = 1; i < NF; i++) if ($i == "via" || $i == "dev") printf "%s %s ", $i, $(i + 1); exit}'); [ -z "$r" ] || ip -4 route replace default $r src 94.237.124.160 table 51820 || true
+
+        CONF)
+        ->and($intent['source'])->toBe(['address' => '94.237.124.160', 'mark' => 51820,
+            'rules' => ['31820:0xca6c:main', '31821:0xca6c:51820'],
+            'commands' => array_map(static fn (string $line): string => substr($line, strlen('PostUp = ')),
+                array_slice(explode("\n", trim($intent['config'])), 6))]);
+});
+
+it('takes the source address from the stored Gateway endpoint, and pins none for a hostname endpoint', function (): void {
+    $hub = SwampNodeFixture::ensure();
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820, endpoint: '198.51.100.7:51820');
+    expect(NodeWireGuardHubInput::source($hub)['address'])->toBe('198.51.100.7');
+
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', port: 51820, endpoint: 'vpn.example.com:51820');
+
+    // A hostname leaves the hub nothing to pin, but every syncconf still carries the mark, so the interface keeps it.
+    expect(NodeWireGuardHubInput::source($hub))->toBeNull()
+        ->and(NodeWireGuardHubInput::config($hub))->toContain("FwMark = 51820\n")->not->toContain('ip -4 rule')
+        ->and(NodeWireGuardHubInput::interface(51820))->toBe("ListenPort = 51820\nFwMark = 51820\n");
 });

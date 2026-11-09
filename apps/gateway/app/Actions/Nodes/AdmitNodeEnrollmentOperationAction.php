@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class AdmitNodeEnrollmentOperationAction
 {
     public const array IdentityFields = ['status', 'cluster_id', 'platform', 'architecture', 'tld', 'user', 'public_ssh_host', 'public_ssh_port',
-        'wireguard_ip', 'lan_ip', 'wireguard_endpoint_override', 'dns_server_override', 'failed_step', 'error_code',
+        'wireguard_ip', 'lan_ip', 'dns_server_override', 'failed_step', 'error_code',
         'ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint', 'wireguard_public_key', 'ssh_jump_node_id'];
 
     public function __construct(private StartOperationAction $operations, private OperationKinds $kinds, private OperationIdempotency $idempotency,

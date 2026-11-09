@@ -1,0 +1,42 @@
+---
+# Send the hub's WireGuard packets to public peers from its public endpoint address (ADR 0251). `hub_source.commands` are
+# the PostUp lines of the hub's orbit.conf; here they reach the running hub, and only on drift. A marked packet to a
+# public test address (192.0.2.1, never sent) must leave from `hub_source.address`.
+- name: Read the hub's endpoint address
+  ansible.builtin.command: { argv: [ip, -4, -o, address, show, to, "{{ hub_source.address }}/32"] }
+  register: hub_source_local
+  changed_when: false
+  check_mode: false
+- name: Require the endpoint address on the hub
+  ansible.builtin.assert: { that: hub_source_local.stdout | trim | length > 0, fail_msg: vpn.endpoint_not_local, quiet: true }
+- name: Read the hub's WireGuard rules
+  ansible.builtin.command: { argv: [ip, -4, -j, rule, show] }
+  register: hub_source_rules
+  changed_when: false
+  check_mode: false
+- name: Read the hub's WireGuard source
+  ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
+  register: hub_source_route
+  changed_when: false
+  failed_when: false
+  check_mode: false
+- name: Apply the hub's WireGuard source
+  vars:
+    live_rules: >-
+      {% for rule in hub_source_rules.stdout | from_json %}{{ rule.priority | default('') }}:{{ rule.fwmark | default('') }}:{{ rule.table | default('') }}
+      {% endfor %}
+  when: >-
+    hub_source.rules | difference(live_rules.split()) | length > 0
+    or (' src ' ~ hub_source.address ~ ' ') not in hub_source_route.stdout
+  ansible.builtin.shell: { executable: /bin/bash, cmd: "{{ hub_source.commands | join('\n') }}" }
+  changed_when: true
+- name: Read the hub's WireGuard source again
+  ansible.builtin.command: { argv: [ip, -4, -o, route, get, 192.0.2.1, mark, "{{ hub_source.mark }}"] }
+  register: hub_source_check
+  changed_when: false
+  check_mode: false
+- name: Require the endpoint address as the source of public WireGuard packets
+  ansible.builtin.assert:
+    that: (' src ' ~ hub_source.address ~ ' ') in hub_source_check.stdout
+    fail_msg: vpn.source_route_failed
+    quiet: true

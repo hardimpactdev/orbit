@@ -47,15 +47,16 @@ final readonly class UpdateNodeAction
 
     /**
      * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
-     * are stored when the run succeeds, while a new name or platform in the same request is already saved.
+     * are stored when the run succeeds, while a new name, platform or LAN address in the same request is already saved.
      * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
-    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null): UpdateNodeResult
+    public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null,
+        bool $hasLanIp = false, ?string $lanIp = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId): UpdateNodeResult {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -64,12 +65,13 @@ final readonly class UpdateNodeAction
         }
     }
 
-    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId): UpdateNodeResult
+    private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId,
+        bool $hasLanIp, ?string $lanIp): UpdateNodeResult
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, &$written): Node|Operation {
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, &$written): Node|Operation {
             $node->refresh();
-            $written = $this->record($node, $name, $platform);
+            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp);
             if ($settings->isEmpty()) {
                 return $node;
             }
@@ -122,8 +124,11 @@ final readonly class UpdateNodeAction
         return $result instanceof Node ? new UpdateNodeResult($node->load('roles'), unchanged: ! $written) : new UpdateNodeResult($result);
     }
 
-    /** Saves the name and platform, the registry facts that need no run, and reports whether either changed. */
-    private function record(Node $node, ?string $name, ?string $platform): bool
+    /**
+     * Saves the name, platform and LAN address, the registry facts that need no run, and reports whether one changed. The LAN
+     * address selects where Orbit renders LAN traffic, the hub endpoint included (ADR 0251); each render picks it up.
+     */
+    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp): bool
     {
         // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
         if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
@@ -137,6 +142,13 @@ final readonly class UpdateNodeAction
         }
         if ($platform !== null) {
             $node->platform = $platform;
+        }
+        if ($hasLanIp && $lanIp !== $node->lan_ip) {
+            if ($lanIp !== null && $node->cluster_id !== null
+                && Node::query()->where('cluster_id', $node->cluster_id)->where('lan_ip', $lanIp)->whereKeyNot($node->id)->exists()) {
+                throw new ResourceOperationException('cluster.lan_ip_conflict', "LAN IP [{$lanIp}] is already assigned in the Cluster.", 409);
+            }
+            $node->lan_ip = $lanIp;
         }
         if (! $node->isDirty()) {
             return false;
