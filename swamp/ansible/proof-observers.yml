@@ -1,0 +1,38 @@
+---
+# Runs on the task VM through its installed Ansible controller. The Incus connection reaches only these disposable guests.
+- name: Prepare the candidate observers on the proof fleet
+  hosts: nested-gateway:nested-app-dev:nested-app-prod
+  connection: community.general.incus
+  remote_user: root
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    agent: >-
+      {{ (lookup('ansible.builtin.file', playbook_dir + '/../../apps/gateway/resources/agent/frozen-manifest.json') | from_json).artifacts['linux-x86_64'] }}
+  tasks:
+    - name: Require a released observer digest
+      ansible.builtin.assert:
+        that: agent.sha256 is match('^[0-9a-f]{64}$')
+        quiet: true
+    - name: Install the candidate observer
+      ansible.builtin.import_tasks: tasks/node-converge-replace.yml
+      vars:
+        converge_replacement:
+          path: /usr/local/bin/orbit-agent
+          url: "{{ agent.url }}"
+          sha256: "{{ agent.sha256 }}"
+    - name: Start the candidate observer
+      ansible.builtin.systemd:
+        name: orbit-agent.service
+        enabled: true
+        state: "{{ 'restarted' if converge_replacement_commit is changed or converge_replacement_metadata is changed else 'started' }}"
+    - name: Read the installed observer digest
+      ansible.builtin.stat:
+        path: /usr/local/bin/orbit-agent
+        checksum_algorithm: sha256
+      register: proof_observer
+    - name: Verify the candidate observer
+      ansible.builtin.assert:
+        that: proof_observer.stat.checksum == agent.sha256
+        fail_msg: The proof observer does not match the candidate pin
+        quiet: true

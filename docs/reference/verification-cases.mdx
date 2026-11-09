@@ -12,6 +12,8 @@ covers:
 
 A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
 
+Before discovery and cases, proof preparation installs the candidate's frozen observer pin on all three nested Nodes with the replacement task from Node convergence, which verifies the checksum and replaces the binary atomically. It starts the observers, restarts changed binaries and verifies installed digests. Every base restore repeats this check; it never updates a base snapshot. A preparation failure stops cases as infrastructure. Batch setup has a 480-second transport limit for the Gateway prerequisites and observer preparation; case deadlines and reporting waits are unchanged.
+
 The design has four aims:
 
 - Writing a case is quick. An agent turns the command page and chart into cases, and another agent reviews them. Different commands are written in parallel.

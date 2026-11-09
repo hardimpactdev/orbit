@@ -76,6 +76,7 @@ sequenceDiagram
   %%> - prerequisite preparation uses the candidate's Ansible play on the nested Gateway; a failure stops the cases as an infrastructure failure
   %%> - the code itself needs no step: the nested containers have the task VM's checkout as a disk device (stage 2), and PHP reads changed files on the next request
   %%> - also runs after every restore below: the restored containers boot the state of `base`, whose database may predate the checkout's migrations
+  %%> - before discovery after each restore, the runner applies the candidate observer pin, starts the observers and verifies installed digests as separate steps in the [runner chart](/reference/pipeline/3-proof-runner); failure stops cases as infrastructure
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>NT: Restore base<br/>a reboot · 5–16 s
     %%> What it does:
