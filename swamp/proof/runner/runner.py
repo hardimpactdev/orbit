@@ -32,7 +32,6 @@ class Run:
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
-        self.metrics_errors = []
         self.evidence.mkdir(parents=True, exist_ok=True)
 
     def cli(self, args, form='json', node=None):
@@ -44,9 +43,6 @@ class Run:
 
     def keep(self, result, suffix):
         self.calls += 1
-        # Temporary diagnostics for #3237; only the metrics read has a public, secret-free payload.
-        if self.spec.command == 'node:metrics' and 'node:metrics' in result.get('args', []) and result['rc'] != 0 and len(self.metrics_errors) < 2:
-            self.metrics_errors.append(f"CLI exit={result['rc']} stdout={terminal_text(result['stdout'])} stderr={terminal_text(result['stderr'])}")
         (self.evidence / f'cli-{self.calls}.{suffix}').write_text(result['stdout'])
         (self.evidence / f'cli-{self.calls}.stderr').write_text(result['stderr'])
         return result
@@ -156,11 +152,6 @@ def execute(case, fleet, spec, evidence, negative=False):
         verdict, cause, failures = 'unrun', 'precondition', [f'setup: {error}']
     except Exception as error:  # a step that could not run is a failed case, never a pass
         verdict, cause, failures = 'failed', 'infrastructure', failures + [f'{type(error).__name__}: {error}']
-    if verdict == 'failed' and run.metrics_errors:
-        try:
-            failures = metrics_diagnostics(run) + failures
-        except Exception as error:
-            failures.insert(0, f'diagnostic unavailable: {type(error).__name__}')
     try:
         steps.cleanup(run)
     except Exception as error:  # the next restore removes what is left
@@ -173,41 +164,6 @@ def execute(case, fleet, spec, evidence, negative=False):
         result['failed'] = failures
     receipt = {**result, 'summary': case.summary, 'steps': run.log, 'phase_secs': run.timings, 'names': run.names, 'sources': {f'{node}/v{family}': address for (node, family), address in run.sources.items()}, 'failed': failures}
     return result, receipt
-
-
-def terminal_text(value):
-    return ' '.join(steps.terminal.plain(value).split())[:145]
-
-
-def metrics_diagnostics(run):
-    """Temporary, read-only evidence for #3237, captured before the proof VM is deleted."""
-    found = run.metrics_errors[:]
-    status = run.fleet.sh('app-dev', "digest=$(sha256sum /usr/local/bin/orbit-agent | cut -d ' ' -f 1); "
-                          "printf '{\"agent_sha256\":\"%s\",\"deadline_ms\":5000,\"input\":{}}\\n' \"$digest\" | "
-                          "runuser -u orbit -- /usr/local/bin/orbit-agent command agent.status", timeout=15)
-    try:
-        answer = json.loads(status.stdout)
-        data = answer.get('data') or answer.get('result') or answer
-        found.append('agent=' + json.dumps(data, separators=(',', ':'))[:180])
-    except ValueError:
-        found.append(f'agent status exit={status.returncode} {terminal_text(status.stderr)}')
-    code = r"""<?php
-require '/home/orbit/orbit/apps/gateway/vendor/autoload.php';
-$app = require '/home/orbit/orbit/apps/gateway/bootstrap/app.php';
-$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$node = App\Models\Node::where('name', 'app-dev')->firstOrFail();
-$facts = Illuminate\Support\Facades\DB::table('node_facts')->where('node_id', $node->id);
-echo json_encode(['kinds' => (clone $facts)->distinct()->pluck('kind'), 'metrics_at' => $facts->where('kind', 'metrics')->value('observed_at')]);
-"""
-    facts = run.fleet.sh('gateway', 'runuser -u orbit -- php', timeout=15, stdin_text=code)
-    found.append(f'facts exit={facts.returncode} {terminal_text(facts.stdout or facts.stderr)}')
-    journal = run.fleet.sh('app-dev', "journalctl -u orbit-agent --no-pager -n 100 -o cat | grep 'metrics fact report failed' | tail -1", timeout=15)
-    found.append('report=' + terminal_text(journal.stdout))
-    if not journal.stdout.strip():
-        proc = run.fleet.sh('app-dev', "awk '/^cpu[0-9]+ / {n++} END {print \"cores=\" n}' /proc/stat; "
-                            "grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo", timeout=15)
-        found.append('proc=' + terminal_text(proc.stdout))
-    return ['diagnostic ' + value for value in found]
 
 
 def verdict_line(result):
