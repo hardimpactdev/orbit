@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/conn-pairing"
-version: 2026.11.02.2
+version: 2026.11.09.1
 visibility: private
 license: MIT
 description: Typed private T3 reply data and unique native sensitive credential storage.

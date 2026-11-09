@@ -19,6 +19,9 @@ use Orbit\Extensions\Conn\Models\ConnPairing;
 /** Shared terminal delivery imports the native protected output into the existing owner record. */
 final readonly class ConnPairingProjection implements DirectOperationProjection
 {
+    /** T3 answered with one of these, so no retry issues a link. Any other failure keeps the outcome unknown. */
+    public const array AnsweredFailures = ['conn.session_rejected', 'conn.request_refused', 'conn.response_invalid'];
+
     public function __construct(private DirectOperation $direct, private SwampVaultExecutionCopy $vault, private ConnPairingCredentialStore $store, private SwampScheduleWorkflows $mutations) {}
 
     public function input(Operation $operation): array
@@ -36,7 +39,7 @@ final readonly class ConnPairingProjection implements DirectOperationProjection
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
-                $code = in_array($detail, ['conn.session_rejected', 'conn.response_invalid', 'conn.pairing_outcome_unknown'], true) ? $detail : 'conn.pairing_outcome_unknown';
+                $code = in_array($detail, self::AnsweredFailures, true) ? $detail : 'conn.pairing_outcome_unknown';
                 $data['error_code'] = $code;
                 $raw = ['error_code' => $code];
             }

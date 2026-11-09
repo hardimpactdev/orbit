@@ -30,14 +30,17 @@ function args(directory: string, status = "200", id = 7) {
         env: { ORBIT_CONN_ADMIN_SESSION: admin },
     };
 }
-Deno.test("private reply writes a pairing-specific native sensitive resource and only a public locator", () =>
+Deno.test("T3's reply with its echoed label writes a pairing-specific native sensitive resource and only a public locator", () =>
     fixture(async (directory) => {
+        // T3's AuthPairingCredentialResult echoes the requested label; a newer T3 may add fields.
         await Deno.writeTextFile(
             `${directory}/reply.json`,
             JSON.stringify({
                 id: "link",
                 credential,
-                expiresAt: "2026-11-01T01:00:00Z",
+                label: "phone",
+                expiresAt: "2026-11-01T01:00:00.000Z",
+                scopes: ["orchestration:read"],
             }),
         );
         const writes: { spec: string; name: string; data: unknown }[] = [];
@@ -63,7 +66,11 @@ Deno.test("private reply writes a pairing-specific native sensitive resource and
         assertEquals(writes[0], {
             spec: "issued",
             name: "pairing-7",
-            data: { id: "link", credential, expiresAt: "2026-11-01T01:00:00Z" },
+            data: {
+                id: "link",
+                credential,
+                expiresAt: "2026-11-01T01:00:00.000Z",
+            },
         });
         for (const [index, id] of [[1, 7], [3, 8]]) {
             const terminal = JSON.stringify(writes[index].data);
@@ -75,7 +82,7 @@ Deno.test("private reply writes a pairing-specific native sensitive resource and
                     backend: "issued",
                     pairing_id: id,
                     pairing_link_id: "link",
-                    expires_at: "2026-11-01T01:00:00Z",
+                    expires_at: "2026-11-01T01:00:00.000Z",
                     credential_ref: {
                         vault: "orbit-control-inputs",
                         key: `nckrtl-conn-pairing-00000000-0000-4000-8000-000000000001-issue-issued-pairing-${id}-credential`,
@@ -84,7 +91,17 @@ Deno.test("private reply writes a pairing-specific native sensitive resource and
             );
         }
     }));
-for (const mode of ["401", "503", "malformed", "echo", "admin-echo"]) {
+const failures: Record<string, string> = {
+    "401": "conn.session_rejected",
+    "503": "conn.request_refused",
+    "malformed": "conn.response_invalid",
+    "no-credential": "conn.response_invalid",
+    "no-label": "conn.response_invalid",
+    "other-label": "conn.response_invalid",
+    "echo": "conn.response_invalid",
+    "admin-echo": "conn.response_invalid",
+};
+for (const [mode, code] of Object.entries(failures)) {
     Deno.test(`${mode} keeps diagnostics public and stores no credential`, () =>
         fixture(async (directory) => {
             let writes = 0;
@@ -96,7 +113,10 @@ for (const mode of ["401", "503", "malformed", "echo", "admin-echo"]) {
                         : mode === "admin-echo"
                         ? admin
                         : "link",
-                    credential,
+                    ...(mode === "no-credential" ? {} : { credential }),
+                    ...(mode === "no-label"
+                        ? {}
+                        : { label: mode === "other-label" ? "laptop" : "phone" }),
                     expiresAt: "2026-11-01T01:00:00Z",
                 }),
             );
@@ -115,6 +135,7 @@ for (const mode of ["401", "503", "malformed", "echo", "admin-echo"]) {
                     },
                 )
             );
+            assertEquals((error as Error).message, code);
             assertFalse(String(error).includes(credential));
             assertFalse(String(error).includes(admin));
             assertEquals(writes, 0);
