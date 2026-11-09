@@ -1,12 +1,12 @@
 ---
 title: "ADR 0250: Run instances and task groups in Incus containers"
 sidebarTitle: "0250 Instances and task groups in containers"
-description: "In progress. Every Instance runs in an unprivileged Incus container on its Node, with a T3 server inside as its agent engine. A task runs in such an Instance container, and Swamp drives its T3; a user drives the same T3 in development. A nested fleet is an optional feature of a Project. A shared kernel is the accepted risk; patching, SCTP off and no secrets on agent hosts are requirements."
+description: "In progress. Every Instance runs in an unprivileged Incus container on its Node, with a T3 server inside as its agent engine. A task runs in such an Instance container, and Swamp drives its T3; a user drives the same T3 in development. A nested fleet is an optional feature. A shared kernel is the accepted risk; patching, SCTP off and no secrets on agent hosts are requirements."
 ---
 
 # ADR 0250: Run instances and task groups in Incus containers
 
-Every Instance runs in an unprivileged Incus container directly on its Node. A development Instance's container holds a T3 server, its agent engine. A task group runs in such an Instance container: a clone of the Project's default Instance, or an existing Instance that the task attaches to. There is one container kind. Only the driver differs: a user drives the T3 threads in development, and Swamp drives the same T3 for a task. A Project that needs its own fleet, such as Orbit for its command proofs, turns on a nested fleet: Incus containers nested inside each of its Instance containers. There is no task VM, no separate task container, no Project VM and no VM per Node. All containers on a Node share that Node's kernel.
+Every Instance runs in an unprivileged Incus container directly on its Node. A development Instance's container holds a T3 server, its agent engine. A task group runs in such an Instance container: a clone of the Project's default Instance, or an existing Instance that the task attaches to. There is one container kind. Only the driver differs: a user drives the T3 threads in development, and Swamp drives the same T3 for a task. Work that needs its own fleet, such as Orbit's command proofs, turns on a nested fleet: Incus containers nested inside an Instance container. There is no task VM, no separate task container, no Project VM and no VM per Node. All containers on a Node share that Node's kernel.
 
 ## Status
 
@@ -50,7 +50,7 @@ Orbit has one runtime kind for Instances and agent work: an unprivileged Incus c
 - **Every Node with Instances.** Every `app-dev` and `app-prod` Node runs its Instances in containers; there is no setting to opt in. The Nodes' Incus pools are ZFS, which clones need. The two roles install the container setup and the [shared folders](#shared-folders) instead of PHP-FPM and checkout folders. Existing checkout Instances are migrated into containers, code and database.
 - **Development Instance.** One container per Instance, recorded as the Instance's runtime. The Project's first default Instance on a Node is built from scratch. Every other Instance is a ZFS clone of that default Instance, and its database is a clone of the default's database through the database family. The default Instance deploys every merge to the default branch, so a clone starts current; there are no development setup steps. The default Instance never runs T3.
 - **Task.** A task group runs in one Instance container. Its start clones the Project's default Instance, or the task attaches to an existing Instance. Swamp drives the container's T3 for the task's turns. A clone made for the task is destroyed when the group ends; an attached Instance stays.
-- **Nested fleet.** An optional feature of a Project. Its Instance containers then run a fleet as Incus containers nested inside them: for Orbit, a Gateway, an `app-dev` and an `app-prod` Node for command proofs.
+- **Nested fleet.** An optional feature, which [the plan](/solutions/development-container-runtime#open-questions) proposes per Project. Instance containers with it run a fleet as Incus containers nested inside them: for Orbit, a Gateway, an `app-dev` and an `app-prod` Node for command proofs.
 - **Production Instance.** Containers on its `app-prod` Node, with the user `orbit` only and no agent. Production containers never sleep. Step 10 moves them, after development containers work.
 - **Node.** The machine Orbit runs on: a bare-metal host or a VPS. Containers are runtimes of Instances, never Nodes. They get no WireGuard identity, no roles and no exporter.
 
@@ -151,7 +151,7 @@ Task work is the critical path. The Swamp migration waits until step 6 passes, a
 2. **Host hardening** on Beast and Shark: current kernels, SCTP off, an explicit container egress model and bridge DNS, and secrets moved off.
 3. **Instance containers** on the Nodes of a build list: Node preparation with the shared folders, the default Instance, clones with T3, and destroy. [Instance containers](/reference/development-containers) specifies them, and [Container runtime](/solutions/development-container-runtime) orders the PRs.
 4. **Tasks in Instance containers.** A task starts in a clone or attaches to an Instance, and Swamp drives the container's T3.
-5. **Nested fleet** as a Project feature, and command proofs in an Orbit Instance container.
+5. **Nested fleet** as an optional feature, and command proofs in an Orbit Instance container.
 6. **Parity gate.** Orbit's command proof cases pass in an Orbit Instance container with the nested fleet on, with the same verdicts as on task VMs, and a real task group runs there end to end. [The plan](/solutions/development-container-runtime#parity-gate) defines it.
 7. **Switch task work** on Beast, then Shark, in a window with no proofs or merges in flight. Running task VMs finish first.
 8. **Switch development:** sleep and wake, threads from Conn, the migration of checkout Instances, and every `app-dev` Node.
@@ -164,7 +164,7 @@ Task work is the critical path. The Swamp migration waits until step 6 passes, a
 - **One VM per Node with containers inside.** Protects the host, but adds a second layer of Nodes, moves WireGuard and exporters into a VM, and still cannot run on UpCloud. Rejected for simplicity.
 - **A separate task container kind, with its own base snapshot, places and a temporary Node identity, running Pi.** The first plan of this ADR. It would repeat the image, users, folders, model route and Git path of Instance containers, keep Pi as a second engine, and need a second switch to T3. Rejected for one container kind with two drivers.
 - **Sibling containers per task group instead of nesting.** Less kernel surface, but a group becomes several containers and a bridge that Swamp must snapshot and restore together, and the agent loses control of its fleet. Rejected because nesting proved to work and keeps one unit per Instance.
-- **A nested fleet in every container.** Every Instance would carry nesting and its kernel surface for a feature that only Orbit's proofs use. Rejected for a feature that a Project turns on.
+- **A nested fleet in every container.** Every Instance would carry nesting and its kernel surface for a feature that only Orbit's proofs use. Rejected for an optional feature.
 - **A VM per Instance (as DevVM does with Lima).** Needs KVM, which UpCloud does not offer, and costs a kernel and reserved memory per Instance.
 - **One T3 outside the containers, driving a Pi server inside each.** Lighter: a Pi server idles at about 90 MB, a T3 server at about 400 MB. But T3's changed-files view, terminals and browser would need a remote git and shell layer through every upstream sync, and Pi Durable has no MCP client. Rejected for a stock T3 inside each container; idle containers stop, which removes the memory cost.
 - **A Swamp adapter process inside the container.** T3's MCP endpoint and WebSocket API already cover threads, turns, waits, reads and interrupts. Rejected: nothing runs in the container for Swamp.

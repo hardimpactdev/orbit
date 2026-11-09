@@ -85,7 +85,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 | 2e | Patch kernels automatically, with planned reboots. | In progress |
 | 3 | Run Instances in containers on the Nodes of a build list, with T3 inside. | Specified in [Instance containers](/reference/development-containers); plan in [Container runtime](/solutions/development-container-runtime) |
 | 4 | Run tasks in Instance containers, driven by Swamp through T3. | Planned in [Container runtime](/solutions/development-container-runtime#pr-7-run-a-task-in-a-clone) |
-| 5 | Add the nested fleet as a Project feature, and run command proofs in an Orbit Instance container. | Planned in [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
+| 5 | Add the nested fleet as an optional feature, and run command proofs in an Orbit Instance container. | Planned in [Container runtime](/solutions/development-container-runtime#pr-10-the-nested-fleet) |
 | 6 | Parity gate: Orbit's command proof cases in an Orbit Instance container with the nested fleet match their task VM results. | Specified in [Parity gate](/solutions/development-container-runtime#parity-gate) |
 | 7 | Switch task work on Beast, then Shark, in a window with no proofs or merges in flight. | Open |
 | 8 | Switch development: sleep and wake, threads from Conn, migration, every `app-dev` Node. | Planned in [Container runtime](/solutions/development-container-runtime#pr-13-sleep-and-wake) |
@@ -94,7 +94,7 @@ Track A replaces task VMs and the Project VM with containers, in the order ADR 0
 
 ### Track B: threads and tasks
 
-Track B builds on steps 3 and 4. Its steps are PRs of the [container plan](/solutions/development-container-runtime#build-prs): PR 14, PR 9 and PR 7 with PR 8.
+Track B builds on steps 3, 4 and 8. Its steps are PRs of the [container plan](/solutions/development-container-runtime#build-prs): PR 14, PR 9 and PR 7 with PR 8.
 
 1. **pi-server on Pi 1.5.0.** Done.
 2. **Drive an external task group from a T3 thread through the Orbit MCP.** What got in the way became fixes in the MCP. The last of them is in review.

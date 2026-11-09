@@ -10,17 +10,13 @@ covers:
 
 # Instance containers
 
-**Not built, except the [records](#records) and the [Node preparation](#prepare-a-node).** This page specifies steps 3 to 6 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
+**Not built, except the [records](#records) and the [Node preparation](#prepare-a-node).** This page specifies steps 3, 4, 5 and 8 of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). It describes the target, and the production basics of step 10. The parity gate of step 6 lives in the plan. The PRs in [Container runtime](/solutions/development-container-runtime) build it, one part at a time, and move each part into its owning page. Until then, development Instances run from checkouts on their Node, as [Applications](/domains/applications) describes, and task groups run on [task VMs](/reference/compute-drivers#task-vms).
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
 Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys every merge to the default branch, so clones start at the current default branch with its dependencies installed. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
-
-This page took in the earlier Task containers page. Its nested fleet is now [Nested fleet](#nested-fleet). Its base container snapshot, its places, its Node identity and its Pi server are dropped: a clone of the default Instance takes the base's place, and T3 takes Pi's. Its host preparation stays as the container host part of [Nodes](#nodes).
-
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys every merge to the default branch, so clones start at the current default branch with its dependencies installed. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 ## Charts
 
@@ -69,7 +65,7 @@ The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253
 
 Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)).
 
-The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 8 ([Production Instances](#production-instances)).
+The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 
 ## Inside a container
 
@@ -165,7 +161,7 @@ A container reaches only what this table lists. Everything else is dropped at it
 | DNS | The bridge's DNS |
 | Everything else | Dropped, including the Gateway and GitHub |
 
-A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. Dependency installs go through the egress model of step 2c of ADR 0250.
+A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. Dependency installs go through the egress model of [step 2c of the ADR 0250 rollout](/solutions/agent-runtime-and-manual-mode).
 
 ## Lifecycle
 
@@ -181,7 +177,7 @@ There are no development setup steps. The default Instance has them done already
 
 ### Create
 
-`orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container, creates the Instance's branch from the default branch, and writes the `.env`, the agent settings, the note links and `/etc/orbit/instance`. Last, it starts T3 and the Processes, publishes the Route and registers the T3 server. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+`orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container, creates the Instance's branch from the default branch, and writes the `.env`, the agent settings, the note links and `/etc/orbit/instance`. Last, it starts T3 and the Processes, adds the T3 project at `/srv/workspace`, publishes the Route and registers the T3 server. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It keeps the default's `APP_KEY`, because the cloned database holds data encrypted with it; the rest of `.env` is the Instance's own. When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
 
@@ -203,7 +199,7 @@ Orbit creates the owner and grants; no path copies roles.
 
 `orbit instance:destroy INSTANCE` refuses while a T3 turn runs, and refuses unpushed work as today. Orbit fetches origin on the Node and compares it with the container's branches, so no token enters the container. `--force` overrides both checks. It revokes the pairings, withdraws the Route, deletes the container and the database, and marks the T3 server removed. The thread history goes with the container; an archive comes later.
 
-The default Instance cannot be destroyed while it has clones: they share its blocks. A broken default is repaired by a deployment; replacing a default container that has clones is not part of step 6. The [destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
+The default Instance cannot be destroyed while it has clones: they share its blocks. A broken default is repaired by a deployment; replacing a default container that has clones is not part of this runtime yet. The [destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) has the steps.
 
 ### Sleep and wake
 
@@ -231,11 +227,11 @@ A failed move leaves the checkout Instance serving as before. The [migration cha
 The Instance's create flow registers its T3 server with the [Conn layer](/reference/conn#registration), with the same record and the same checks as a server that registers itself:
 
 1. A step in the container issues a session with `t3 auth session issue --label "Orbit Gateway" --token-only`, as `agent`. Swamp stores it in the vault, never in the run.
-1. The same step issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). Swamp keeps that one in the vault.
-2. The same step checks the served environment id and the session's scopes, as `POST /conn/environments` does.
-3. The run returns the environment id and the URL: the Node's WireGuard address and the container's port.
-4. The Gateway records the server from the run's result and moves the session from the vault into its encrypted record. It does not check the result again.
-5. The server's Node is the container's Node, and the record names the Instance.
+2. The same step issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). Swamp keeps that one in the vault.
+3. The same step checks the served environment id and both sessions' scopes, as `POST /conn/environments` does.
+4. The run returns the environment id and the URL: the Node's WireGuard address and the container's port.
+5. The Gateway records the server from the run's result and moves the Gateway session from the vault into its encrypted record. The Swamp session stays in the vault. It does not check the result again.
+6. The server's Node is the container's Node, and the record names the Instance.
 
 The container cannot call the Gateway, so registration never comes from inside it. Orbit issues a new session when it wakes a container whose session expires within seven days, and a daily check renews the sessions of running containers. The [registration chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd) has the steps.
 
@@ -247,7 +243,7 @@ A container's T3 server has two drivers. They use the same threads and the same 
 
 | Driver | When | Through |
 | --- | --- | --- |
-| A user | No task runs in the Instance, or its task is paused | Conn, paired with the T3 server through Orbit |
+| A user | No task runs in the Instance, or its task is [paused](/solutions/development-container-runtime#open-questions) | Conn, paired with the T3 server through Orbit |
 | Swamp | A task flow runs in the Instance | T3's MCP endpoint and WebSocket API, as [Swamp drives T3](#swamp-drives-t3) specifies |
 
 Both send a turn with `queue`, so neither steers the other's turn. No lease decides who drives.
@@ -271,7 +267,7 @@ A task group runs in one Instance container. Everything else about a group, its 
 | Workspace actions | The receipt, the Git evidence, the reviewer's reset and the checks run from the Node, with `incus exec` as `agent` in `/srv/workspace`. A check sees what the agent saw |
 | Preview | The Instance's Route |
 | Publish | Orbit reads the branch out on the Node and pushes it with a minted token, as [Git in and out](#git-in-and-out) describes |
-| Pause | Swamp sends no turn. The user drives from Conn |
+| Pause | Swamp sends no turn, and the user drives from Conn. How a task pauses is an [open question](/solutions/development-container-runtime#open-questions) |
 | End | Orbit destroys a clone that the task owns, through [Destroy](#destroy). An attached Instance stays running |
 
 A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a container while a task flow runs in it.
@@ -285,7 +281,8 @@ Swamp drives a container's T3 server through T3's own API. Nothing of Orbit runs
 Swamp reaches the container's T3 as a Conn device does, with its own session.
 
 - **Address.** The Instance's published URL: the Node's WireGuard address and the runtime row's `t3_port`. Conn devices use the same path. The firewall admits WireGuard peers and refuses task VMs.
-- **Session.** A second T3 session, `Orbit Swamp`, from the create flow. Swamp keeps it in the vault and reads it in each step that calls T3.
+- **Session.** A second T3 session, `Orbit Swamp`, from the create flow, as the plan proposes.
+- **Vault.** Swamp keeps that session in the vault and reads it in each step that calls T3.
 - **Session scope.** The session never enters a run or the Gateway's records. The renewal of [registration](#t3-registration-and-pairing) renews it, and destroy revokes it.
 - **MCP.** `POST <url>/mcp` with `Authorization: Bearer <session>`.
 - **WebSocket.** `POST <url>/api/auth/websocket-ticket` with the same bearer gives a ticket. Swamp then opens `/ws?orchestrationProtocol=2&wsTicket=<ticket>` and sends Effect RPC requests.
@@ -298,14 +295,19 @@ Swamp uses these T3 calls and no others.
 | Purpose | Call | Input that Orbit sets |
 | --- | --- | --- |
 | Find the workspace project | MCP `t3_project_list` | The project at `/srv/workspace`, which the create flow adds |
-| Start a thread with its first turn | MCP `t3_thread_launch` | `projectId`, `title`, `message`, `modelSelection` (provider instance `codex` or `claudeAgent`, model, effort), `runtimeMode: full-access`, `interactionMode: default`, `workspaceStrategy: root`, `clientRequestId` |
+| Start a thread with its first turn | MCP `t3_thread_launch` | `projectId`, `title`, `message`, `modelSelection: {instanceId: codex or claudeAgent, model, options: {effort}}`, `runtimeMode: full-access`, `interactionMode: default`, `workspaceStrategy: {type: root}`, `clientRequestId` |
 | Send a later turn | MCP `t3_thread_send` | `threadId`, `message`, `mode: queue`, `clientRequestId` |
-| Wait for the turn | MCP `t3_thread_wait` | `threadId`, `runId`, `timeoutMs`. On a timeout Swamp calls it again |
+| Wait for the turn | MCP `t3_thread_wait` | `threadId`, `runId`, `timeoutMs`. It returns when the run ends, with the run's latest `runId` |
+| Read a question | MCP `t3_pending_request` | `action: read`, for a `waiting` run |
 | Read the transcript | MCP `t3_thread_read` | `threadId`, `view: activity`, paged with `afterPosition` |
 | Read state and usage | WebSocket `orchestration.getThreadProjection` | `threadId`. Gives the run's status, failure, retry and provider turns with their token usage |
-| Interrupt | MCP `t3_thread_interrupt` | `threadId`, `runId`. If the run has not ended 30 seconds later, WebSocket `orchestration.forceStopThread` |
+| Interrupt | MCP `t3_thread_interrupt` | `threadId`, `runId`. If the run has not ended 30 seconds later, WebSocket `orchestration.forceStopThread` with `threadId` and `runId` |
 
-`clientRequestId` is `operation-{id}`. A retried launch or send with the same id returns the same run and starts no second turn, as a repeated Pi send key does.
+`clientRequestId` is `operation-{id}`. A retried launch or send with the same id and the same session returns the same run and starts no second turn, as a repeated Pi send key does. T3 keeps these ids per session, so Orbit never renews the `Orbit Swamp` session while a turn operation of the Instance runs.
+
+`runtimeMode: full-access` holds only while the session carries no mode limit and the server's managed policy sets no lower maximum. The image sets neither.
+
+A wait that times out reads the run's status. While it is still running, Swamp waits again. A `waiting` run ends the turn as `blocked`: Swamp reads the question with `t3_pending_request` and records it as the receipt's question.
 
 ### Threads and roles
 
@@ -315,7 +317,7 @@ A new thread takes any model the model router serves for Codex or Claude Code. C
 
 ### Thread state
 
-The state of a thread is the status of its latest run, from `t3_thread_wait` or `orchestration.getThreadProjection`.
+The state of a thread is the status of its latest run, from `t3_thread_wait` or `orchestration.getThreadProjection`. A T3 restart ends a run and continues it in a new run that points back to it, so the latest run is the end of that chain.
 
 | T3 run status | Orbit state |
 | --- | --- |
@@ -323,13 +325,13 @@ The state of a thread is the status of its latest run, from `t3_thread_wait` or 
 | `preparing`, `queued`, `starting`, `running` | `working` |
 | `waiting` | `asking_for_input` |
 | `completed` | `done` |
-| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's failure class and message as the error |
+| `failed`, `interrupted`, `cancelled`, `rolled_back` | `failed`, with T3's failure class and message as the error, as the plan proposes |
 
-`full-access` agents ask for no approval. A `waiting` run comes only from a question that the agent asks; Swamp handles it as a `blocked` turn.
+`full-access` agents ask for no approval. A `waiting` run comes from a question that the agent asks, or from an MCP server of the project that asks for input.
 
 ### Token metrics
 
-Swamp reads the `turnTokenUsage` of each provider turn in the run from `orchestration.getThreadProjection` and adds them up for the turn.
+Swamp reads the `turnTokenUsage` of each provider turn from `orchestration.getThreadProjection`, over every run of the turn's restart chain, and adds them up. It skips a provider turn marked `localCommand`, whose counts describe a local command, not model work.
 
 | Orbit metric | From T3 |
 | --- | --- |
@@ -337,9 +339,9 @@ Swamp reads the `turnTokenUsage` of each provider turn in the run from `orchestr
 | Cached input | `cachedInputTokens` |
 | Output | `outputTokens`, which holds the reasoning tokens |
 | Subagents and compaction | `otherUsage.inputTokens` and `otherUsage.outputTokens`, added to uncached input and output |
-| Cost | Null. T3 reports no cost per turn |
+| Cost | Null, as the plan proposes. T3 reports no cost per turn |
 
-A provider turn whose `usageStatus` is `partial` or `unavailable` leaves the turn's metrics null, because a partial sum would look complete. The thread keeps the sum of its turns, as with Pi.
+A provider turn without `turnTokenUsage`, or whose `usageStatus` is `partial` or `unavailable`, leaves the turn's metrics null, because a partial sum would look complete. The thread keeps the sum of its turns, as with Pi.
 
 ### Retries and restarts
 
@@ -347,8 +349,9 @@ T3 and its agents own recovery inside a turn. Swamp only waits.
 
 - **Provider errors.** Claude Code and Codex retry a transient provider error inside the turn. T3 records each attempt, and the run stays `running`.
 - **No retry by Orbit.** Swamp and the Gateway retry none. An exhausted retry ends the run `failed` with its failure class.
-- **T3 restart.** A folder update or a crash restarts T3. T3's restart continuation resumes the turn, and the run stays `running`. Swamp's wait reconnects and waits on the same run id.
-- **Lost wait.** A step that loses its connection calls `t3_thread_wait` again for the same run. Native resume reuses completed steps, so the keyed send never repeats.
+- **T3 restart.** A folder update or a crash restarts T3. T3's restart continuation continues the turn in a new run, and the wait follows that chain.
+- **Latest run.** Swamp uses the `runId` that each wait returns for its next wait, interrupt and state read.
+- **Lost wait.** A step that loses its connection calls `t3_thread_wait` again with the last run id it has. Native resume reuses completed steps, so the keyed send never repeats.
 - **Cancel.** A cancelled turn operation interrupts the run, so the turn stops in the container.
 
 ### Transcripts and changed files
@@ -402,7 +405,7 @@ The agent reaches its fleet as on a task VM, with its own tunnel.
 - Its tunnel `wg-nested` runs as `orbit-wg-nested.service` with `ip` and `wg`, because `wg-quick` segfaults in the outer container under Ubuntu 26.04's AppArmor profile.
 - The candidate CLI in the workspace talks to the nested Gateway at `https://10.45.0.1`, with the `nested` profile and the nested root CA.
 - The agent runs `incus` in the container for `exec`, logs and snapshots of its nested containers.
-- That makes the agent root-equivalent inside its own container, never on the Node.
+- The plan proposes that `agent` joins the inner Incus admin group. That makes the agent root-equivalent inside its own container, never on the Node.
 - `orbit` has no access to the inner Incus.
 - The nested Gateway and `app-dev` get `/srv/workspace` as the disk device `checkout`, so an edit reaches them at once.
 
@@ -416,7 +419,7 @@ A container cannot reach GitHub. Orbit moves branches from the Node, as it does 
 
 ## Production Instances
 
-Step 8 of ADR 0250 moves production Instances into containers on `app-prod` Nodes, after development containers work. The decided basics:
+Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nodes, after development containers work. The decided basics:
 
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
@@ -458,7 +461,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.default_missing` | 409 | `instance:create` of a non-default Instance while the Project has no active default Instance on the Node |
+| `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.default_not_migrated` | 409 | `instance:migrate` of a non-default Instance whose default Instance is still a checkout |
 | `instance.turn_running` | 409 | `instance:destroy` without `--force` while a T3 turn runs in the container |
@@ -476,9 +479,9 @@ These reasons shape the runtime. ADR 0250 lists the alternatives that were rejec
 
 A task needs what a development Instance has: the code with its dependencies, a database, a preview and an agent engine. A second container kind would repeat the image, the users, the folders, the model route and the Git path. With one kind, a user can take over a stuck task in Conn, and a task can continue work that a user began.
 
-### The nested fleet is a Project feature
+### The nested fleet is optional
 
-Only Orbit's command proofs need a fleet inside the container. Nesting adds kernel surface, so a Project turns it on, and every other container keeps nesting off.
+Only Orbit's command proofs need a fleet inside the container. Nesting adds kernel surface, so only containers that need a fleet turn it on, and every other container keeps nesting off.
 
 ### T3 inside, not outside
 

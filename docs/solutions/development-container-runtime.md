@@ -21,7 +21,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Agent engine | A T3 server runs as `agent` in every development Instance container. Swamp drives it through T3's own API. No Conn or T3 fork, and no Pi server in a container |
 | Pi | The Pi server stays only on today's task VMs, until step 9 removes them |
 | Tasks | A task starts in a clone of the Project's default Instance, or attaches to an existing Instance |
-| Nested fleet | An optional feature of a Project. Orbit turns it on for its command proofs |
+| Nested fleet | An optional feature. Orbit turns it on for its command proofs. Whether a Project or an Instance turns it on is an open question |
 | Parity gate | Orbit's command proof cases pass in an Orbit Instance container with the nested fleet on, with the same verdicts as on task VMs |
 | Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
 | Registration | A step in the Instance-create flow issues and checks the T3 sessions. The Gateway records the server from that step's result |
@@ -75,7 +75,7 @@ The build list, the Gateway setting `instances.container_nodes` (`ORBIT_INSTANCE
 These come from other work and must land first.
 
 - **The model forwarder and guard change.** [#3290](https://github.com/hardimpactdev/orbit/pull/3290) built the per-Node forwarder and lets the model router guard accept agent Nodes and the `?beta=true` query. Merged.
-- **Container egress for dependencies.** Step 2c of ADR 0250 names the package path that dependency installs use. PR 4 needs it. The image build of PR 3 has its own way out, for its build container only.
+- **Container egress for dependencies.** [Step 2c of the rollout](/solutions/agent-runtime-and-manual-mode) names the package path that dependency installs use. PR 4 needs it. The image build of PR 3 has its own way out, for its build container only.
 - **Pairing works.** The spike's pairings failed at the vault step. The pairing fix on `main` must pair with a container's server before PR 5 ends.
 
 ## Build PRs
@@ -237,11 +237,16 @@ Tests: Pest for the intent and projection of both flows; Ansible `unit` cases; t
 
 This PR changes `instance:create`, so its spec commit updates the create page and cases with [container/create.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) and [container/t3-register.mmd](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/t3-register.mmd).
 
+The create flow gets these parts:
+
 - The clone of the default container and the database clone through the database family: a template copy on the same server, a dump and restore across servers.
 - The branch from the Node, the workspace, `.env`, the agent settings, the note links and `/etc/orbit/instance`.
 - The first start of T3, the Processes and the Route.
+The registration and the container's paths:
+
 - The registration step and the Gateway's record of the server from its result. The record names the Instance.
 - The `Orbit Swamp` session beside the Gateway's, kept in the vault, and the T3 project at `/srv/workspace`.
+- The lifecycle contributions reused from `task-4193` add a plug-in point, so this PR follows [Add a plug-in point](/reference/extensions#add-a-plug-in-point).
 - The container's NIC rule to its Instance's database server and port.
 - The T3 proxy device and its route rule.
 - The daily renewal run.
@@ -324,15 +329,15 @@ This PR lets a task drive an Instance that a user also drives.
 - A task group can name an existing Instance of its Project. The task does not own it, and the group's end leaves it running.
 - Its turns go to that Instance's T3 through the driver of PR 8, with `queue`.
 - The task's check and publish run in the Instance's container.
-- Pausing the task stops Swamp from sending; the user drives from the thread.
+- Pausing the task stops Swamp from sending, by the answer to the pause question; the user drives from the thread.
 
 Tests: Pest for the attach admission, the ownership rules and the end without destroy. Live: attach a task to an Instance, see its turns in the Conn thread, pause it, send a turn as the user, resume it, and end the group with the Instance still running.
 
 ### PR 10: the nested fleet
 
-This PR adds the [nested fleet](/reference/development-containers#nested-fleet) as a Project feature. It reuses the nested topology of the earlier task container plan; the default Instance takes the place of the base container.
+This PR adds the [nested fleet](/reference/development-containers#nested-fleet) as an optional feature. It reuses the nested topology of the earlier task container plan; the default Instance takes the place of the base container.
 
-- **Setting.** A Project setting turns the nested fleet on. Orbit's own Project turns it on.
+- **Setting.** A Project setting turns the nested fleet on, as the open question recommends. Orbit's own Project turns it on.
 - **Node.** The `app-dev` converge adds an Incus project for nested-fleet containers. It allows nesting, interception, isolated ID maps and low-level keys.
 - **IDs.** Root's subordinate IDs on the Node hold one isolated range per nested-fleet container.
 - **Default Instance.** The create and deploy flows of a nested-fleet Project build the inner Incus, its directory pool `topology-seed`, the network `oe-nested` and the fleet once.
@@ -361,11 +366,11 @@ This PR makes the proof flows run on a nested fleet in an Instance container. It
 
 Tests: Pest for the admission of the options and the proof intents; `swamp workflow validate`. Live: `orbit proof firewall:allow --group <group>` on a group in an Orbit clone on Beast, and a short `proof:run --node=beast --runtime=container` with two cases. The PR records the restore times. If their 95th percentile is over 45 seconds, the limit becomes that percentile plus a margin, and the PR says which.
 
-## Parity gate
+### Parity gate
 
-Step 6 of ADR 0250 passes when every part below holds. All of it runs on Beast. The task VM half takes Beast's VM task places, so it runs in a window agreed with the operations migration thread.
+Step 6 of ADR 0250 passes when every part below holds. All of it runs on Beast. The task VM half takes Beast's VM task places, so it runs while no other proof uses them.
 
-### Proof cases
+#### Proof cases
 
 Both runs prove the same commit of `main`, picked after PR 11.
 
@@ -375,7 +380,7 @@ Both runs prove the same commit of `main`, picked after PR 11.
 4. A case that fails on both runtimes is a case defect and does not block.
 5. A case that fails only in the container blocks. After its fix, the whole container run passes again.
 
-### Real tasks
+#### Real tasks
 
 Real task work runs in clones and in an attached Instance.
 
@@ -385,7 +390,7 @@ Real task work runs in clones and in an attached Instance.
 4. One T3 restart during a turn does not end the turn.
 5. A task attached to an Instance turns, pauses for a user turn in Conn, and resumes.
 
-### Record
+#### Record
 
 The case table goes on this page, with the times of a start, a restore and a default deployment on both runtimes. The peak memory of one nested-fleet clone goes there too; it sets the Node's task and CI places.
 
@@ -609,11 +614,12 @@ Each question names the PR that needs the answer. The recommendation is what tha
 | Which T3 session does Swamp use? (PR 5, PR 8) | (a) A dedicated `Orbit Swamp` session per Instance, kept in the vault. (b) The Gateway's session, handed to Swamp per step by a mint call. (c) `incus exec … t3 thread` in the container | (a): it is revoked on its own and stays in the vault. PR 8 checks which scopes the thread tools need |
 | What cost does a T3 turn record? (PR 8) | (a) Null, because T3 reports no cost per turn. (b) Orbit prices tokens from the model router's model list | (a): a guessed price would look exact. Insights already handle a null cost |
 | How does a T3 failure map to Orbit's provider errors? (PR 8) | (a) Record T3's failure class (`usage_limit`, `provider_error`, `transport_error`, `permission_error`, `validation_error`, `unknown`) as is. (b) Map it to Pi's `overloaded`, `rate_limited` and `server_error` | (a): the classes do not map one to one, and Swamp decides assistance from the class |
-| Is a repeated `clientRequestId` safe across a T3 restart? (PR 8) | (a) Rely on T3's idempotent launch and send, and prove it. (b) Swamp reads the thread's runs before every resend | (a), with the PR 8 test. If it fails, (b) |
+| Is a repeated `clientRequestId` safe across a T3 restart? (PR 8) | (a) Rely on T3's idempotent launch and send, keyed per session; renew the Swamp session only between turn operations. (b) Swamp reads the thread's runs before a resend | (a), with the PR 8 test. If it fails, (b) |
+| How does a task pause and resume? (PR 9) | (a) An explicit pause recorded on the group, which keeps Swamp from admitting a turn until resume. (b) No pause: the user sends between Swamp's turns, and both queue | (a): the user's takeover of a stuck task needs Swamp to stop, and Tasks has no pause today |
 | How many task clones may a Node run? (PR 7) | (a) Task and CI place counts per Node, with the queue and two-hour wait of task places. (b) Admission by free memory. (c) No limit | (a), with counts from the gate's peak memory. It keeps the queue that tasks have today |
 | Is the nested fleet set per Project or per Instance? (PR 10) | (a) A Project setting, which the default Instance and every clone carry. (b) Per Instance. (c) Both | (a): a clone carries its default's fleet, so a per-Instance switch would need a second default |
 | How does the agent drive the inner Incus? (PR 10) | (a) `agent` joins the inner Incus admin group: root-equivalent inside its own container, no sudo. (b) Sudo for `agent` in nested-fleet containers. (c) Only Swamp drives the fleet, from the Node | (a): the agent needs its fleet for proofs, and `orbit` still gets nothing |
-| What egress does a nested-fleet Instance get? (PR 10, PR 11) | (a) The package path of step 2c, as every container. (b) Public addresses on every port, as a task VM has | (a). The parity gate shows whether a proof case needs more; then (b) for nested-fleet Instances only |
+| What egress does a nested-fleet Instance get? (PR 10, PR 11) | (a) The package path of rollout step 2c, as every container. (b) Public addresses on every port, as a task VM has | (a). The parity gate shows whether a proof case needs more; then (b) for nested-fleet Instances only |
 | Where do task clones and CI proofs run before every task host is an `app-dev` Node? (PR 7, PR 12) | (a) On Beast and Shark as `app-dev` Nodes on the build list, beside their task VMs. (b) On new Nodes | (a): they are the task hosts today, and their host preparation already ran |
 
 ## Reference page changes

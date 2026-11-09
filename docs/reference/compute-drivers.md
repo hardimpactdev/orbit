@@ -1028,7 +1028,7 @@ Every refusal fails the phase with `task_vm.setup_failed`. Ansible runs its modu
 
 ### Prepare an Instance container host
 
-An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Development containers](/reference/development-containers#prepare-a-node) describes the result.
+An `app-dev` Node on the [build list](/reference/development-containers#the-build-list) that is not a task VM gets a container branch in its role converge: `tasks/instance-host.yml`, from `tasks/node-role-runtime.yml`. The Gateway's `InstanceHostIntent` sends the branch's intent as the role runtime's `instances` key, only for such a Node; every other Node gets the same intent as before. The admission of a role add or converge allocates the Node's Instance bridge before it captures the intent; the capture only reads it. [Instance containers](/reference/development-containers#prepare-a-node) describes the result.
 
 The branch shares the two task files of a [container host](#prepare-a-container-host). `container_host` names what differs:
 
